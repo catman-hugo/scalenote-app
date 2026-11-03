@@ -8,7 +8,7 @@ Nothing has been built yet.
 
 | Version | What it adds | Status |
 |---|---|---|
-| 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress: build pipeline and pen test page written, nothing run on a device yet |
+| 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress. Builds for Windows, Linux and Android are made by GitHub and published as a release. Tested by hand: Linux Mint (opens, mouse works) and Windows 11 (mouse, touchpad, finger, pen pressure and eraser button work). Android (POCO F7 Pro, Android 16): installs, runs and finger drawing works; the top bar was hidden under the status bar (fixed, not yet re-tested). Not tested: Android pen, Fedora, pen barrel button (does not work on the test pen in other apps either), tilt (not reported on the test pen), an editor saving a markdown file |
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | not started |
 | 0.2 | Editor completion, markdown source view, block gutter, themes, settings, converter for the owner's old notes, update notice | not started |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |

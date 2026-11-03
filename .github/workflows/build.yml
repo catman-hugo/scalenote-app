@@ -101,6 +101,15 @@ jobs:
       # Release signing is added later with a real key kept in GitHub secrets.
       - run: npx tauri android build --apk --debug --target aarch64 --ci
 
+      # Gradle names the file app-universal-debug.apk. Rename it like the desktop
+      # installers: product name, version from the app config, then the CPU type.
+      - name: Name the APK like the other installers
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          mv "$apk" "$(dirname "$apk")/ScaleNote Spike_${version}_arm64-debug.apk"
+          find src-tauri/gen/android/app/build/outputs/apk -name '*.apk'
+
       - uses: actions/upload-artifact@v4
         with:
           name: scalenote-android
