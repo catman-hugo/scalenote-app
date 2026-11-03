@@ -1,0 +1,41 @@
+# Dependencies and build output
+node_modules/
+target/
+dist/
+build/
+out/
+.vite/
+*.log
+
+# Tauri and Android build output
+src-tauri/gen/
+android/app/build/
+android/.gradle/
+*.apk
+*.aab
+*.msi
+*.exe
+*.deb
+*.rpm
+*.AppImage
+
+# Secrets and local settings, never commit these
+.env
+.env.*
+*.pem
+*.key
+*.keystore
+*.jks
+
+# Local databases and caches
+*.db
+*.sqlite
+*.sqlite3
+.scalenote/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

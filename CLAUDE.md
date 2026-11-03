@@ -1,0 +1,64 @@
+# Instructions for whoever builds ScaleNote
+
+Read this file first, then `PROGRESS.md` and `DECISIONS.md`. The detailed plan lives in `docs/` once it has been added. Until then, ask the owner for the plan document. Do not guess features.
+
+## What this project is
+
+A local-first note app. Notes are plain markdown files in a normal folder, so Obsidian can open the same folder. It runs on Windows, Linux, Android and in a browser, with an optional home server for sync. The owner is not a programmer: he decides what gets built, tests builds on real devices, and reports what is wrong.
+
+## How work is organised
+
+- Each version in `PROGRESS.md` is built in short slices. One chat builds one version or slice.
+- Nothing lives only in a chat. At the end of every session, update `PROGRESS.md` (what is done, what is half done, what is untested on a device) and `DECISIONS.md`.
+- A new session starts by reading this file, `PROGRESS.md` and `DECISIONS.md`.
+
+## Git rules
+
+- Never commit to `main` directly (the very first commit is the only exception). Work on a branch called `feature/<short-description>` or `fix/<short-description>`.
+- Small, frequent commits. A message is a short imperative summary ("Add vault folder picker"), then a blank line and a few sentences on why when the reason is not obvious.
+- Open a pull request for each branch. The owner merges. Do not merge your own pull request.
+- Remove scratch files before committing, and check what is staged before every commit.
+
+## Honest reporting
+
+- Say exactly what you ran and show real output, not a summary of it.
+- Say clearly what was only tested here and what needs a real device. Never call something done if it was not tried.
+- Check every library and API against its real documentation before using it. Do not invent function names. Pin dependency versions. A previous attempt lost days to invented APIs and an accidental major version jump.
+- Tests must call the real functions, not a copy of their logic.
+- Test the packaged app, not only the development mode.
+
+## Code rules
+
+- Comments explain why a choice was made and how a part works, in plain language, where it helps most (sync, file format, parsing, security, anything non-obvious). Obvious lines get no comment.
+- Keep functions small and simple. Prefer plain code over clever code.
+- No text typed straight into the interface code. Every sentence a user sees goes in a language file. The app is English only for now, but must be translatable from the start.
+- Writes to the vault are atomic: write a temporary file, then rename it. Never overwrite a note in place.
+- Unknown markdown syntax is kept byte for byte. Opening a vault must never lose content.
+- Anything received from a network, a file from another app, or a peer is untrusted. Set size limits, never run code from it.
+- Secrets (keys, tokens) go in the system's secure storage, never in the vault, logs or the repository.
+- Rust code after startup must not use `unwrap()` or `expect()`. Handle errors, log them, show a calm message.
+- The AI assistant is off by default and, when off, no AI code is loaded and no AI element exists anywhere in the interface. One panel only, no AI entries elsewhere, no AI action that changes anything without the user accepting it.
+
+## No personal information in this repository
+
+This repository is public. Never put real names, addresses, device names, IP addresses, server details, email addresses, keys or notes into code, comments, examples, test data, commit messages or issues. Use clearly fake data such as `example.local` and `alice` / `bob`.
+
+## Design rules
+
+The interface should look like a tool someone made on purpose, in the line of Notion, OneNote, Obsidian, Rnote, AppFlowy and AFFiNE:
+
+- No gradients on buttons, backgrounds or cards. Solid colours only.
+- No glow, neon, blurred glass panels or stacked shadows. One soft shadow for a floating menu is fine.
+- No big rounded corners on everything, and no decorative animation. Motion only when it does a job.
+- No sparkle icons, no decorative emoji or illustrations, and no marketing wording.
+- Colour has a job (notebook colour, status, pen palette, theme). One font family, one size scale, one spacing scale, one icon set.
+- Every version ends with a design check on screenshots of each new screen, in light and dark.
+
+## Definition of done for a version
+
+1. It builds and runs as a packaged app, not only in development.
+2. A note can be created, edited, saved and reopened without data loss, and killing the app mid-edit corrupts nothing.
+3. Nothing added throws an unhandled error with empty input, huge input, special characters or rapid clicking.
+4. The design check and the security checklist are done.
+5. Release notes are written in plain language.
+6. `PROGRESS.md` is accurate.
