@@ -127,9 +127,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           find built -type f | sort
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --prerelease \
-            --title "ScaleNote ${GITHUB_REF_NAME#v} (test build)" \
-            --notes "Test build for trying out on real devices. It is not a finished app. Install the file for your system: .msi or .exe for Windows, .deb for Linux Mint, .rpm for Fedora, .AppImage for any Linux, .apk for Android. Most of the code is written by AI and has not been human-reviewed, so keep backups." \
-            $(find built -type f)
+          # A release made by hand on the website already exists by the time this runs,
+          # so attach the files to it. Otherwise create the release first.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber $(find built -type f)
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "ScaleNote ${GITHUB_REF_NAME#v} (test build)" \
+              --notes "Test build for trying out on real devices. It is not a finished app. Install the file for your system: .msi or .exe for Windows, .deb for Linux Mint, .rpm for Fedora, .AppImage for any Linux, .apk for Android. Most of the code is written by AI and has not been human-reviewed, so keep backups." \
+              $(find built -type f)
+          fi
