@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    scalenote_spike_lib::run()
+    scalenote_lib::run()
 }

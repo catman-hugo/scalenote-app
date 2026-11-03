@@ -1,7 +1,7 @@
 [package]
-name = "scalenote-spike"
-version = "0.0.2"
-description = "Version 0.0 spike: app window, pen test page and build pipeline."
+name = "scalenote"
+version = "0.1.0"
+description = "ScaleNote: a local-first markdown note app."
 edition = "2021"
 rust-version = "1.77"
 
@@ -10,7 +10,7 @@ members = [".", "core"]
 
 [lib]
 # The library name differs from the package name so the Android build can load it.
-name = "scalenote_spike_lib"
+name = "scalenote_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

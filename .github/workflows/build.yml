@@ -17,6 +17,32 @@ permissions:
   contents: read
 
 jobs:
+  # Runs the automatic tests. Real devices are still needed for pen, touch and file pickers.
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # Only the file-handling crate is tested here; it has no window or webview in it.
+      - run: cargo test -p scalenote-core --locked
+        working-directory: src-tauri
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/editor.spec.mjs
+
   desktop:
     name: ${{ matrix.label }}
     strategy:
@@ -107,7 +133,7 @@ jobs:
         run: |
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
-          mv "$apk" "$(dirname "$apk")/ScaleNote Spike_${version}_arm64-debug.apk"
+          mv "$apk" "$(dirname "$apk")/ScaleNote_${version}_arm64-debug.apk"
           find src-tauri/gen/android/app/build/outputs/apk -name '*.apk'
 
       - uses: actions/upload-artifact@v4

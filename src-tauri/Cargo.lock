@@ -2523,12 +2523,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "scalenote-core"
-version = "0.0.2"
-
-[[package]]
-name = "scalenote-spike"
-version = "0.0.2"
+name = "scalenote"
+version = "0.1.0"
 dependencies = [
  "scalenote-core",
  "serde",
@@ -2536,6 +2532,10 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
 ]
+
+[[package]]
+name = "scalenote-core"
+version = "0.1.0"
 
 [[package]]
 name = "schemars"

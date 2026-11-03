@@ -1,12 +1,28 @@
 {
-  "name": "scalenote-spike",
+  "name": "scalenote",
   "private": true,
-  "version": "0.0.2",
-  "description": "Version 0.0 spike: checks that the app window, pen input and the build pipeline work on real devices.",
+  "version": "0.1.0",
+  "description": "ScaleNote: a local-first markdown note app.",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.12.4"
-  }
+    "@tauri-apps/cli": "2.12.4",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-dialog": "2.8.4",
+    "@tiptap/core": "3.32.2",
+    "@tiptap/extension-list": "3.32.2",
+    "@tiptap/extensions": "3.32.2",
+    "@tiptap/markdown": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
+    "@tiptap/suggestion": "3.32.2"
+  },
+  "type": "module"
 }

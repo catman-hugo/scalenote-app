@@ -1,0 +1,598 @@
+/* ScaleNote styles. Flat colours only: no gradients, glow or blur. One font family, one
+   size scale, one spacing scale. Colour has a job: the accent marks the current note,
+   the focus ring and the primary button; red-ish marks a failed save. */
+
+:root {
+  --bg: #ffffff;
+  --bg-side: #f6f6f4;
+  --bg-hover: #ebebe8;
+  --bg-code: #f2f2ef;
+  --text: #1f1f1d;
+  --text-soft: #5f5f5a;
+  --line: #dcdcd6;
+  --accent: #5b3fc4;
+  --accent-text: #ffffff;
+  --accent-soft: #e9e5f8;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #a3231b;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* size scale */
+  --text-s: 0.8125rem;
+  --text-m: 1rem;
+  --text-l: 1.25rem;
+  --text-xl: 1.625rem;
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 40px;
+
+  --radius: 4px;
+  --sidebar-width: 280px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1a;
+    --bg-side: #232322;
+    --bg-hover: #2e2e2c;
+    --bg-code: #262625;
+    --text: #e9e9e5;
+    --text-soft: #a5a5a0;
+    --line: #3a3a37;
+    --accent: #a898f0;
+    --accent-text: #15121f;
+    --accent-soft: #34304a;
+    --warn-bg: #3d3018;
+    --warn-text: #f2d9a6;
+    --bad: #f08a80;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-m);
+  line-height: 1.5;
+  /* Room for the notch and the system bars on phones. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  min-height: 36px;
+}
+
+button:hover {
+  background: var(--bg-hover);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.link-button {
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-soft);
+  min-height: 0;
+  text-align: left;
+}
+
+.icon {
+  flex: none;
+}
+
+/* ---------- layout ---------- */
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-side);
+  border-right: 1px solid var(--line);
+  min-height: 0;
+}
+
+body:not(.sidebar-open) .sidebar {
+  display: none;
+}
+
+.scrim {
+  display: none;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.logo {
+  border-radius: var(--radius);
+}
+
+.vault-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-actions {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.side-actions button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  font-size: var(--text-s);
+}
+
+.side-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--line);
+  font-size: var(--text-s);
+}
+
+.side-foot a {
+  color: var(--text-soft);
+}
+
+/* ---------- note list ---------- */
+
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--space-2);
+}
+
+.tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-list .tree-list {
+  padding-left: var(--space-4);
+}
+
+.tree-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  border: none;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  min-height: 32px;
+  border-radius: var(--radius);
+}
+
+.tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row.current > .tree-button {
+  background: var(--accent-soft);
+}
+
+.tree-row.selected-folder > .tree-button {
+  background: var(--bg-hover);
+}
+
+.tree-empty {
+  color: var(--text-soft);
+  font-size: var(--text-s);
+  padding: var(--space-2) var(--space-3);
+}
+
+.inline-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 2px var(--space-1);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+/* ---------- top bar and messages ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  min-height: 52px;
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+  border-color: transparent;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-l);
+  font-weight: 600;
+}
+
+.title:hover {
+  border-color: var(--line);
+}
+
+.status {
+  color: var(--text-soft);
+  font-size: var(--text-s);
+  white-space: nowrap;
+}
+
+.status[data-state="failed"] {
+  color: var(--bad);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: var(--text-s);
+}
+
+.banner[hidden],
+.empty[hidden],
+.editor[hidden] {
+  display: none;
+}
+
+.empty {
+  color: var(--text-soft);
+  padding: var(--space-6) var(--space-5);
+  margin: 0;
+}
+
+/* ---------- editor ---------- */
+
+.editor {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+}
+
+.note-body {
+  max-width: 46rem;
+  margin: 0 auto;
+  min-height: 60vh;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+
+/* One rule sets the space between blocks, so no block type has its own margins. */
+.note-body > * {
+  margin: 0;
+}
+
+.note-body > * + * {
+  margin-top: var(--space-3);
+}
+
+.note-body h1,
+.note-body h2,
+.note-body h3,
+.note-body h4,
+.note-body h5,
+.note-body h6 {
+  line-height: 1.25;
+}
+
+.note-body h1 {
+  font-size: var(--text-xl);
+}
+
+.note-body h2 {
+  font-size: var(--text-l);
+}
+
+.note-body h3,
+.note-body h4 {
+  font-size: var(--text-m);
+}
+
+.note-body h5,
+.note-body h6 {
+  font-size: var(--text-s);
+}
+
+.note-body ul,
+.note-body ol {
+  padding-left: var(--space-5);
+}
+
+.note-body li p {
+  margin: 0;
+}
+
+.note-body ul ul,
+.note-body ol ol,
+.note-body ul ol,
+.note-body ol ul {
+  margin: 0;
+}
+
+.note-body ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: var(--space-1);
+}
+
+.note-body ul[data-type="taskList"] li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.note-body ul[data-type="taskList"] li > label {
+  margin-top: 0.2em;
+}
+
+.note-body ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+.note-body blockquote {
+  padding-left: var(--space-4);
+  border-left: 3px solid var(--line);
+  color: var(--text-soft);
+}
+
+.note-body code {
+  font-family: var(--mono);
+  background: var(--bg-code);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius);
+  font-size: 0.9em;
+}
+
+.note-body pre {
+  font-family: var(--mono);
+  background: var(--bg-code);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.note-body pre code {
+  background: none;
+  padding: 0;
+}
+
+.note-body hr {
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.note-body a {
+  color: var(--accent);
+}
+
+.note-body p.is-empty::before,
+.note-body h1.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-soft);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.raw-block {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+.raw-label {
+  font-size: var(--text-s);
+  color: var(--text-soft);
+  margin-bottom: var(--space-1);
+}
+
+.raw-text {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: var(--text-s);
+  line-height: 1.5;
+  padding: 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.raw-text:focus-visible {
+  outline: none;
+}
+
+/* ---------- slash menu ---------- */
+
+.slash-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* The one soft shadow in the app: it lifts a floating menu off the page. */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: var(--space-1);
+}
+
+.slash-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  min-height: 32px;
+  padding: var(--space-1) var(--space-3);
+}
+
+.slash-item.selected {
+  background: var(--accent-soft);
+}
+
+.slash-empty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-soft);
+}
+
+/* ---------- dialogs ---------- */
+
+.dialog {
+  max-width: 30rem;
+  width: calc(100% - 2 * var(--space-4));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-5);
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.dialog h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-l);
+}
+
+.dialog ul {
+  padding-left: var(--space-5);
+}
+
+.dialog li {
+  margin-bottom: var(--space-2);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.hint {
+  color: var(--text-soft);
+  font-size: var(--text-s);
+  margin: 0;
+}
+
+.logo-large {
+  display: block;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius);
+}
+
+/* ---------- narrow screens: the list slides over the note ---------- */
+
+@media (max-width: 700px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
+    width: min(85vw, var(--sidebar-width));
+    padding-top: env(safe-area-inset-top);
+  }
+
+  body.sidebar-open .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 9;
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .editor {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+}
