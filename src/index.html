@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>ScaleNote spike</title>
+    <link rel="stylesheet" href="pentest.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <h1 id="title"></h1>
+      <div class="actions">
+        <button id="clear" type="button"></button>
+        <button id="copy" type="button"></button>
+      </div>
+    </header>
+
+    <p id="intro" class="intro"></p>
+
+    <main class="layout">
+      <canvas id="pad" aria-label="Drawing area"></canvas>
+
+      <section class="readout" aria-live="polite">
+        <h2 id="liveHeading"></h2>
+        <dl id="live"></dl>
+        <h2 id="reportHeading"></h2>
+        <pre id="report"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="pentest.js"></script>
+  </body>
+</html>

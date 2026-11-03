@@ -8,7 +8,7 @@ Nothing has been built yet.
 
 | Version | What it adds | Status |
 |---|---|---|
-| 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | not started |
+| 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress: build pipeline and pen test page written, nothing run on a device yet |
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | not started |
 | 0.2 | Editor completion, markdown source view, block gutter, themes, settings, converter for the owner's old notes, update notice | not started |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
