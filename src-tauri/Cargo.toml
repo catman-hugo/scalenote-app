@@ -5,6 +5,9 @@ description = "Version 0.0 spike: app window, pen test page and build pipeline."
 edition = "2021"
 rust-version = "1.77"
 
+[workspace]
+members = [".", "core"]
+
 [lib]
 # The library name differs from the package name so the Android build can load it.
 name = "scalenote_spike_lib"
@@ -16,3 +19,6 @@ tauri-build = { version = "=2.7.4", features = [] }
 
 [dependencies]
 tauri = { version = "=2.12.4", features = [] }
+tauri-plugin-dialog = "=2.8.4"
+scalenote-core = { path = "core" }
+serde = { version = "=1.0.229", features = ["derive"] }
