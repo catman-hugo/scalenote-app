@@ -1,0 +1,12 @@
+{
+  "name": "scalenote-spike",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Version 0.0 spike: checks that the app window, pen input and the build pipeline work on real devices.",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

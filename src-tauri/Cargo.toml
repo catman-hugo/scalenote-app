@@ -1,0 +1,18 @@
+[package]
+name = "scalenote-spike"
+version = "0.0.1"
+description = "Version 0.0 spike: app window, pen test page and build pipeline."
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# The library name differs from the package name so the Android build can load it.
+name = "scalenote_spike_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+# Exact versions (=) so a new release can never change the build by itself.
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.4", features = [] }
