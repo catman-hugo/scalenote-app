@@ -35,3 +35,18 @@ Context. An app that has not passed Google's verification has login that expires
 Decision. Two-way sync uses CalDAV (iCloud, Nextcloud). Google Calendar is read-only through its secret link.
 Alternatives. Pass Google's verification. Rejected by the owner.
 Cost. Google calendars cannot be edited from ScaleNote.
+
+## 2026-11-03: Pinned versions and a bundler-free spike
+Context. An earlier attempt lost days to an accidental major version jump.
+Decision. Tauri CLI and crates are pinned to exact versions (CLI 2.12.4, tauri =2.12.4, tauri-build =2.7.4). Lockfiles are committed. The 0.0 spike page is plain HTML/JS/CSS with no bundler.
+Alternatives. Vite and TypeScript from the start. Rejected for the spike because it adds versions to track before anything needs them.
+Cost. The spike page is not the real interface. A framework is chosen when version 0.1 starts.
+
+## 2026-11-03: Installers are built by GitHub Actions
+Context. The build environment used for development cannot compile Tauri apps or Android packages.
+Decision. A workflow builds Linux (deb, rpm, AppImage), Windows (msi, exe) and a debug Android APK. The Android project is generated in the workflow, not committed. Debug APKs use a throwaway key, release signing comes later.
+Cost. A failed build is only seen after pushing. Nothing built here has been run on a device yet.
+
+## 2026-11-03: Placeholder icon
+Context. The real logo has not been supplied.
+Decision. A plain generated square is used until it is.
