@@ -1,12 +1,16 @@
 # Builds installable test versions of the app on GitHub's machines.
 # Run it by hand: Actions tab -> "Build test versions" -> Run workflow.
 # Finished files appear at the bottom of the run page, under "Artifacts".
+# Pushing a tag that starts with "v" (for example v0.0.1) also publishes the files
+# on the repository's front page under "Releases".
 name: Build test versions
 
 on:
   workflow_dispatch:
   pull_request:
     branches: [main]
+  push:
+    tags: ["v*"]
 
 # The builds only need to read the code. They get no permission to change the repository.
 permissions:
@@ -102,3 +106,30 @@ jobs:
           name: scalenote-android
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+
+  # Only runs for tags. It is the one job allowed to write to the repository, and it
+  # runs no project code: it only attaches the finished files to a release.
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: built
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find built -type f | sort
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --prerelease \
+            --title "ScaleNote ${GITHUB_REF_NAME#v} (test build)" \
+            --notes "Test build for trying out on real devices. It is not a finished app. Install the file for your system: .msi or .exe for Windows, .deb for Linux Mint, .rpm for Fedora, .AppImage for any Linux, .apk for Android. Most of the code is written by AI and has not been human-reviewed, so keep backups." \
+            $(find built -type f)
