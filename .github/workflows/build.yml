@@ -126,16 +126,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          find built -type f | sort
+          # The installer names contain spaces, so the list is built as a real array
+          # (null-separated) instead of being split on spaces by the shell.
+          mapfile -d '' files < <(find built -type f -print0)
+          printf '%s\n' "${files[@]}"
           # A release made by hand on the website already exists by the time this runs,
           # so attach the files to it. Otherwise create the release first.
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber $(find built -type f)
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
           else
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \
               --title "ScaleNote ${GITHUB_REF_NAME#v} (test build)" \
               --notes "Test build for trying out on real devices. It is not a finished app. Install the file for your system: .msi or .exe for Windows, .deb for Linux Mint, .rpm for Fedora, .AppImage for any Linux, .apk for Android. Most of the code is written by AI and has not been human-reviewed, so keep backups." \
-              $(find built -type f)
+              "${files[@]}"
           fi
