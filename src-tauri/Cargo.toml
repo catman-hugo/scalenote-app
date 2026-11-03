@@ -1,6 +1,6 @@
 [package]
 name = "scalenote-spike"
-version = "0.0.1"
+version = "0.0.2"
 description = "Version 0.0 spike: app window, pen test page and build pipeline."
 edition = "2021"
 rust-version = "1.77"
