@@ -12,11 +12,13 @@ Built and tried only where the builder can run it (no device was used):
 - First-run disclosure, folder choice, logo in the app, pen test page reachable from the sidebar. The assistant is stored as off and has no switch or any element in the interface.
 - Design check done on screenshots in light and dark, at desktop and phone width.
 
+Automatic checks on PR #7 (all green on the latest commit): Rust and interface tests on Linux and Windows, and builds of the Linux packages, the Windows installers plus a portable zip, and the Android debug APK. So the Rust glue compiles on all three.
+
 Not done or not tested:
-- Nothing has been run inside the real Tauri window. The Rust glue (`src-tauri/src/lib.rs`) has never been compiled here; the first compile is on GitHub. Expect possible build fixes.
+- Nothing has been run inside the real Tauri window, on any device.
 - Not tried on a device: Windows folder picker, Android default folder, window-close saving, the .msi and .deb installers, keyboard behaviour on Android (slash menu).
 - Not checked here: a note on a network drive or a sync tool changing files while open.
-- Known limits: lists with blank lines inside (loose lists), numbered lists using ")" and any block with wikilinks, tags, html or images are kept as raw blocks and edited as plain text. No delete, no move, no search (0.3). Underline is off because markdown has no underline. Release notes are not written yet. The security checklist is not done yet.
+- Known limits: lists with blank lines inside (loose lists), numbered lists using ")" and any block with wikilinks, tags, html or images are kept as raw blocks and edited as plain text. No delete, no move, no search (0.3). Underline is off because markdown has no underline. Release notes are in `docs/release-notes/0.1.0.md` and the security checklist in `docs/security-checklist-0.1.md` (builder-checked, not an outside review). The 0.2 plan is in `docs/v0.2-plan.md`.
 
 ## Versions
 
