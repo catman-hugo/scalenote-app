@@ -50,3 +50,9 @@ Cost. A failed build is only seen after pushing. Nothing built here has been run
 ## 2026-11-03: Placeholder icon
 Context. The real logo has not been supplied.
 Decision. A plain generated square is used until it is.
+
+## 2026-11-03: App icon is the owner's logo on a white tile
+Context. The logo has a transparent background and a transparent middle, and its outline is dark, so it disappears on dark taskbars and home screens.
+Decision. Desktop icons use the logo on a white rounded tile. Android uses a plain white square with extra margin so the system's icon shapes do not cut into the logo. The original is kept in assets/logo.png.
+Alternatives. Transparent logo (unreadable on dark), and a light purple tile (purple on purple).
+Cost. Icons are generated from a script-made tile, so changing the logo means regenerating them.
