@@ -36,8 +36,8 @@ export const strings = {
     nothingYet: "Nothing recorded yet. Draw on the white area first.",
   },
   buttonMeaning: {
-    1: "pen touching",
-    2: "barrel button",
-    32: "eraser button",
+    pen: { 1: "pen touching", 2: "barrel button", 32: "eraser button" },
+    mouse: { 1: "left click", 2: "right click", 4: "wheel press" },
+    touch: { 1: "finger touching" },
   },
 };
