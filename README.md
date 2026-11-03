@@ -2,7 +2,7 @@
 
 A note-taking app that keeps your notes as plain markdown files in a normal folder. It has a block editor, drawing with a pen, a calendar, and an optional study assistant. Because the notes are just files, you can open the same folder in Obsidian and nothing is locked inside the app.
 
-**Status: planning is finished and building has just started. There is nothing to download or install yet.**
+**Status: building has just started. The only download is a test page for pens and screens, not a note app yet.**
 
 ## About the AI in this project
 
@@ -22,17 +22,19 @@ The plan, in order, is in [PROGRESS.md](PROGRESS.md). The first goal (version 1.
 
 ## Installing
 
-There are no releases yet, so there is nothing to install.
+There is no note app to install yet. The [Releases page](../../releases) has test builds of version 0.0, which only open a window where you can draw and check that your pen, finger and mouse are read correctly. They exist so the build process can be tried on real devices.
 
-When there are, they will be on the [Releases page](../../releases):
+Download the file for your system from the newest release, under Assets:
 
-| System | What you will download |
-|---|---|
-| Windows 10 and 11 | an installer (`.msi` or `.exe`), and a portable zip |
-| Linux | `.deb`, `.rpm`, or an AppImage |
-| Android | an `.apk` file |
+| System | File | How to install |
+|---|---|---|
+| Windows 10 and 11 | `.exe` or `.msi` | Open the file and follow the installer. Windows may warn about an unknown publisher, because test builds are not signed yet. |
+| Linux Mint, Ubuntu, Debian | `.deb` | Open it with the software installer, or run `sudo apt install ./file.deb` in the download folder. |
+| Fedora | `.rpm` | Open it with the software installer, or run `sudo dnf install ./file.rpm`. |
+| Any Linux | `.AppImage` | Right-click the file, open Properties, allow running it as a program, then open it. |
+| Android | `.apk` | Copy it to the device and open it. Android will ask you to allow installing from this source. Android is not tested yet. |
 
-This section will be updated with step-by-step instructions for each system when the first release is ready.
+Step-by-step instructions with pictures come with the first real version.
 
 ## Building from source
 
