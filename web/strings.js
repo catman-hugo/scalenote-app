@@ -5,7 +5,7 @@ export const strings = {
 
   welcome: {
     title: "Welcome to ScaleNote",
-    body: "Your notes are plain markdown files in a normal folder. Choose where that folder is.",
+    body: "Your pages are plain markdown files in a normal folder. Choose where that folder is.",
     chooseFolder: "Choose a folder",
     useDefault: "Use the default folder",
     defaultHint: "The default folder is created for you if it does not exist yet.",
@@ -17,34 +17,41 @@ export const strings = {
     title: "About this app",
     points: [
       "ScaleNote is a personal side project. Most of the code is written by AI tools. A person decides what is built and tests it on real devices.",
-      "Nothing has been reviewed by an independent security expert yet. Expect bugs. Some may damage or lose notes.",
-      "Keep your own backups. Your notes are plain files in a folder, so any backup tool works.",
-      "ScaleNote looks for new versions on GitHub when it starts. That only asks for the public list of releases and sends nothing from your notes, but GitHub can see your internet address, like any website. You can turn this off in Settings.",
+      "Nothing has been reviewed by an independent security expert yet. Expect bugs. Some may damage or lose pages.",
+      "Keep your own backups. Your pages are plain files in a folder, so any backup tool works.",
+      "ScaleNote looks for new versions on GitHub when it starts. That only asks for the public list of releases and sends nothing from your pages, but GitHub can see your internet address, like any website. You can turn this off in Settings.",
     ],
     accept: "I understand",
   },
 
   sidebar: {
-    notes: "Notes",
-    newNote: "New note",
+    notes: "Pages",
+    newNote: "New page",
     newFolder: "New folder",
-    openFolder: "Open another folder",
-    empty: "No notes yet. Use New note to write the first one.",
+    empty: "No pages yet. Use New page to write the first one.",
     truncated: "This folder is very large. Only part of it is listed.",
-    toggle: "Show or hide the note list",
+    toggle: "Show or hide the page list",
     penTest: "Pen test",
     collapse: "Collapse folder",
     expand: "Expand folder",
   },
 
   editor: {
-    titleLabel: "Note title",
+    titleLabel: "Page title",
     placeholder: "Type / for blocks",
-    noNoteOpen: "Open a note from the list, or create a new one.",
+    noNoteOpen: "Open a page from the list, or create a new one.",
     rawLabel: "Kept exactly as written",
     saved: "Saved",
     saving: "Saving",
     unsaved: "Not saved yet",
+  },
+
+  folders: {
+    switchLabel: "Switch folder",
+    recent: "Recent folders",
+    openOther: "Open another folder",
+    useDefault: "Use the default folder",
+    missing: "That folder could not be opened, so it was removed from the recent list.",
   },
 
   settings: {
@@ -53,12 +60,12 @@ export const strings = {
     theme: "Theme",
     themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
     fontSize: "Text size",
-    fontSizes: { 90: "Small", 100: "Normal", 112: "Large", 125: "Larger" },
-    editorWidth: "Note width",
+    fontSizes: { 80: "Smallest", 90: "Small", 100: "Normal", 112: "Large", 125: "Largest" },
+    editorWidth: "Page width",
     editorWidths: { narrow: "Narrow", medium: "Medium", wide: "Wide", full: "Full width" },
-    sidebarWidth: "Note list width",
+    sidebarWidth: "Page list width",
     updates: "Look for new versions and install them automatically",
-    updatesHint: "ScaleNote only reads the public list of releases on GitHub. Nothing from your notes is sent. Until installers are signed, a new version is offered as a download instead of being installed by itself.",
+    updatesHint: "ScaleNote only reads the public list of releases on GitHub. Nothing from your pages is sent. Until installers are signed, a new version is offered as a download instead of being installed by itself.",
     checkNow: "Check now",
     checking: "Checking",
     upToDate: "You have the latest version.",
@@ -93,10 +100,10 @@ export const strings = {
   source: {
     show: "Markdown",
     hide: "Editor",
-    showLabel: "Show the note as markdown text",
+    showLabel: "Show the page as markdown text",
     hideLabel: "Back to the block editor",
-    textLabel: "Markdown text of the note",
-    mixedLineEndings: "This note mixes two kinds of line endings, so it is shown here but cannot be edited as text without changing them. Use the block editor instead.",
+    textLabel: "Markdown text of the page",
+    mixedLineEndings: "This page mixes two kinds of line endings, so it is shown here but cannot be edited as text without changing them. Use the block editor instead.",
   },
 
   slash: {
@@ -182,10 +189,10 @@ export const strings = {
 
   messages: {
     conflict:
-      "This note was changed by another program while you were editing. The version on disk was loaded, and your edits were saved as a separate note.",
+      "This page was changed by another program while you were editing. The version on disk was loaded, and your edits were saved as a separate page.",
     conflictCopyFailed:
-      "This note was changed by another program. The version on disk was loaded. Your edits could not be saved as a copy.",
-    saveFailed: "The note could not be saved. Your text is still on screen. Trying again.",
+      "This page was changed by another program. The version on disk was loaded. Your edits could not be saved as a copy.",
+    saveFailed: "The page could not be saved. Your text is still on screen. Trying again.",
     dismiss: "Dismiss",
   },
 
@@ -194,7 +201,7 @@ export const strings = {
     not_found: "That file or folder was not found.",
     not_a_directory: "That is not a folder.",
     invalid_path: "That name or location is not allowed.",
-    not_a_note: "That is not a markdown note.",
+    not_a_note: "That is not a markdown page.",
     too_large: "That file is too large to open safely.",
     not_utf8: "That file is not plain text, so it was not opened.",
     conflict: "The file was changed by another program.",

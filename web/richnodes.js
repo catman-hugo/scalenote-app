@@ -22,11 +22,13 @@ function setAttrs(editor, getPos, current, changes) {
 }
 
 // Marks a header area as not part of the text, so typing in it never reaches the editor.
-function headerGuards(head) {
+// `dom` is the whole block. Its class changes when a toggle is folded; that is only a view
+// state, so the editor must not take it for an edit and undo it.
+function headerGuards(head, dom) {
   head.contentEditable = "false";
   return {
     stopEvent: (event) => head.contains(event.target),
-    ignoreMutation: (mutation) => head.contains(mutation.target),
+    ignoreMutation: (mutation) => head.contains(mutation.target) || (dom !== undefined && mutation.type === "attributes" && mutation.target === dom && mutation.attributeName === "class"),
   };
 }
 
@@ -179,7 +181,7 @@ export const Toggle = Node.create({
           if (summary.value !== current.attrs.summary) summary.value = current.attrs.summary;
           return true;
         },
-        ...headerGuards(head),
+        ...headerGuards(head, dom),
       };
     };
   },

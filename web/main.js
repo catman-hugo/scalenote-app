@@ -5,6 +5,8 @@ import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appe
 import { openSettings } from "./settings.js";
 import { checkForUpdate, shouldCheck } from "./updates.js";
 import { renderNotes } from "./whatsnew.js";
+import { openFolderMenu } from "./foldermenu.js";
+import { addRecent, cleanRecent, removeRecent } from "./recent.js";
 import { backend, BackendError } from "./backend.js";
 import { composeNote, loadNote } from "./compose.js";
 import { newNoteId, withNoteId } from "./blocks.js";
@@ -21,7 +23,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -95,6 +97,7 @@ async function loadSettings() {
     const parsed = raw ? JSON.parse(raw) : {};
     app.settings = {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
+      recentVaults: cleanRecent(parsed.recentVaults),
       disclosureAccepted: parsed.disclosureAccepted === true,
       ...normalizeAppearance(parsed),
       // One switch for both looking for updates and installing them. On unless turned off.
@@ -310,12 +313,54 @@ function showWelcome() {
 async function openVaultFrom(choice) {
   const opened = choice === "default" ? await backend.openDefaultVault() : await backend.openVault(choice);
   app.settings.vaultPath = opened.path;
+  app.settings.recentVaults = addRecent(app.settings.recentVaults, opened.path);
   await saveSettings();
   el("vaultName").textContent = opened.name || strings.appName;
   app.expanded = new Set();
   app.selectedFolder = "";
   await showNoNote();
   await refreshTree();
+}
+
+// Switching to another folder from the folder menu. `choice` is "default" or a path. The page
+// that is open is saved first. If the folder cannot be opened, the old folder stays in place
+// (the Rust side only swaps on success) and a recent entry that no longer works is dropped.
+async function switchFolder(choice) {
+  await closeCurrentNote();
+  hideBanner();
+  try {
+    await openVaultFrom(choice);
+  } catch (error) {
+    logProblem("switch folder failed", error);
+    if (choice !== "default") {
+      app.settings.recentVaults = removeRecent(app.settings.recentVaults, choice);
+      await saveSettings();
+    }
+    showBanner(error && error.code === "not_found" ? strings.folders.missing : errorText(error));
+    await showNoNote();
+  }
+}
+
+async function openAnotherFolder() {
+  let chosen = null;
+  try {
+    chosen = await backend.pickFolder();
+  } catch (error) {
+    logProblem("folder picker failed", error);
+    return;
+  }
+  if (chosen) await switchFolder(chosen);
+}
+
+function showFolderMenu() {
+  openFolderMenu(el("vaultButton"), {
+    recent: app.settings.recentVaults,
+    current: app.settings.vaultPath,
+    canPick: !isAndroid,
+    onPick: switchFolder,
+    onOther: openAnotherFolder,
+    onDefault: () => switchFolder("default"),
+  });
 }
 
 async function chooseVault() {
@@ -651,9 +696,12 @@ function fillStaticText() {
   };
   withIcon("newNote", "plus", strings.sidebar.newNote);
   withIcon("newFolder", "folder", strings.sidebar.newFolder);
-  withIcon("openOther", "folderOpen", strings.sidebar.openFolder);
   withIcon("openSettings", "settings", strings.settings.open);
   el("penTest").textContent = strings.sidebar.penTest;
+  // The folder name opens the folder menu. On Android the folder is fixed, so it is plain text.
+  el("vaultButton").append(icon("chevronDown"));
+  el("vaultButton").title = strings.folders.switchLabel;
+  el("vaultButton").disabled = isAndroid;
   el("updateDownload").textContent = strings.update.download;
   el("updateDetails").textContent = strings.update.details;
   el("updateLater").textContent = strings.update.later;
@@ -711,10 +759,17 @@ function wireEvents() {
   guardFileDrops();
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
-  el("openOther").addEventListener("click", async () => {
-    await closeCurrentNote();
-    await chooseVault();
-  });
+  el("vaultButton").addEventListener("click", showFolderMenu);
+  // Settings and What's new can be closed by clicking outside the box (or Escape, or Close).
+  // The first-run screens cannot: they need an answer.
+  for (const id of ["settings", "whatsnew"]) {
+    const dialog = el(id);
+    dialog.addEventListener("click", (event) => {
+      const box = dialog.getBoundingClientRect();
+      const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside) dialog.close();
+    });
+  }
   el("toggle").addEventListener("click", toggleSidebar);
   el("sourceToggle").addEventListener("click", toggleSource);
   el("source").addEventListener("input", () => app.autosave.touch());

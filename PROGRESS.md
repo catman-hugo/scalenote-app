@@ -69,6 +69,18 @@ Not done or not tested:
 - Not checked here: a note on a network drive or a sync tool changing files while open.
 - Known limits: lists with blank lines inside (loose lists), numbered lists using ")" and any block with wikilinks, tags, html or images are kept as raw blocks and edited as plain text. No delete, no move, no search (0.3). Underline is off because markdown has no underline. Release notes are in `docs/release-notes/0.1.0.md` and the security checklist in `docs/security-checklist-0.1.md` (builder-checked, not an outside review). The 0.2 plan is in `docs/v0.2-plan.md`.
 
+## 0.2.2: built
+From the owner's test of 0.2.1 on Linux (2026-11-04).
+- Folder switcher: the folder name at the top left opens a menu with recent folders (current one marked), Open another folder (straight to the picker) and Use the default folder. Recent folders are kept in settings.json, at most 8, cleaned on load. A folder that cannot be opened is removed from the list with a calm message. The folder name is disabled on the Android phone, which has no picker.
+- Settings and What's new close with the close button, Escape or a click outside. The Welcome and disclosure screens stay unclosable at first run.
+- Text sizes: Smallest (80 percent), Small (90), Normal (100), Large (112), Largest (125). Icons are sized in rem so they scale.
+- "Note" became "page" in the interface (the callout kind "Note" is unchanged).
+- Toggle: the fold bug was a class change on the node view being treated as an edit and undone; fixed and covered by a test that fails without the fix. A toggle shows only arrow and title until focus is inside it.
+- Tested here: 57 unit tests, the browser tests (including new ones for each item above) and screenshots in light and dark, desktop and phone width, at text sizes 80, 100 and 125. No Rust changes, so the Rust tests are unchanged.
+- Not tried on a device: everything above. Needs a real test on Linux, Windows and the Android phone (folder menu on the phone is disabled by design; check that it looks right).
+- Moved to 0.2.3: drag preview, multi-select, plus button, block type row in the selection bar.
+- Release notes: `docs/release-notes/0.2.2.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -77,7 +89,8 @@ Not done or not tested:
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | built, not tested on a device (see above) |
 | 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline styles decided, not built |
 | 0.2.1 | Polish from the first device test of 0.2 (see "0.2.1: built"). No new features | built, not tried on a device; comes before 0.3 |
-| 0.2.2 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together | planned, after 0.2.1 |
+| 0.2.2 | Folder switcher, five text sizes with scaling icons, "page" wording, toggle fix (see "0.2.2: built") | built, not tried on a device |
+| 0.2.3 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together, plus button, block type row in the selection bar | planned, after 0.2.2 |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
@@ -108,6 +121,6 @@ Not planned: voice calls, and Apple hardware.
 Nothing has been reviewed by a human yet.
 
 ## Block layout: columns (waiting for a decision)
-Owner request (2026-11-04): drag a block next to another one to make columns. Markdown has no columns, and the notes must stay plain markdown that Obsidian can open. A format has to be chosen first, for example an Obsidian-style callout block holding the columns, or a small html table. The choice affects what other programs show, so it needs the owner's decision before anything is built. Proposed home: after 0.3, as its own slice, once 0.2.2 has the drag preview and multi-select in place.
+Owner request (2026-11-04): drag a block next to another one to make columns. Markdown has no columns, and the notes must stay plain markdown that Obsidian can open. A format has to be chosen first, for example an Obsidian-style callout block holding the columns, or a small html table. The choice affects what other programs show, so it needs the owner's decision before anything is built. Proposed home: after 0.3, as its own slice, once 0.2.3 has the drag preview and multi-select in place.
 
 The owner's Notion screenshots (drop on the left or right edge of a block makes columns, vertical and horizontal drop lines, a half see-through drag preview) are written up in `docs/notion-reference-notes.md`. The format has to hold two or more columns of several blocks each.

@@ -29,3 +29,7 @@ Checked by the builder by reading and by automatic tests. Not an outside review.
 ## Addendum for 0.2.1
 
 No new input, network request, permission, dependency or Rust code. Changes are layout, icons (drawn from fixed paths in `web/icons.js`, no outside files) and test additions. Page policy, update check and opener scope are unchanged. Checked by the browser tests, which fail on any page error, console error or policy violation.
+
+## Addendum for 0.2.2
+- Recent folders are paths stored only in settings.json. They are validated on load (strings, length limit, no control characters, duplicates removed, at most 8). They are never sent anywhere.
+- No new network calls, no new Rust code, no new permissions. The content security policy is unchanged. Builder-checked, not an outside review.

@@ -3,7 +3,7 @@
 
 export const THEMES = ["system", "light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"];
 // Percent of the normal text size. Everything is sized in rem, so one number scales the app.
-export const FONT_SIZES = [90, 100, 112, 125];
+export const FONT_SIZES = [80, 90, 100, 112, 125];
 // Width of the note column. "full" lets it use all the room.
 export const EDITOR_WIDTHS = { narrow: "36rem", medium: "46rem", wide: "60rem", full: "none" };
 export const SIDEBAR_MIN = 200;
