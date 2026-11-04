@@ -16,11 +16,15 @@ test("versions are read strictly and compared as numbers", () => {
   assert.equal(compareVersions([0, 2, 0], [0, 2, 0]), 0);
 });
 
-test("the newest published release above the current one wins; drafts, pre-releases and odd tags are ignored", () => {
+test("the newest published release above the current one wins; drafts and odd tags are ignored, pre-releases count", () => {
   const list = [release("v0.3.0", { draft: true }), release("v0.2.5", { prerelease: true }), release("v0.2.1"), release("v0.2.0"), release("v0.10.0"), release("nightly"), null, 5];
   const found = newestRelease(list, "0.2.0");
   assert.equal(found.version, "0.10.0");
   assert.equal(newestRelease(list, "0.10.0"), null);
+  const onlyPre = [release("v0.2.2", { prerelease: true }), release("v0.2.1", { prerelease: true })];
+  assert.equal(newestRelease(onlyPre, "0.2.1").version, "0.2.2");
+  assert.equal(newestRelease(onlyPre, "0.2.2"), null);
+  assert.equal(newestRelease([release("v0.2.3", { prerelease: true, draft: true })], "0.2.1"), null);
   assert.equal(newestRelease("not a list", "0.1.0"), null);
   assert.equal(newestRelease(list, "garbage"), null);
 });

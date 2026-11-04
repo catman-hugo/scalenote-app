@@ -770,10 +770,23 @@ await test("the grabbed handle is hidden while a block is dragged and comes back
   const h = await page.locator(".gutter-handle").boundingBox();
   const opacity = () => page.evaluate(() => getComputedStyle(document.querySelector(".gutter-handle")).opacity);
   assert.equal(await opacity(), "1");
-  await page.mouse.move(h.x + 16, h.y + 16);
+  // Grab the middle of the handle: a fixed offset can miss it when the handle is smaller on another machine.
+  const cx = h.x + h.width / 2, cy = h.y + h.height / 2;
+  // hover() waits until the handle really receives the pointer, and says what is in the way if it never does.
+  let hoverNote = "hover ok";
+  await page.locator(".gutter-handle").hover({ timeout: 8000 }).catch((e) => { hoverNote = "hover failed: " + String(e.message).split("\n").slice(0, 6).join(" / "); });
+  await page.mouse.move(cx, cy);
+  const under = hoverNote + " | " + await page.evaluate(([x, y]) => {
+    const h = document.querySelector(".gutter-handle");
+    const cs = getComputedStyle(h);
+    const stack = document.elementsFromPoint(x, y).slice(0, 5).map((e) => e.tagName + "." + e.className).join(" > ");
+    return stack + " | handle z=" + cs.zIndex + " pe=" + cs.pointerEvents + " display=" + cs.display + " vis=" + cs.visibility + " viewport=" + innerWidth + "x" + innerHeight;
+  }, [cx, cy]);
   await page.mouse.down();
-  await page.mouse.move(h.x + 16, h.y + 60, { steps: 5 });
-  assert.equal(await opacity(), "0", "hidden while dragging");
+  await page.mouse.move(cx, cy + 44, { steps: 5 });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".gutter-handle")).opacity === "0", null, { timeout: 2000 }).catch(() => {});
+  const info = await page.evaluate(() => ({ body: document.body.className, handle: document.querySelector(".gutter-handle").getBoundingClientRect().toJSON(), hidden: document.querySelector(".gutter-handle").hidden }));
+  assert.equal(await opacity(), "0", "hidden while dragging; under the pointer: " + under + "; grabbed at " + JSON.stringify(h) + "; now " + JSON.stringify(info));
   await page.keyboard.press("Escape");
   await page.mouse.up();
   assert.equal(await opacity(), "1", "visible again");

@@ -28,13 +28,18 @@ export function safeReleaseUrl(value) {
   return typeof value === "string" && value.length < 300 && value.startsWith(`${RELEASE_PAGE}/`) && !/[\s"'<>\\]/.test(value) ? value : RELEASE_PAGE;
 }
 
-/** The newest published (not draft, not pre-release) release that is newer than `current`, or null. */
+/**
+ * The newest published release (not a draft) that is newer than `current`, or null.
+ * Pre-releases count on purpose: until version 1.0 every release is a test build labelled
+ * pre-release, so skipping them meant the check never found anything. Tags that are not a plain
+ * x.y.z number are still ignored.
+ */
 export function newestRelease(list, current) {
   const have = parseVersion(current);
   if (!have || !Array.isArray(list)) return null;
   let best = null;
   for (const item of list) {
-    if (!item || typeof item !== "object" || item.draft === true || item.prerelease === true) continue;
+    if (!item || typeof item !== "object" || item.draft === true) continue;
     const version = parseVersion(item.tag_name);
     if (!version || compareVersions(version, have) <= 0) continue;
     if (best && compareVersions(version, best.parsed) <= 0) continue;
