@@ -18,6 +18,8 @@ The note width setting works (checked by the owner with a note open); it only lo
 6. Block handle position: it sits at the top edge of its block, so it looks off-centre next to headings, code and lists, and badly placed next to the divider (a 2 pixel line). Centre it on the first line of the block, and give the divider a proper spot.
 7. While dragging, the handle that was grabbed stays visible. Hide it (or turn it into the drag preview) during the drag.
 
+8. Selection bar: Notion also shows a block type row there. Notes and a proposed split are in `docs/notion-reference-notes.md`.
+
 Also still open for 0.2.1 or later: the owner's decision on inline html styles (underline, highlight, colour, sub and superscript), and anything found on the Android phone and Linux.
 
 ## 0.2 state (branch feature/v0.2-editor, pull request #9)
@@ -105,3 +107,5 @@ Nothing has been reviewed by a human yet.
 
 ## Block layout: columns (waiting for a decision)
 Owner request (2026-11-04): drag a block next to another one to make columns. Markdown has no columns, and the notes must stay plain markdown that Obsidian can open. A format has to be chosen first, for example an Obsidian-style callout block holding the columns, or a small html table. The choice affects what other programs show, so it needs the owner's decision before anything is built. Proposed home: after 0.3, as its own slice, once 0.2.2 has the drag preview and multi-select in place.
+
+The owner's Notion screenshots (drop on the left or right edge of a block makes columns, vertical and horizontal drop lines, a half see-through drag preview) are written up in `docs/notion-reference-notes.md`. The format has to hold two or more columns of several blocks each.
