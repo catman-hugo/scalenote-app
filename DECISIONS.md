@@ -114,3 +114,9 @@ Context. The first test of 0.2 on Windows found four small interface problems (W
 Decision. They go into a patch release 0.2.1 that comes before 0.3 and holds no new features. That keeps 0.3 (search, links) free of interface repairs, and lets findings from the Android phone and Linux be added to the same patch. The gear icon is an svg using the theme colour, and no emoji is used anywhere in the app. The list is in `PROGRESS.md`.
 Alternatives. Waiting for the 1.0.0 hardening (rejected: the problems are visible every day). Mixing them into 0.3 (rejected: it makes 0.3 harder to test).
 Cost. One more release to build and test.
+
+## 2026-11-04: Sidebar buttons shrink to icons with a container query
+Context. The note list can be made narrow in Settings (200 to 420 pixels). At the narrow end the New note and New folder buttons wrapped and the bottom links stacked.
+Decision. Every sidebar button is an icon plus a label that never wraps. Below a width the labels are hidden with a container query (the label stays as tooltip and accessible name), and the Pen test link is hidden below a smaller width.
+Alternatives. Raising the minimum list width to hide the problem (still breaks with larger text), or media queries on the window (the list width is a setting, not the window width).
+Cost. Container queries need a reasonably recent web view. Current WebView2 (Windows) and Android System WebView are Chromium based and should have them, and recent WebKitGTK (Linux) should too, but I have not checked the exact versions. On an older view the labels would stay visible and be cut with an ellipsis instead of hidden, which is still readable. Not yet tried on a real device.

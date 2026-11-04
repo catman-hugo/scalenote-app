@@ -3,11 +3,47 @@
 // block. It uses pointer events, so the same code serves mouse, finger and pen.
 
 import { canTurnInto, deleteUnit, duplicateUnit, ensureBlockId, moveUnit, moveUnitBy, TURN_NAMES, turnInto, unitIndexAt, unitsOf } from "./blockops.js";
+import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
 const DRAG_START_PX = 6;
 const EDGE_PX = 48;
 const HANDLE_SIZE = 32;
+
+// Where the middle of a block's first line is, so the handle lines up with the first line of
+// text for headings, lists, code and callouts alike. A divider or an empty block has no text,
+// so the middle of the block itself is used. A tall picture or table is capped at one line
+// of height, so the handle stays near the top instead of floating in the middle.
+function firstLineMiddle(dom) {
+  const rect = dom.getBoundingClientRect();
+  const style = getComputedStyle(dom);
+  const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.5 || 24;
+  if (dom.querySelector("hr") || dom.tagName === "HR") return rect.top + rect.height / 2;
+  const walker = document.createTreeWalker(dom, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        // Option labels inside a select are not lines of the note.
+        if (node.parentElement && node.parentElement.closest("select")) return NodeFilter.FILTER_REJECT;
+        return node.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+      return /^(INPUT|TEXTAREA|SELECT|IMG)$/.test(node.tagName) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    },
+  });
+  const first = walker.nextNode();
+  let box = null;
+  if (first && first.nodeType === Node.TEXT_NODE) {
+    const range = document.createRange();
+    range.selectNodeContents(first);
+    box = range.getClientRects()[0] || null;
+  } else if (first) {
+    box = first.getBoundingClientRect();
+  }
+  if (box && box.height > 0) {
+    // One line at most, measured from the top of what was found.
+    return box.top + Math.min(box.height, line * 1.5) / 2;
+  }
+  return rect.top + Math.min(rect.height, line) / 2;
+}
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -18,7 +54,8 @@ function el(tag, className, text) {
 
 export function attachGutter(editor, { scroller, noteTitle, notify }) {
   const g = strings.gutter;
-  const handle = el("button", "gutter-handle", g.handleMark);
+  const handle = el("button", "gutter-handle");
+  handle.append(icon("grip"));
   handle.type = "button";
   handle.hidden = true;
   handle.setAttribute("aria-label", g.handleLabel);
@@ -74,7 +111,7 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
     }
     handle.hidden = false;
     handle.style.left = `${Math.max(2, rect.left - HANDLE_SIZE - 4)}px`;
-    handle.style.top = `${Math.max(area.top, rect.top)}px`;
+    handle.style.top = `${Math.max(area.top, firstLineMiddle(dom) - HANDLE_SIZE / 2)}px`;
   }
 
   function followSelection() {

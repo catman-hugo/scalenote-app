@@ -77,7 +77,6 @@ export const strings = {
   },
 
   gutter: {
-    handleMark: "⋮⋮",
     handleLabel: "Block actions",
     moveUp: "Move up",
     moveDown: "Move down",
@@ -156,7 +155,6 @@ export const strings = {
 
   toggle: {
     fold: "Show or hide the toggle content",
-    foldMark: "▾",
     summaryLabel: "Toggle title",
     summaryPlaceholder: "Toggle title",
   },

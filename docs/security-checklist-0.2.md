@@ -25,3 +25,7 @@ Checked by the builder by reading and by automatic tests. Not an outside review.
 | The assistant is still off and absent from the interface | Browser test |
 | New dependency: `tauri-plugin-opener` 2.7.2 and `@tauri-apps/plugin-opener` 2.7.2, pinned. It also adds the `zbus` family on Linux | Cargo.lock only gained packages, no existing version changed |
 | Open risk | The Tauri window with the real policy, opener and file drops has not been run here (device). Pictures pasted from other programs are trusted only as far as their first bytes |
+
+## Addendum for 0.2.1
+
+No new input, network request, permission, dependency or Rust code. Changes are layout, icons (drawn from fixed paths in `web/icons.js`, no outside files) and test additions. Page policy, update check and opener scope are unchanged. Checked by the browser tests, which fail on any page error, console error or policy violation.

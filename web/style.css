@@ -197,32 +197,93 @@ body:not(.sidebar-open) .sidebar {
   white-space: nowrap;
 }
 
+/* The list can be dragged narrow (Settings). Each button is an icon plus a label that
+   never wraps: the label is cut with an ellipsis, and below a width it is hidden and only
+   the icon shows (the label stays as the tooltip and accessible name). */
+.sidebar {
+  container-type: inline-size;
+  container-name: side;
+}
+
+.side-open,
 .side-actions {
   display: flex;
   gap: var(--space-2);
-  padding: 0 var(--space-4) var(--space-3);
+  padding: 0 var(--space-4) var(--space-2);
 }
 
-.side-actions button {
-  flex: 1;
+.side-open button,
+.side-actions button,
+.side-foot button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-s);
+}
+
+.side-open button,
+.side-actions button {
+  flex: 1;
+}
+
+.side-open button {
+  justify-content: flex-start;
+}
+
+.btn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-actions {
+  padding-bottom: var(--space-3);
 }
 
 .side-foot {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--line);
   font-size: var(--text-s);
 }
 
+.side-foot .link-button {
+  flex: 0 1 auto;
+  color: var(--text);
+}
+
 .side-foot a {
+  margin-left: auto;
   color: var(--text-soft);
+  white-space: nowrap;
+}
+
+@container side (max-width: 17rem) {
+  .side-actions .btn-label,
+  .side-open .btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .side-open button,
+  .side-actions button {
+    justify-content: center;
+  }
+}
+
+@container side (max-width: 13rem) {
+  .side-foot a {
+    display: none;
+  }
 }
 
 /* ---------- note list ---------- */
@@ -534,8 +595,6 @@ body:not(.sidebar-open) .sidebar {
   justify-content: center;
   border-color: transparent;
   color: var(--text-soft);
-  font-size: var(--text-s);
-  letter-spacing: -2px;
   cursor: grab;
   /* A finger drag on the handle moves the block; it must not scroll the page. */
   touch-action: none;
@@ -549,6 +608,10 @@ body:not(.sidebar-open) .sidebar {
 
 body.block-dragging,
 body.block-dragging * { cursor: grabbing; user-select: none; }
+/* The grabbed handle is hidden while the block moves. It stays in the layout (not display:
+   none) so it keeps receiving the pointer until the drop. */
+body.block-dragging .gutter-handle { opacity: 0; }
+.gutter-handle .icon { width: 20px; height: 20px; }
 
 .gutter-menu {
   position: fixed;
@@ -877,6 +940,8 @@ body.block-dragging * { cursor: grabbing; user-select: none; }
 .setting-row select, .setting-row input[type="range"] { min-width: 12rem; max-width: 60%; }
 
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
+#whatsnew { max-width: min(52rem, calc(100% - 2 * var(--space-4))); }
+#whatsnew .notes { max-height: calc(100dvh - 12rem); }
 .notes { max-height: 50vh; overflow-y: auto; margin: var(--space-3) 0; overflow-wrap: anywhere; }
 .notes h3, .notes h4 { margin: var(--space-3) 0 var(--space-1); }
 .notes p, .notes ul { margin: var(--space-1) 0; }

@@ -715,6 +715,130 @@ function githubReturns(list, seen = []) {
 }
 const NEWER = [{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: EVIL_NOTES, draft: false, prerelease: false }];
 
+// ---------- 0.2.1: handle position, sidebar, icons, what's new ----------
+
+const ALIGN = ["# Title", "", "Some text here", "", "---", "", "- a", "- b", "", "```js", "code", "```", "", "> [!note] Heads up", "> body", "", "<details>", "<summary>More</summary>", "", "inside", "", "</details>", ""].join("\n");
+
+for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) await test(`the block handle is centred on the first line of every kind of block, also the divider (${label})`, async (page) => {
+  await openSeeded(page, "A.md", ALIGN);
+  const blocks = await page.locator(".note-body > *").count();
+  assert.ok(blocks >= 7, "blocks: " + blocks);
+  for (let i = 0; i < blocks; i++) {
+    const block = page.locator(".note-body > *").nth(i);
+    await block.scrollIntoViewIfNeeded();
+    const box = await block.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 12));
+    await page.waitForSelector(".gutter-handle:not([hidden])");
+    const result = await page.evaluate((index) => {
+      const dom = document.querySelectorAll(".note-body > *")[index];
+      const handle = document.querySelector(".gutter-handle").getBoundingClientRect();
+      // What the eye sees as the first line: the first piece of text, field or picture, or the divider itself.
+      let middle;
+      const head = dom.querySelector(".callout-head, .toggle-head");
+      if (dom.querySelector("hr") || dom.tagName === "HR") {
+        const r = dom.getBoundingClientRect();
+        middle = r.top + r.height / 2;
+      } else if (head) {
+        // A callout or toggle starts with its title row.
+        const r = head.getBoundingClientRect();
+        middle = r.top + r.height / 2;
+      } else {
+        const target = [...dom.querySelectorAll("*")].find((n) => /^(INPUT|IMG)$/.test(n.tagName)) || dom;
+        const walker = document.createTreeWalker(dom, NodeFilter.SHOW_TEXT);
+        let text = null;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue.trim() && !n.parentElement.closest("select")) { text = n; break; }
+        const range = document.createRange();
+        if (text) range.selectNodeContents(text);
+        const r = text ? range.getClientRects()[0] : target.getBoundingClientRect();
+        middle = r.top + r.height / 2;
+      }
+      return { kind: dom.className || dom.tagName, handle: handle.top + handle.height / 2, middle };
+    }, i);
+    assert.ok(Math.abs(result.handle - result.middle) <= 4, `block ${i} (${result.kind}): handle at ${result.handle}, first line at ${result.middle}`);
+  }
+}, { viewport });
+
+await test("the grabbed handle is hidden while a block is dragged and comes back after the drop", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "Second" }).click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const h = await page.locator(".gutter-handle").boundingBox();
+  const opacity = () => page.evaluate(() => getComputedStyle(document.querySelector(".gutter-handle")).opacity);
+  assert.equal(await opacity(), "1");
+  await page.mouse.move(h.x + 16, h.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y + 60, { steps: 5 });
+  assert.equal(await opacity(), "0", "hidden while dragging");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  assert.equal(await opacity(), "1", "visible again");
+});
+
+for (const fontSize of [100, 125]) await test(`the sidebar keeps its buttons on one line at the narrowest width and shows icons only (text size ${fontSize})`, async (page) => {
+  await page.waitForSelector("#newNote");
+  const m = await page.evaluate(() => {
+    const box = (id) => document.getElementById(id).getBoundingClientRect();
+    const labelShown = (id) => { const l = document.querySelector("#" + id + " .btn-label"); return l.getBoundingClientRect().width > 4; };
+    return {
+      width: document.getElementById("sidebar").getBoundingClientRect().width,
+      newNote: box("newNote"), newFolder: box("newFolder"), openOther: box("openOther"), openSettings: box("openSettings"),
+      labels: { newNote: labelShown("newNote"), openOther: labelShown("openOther"), openSettings: labelShown("openSettings") },
+      icons: ["newNote", "newFolder", "openOther", "openSettings"].map((id) => document.querySelectorAll("#" + id + " svg").length),
+      names: ["newNote", "newFolder", "openOther", "openSettings"].map((id) => document.getElementById(id).getAttribute("aria-label")),
+      overflow: document.getElementById("sidebar").scrollWidth > document.getElementById("sidebar").clientWidth,
+    };
+  });
+  assert.equal(m.width, 200);
+  assert.ok(m.newNote.height <= 48 && m.newFolder.height <= 48 && m.openOther.height <= 48 && m.openSettings.height <= 48, JSON.stringify(m));
+  assert.ok(Math.abs(m.newNote.y - m.newFolder.y) < 1, "New note and New folder share one row");
+  assert.equal(m.labels.newNote, false);
+  assert.equal(m.labels.openOther, false);
+  assert.ok(m.icons.every((n) => n === 1), "every sidebar button has an icon: " + m.icons);
+  assert.ok(m.names.every((n) => n && n.length > 3), "every button keeps a name: " + m.names);
+  assert.equal(m.overflow, false);
+}, { settings: { vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, sidebarWidth: 200, fontSize }, viewport: { width: 1100, height: 760 } });
+
+await test("at the normal width the sidebar shows labels, with Open another folder at the top and a gear for Settings", async (page) => {
+  await page.waitForSelector("#newNote");
+  const m = await page.evaluate(() => {
+    const y = (id) => document.getElementById(id).getBoundingClientRect().y;
+    const label = (id) => document.querySelector("#" + id + " .btn-label").getBoundingClientRect().width;
+    return { open: y("openOther"), actions: y("newNote"), tree: y("tree"), foot: y("openSettings"), openLabel: label("openOther"), noteLabel: label("newNote"), settingsLabel: label("openSettings"), svg: document.querySelectorAll("#openSettings svg path").length, text: document.getElementById("openSettings").textContent };
+  });
+  assert.ok(m.open < m.actions && m.actions < m.tree && m.tree < m.foot, JSON.stringify(m));
+  assert.ok(m.openLabel > 40 && m.noteLabel > 30 && m.settingsLabel > 30, JSON.stringify(m));
+  assert.equal(m.svg, 1, "the gear is one drawn icon");
+  assert.equal(m.text, "Settings");
+}, { settings: { vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false } });
+
+await test("no emoji or typed symbol stands in for an icon anywhere in the screens", async (page) => {
+  await openSeeded(page, "A.md", ALIGN);
+  await page.locator(".note-body p", { hasText: "Some text" }).click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const found = await page.evaluate(() => {
+    const text = (document.getElementById("app").innerText + document.querySelector(".gutter-handle").textContent + document.querySelector(".toggle-fold").textContent);
+    return text.match(/[\p{Extended_Pictographic}•⋮▾▸⚙]/gu) || [];
+  });
+  assert.deepEqual(found, []);
+  assert.equal(await page.locator(".gutter-handle svg").count(), 1);
+  assert.equal(await page.locator(".toggle-fold svg").count(), 1);
+});
+
+await test("the What's new box is wide and tall enough for a long list of notes", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDetails");
+  await page.waitForSelector("#whatsnew[open]");
+  const m = await page.evaluate(() => {
+    const d = document.querySelector("#whatsnew").getBoundingClientRect();
+    const n = document.querySelector("#whatsnew .notes");
+    return { width: d.width, height: d.height, scrolls: n.scrollHeight > n.clientHeight, notesHeight: n.clientHeight, view: window.innerHeight };
+  });
+  assert.ok(m.width >= 700, JSON.stringify(m));
+  assert.ok(m.notesHeight >= m.view * 0.5, JSON.stringify(m));
+  assert.ok(m.height <= m.view, "the box fits in the window: " + JSON.stringify(m));
+}, { settings: existingUser(), before: githubReturns([{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: Array.from({ length: 40 }, (_, i) => "- A fairly long line of release notes number " + i + " that takes some room on screen.").join("\n"), draft: false, prerelease: false }]) });
+
+
 await test("a newer release shows a notice with a download button and its notes as plain text", async (page) => {
   await page.waitForSelector("#updateNotice:not([hidden])");
   assert.match(await page.textContent("#updateText"), /ScaleNote 9\.9\.9 is available/);
@@ -921,6 +1045,54 @@ if (shots) {
       await up.screenshot({ path: name("9-update-notice") });
       await update.close();
     }
+  }
+  // 0.2.1 screens: the sidebar at normal and narrowest width, the handle on a heading, the
+  // divider and a callout, the handle while dragging, and a long What's new box.
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      for (const width of label === "desktop" ? [280, 200] : [280]) {
+        const context = await browser.newContext({ viewport, colorScheme: scheme });
+        await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false, sidebarWidth: width }));
+        await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+        const page = await context.newPage();
+        await prepare(page, {});
+        const name = (n) => `${shots}/v021-${label}-${scheme}-${n}.png`;
+        await page.goto(url);
+        await page.waitForSelector("#newNote");
+        await page.evaluate(([text]) => window.__mock.files.set("Alignment.md", text), [ALIGN]);
+        await page.click("#newFolder");
+        await page.screenshot({ path: name(`1-sidebar-${width}`) });
+        if (width === 200 || label === "phone") { await context.close(); continue; }
+        await page.click('.tree-button[data-path="Alignment.md"]');
+        await page.waitForSelector(".note-body");
+        for (const [key, selector] of [["heading", ".note-body h1"], ["divider", ".note-body hr"], ["code", ".note-body pre"], ["callout", ".note-body .callout"], ["toggle", ".note-body .toggle"]]) {
+          const box = await page.locator(selector).first().boundingBox();
+          await page.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 10));
+          await page.waitForSelector(".gutter-handle:not([hidden])");
+          await page.screenshot({ path: name(`2-handle-${key}`) });
+        }
+        const para = await page.locator(".note-body p").first().boundingBox();
+        await page.mouse.move(para.x + 10, para.y + 8);
+        const h = await page.locator(".gutter-handle").boundingBox();
+        await page.mouse.move(h.x + 16, h.y + 16);
+        await page.mouse.down();
+        await page.mouse.move(h.x + 16, h.y + 120, { steps: 6 });
+        await page.screenshot({ path: name("3-dragging") });
+        await page.keyboard.press("Escape");
+        await page.mouse.up();
+        await context.close();
+      }
+    }
+    const update = await browser.newContext({ viewport: { width: 1100, height: 760 }, colorScheme: scheme });
+    await update.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, lastSeenVersion: "0.1.1" }));
+    await update.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const up = await update.newPage();
+    const longNotes = ["## New", ...Array.from({ length: 14 }, (_, i) => "- A fairly long line of release notes number " + (i + 1) + " that takes a little room on the screen so the box has to show a lot.")].join("\n");
+    await prepare(up, { releases: [{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: longNotes, draft: false, prerelease: false }] });
+    await up.goto(url);
+    await up.waitForSelector("#whatsnew[open]");
+    await up.screenshot({ path: `${shots}/v021-desktop-${scheme}-4-whats-new.png` });
+    await update.close();
   }
   // Every theme, desktop only. The named themes do not depend on the system setting.
   for (const theme of ["light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"]) {

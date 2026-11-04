@@ -625,11 +625,22 @@ function closeSidebarOnPhone() {
 }
 
 function fillStaticText() {
-  el("newNote").replaceChildren(icon("plus"), document.createTextNode(strings.sidebar.newNote));
-  el("newFolder").replaceChildren(icon("folder"), document.createTextNode(strings.sidebar.newFolder));
-  el("openOther").textContent = strings.sidebar.openFolder;
+  // Each sidebar button is an icon plus a label. The label can be hidden when the list is
+  // narrow, so the text is also the tooltip and the accessible name.
+  const withIcon = (id, name, text) => {
+    const button = el(id);
+    const label = document.createElement("span");
+    label.className = "btn-label";
+    label.textContent = text;
+    button.replaceChildren(icon(name), label);
+    button.title = text;
+    button.setAttribute("aria-label", text);
+  };
+  withIcon("newNote", "plus", strings.sidebar.newNote);
+  withIcon("newFolder", "folder", strings.sidebar.newFolder);
+  withIcon("openOther", "folderOpen", strings.sidebar.openFolder);
+  withIcon("openSettings", "settings", strings.settings.open);
   el("penTest").textContent = strings.sidebar.penTest;
-  el("openSettings").textContent = strings.settings.open;
   el("updateDownload").textContent = strings.update.download;
   el("updateDetails").textContent = strings.update.details;
   el("updateLater").textContent = strings.update.later;
