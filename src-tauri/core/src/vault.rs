@@ -30,6 +30,8 @@ pub enum VaultError {
     /// The file on disk is not the version the caller started from.
     Conflict,
     AlreadyExists,
+    /// A file that is not one of the allowed picture types.
+    UnsupportedType,
     /// Anything else the operating system reported. The text is for the log only.
     Io(String),
 }
@@ -46,6 +48,7 @@ impl VaultError {
             VaultError::NotUtf8 => "not_utf8",
             VaultError::Conflict => "conflict",
             VaultError::AlreadyExists => "already_exists",
+            VaultError::UnsupportedType => "unsupported_type",
             VaultError::Io(_) => "io",
         }
     }
@@ -153,7 +156,7 @@ impl Vault {
 
     /// Turns a vault-relative path such as `School/Week 1.md` into a real path,
     /// refusing anything that could point outside the vault.
-    fn resolve(&self, relative: &str) -> Result<PathBuf> {
+    pub(crate) fn resolve(&self, relative: &str) -> Result<PathBuf> {
         if relative.is_empty() {
             return Ok(self.root.clone());
         }
@@ -176,7 +179,7 @@ impl Vault {
 
     /// A symlink inside the vault could point anywhere. Resolve the nearest part of the
     /// path that exists and make sure it is still inside the vault.
-    fn ensure_inside(&self, path: &Path) -> Result<()> {
+    pub(crate) fn ensure_inside(&self, path: &Path) -> Result<()> {
         let mut probe = path.to_path_buf();
         loop {
             if probe.exists() {
@@ -228,6 +231,10 @@ impl Vault {
                 continue;
             };
             if name.starts_with('.') {
+                continue;
+            }
+            // The folder that holds pictures is not a place for notes, so it is not listed.
+            if depth == 0 && name == crate::attachments::ATTACHMENT_DIR && file_type.is_dir() {
                 continue;
             }
             // Symlinked folders are skipped so a loop can never hang the listing.

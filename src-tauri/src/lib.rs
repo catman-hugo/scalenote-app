@@ -5,6 +5,8 @@
 // interface turns the code into a sentence from the language file.
 
 use scalenote_core::atomic::write_atomic;
+use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
+use scalenote_core::base64;
 use scalenote_core::logger::{Level, Logger};
 use scalenote_core::{EntryKind, NoteVersion, Vault, VaultError};
 use serde::Serialize;
@@ -169,6 +171,25 @@ fn rename_entry(path: String, new_name: String, state: State<AppState>) -> Resul
     with_vault(&state, "rename", |vault| vault.rename(&path, &new_name))
 }
 
+/// Copies a picture into the vault's `attachments` folder. `data` is the picture as base64
+/// text; the file type is decided from its content, not from `name`. Returns the path to
+/// write into the note.
+#[tauri::command]
+fn save_attachment(name: String, data: String, state: State<AppState>) -> Result<String, String> {
+    // The length is checked before decoding, so a huge text is never turned into bytes.
+    if data.len() > MAX_ATTACHMENT_BASE64 {
+        return Err("too_large".to_string());
+    }
+    let bytes = base64::decode(&data).ok_or_else(|| "unsupported_type".to_string())?;
+    with_vault(&state, "save attachment", |vault| vault.write_attachment(&name, &bytes))
+}
+
+/// Returns a picture from `attachments/` as a `data:` address, for showing in a note.
+#[tauri::command]
+fn read_attachment(path: String, state: State<AppState>) -> Result<String, String> {
+    with_vault(&state, "read attachment", |vault| vault.read_attachment_data_url(&path))
+}
+
 /// The interface logs short fixed messages through here. The length limit is applied again
 /// by the logger.
 #[tauri::command]
@@ -221,6 +242,7 @@ pub fn run() {
     // nothing to show. We still report why, instead of panicking with unwrap/expect.
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
@@ -235,6 +257,8 @@ pub fn run() {
             create_note,
             create_folder,
             rename_entry,
+            save_attachment,
+            read_attachment,
             log_line,
             get_settings,
             set_settings

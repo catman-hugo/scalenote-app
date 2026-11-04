@@ -2,7 +2,36 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-03, end of the 0.1 build session.
+Last updated: 2026-11-04, end of the 0.2 build session.
+
+## 0.2 state (branch feature/v0.2-editor, pull request #9)
+
+Built and tried only where the builder can run it (a test browser with a pretend backend, and Rust tests). Nothing has been run in the real window on any device.
+
+- 0.2.1 Text formatting: selection bar (bold, italic, strike, code, link), Ctrl/Cmd+K. Callouts, toggles and tables are editable blocks. Untouched notes are written back byte for byte (property tests with random notes).
+- 0.2.2 Pictures: slash menu, paste and drop. Copied into `attachments/` by the Rust side (type from the first bytes, 10 MiB, atomic, SVG refused).
+- 0.2.3 Block handle: menu (move up and down, duplicate, delete, turn into, copy block link), drag with mouse, touch and pen events, Alt+Up and Alt+Down. Block ids use ` ^id`. Touch and pen dragging were tested with synthetic touch and pen events from the test browser only.
+- 0.2.4 Markdown source view for the whole note.
+- 0.2.5 Eight themes plus "follow the system"; Settings for theme, text size, note width and list width. Contrast is tested.
+- 0.2.6 Update check (on by default, one setting), notice with download button, What's new once after an update, first-run text mentions it, `connect-src` added to the page policy. Phone keyboard layout fix (`100dvh`, `interactive-widget`). The note list was already open at the start; a test now covers it on a phone-sized window.
+
+Tests: `npm test` (JS, 53 tests), `cargo test -p scalenote-core --locked` (33 unit, 1 crash test, 14 vault tests), `node tests/editor.spec.mjs` (browser tests, they also fail on any page error or policy violation). The browser tests never reach the real GitHub.
+
+Not done:
+- Underline, highlight, colour, subscript and superscript: waiting for the owner's decision on which inline html is allowed.
+- Automatic installing of updates: needs a signing key in GitHub secrets. Until then the notice opens the download page.
+- Following block links (`[[Note#^id]]`): 0.3.
+- Only text blocks can be turned into other block types. Callouts, toggles and tables cannot be dragged into each other.
+
+Needs a try on a real device (Windows 11 .msi, POCO F7 Pro Android, Linux):
+- The real window with the new page policy (`connect-src ipc: http://ipc.localhost https://api.github.com`): if notes will not open, this is the first suspect.
+- Dropping a file into the note on Windows (`dragDropEnabled: false`), choosing and pasting pictures on Android.
+- Dragging blocks by finger and by pen; the handle next to the on-screen keyboard.
+- The phone keyboard no longer pushing the top bar under the status bar.
+- The download button in the update notice (opener plugin and its address scope).
+- All eight themes on the real screens, sage and lavender first.
+
+Checks written: `docs/security-checklist-0.2.md`, `docs/release-notes/0.2.0.md`. Design check: screenshots of every new screen in light and dark, desktop and phone width, plus one per theme (made with `SHOTS_DIR=... node tests/editor.spec.mjs`).
 
 ## 0.1 state (branch feature/v0.1-vault-editor)
 
@@ -26,7 +55,7 @@ Not done or not tested:
 |---|---|---|
 | 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress. Builds for Windows, Linux and Android are made by GitHub and published as a release. Tested by hand: Linux Mint (opens, mouse works) and Windows 11 (mouse, touchpad, finger, pen pressure and eraser button work). Android (POCO F7 Pro, Android 16): installs, runs and finger drawing works; the top bar was hidden under the status bar (fixed, not yet re-tested). Not tested: Android pen, Fedora, pen barrel button (does not work on the test pen in other apps either), tilt (not reported on the test pen), an editor saving a markdown file |
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | built, not tested on a device (see above) |
-| 0.2 | Editor completion, markdown source view, block gutter, themes, settings, converter for the owner's old notes, update notice | not started |
+| 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline html styles waiting for a decision |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

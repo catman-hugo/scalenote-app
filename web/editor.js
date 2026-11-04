@@ -7,6 +7,82 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
 import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
+import { Callout, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
+import { attachToolbars } from "./toolbar.js";
+import { attachGutter } from "./gutter.js";
+import { Plugin } from "@tiptap/pm/state";
+import { choosePicture, checkPicture, storePicture } from "./images.js";
+
+// Pictures: the same path for paste, drop and the slash menu. The file is copied into the
+// vault first, and only then an image block is placed in the note.
+let pictureOptions = { onProblem: () => {}, noteKey: () => null };
+
+async function insertPictures(editor, files, position) {
+  const key = pictureOptions.noteKey();
+  for (const file of files) {
+    try {
+      const path = await storePicture(file);
+      // The user may have opened another note while the file was being copied.
+      if (pictureOptions.noteKey() !== key) return;
+      if (typeof position === "number") editor.commands.setTextSelection(Math.min(position, editor.state.doc.content.size));
+      editor.chain().focus().insertContent([{ type: "imageBlock", attrs: { alt: "", path } }, { type: "paragraph" }]).run();
+      position = undefined;
+    } catch (error) {
+      pictureOptions.onProblem(error && error.code ? error.code : "unknown");
+    }
+  }
+}
+
+const PictureInput = Extension.create({
+  name: "pictureInput",
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    const picturesIn = (list) => Array.from(list || []).filter((file) => file.type.startsWith("image/") || checkPicture(file) === null);
+    return [
+      new Plugin({
+        props: {
+          handlePaste(_view, event) {
+            const files = picturesIn(event.clipboardData && event.clipboardData.files);
+            if (files.length === 0) return false;
+            event.preventDefault();
+            insertPictures(editor, files);
+            return true;
+          },
+          handleDrop(view, event) {
+            const all = Array.from((event.dataTransfer && event.dataTransfer.files) || []);
+            if (all.length === 0) return false;
+            // Always stop the browser from opening a dropped file in the window.
+            event.preventDefault();
+            const spot = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            const pictures = picturesIn(all);
+            if (pictures.length < all.length) pictureOptions.onProblem("unsupported_type");
+            if (pictures.length) insertPictures(editor, pictures, spot ? spot.pos : undefined);
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
+
+// Set by createEditor; lets the Mod-k shortcut open the link box in the toolbar.
+let toolbars = null;
+let gutter = null;
+const BlockMoveShortcuts = Extension.create({
+  name: "blockMoveShortcuts",
+  addKeyboardShortcuts() {
+    return {
+      "Alt-ArrowUp": () => Boolean(gutter && gutter.moveCurrent(-1)),
+      "Alt-ArrowDown": () => Boolean(gutter && gutter.moveCurrent(1)),
+    };
+  },
+});
+const LinkShortcut = Extension.create({
+  name: "linkShortcut",
+  addKeyboardShortcuts() {
+    return { "Mod-k": () => (toolbars && !this.editor.state.selection.empty ? (toolbars.openLink(), true) : false) };
+  },
+});
 
 // Remembers, on every block, the exact text it had when the note was opened (`src`), how
 // the editor wrote that same block back then (`base`), and the blank lines after it
@@ -17,9 +93,11 @@ const SourceKeeper = Extension.create({
     const keep = { default: null, rendered: false };
     return [
       {
-        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule"],
-        attributes: { src: keep, base: keep, gap: keep },
+        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "toggle", "table", "imageBlock"],
+        attributes: { src: keep, base: keep, gap: keep, idx: keep },
       },
+      // Only paragraphs can carry a block link id on their last line.
+      { types: ["paragraph"], attributes: { blockId: keep } },
     ];
   },
 });
@@ -37,6 +115,7 @@ const RawBlock = Node.create({
       src: { default: "", rendered: false },
       base: { default: null, rendered: false },
       gap: { default: null, rendered: false },
+      idx: { default: null, rendered: false },
     };
   },
   parseHTML() {
@@ -98,12 +177,38 @@ function slashItems() {
     { title: s.quote, words: "quote blockquote", run: (e, r) => clear(e, r).toggleBlockquote().run() },
     { title: s.codeBlock, words: "code block", run: (e, r) => clear(e, r).toggleCodeBlock().run() },
     { title: s.divider, words: "divider rule line hr", run: (e, r) => clear(e, r).setHorizontalRule().run() },
+    {
+      id: "callout",
+      title: s.callout,
+      words: "callout note info box admonition",
+      run: (e, r) => clear(e, r).insertContent({ type: "callout", attrs: { kind: "note" }, content: [{ type: "paragraph" }] }).run(),
+    },
+    {
+      id: "toggle",
+      title: s.toggle,
+      words: "toggle details collapse fold summary",
+      run: (e, r) => clear(e, r).insertContent({ type: "toggle", attrs: { summary: "" }, content: [{ type: "paragraph" }] }).run(),
+    },
+    {
+      id: "image",
+      title: s.image,
+      words: "image picture photo png jpg attachment",
+      run: (e, r) => {
+        clear(e, r).run();
+        choosePicture().then((file) => file && insertPictures(e, [file]));
+      },
+    },
+    { id: "table", title: s.table, words: "table grid rows columns", run: (e, r) => clear(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   ];
 }
 
-function filterItems(query) {
+// Blocks that cannot sit inside a callout or a toggle (see richnodes.js).
+const TOP_LEVEL_ONLY = new Set(["callout", "toggle", "table", "image"]);
+
+function filterItems(query, editor) {
   const q = query.trim().toLowerCase();
-  return slashItems().filter((item) => !q || `${item.title} ${item.words}`.toLowerCase().includes(q));
+  const inside = editor && (editor.isActive("callout") || editor.isActive("toggle"));
+  return slashItems().filter((item) => (!inside || !TOP_LEVEL_ONLY.has(item.id)) && (!q || `${item.title} ${item.words}`.toLowerCase().includes(q)));
 }
 
 // The floating list. Plain DOM, positioned under the cursor, closed by Escape or by
@@ -202,7 +307,7 @@ const SlashMenu = Extension.create({
         char: "/",
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }) => filterItems(query),
+        items: ({ query, editor }) => filterItems(query, editor),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: renderSlashMenu,
       }),
@@ -210,7 +315,9 @@ const SlashMenu = Extension.create({
   },
 });
 
-export function createEditor(element, onChange) {
+// `options.loadImage(path)` gives the picture for an image block as a data: address.
+export function createEditor(element, onChange, options = {}) {
+  pictureOptions = { onProblem: options.onProblem || (() => {}), noteKey: options.noteKey || (() => null) };
   const editor = new Editor({
     element,
     // The page has a strict content security policy that forbids injected styles, so the
@@ -229,13 +336,26 @@ export function createEditor(element, onChange) {
       Placeholder.configure({ placeholder: strings.editor.placeholder }),
       SourceKeeper,
       RawBlock,
+      Callout,
+      Toggle,
+      ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
+      ...tableExtensions,
       SlashMenu,
+      LinkShortcut,
+      BlockMoveShortcuts,
+      PictureInput,
     ],
     content: { type: "doc", content: [{ type: "paragraph" }] },
     editorProps: {
       attributes: { class: "note-body", spellcheck: "true", "aria-label": strings.editor.placeholder },
     },
     onUpdate: () => onChange(),
+  });
+  toolbars = attachToolbars(editor);
+  gutter = attachGutter(editor, {
+    scroller: element,
+    noteTitle: options.noteTitle || (() => ""),
+    notify: options.notify || (() => {}),
   });
   return editor;
 }

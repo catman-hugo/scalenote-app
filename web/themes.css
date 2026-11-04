@@ -1,0 +1,165 @@
+/* Colour themes. Generated once from the first ScaleNote's theme values, then kept by hand.
+   Every colour is solid: the translucent borders and tints of the first version were
+   blended onto the theme's own background. Colours that failed the contrast test
+   (tests/themes.test.mjs) were nudged until they passed. No theme here is the default:
+   with no data-theme, style.css follows the system's light or dark setting. */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f9f7f4;
+  --bg-side: #e8e5e1;
+  --bg-hover: #e2dfdb;
+  --bg-code: #fdfdfc;
+  --text: #1a1816;
+  --text-soft: #5c5854;
+  --line: #cccbc8;
+  --accent: #805c29;
+  --accent-text: #ffffff;
+  --accent-soft: #e8e1d8;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #a3231b;
+  --kind-ok: #296c36;
+  --kind-warn: #8e5100;
+  --kind-info: #1f5fa8;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #181818;
+  --bg-side: #141414;
+  --bg-hover: #202020;
+  --bg-code: #1c1c1c;
+  --text: #e8e6e3;
+  --text-soft: #9b9794;
+  --line: #424242;
+  --accent: #c879ff;
+  --accent-text: #15121f;
+  --accent-soft: #382942;
+  --warn-bg: #3d3018;
+  --warn-text: #f2d9a6;
+  --bad: #d76a64;
+  --kind-ok: #7fd18f;
+  --kind-warn: #f0b45a;
+  --kind-info: #8fbcf0;
+}
+
+:root[data-theme="sepia"] {
+  color-scheme: light;
+  --bg: #f5f0e8;
+  --bg-side: #e5dfd3;
+  --bg-hover: #ddd7ca;
+  --bg-code: #faf6ef;
+  --text: #2e2416;
+  --text-soft: #6b5740;
+  --line: #d1c8b9;
+  --accent: #7b5325;
+  --accent-text: #ffffff;
+  --accent-soft: #e1d7c9;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #a3231b;
+  --kind-ok: #276633;
+  --kind-warn: #854c00;
+  --kind-info: #1d599e;
+}
+
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+  --bg: #131c24;
+  --bg-side: #101920;
+  --bg-hover: #1a2634;
+  --bg-code: #162030;
+  --text: #cdd9e5;
+  --text-soft: #768fa3;
+  --line: #22374b;
+  --accent: #58a6ff;
+  --accent-text: #15121f;
+  --accent-soft: #1e3247;
+  --warn-bg: #3d3018;
+  --warn-text: #f2d9a6;
+  --bad: #f85149;
+  --kind-ok: #7fd18f;
+  --kind-warn: #f0b45a;
+  --kind-info: #8fbcf0;
+}
+
+:root[data-theme="sage"] {
+  color-scheme: light;
+  --bg: #f8faf7;
+  --bg-side: #e8ede4;
+  --bg-hover: #e2e9dc;
+  --bg-code: #f8faf6;
+  --text: #1d2d18;
+  --text-soft: #4a6644;
+  --line: #c0cdb9;
+  --accent: #426d25;
+  --accent-text: #ffffff;
+  --accent-soft: #dfe6da;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #a3231b;
+  --kind-ok: #2c7339;
+  --kind-warn: #975600;
+  --kind-info: #1f5fa8;
+}
+
+:root[data-theme="forest"] {
+  color-scheme: dark;
+  --bg: #222e20;
+  --bg-side: #1e2a1c;
+  --bg-hover: #2a3828;
+  --bg-code: #283426;
+  --text: #d4e8cc;
+  --text-soft: #7ea870;
+  --line: #374d2e;
+  --accent: #8bc34a;
+  --accent-text: #15121f;
+  --accent-soft: #334627;
+  --warn-bg: #3d3018;
+  --warn-text: #f2d9a6;
+  --bad: #f08a80;
+  --kind-ok: #7fd18f;
+  --kind-warn: #f0b45a;
+  --kind-info: #8fbcf0;
+}
+
+:root[data-theme="lavender"] {
+  color-scheme: light;
+  --bg: #f7f4fc;
+  --bg-side: #e8e2f4;
+  --bg-hover: #e0d9f0;
+  --bg-code: #ffffff;
+  --text: #2d1f4a;
+  --text-soft: #6b4f9a;
+  --line: #dbd0f1;
+  --accent: #7537df;
+  --accent-text: #ffffff;
+  --accent-soft: #e5daf8;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #b72020;
+  --kind-ok: #296c36;
+  --kind-warn: #8e5100;
+  --kind-info: #1f5fa8;
+}
+
+:root[data-theme="dusk"] {
+  color-scheme: dark;
+  --bg: #20163a;
+  --bg-side: #1c1234;
+  --bg-hover: #2a1f4a;
+  --bg-code: #261c42;
+  --text: #e8e0ff;
+  --text-soft: #9d80d4;
+  --line: #3c2c65;
+  --accent: #a78bfa;
+  --accent-text: #15121f;
+  --accent-soft: #362959;
+  --warn-bg: #3d3018;
+  --warn-text: #f2d9a6;
+  --bad: #f87171;
+  --kind-ok: #7fd18f;
+  --kind-warn: #f0b45a;
+  --kind-info: #8fbcf0;
+}

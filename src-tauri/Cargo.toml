@@ -1,6 +1,6 @@
 [package]
 name = "scalenote"
-version = "0.1.1"
+version = "0.2.0"
 description = "ScaleNote: a local-first markdown note app."
 edition = "2021"
 rust-version = "1.77"
@@ -20,5 +20,6 @@ tauri-build = { version = "=2.7.4", features = [] }
 [dependencies]
 tauri = { version = "=2.12.4", features = [] }
 tauri-plugin-dialog = "=2.8.4"
+tauri-plugin-opener = "=2.7.2"
 scalenote-core = { path = "core" }
 serde = { version = "=1.0.229", features = ["derive"] }

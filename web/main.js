@@ -1,5 +1,10 @@
 // Wires the screens together: settings, the folder, the note list, the editor and saving.
 
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appearance.js";
+import { openSettings } from "./settings.js";
+import { checkForUpdate, shouldCheck } from "./updates.js";
+import { renderNotes } from "./whatsnew.js";
 import { backend, BackendError } from "./backend.js";
 import { composeNote, loadNote } from "./compose.js";
 import { newNoteId, withNoteId } from "./blocks.js";
@@ -7,6 +12,7 @@ import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
+import { pathForVault } from "./images.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
@@ -15,7 +21,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, disclosureAccepted: false, aiEnabled: false },
+  settings: { vaultPath: null, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -24,6 +30,11 @@ const app = {
   lastSavedText: null,
   editor: null,
   autosave: null,
+  // "editor" shows blocks, "source" shows the whole note as markdown text. The choice stays
+  // when another note is opened.
+  mode: "editor",
+  // The line ending of the note in source view; a text box always uses "\n" inside.
+  lineEnding: "\n",
 };
 
 // ---------- small helpers ----------
@@ -45,6 +56,15 @@ function showBanner(text) {
 
 function hideBanner() {
   el("banner").hidden = true;
+}
+
+let toastTimer = null;
+// A short message that goes away by itself (for example "Block link copied").
+function showToast(text) {
+  el("toast").textContent = text;
+  el("toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el("toast").hidden = true), 3500);
 }
 
 function setStatus(kind) {
@@ -76,12 +96,114 @@ async function loadSettings() {
     app.settings = {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
       disclosureAccepted: parsed.disclosureAccepted === true,
+      ...normalizeAppearance(parsed),
+      // One switch for both looking for updates and installing them. On unless turned off.
+      updates: parsed.updates !== false,
+      lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
+      lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
+      dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
       // The assistant is off. There is no switch for it in this version.
       aiEnabled: false,
     };
   } catch (error) {
     logProblem("settings unreadable", error);
   }
+}
+
+// ---------- updates ----------
+
+const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
+const RELEASE_NOTES = typeof __RELEASE_NOTES__ === "string" ? __RELEASE_NOTES__ : "";
+let offered = null; // the newer release the notice is about
+
+function fill(text, values) {
+  return text.replace(/\{(\w+)\}/g, (_, key) => String(values[key]));
+}
+
+function showNotes(title, notes) {
+  const dialog = el("whatsnew");
+  dialog.replaceChildren(textElement("h2", title));
+  const body = document.createElement("div");
+  body.className = "notes";
+  renderNotes(body, notes);
+  dialog.append(body, buttonElement(strings.update.close, () => dialog.close(), true));
+  if (!dialog.open) dialog.showModal();
+  return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+}
+
+function showUpdateNotice(release) {
+  offered = release;
+  el("updateText").textContent = fill(strings.update.available, { version: release.version });
+  el("updateNotice").hidden = false;
+}
+
+async function runUpdateCheck() {
+  const { release } = await checkForUpdate({ current: APP_VERSION });
+  app.settings.lastUpdateCheck = Date.now();
+  await saveSettings();
+  return release;
+}
+
+async function checkQuietly() {
+  if (!shouldCheck({ enabled: app.settings.updates, lastCheck: app.settings.lastUpdateCheck })) return;
+  try {
+    const release = await runUpdateCheck();
+    if (release && release.version !== app.settings.dismissedUpdate) showUpdateNotice(release);
+  } catch (error) {
+    // Offline or GitHub unreachable is normal; it is logged and nothing is shown.
+    logProblem("update check failed", error);
+  }
+}
+
+function updateSettingsRows() {
+  const s = strings.settings;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = app.settings.updates;
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.updates, "setting-label"), box);
+  const result = textElement("p", "", "setting-hint");
+  const check = buttonElement(s.checkNow, async () => {
+    result.textContent = s.checking;
+    try {
+      const release = await runUpdateCheck();
+      result.textContent = release ? fill(s.newVersion, { version: release.version }) : s.upToDate;
+      if (release) showUpdateNotice(release);
+    } catch (error) {
+      logProblem("update check failed", error);
+      result.textContent = s.checkFailed;
+    }
+  });
+  box.addEventListener("change", () => {
+    app.settings.updates = box.checked;
+    saveSettings();
+  });
+  return [row, textElement("p", s.updatesHint, "setting-hint"), check, result];
+}
+
+async function openDownload() {
+  if (!offered) return;
+  try {
+    await openUrl(offered.url);
+  } catch (error) {
+    logProblem("could not open the download page", error);
+    showBanner(strings.update.openFailed);
+  }
+}
+
+// After an update the new version's notes are shown once. A fresh install sees nothing.
+async function showWhatsNewOnce(freshInstall) {
+  if (app.settings.lastSeenVersion === APP_VERSION) return;
+  const show = !freshInstall && RELEASE_NOTES !== "";
+  app.settings.lastSeenVersion = APP_VERSION;
+  await saveSettings();
+  if (show) await showNotes(fill(strings.update.whatsNewTitleUpdated, { version: APP_VERSION }), RELEASE_NOTES);
+}
+
+function appearanceOf(settings) {
+  const { theme, fontSize, editorWidth, sidebarWidth } = settings;
+  return { theme, fontSize, editorWidth, sidebarWidth };
 }
 
 async function saveSettings() {
@@ -277,6 +399,8 @@ async function showNoNote() {
   await closeCurrentNote();
   el("empty").hidden = false;
   el("editor").hidden = true;
+  el("source").hidden = true;
+  el("sourceToggle").hidden = true;
   el("title").hidden = true;
   setStatus("");
 }
@@ -312,13 +436,79 @@ function showNote(path, note) {
   app.lastSavedText = note.text;
   app.editor.commands.setContent(doc, { emitUpdate: false });
   el("empty").hidden = true;
-  el("editor").hidden = false;
   el("title").hidden = false;
+  el("sourceToggle").hidden = false;
+  fillSource(note.text);
+  applyMode();
   el("title").value = noteTitle(path);
   setStatus("");
   app.selectedFolder = parentOf(path);
   for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
   drawTree();
+}
+
+// ---------- markdown source view ----------
+
+// A text box turns every line ending into "\n" inside. A note with Windows line endings
+// (all "\r\n") is shown with "\n" and gets "\r\n" back when saved, so nothing changes. A note
+// that mixes both cannot be given back exactly, so it is shown read-only.
+function fillSource(text) {
+  const box = el("source");
+  const crlfCount = (text.match(/\r\n/g) || []).length;
+  const lfCount = (text.match(/\n/g) || []).length;
+  const loneCr = /\r(?!\n)/.test(text);
+  const consistent = !loneCr && (crlfCount === 0 || crlfCount === lfCount);
+  app.lineEnding = crlfCount > 0 && consistent ? "\r\n" : "\n";
+  box.readOnly = !consistent;
+  box.value = text;
+  box.setAttribute("aria-label", strings.source.textLabel);
+}
+
+function sourceText() {
+  const value = el("source").value;
+  return app.lineEnding === "\r\n" ? value.replace(/\n/g, "\r\n") : value;
+}
+
+// The text the open note has right now, without adding anything (no id is created here).
+function plainCurrentText() {
+  return composeNote(app.current.parts, app.editor.getJSON(), {
+    serialize: (json) => app.editor.markdown.serialize(json),
+    assignId: false,
+  });
+}
+
+function applyMode() {
+  const source = app.mode === "source" && app.current;
+  el("editor").hidden = !app.current || source;
+  el("source").hidden = !source;
+  const toggle = el("sourceToggle");
+  toggle.textContent = source ? strings.source.hide : strings.source.show;
+  toggle.setAttribute("aria-label", source ? strings.source.hideLabel : strings.source.showLabel);
+  toggle.setAttribute("aria-pressed", String(Boolean(source)));
+  if (source && el("source").readOnly) showBanner(strings.source.mixedLineEndings);
+}
+
+async function toggleSource() {
+  if (!app.current) return;
+  if (app.mode === "editor") {
+    // The note on screen is the truth: show exactly what saving it would write.
+    fillSource(plainCurrentText());
+    app.mode = "source";
+    applyMode();
+    el("source").focus();
+    return;
+  }
+  // Back to blocks. Whatever is in the box is saved first, then read again as blocks.
+  await app.autosave.flush();
+  const text = sourceText();
+  const { parts, doc } = loadNote(text, {
+    parse: (md) => app.editor.markdown.parse(md),
+    serialize: (json) => app.editor.markdown.serialize(json),
+  });
+  app.current.parts = parts;
+  app.editor.commands.setContent(doc, { emitUpdate: false });
+  app.mode = "editor";
+  applyMode();
 }
 
 function currentText() {
@@ -335,7 +525,8 @@ async function saveCurrent() {
   const { current } = app;
   if (!current) return;
   const path = current.path;
-  const text = currentText();
+  // In source view the box is saved exactly as it is: no id is added, nothing is tidied.
+  const text = app.mode === "source" ? sourceText() : currentText();
   if (text === app.lastSavedText) return;
   try {
     current.version = await backend.writeNote(path, text, current.version);
@@ -438,6 +629,29 @@ function fillStaticText() {
   el("newFolder").replaceChildren(icon("folder"), document.createTextNode(strings.sidebar.newFolder));
   el("openOther").textContent = strings.sidebar.openFolder;
   el("penTest").textContent = strings.sidebar.penTest;
+  el("openSettings").textContent = strings.settings.open;
+  el("updateDownload").textContent = strings.update.download;
+  el("updateDetails").textContent = strings.update.details;
+  el("updateLater").textContent = strings.update.later;
+  el("updateDownload").addEventListener("click", openDownload);
+  el("updateDetails").addEventListener("click", () => offered && showNotes(fill(strings.update.whatsNewTitle, { version: offered.version }), offered.notes));
+  el("updateLater").addEventListener("click", () => {
+    if (offered) app.settings.dismissedUpdate = offered.version;
+    el("updateNotice").hidden = true;
+    saveSettings();
+  });
+  el("openSettings").addEventListener("click", () => {
+    openSettings(
+      el("settings"),
+      appearanceOf(app.settings),
+      (next) => {
+        Object.assign(app.settings, next);
+        applyAppearance(document.documentElement, app.settings);
+        saveSettings();
+      },
+      updateSettingsRows(),
+    );
+  });
   el("empty").textContent = strings.editor.noNoteOpen;
   el("title").setAttribute("aria-label", strings.editor.titleLabel);
   el("toggle").replaceChildren(icon("menu"));
@@ -458,7 +672,19 @@ function startFlushTriggers() {
     .catch((error) => logProblem("close hook missing", error));
 }
 
+// A file dropped anywhere in the window must never be opened by the browser (which would
+// replace the app with the file). Dropping on the note is handled by the editor.
+function guardFileDrops() {
+  const hasFiles = (event) => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes("Files");
+  for (const type of ["dragover", "drop"]) {
+    window.addEventListener(type, (event) => {
+      if (hasFiles(event)) event.preventDefault();
+    });
+  }
+}
+
 function wireEvents() {
+  guardFileDrops();
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("openOther").addEventListener("click", async () => {
@@ -466,6 +692,8 @@ function wireEvents() {
     await chooseVault();
   });
   el("toggle").addEventListener("click", toggleSidebar);
+  el("sourceToggle").addEventListener("click", toggleSource);
+  el("source").addEventListener("input", () => app.autosave.touch());
   el("scrim").addEventListener("click", toggleSidebar);
   el("bannerClose").addEventListener("click", hideBanner);
   el("title").addEventListener("keydown", (event) => {
@@ -486,15 +714,26 @@ async function start() {
   document.body.classList.add("sidebar-open");
 
   app.autosave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCurrent, onStatus: setStatus });
-  app.editor = createEditor(el("editor"), () => app.autosave.touch());
+  app.editor = createEditor(el("editor"), () => app.autosave.touch(), {
+    loadImage: (path) => backend.readAttachment(pathForVault(path)),
+    noteKey: () => (app.current ? app.current.path : null),
+    noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
+    notify: showToast,
+    onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
+  });
   startFlushTriggers();
 
   await loadSettings();
-  if (!app.settings.disclosureAccepted) {
+  applyAppearance(document.documentElement, app.settings);
+  const freshInstall = !app.settings.disclosureAccepted;
+  if (freshInstall) {
     await showDisclosure();
     app.settings.disclosureAccepted = true;
     await saveSettings();
   }
+  await showWhatsNewOnce(freshInstall);
+  // Not awaited: looking for an update must never hold up opening the notes.
+  checkQuietly();
   if (app.settings.vaultPath) {
     try {
       await openVaultFrom(app.settings.vaultPath);

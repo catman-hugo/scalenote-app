@@ -30,6 +30,10 @@ export const backend = {
   createNote: (parent, title) => call("create_note", { parent, title }),
   createFolder: (parent, name) => call("create_folder", { parent, name }),
   rename: (path, newName) => call("rename_entry", { path, newName }),
+  // `data` is the picture as base64 text. Returns the path to write into the note.
+  saveAttachment: (name, data) => call("save_attachment", { name, data }),
+  // Returns the picture as a data: address.
+  readAttachment: (path) => call("read_attachment", { path }),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),

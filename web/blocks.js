@@ -26,6 +26,11 @@ const QUOTE = /^ {0,3}>/;
 const LIST_MARKER = /^ {0,3}([-*+]|\d{1,9}[.)])([ \t]+|\r?$)/;
 const SETEXT = /^ {0,3}(=+|-+)[ \t]*\r?$/;
 const TABLE_DIVIDER = /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*\r?$/;
+const DETAILS_OPEN = /^<details( open)?>[ \t]*$/;
+const DETAILS_ANY_OPEN = /^[ \t]*<details[\s>]/;
+const DETAILS_CLOSE = /^[ \t]*<\/details>[ \t]*$/;
+const CALLOUT_START = /^ {0,3}>[ \t]?\[![A-Za-z][A-Za-z0-9-]*\][+-]?([ \t]|$)/;
+const IMAGE_ONLY = /^!\[[^\[\]\n]*\]\(attachments\/[^\s()<>"\\]+\.(png|jpe?g|gif|webp)\)[ \t]*$/i;
 const RAW_LINE_START = /^(<|\$\$|%%|\[\^[^\]]+\]:|\[[^\]]+\]:[ \t]+\S|!\[\[| {4}|\t)/;
 
 // Inline syntax the editor cannot round-trip. A block containing any of it is kept raw, so
@@ -42,6 +47,14 @@ const UNSAFE_INLINE = [
   /(^|\s)\^[\w-]+\s*$/, // block ids
   /~~~/,
 ];
+
+/** Block ids are letters, digits and hyphens, as in Obsidian. */
+export const BLOCK_ID = /[ \t]+\^([A-Za-z0-9-]+)$/;
+
+/** Removes a closing " ^id" from the end of a paragraph's text. */
+export function stripBlockId(text) {
+  return text.replace(BLOCK_ID, "");
+}
 
 function hasUnsafeInline(text) {
   return UNSAFE_INLINE.some((pattern) => pattern.test(text));
@@ -77,6 +90,10 @@ function readBlock(lines, i) {
     }
     return [lines.length - 1, "raw"]; // never closed: keep everything as written
   }
+  if (DETAILS_OPEN.test(first)) {
+    const end = findDetailsEnd(lines, i);
+    if (end !== -1) return [end, "details"];
+  }
   if (RAW_LINE_START.test(first)) return [skipToBlank(lines, i), "raw"];
   if (HEADING.test(first)) return [i, hasUnsafeInline(first) ? "raw" : "heading"];
   if (RULE.test(first)) return [i, "rule"];
@@ -91,10 +108,27 @@ function skipToBlank(lines, i) {
   return j;
 }
 
+// A toggle (<details>) may hold blank lines, so it ends at its own closing line, not at the
+// first blank line. Nested toggles are counted. Returns -1 when it never closes.
+function findDetailsEnd(lines, i) {
+  let depth = 0;
+  for (let j = i; j < lines.length; j++) {
+    if (DETAILS_ANY_OPEN.test(lines[j].text)) depth++;
+    if (DETAILS_CLOSE.test(lines[j].text)) {
+      depth--;
+      if (depth === 0) return j;
+    }
+  }
+  return -1;
+}
+
 function readQuote(lines, i) {
   let j = i;
   while (j + 1 < lines.length && QUOTE.test(lines[j + 1].text)) j++;
   const text = lines.slice(i, j + 1).map((l) => l.text).join("\n");
+  // A callout is only a candidate here. compose.js decides whether the editor can really
+  // hold it; if not, it becomes a raw block there.
+  if (CALLOUT_START.test(lines[i].text)) return [j, "callout"];
   const unsafe = /^ {0,3}>[ \t]*\[!/.test(lines[i].text) || hasUnsafeInline(text) || /^[ \t]*>[ \t]*(```|#|[-*+] |\d+[.)] )/m.test(text);
   return [j, unsafe ? "raw" : "quote"];
 }
@@ -145,8 +179,12 @@ function readParagraph(lines, i) {
     j++;
   }
   const text = lines.slice(i, j + 1).map((l) => l.text).join("\n");
+  if (j === i && IMAGE_ONLY.test(text)) return [j, "image"];
   const isTable = j > i && TABLE_DIVIDER.test(lines[i + 1].text) && text.includes("|");
-  const unsafe = isTable || hasUnsafeInline(text) || /^\|.*\|[ \t]*$/m.test(text);
+  if (isTable) return [j, "table"]; // a candidate; compose.js may still keep it raw
+  // A block link id (" ^abc123") closing the paragraph is part of how the editor keeps the
+  // paragraph, so it is not a reason to keep the paragraph raw.
+  const unsafe = hasUnsafeInline(stripBlockId(text)) || /^\|.*\|[ \t]*$/m.test(text);
   return [j, unsafe ? "raw" : "paragraph"];
 }
 
