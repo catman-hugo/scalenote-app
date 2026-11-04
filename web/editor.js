@@ -9,6 +9,60 @@ import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
 import { Callout, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
 import { attachToolbars } from "./toolbar.js";
+import { Plugin } from "@tiptap/pm/state";
+import { choosePicture, checkPicture, storePicture } from "./images.js";
+
+// Pictures: the same path for paste, drop and the slash menu. The file is copied into the
+// vault first, and only then an image block is placed in the note.
+let pictureOptions = { onProblem: () => {}, noteKey: () => null };
+
+async function insertPictures(editor, files, position) {
+  const key = pictureOptions.noteKey();
+  for (const file of files) {
+    try {
+      const path = await storePicture(file);
+      // The user may have opened another note while the file was being copied.
+      if (pictureOptions.noteKey() !== key) return;
+      if (typeof position === "number") editor.commands.setTextSelection(Math.min(position, editor.state.doc.content.size));
+      editor.chain().focus().insertContent([{ type: "imageBlock", attrs: { alt: "", path } }, { type: "paragraph" }]).run();
+      position = undefined;
+    } catch (error) {
+      pictureOptions.onProblem(error && error.code ? error.code : "unknown");
+    }
+  }
+}
+
+const PictureInput = Extension.create({
+  name: "pictureInput",
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    const picturesIn = (list) => Array.from(list || []).filter((file) => file.type.startsWith("image/") || checkPicture(file) === null);
+    return [
+      new Plugin({
+        props: {
+          handlePaste(_view, event) {
+            const files = picturesIn(event.clipboardData && event.clipboardData.files);
+            if (files.length === 0) return false;
+            event.preventDefault();
+            insertPictures(editor, files);
+            return true;
+          },
+          handleDrop(view, event) {
+            const all = Array.from((event.dataTransfer && event.dataTransfer.files) || []);
+            if (all.length === 0) return false;
+            // Always stop the browser from opening a dropped file in the window.
+            event.preventDefault();
+            const spot = view.posAtCoords({ left: event.clientX, top: event.clientY });
+            const pictures = picturesIn(all);
+            if (pictures.length < all.length) pictureOptions.onProblem("unsupported_type");
+            if (pictures.length) insertPictures(editor, pictures, spot ? spot.pos : undefined);
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
 
 // Set by createEditor; lets the Mod-k shortcut open the link box in the toolbar.
 let toolbars = null;
@@ -120,6 +174,15 @@ function slashItems() {
       title: s.toggle,
       words: "toggle details collapse fold summary",
       run: (e, r) => clear(e, r).insertContent({ type: "toggle", attrs: { summary: "" }, content: [{ type: "paragraph" }] }).run(),
+    },
+    {
+      id: "image",
+      title: s.image,
+      words: "image picture photo png jpg attachment",
+      run: (e, r) => {
+        clear(e, r).run();
+        choosePicture().then((file) => file && insertPictures(e, [file]));
+      },
     },
     { id: "table", title: s.table, words: "table grid rows columns", run: (e, r) => clear(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   ];
@@ -240,6 +303,7 @@ const SlashMenu = Extension.create({
 
 // `options.loadImage(path)` gives the picture for an image block as a data: address.
 export function createEditor(element, onChange, options = {}) {
+  pictureOptions = { onProblem: options.onProblem || (() => {}), noteKey: options.noteKey || (() => null) };
   const editor = new Editor({
     element,
     // The page has a strict content security policy that forbids injected styles, so the
@@ -264,6 +328,7 @@ export function createEditor(element, onChange, options = {}) {
       ...tableExtensions,
       SlashMenu,
       LinkShortcut,
+      PictureInput,
     ],
     content: { type: "doc", content: [{ type: "paragraph" }] },
     editorProps: {

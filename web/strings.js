@@ -147,6 +147,8 @@ export const strings = {
     already_exists: "Something with that name already exists.",
     io: "The computer could not read or write that file.",
     no_vault: "No folder is open.",
+    unsupported_type: "That file is not a picture ScaleNote can use. Allowed types: png, jpg, gif and webp.",
+    too_large_picture: "That picture is too large. The limit is 10 MB.",
     unknown: "Something went wrong.",
   },
 };

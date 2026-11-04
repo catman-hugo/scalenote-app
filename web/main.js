@@ -7,6 +7,7 @@ import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
+import { pathForVault } from "./images.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
@@ -458,7 +459,19 @@ function startFlushTriggers() {
     .catch((error) => logProblem("close hook missing", error));
 }
 
+// A file dropped anywhere in the window must never be opened by the browser (which would
+// replace the app with the file). Dropping on the note is handled by the editor.
+function guardFileDrops() {
+  const hasFiles = (event) => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes("Files");
+  for (const type of ["dragover", "drop"]) {
+    window.addEventListener(type, (event) => {
+      if (hasFiles(event)) event.preventDefault();
+    });
+  }
+}
+
 function wireEvents() {
+  guardFileDrops();
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("openOther").addEventListener("click", async () => {
@@ -486,7 +499,11 @@ async function start() {
   document.body.classList.add("sidebar-open");
 
   app.autosave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCurrent, onStatus: setStatus });
-  app.editor = createEditor(el("editor"), () => app.autosave.touch());
+  app.editor = createEditor(el("editor"), () => app.autosave.touch(), {
+    loadImage: (path) => backend.readAttachment(pathForVault(path)),
+    noteKey: () => (app.current ? app.current.path : null),
+    onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
+  });
   startFlushTriggers();
 
   await loadSettings();

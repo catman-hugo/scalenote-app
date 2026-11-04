@@ -6,6 +6,7 @@
   const folders = new Set([""]);
   let settings = "";
   const logs = [];
+  const attachments = new Map(); // path -> base64 text
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
   const fail = (code) => { throw code; };
   const unique = (parent, stem, ext, exists) => {
@@ -31,6 +32,24 @@
       else if (expected) fail("conflict");
       files.set(path, text); return hash(text);
     },
+    // A stand-in for the Rust picture commands: same limits and the same error codes.
+    save_attachment: ({ name, data }) => {
+      if (data.length > 14000000) fail("too_large");
+      let bytes;
+      try { bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0)); } catch { fail("unsupported_type"); }
+      const png = [0x89, 0x50, 0x4e, 0x47].every((b, i) => bytes[i] === b);
+      const jpg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+      const gif = String.fromCharCode(...bytes.slice(0, 3)) === "GIF";
+      const webp = String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+      if (!(png || jpg || gif || webp)) fail("unsupported_type");
+      const ext = png ? "png" : jpg ? "jpg" : gif ? "gif" : "webp";
+      const stem = (name.replace(/\.[^.]*$/, "").replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^-+|-+$/g, "")) || "image";
+      let n = 1, path;
+      for (;; n++) { path = `attachments/${n === 1 ? stem : stem + "-" + n}.${ext}`; if (!attachments.has(path) || attachments.get(path) === data) break; }
+      attachments.set(path, data);
+      return path;
+    },
+    read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return "data:image/png;base64," + attachments.get(path); },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },
     rename_entry: ({ path, newName }) => {
@@ -56,5 +75,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { files, folders, logs, hash, getSettings: () => settings };
+  window.__mock = { files, folders, attachments, logs, hash, getSettings: () => settings };
 })();

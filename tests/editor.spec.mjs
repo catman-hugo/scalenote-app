@@ -99,7 +99,7 @@ await test("slash menu offers every block and filters", async (page) => {
   await page.click("#editor .note-body");
   await page.keyboard.type("/");
   await page.waitForSelector(".slash-menu");
-  assert.equal(await page.locator(".slash-item").count(), 14);
+  assert.equal(await page.locator(".slash-item").count(), 15);
   await page.keyboard.type("to-do");
   assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["To-do list"]);
   await page.keyboard.press("Enter");
@@ -321,6 +321,95 @@ await test("slash menu inserts a callout, a toggle and a table", async (page) =>
   assert.equal(await page.locator(".note-body table").count(), 1);
   const saved = (await files(page))["Untitled.md"];
   assert.match(saved, /<details>\n<summary><\/summary>\n\nhidden words\n\n<\/details>\n\n\| {2}\| {2}\| {2}\|\n\| --- \| --- \| --- \|/);
+});
+
+// ---------- 0.2.2: pictures ----------
+
+const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const PNG = Buffer.from(PNG_B64, "base64");
+const pasteFile = (page, name, type, bytes, kind = "paste") =>
+  page.evaluate(([n, t, b, k]) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], n, { type: t }));
+    const target = document.querySelector(".note-body");
+    const event = k === "paste" ? new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }) : new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true, clientX: target.getBoundingClientRect().left + 50, clientY: target.getBoundingClientRect().top + 20 });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  }, [name, type, bytes, kind]);
+
+await test("the slash menu inserts a picture: it is copied to attachments and written as plain markdown", async (page) => {
+  await start(page);
+  // Listen early: the browser only reports the file chooser if the listener is already known.
+  const chooser = new Promise((resolve) => page.once("filechooser", resolve));
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  await page.keyboard.type("before");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/image");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await (await chooser).setFiles({ name: "Cell diagram (1).png", mimeType: "image/png", buffer: PNG });
+  await page.waitForSelector(".image-img[src]");
+  assert.equal(await page.evaluate(() => document.querySelector(".image-img").naturalWidth), 1);
+  await page.fill(".image-alt", "a cell");
+  await waitSaved(page);
+  assert.match((await files(page))["Untitled.md"], /before\n\n!\[a cell\]\(attachments\/Cell-diagram-1\.png\)\n$/);
+  assert.deepEqual([...await page.evaluate(() => [...window.__mock.attachments.keys()])], ["attachments/Cell-diagram-1.png"]);
+});
+
+await test("a pasted picture is stored, and the same picture pasted twice is stored once", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  assert.equal(await pasteFile(page, "shot.png", "image/png", PNG_B64), true);
+  await page.waitForSelector(".image-img[src]");
+  await pasteFile(page, "shot.png", "image/png", PNG_B64);
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 2);
+  await waitSaved(page);
+  assert.equal(await page.evaluate(() => window.__mock.attachments.size), 1);
+  assert.match((await files(page))["Untitled.md"], /!\[\]\(attachments\/shot\.png\)\n\n!\[\]\(attachments\/shot\.png\)\n$/);
+});
+
+await test("a dropped svg or text file is refused with a calm message and nothing is stored", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  assert.equal(await pasteFile(page, "evil.svg", "image/svg+xml", btoa("<svg onload=alert(1)/>"), "drop"), true);
+  // Dropping outside the note must not let the browser open the file either.
+  const outside = await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["x"], "a.txt", { type: "text/plain" }));
+    const event = new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true });
+    document.getElementById("sidebar").dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  assert.equal(outside, true);
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.match(await page.textContent("#bannerText"), /png, jpg, gif and webp/);
+  assert.equal(await page.locator(".image-block").count(), 0);
+  assert.equal(await page.evaluate(() => window.__mock.attachments.size), 0);
+  // A file that claims to be a png but is not a picture is refused by the backend.
+  await pasteFile(page, "fake.png", "image/png", btoa("not a picture at all"));
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator(".image-block").count(), 0);
+  assert.equal(await page.evaluate(() => window.__mock.attachments.size), 0);
+});
+
+await test("a missing picture shows a message and the note is not changed by opening it", async (page) => {
+  const text = "intro\n\n![](attachments/gone.png)\n\nend\n";
+  await openSeeded(page, "Pic.md", text);
+  await page.waitForSelector(".image-missing:not([hidden])");
+  assert.equal(await page.locator(".raw-block").count(), 0);
+  await page.click("#newNote");
+  await page.waitForTimeout(1000);
+  assert.equal((await files(page))["Pic.md"], text);
+});
+
+await test("picture links that are not safe stay raw blocks", async (page) => {
+  const text = "![](attachments/a.svg)\n\n![](https://example.local/a.png)\n\n![](attachments/../x.png)\n";
+  await openSeeded(page, "Bad.md", text);
+  assert.equal(await page.locator(".raw-block").count(), 3);
+  assert.equal(await page.locator(".image-block").count(), 0);
 });
 
 const DEMO = "# Cell biology\n\nThe **cell** is the basic unit of life. See also `mitosis`.\n\n- Nucleus\n- Mitochondria\n\nTo do:\n\n- [ ] Review chapter 3\n- [x] Draw the cell\n\n> Everything is made of cells.\n\n| organelle | job |\n|---|---|\n| nucleus | DNA |\n";

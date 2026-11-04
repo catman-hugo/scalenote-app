@@ -6,6 +6,8 @@
 //! functions.
 
 pub mod atomic;
+pub mod attachments;
+pub mod base64;
 pub mod logger;
 pub mod names;
 pub mod vault;
