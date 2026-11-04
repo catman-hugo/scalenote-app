@@ -2,7 +2,22 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-04, 0.2.1 built (branch feature/v0.2.1-polish).
+Last updated: 2026-11-04, 0.2.1 released and first tried on Linux; 0.2.2 planned.
+
+## 0.2.2 plan (built, see "0.2.2: built"; from the owner's test of 0.2.1 on Linux, 2026-11-04)
+
+Tried on Linux and found good: the gear icon, "Open another folder" at the top, the sidebar layout, the handle position (also on the divider), hiding the grabbed handle, and the default folder text. Not yet seen: the What's new box.
+
+1. Switching folders. Clicking the folder name at the top left of the sidebar opens a small menu with the recently used folders (the current one marked), "Open another folder" and "Use the default folder". This lets the owner keep a separate folder for each area of life. Open another folder goes straight to the folder picker. It must no longer show the first-run Welcome screen, which today looks like a fresh install. Recent folders are stored in the settings file only (a short list, validated, a folder that no longer exists gives a calm message). To confirm with the owner: whether the separate "Open another folder" button at the top of the sidebar goes away once the name opens this menu.
+2. The first-run Welcome screen can only be closed by choosing, and that stays so on the very first start. Any other time it must be possible to close it (a Close button, the Escape key, and clicking outside). The folder menu in item 1 should make this case rare, but the rule applies to every dialog that is not the first-run disclosure.
+3. Text size: add a smaller option, so there are five: Smallest (80 percent), Small, Normal, Large, Largest. The icons in the sidebar buttons (New page, New folder, Open another folder) scale with the text size, which means sizing every icon in text units instead of fixed pixels. If the Open another folder button stays, its text is centred like the other two buttons.
+4. Rename "New note" to "New page" in the sidebar and in the sentences that name it. To confirm with the owner: whether "note" becomes "page" everywhere in the interface or only on this button.
+5. Toggle block: folding does not work. Clicking the arrow does nothing. Found in the test browser: it is a bug since 0.2.0 (the old text arrow did not fold either), not caused by the new icons. The cause is that the editor sees the fold class change on the block as an edit and puts it back. It needs a test for folding, which did not exist.
+6. Toggle look: the box around the toggle title and the outline of the block are only visible while the owner is working in the toggle. Otherwise only the arrow and the title are shown.
+
+## Release table note
+
+0.2.2 is now the release for the list above. The block editing polish that was planned as 0.2.2 (drag preview, selecting several blocks, plus button, block type row in the selection bar) moves to 0.2.3.
 
 ## 0.2.1: built, not tried on a device (from the owner's first test of 0.2 on the Windows portable build, 2026-11-04)
 
