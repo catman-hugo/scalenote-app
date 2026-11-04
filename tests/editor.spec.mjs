@@ -650,6 +650,48 @@ await test("a moved note with a shuffled order opens and saves again without los
   assert.equal((await files(page))["G.md"], saved);
 });
 
+// ---------- themes and settings ----------
+
+await test("settings: theme, text size, note width and list width apply at once and are saved", async (page) => {
+  await openSeeded(page, "S.md", "hello\n");
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  await page.selectOption('#settings select >> nth=0', "sage");
+  await page.selectOption('#settings select >> nth=1', "125");
+  await page.selectOption('#settings select >> nth=2', "wide");
+  await page.locator('#settings input[type="range"]').fill("360");
+  const look = await page.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    size: document.documentElement.style.fontSize,
+    side: getComputedStyle(document.querySelector("#sidebar")).width,
+    bodyWidth: getComputedStyle(document.querySelector(".note-body")).maxWidth,
+    bg: getComputedStyle(document.body).backgroundColor,
+  }));
+  assert.equal(look.theme, "sage");
+  assert.equal(look.size, "125%");
+  assert.equal(look.side, "360px");
+  assert.equal(look.bodyWidth, "1200px"); // 60rem at 125% text size
+  assert.equal(look.bg, "rgb(248, 250, 247)");
+  const saved = JSON.parse(await page.evaluate(() => window.__mock.getSettings()));
+  assert.deepEqual([saved.theme, saved.fontSize, saved.editorWidth, saved.sidebarWidth], ["sage", 125, "wide", 360]);
+  assert.equal(saved.vaultPath !== undefined, true);
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  // back to the system choice removes the attribute
+  await page.click("#openSettings");
+  await page.selectOption('#settings select >> nth=0', "system");
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-theme")), false);
+});
+
+await test("every theme draws the whole interface without errors", async (page) => {
+  await openSeeded(page, "T.md", RICH);
+  for (const theme of ["light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"]) {
+    await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+    const colours = await page.evaluate(() => [getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector(".sidebar")).backgroundColor]);
+    assert.notEqual(colours[0], colours[1], theme + ": page and list differ");
+  }
+});
+
 if (shots) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {

@@ -44,6 +44,19 @@ export const strings = {
     unsaved: "Not saved yet",
   },
 
+  settings: {
+    open: "Settings",
+    title: "Settings",
+    theme: "Theme",
+    themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
+    fontSize: "Text size",
+    fontSizes: { 90: "Small", 100: "Normal", 112: "Large", 125: "Larger" },
+    editorWidth: "Note width",
+    editorWidths: { narrow: "Narrow", medium: "Medium", wide: "Wide", full: "Full width" },
+    sidebarWidth: "Note list width",
+    close: "Close",
+  },
+
   gutter: {
     handleMark: "⋮⋮",
     handleLabel: "Block actions",

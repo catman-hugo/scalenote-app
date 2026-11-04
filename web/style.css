@@ -345,7 +345,7 @@ body:not(.sidebar-open) .sidebar {
 }
 
 .note-body {
-  max-width: 46rem;
+  max-width: var(--editor-width, 46rem);
   margin: 0 auto;
   min-height: 60vh;
   outline: none;
@@ -851,3 +851,10 @@ body.block-dragging * { cursor: grabbing; user-select: none; }
     padding-right: var(--space-3);
   }
 }
+
+/* ---------- settings dialog ---------- */
+
+.settings-body { display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-4) 0; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.setting-label { color: var(--text); }
+.setting-row select, .setting-row input[type="range"] { min-width: 12rem; max-width: 60%; }

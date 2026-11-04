@@ -26,7 +26,7 @@ await build({
   logLevel: "info",
 });
 
-for (const file of ["index.html", "pentest.html", "style.css", "pentest.css"]) {
+for (const file of ["index.html", "pentest.html", "style.css", "themes.css", "pentest.css"]) {
   await cp(path.join(web, file), path.join(dist, file));
 }
 // A small copy of the logo (128px) for the screens; the full-size one stays in assets/.

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>ScaleNote</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="themes.css" />
   </head>
   <body>
     <div id="app" class="app">
@@ -20,6 +21,7 @@
         <nav id="tree" class="tree" aria-label="Notes"></nav>
         <div class="side-foot">
           <button id="openOther" type="button" class="link-button"></button>
+          <button id="openSettings" type="button" class="link-button"></button>
           <a id="penTest" href="pentest.html"></a>
         </div>
       </aside>
@@ -45,6 +47,7 @@
     <div id="toast" class="toast" role="status" hidden></div>
     <dialog id="disclosure" class="dialog"></dialog>
     <dialog id="welcome" class="dialog"></dialog>
+    <dialog id="settings" class="dialog"></dialog>
 
     <script type="module" src="main.js"></script>
   </body>

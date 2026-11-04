@@ -1,5 +1,7 @@
 // Wires the screens together: settings, the folder, the note list, the editor and saving.
 
+import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appearance.js";
+import { openSettings } from "./settings.js";
 import { backend, BackendError } from "./backend.js";
 import { composeNote, loadNote } from "./compose.js";
 import { newNoteId, withNoteId } from "./blocks.js";
@@ -16,7 +18,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, disclosureAccepted: false, aiEnabled: false },
+  settings: { vaultPath: null, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -91,12 +93,18 @@ async function loadSettings() {
     app.settings = {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
       disclosureAccepted: parsed.disclosureAccepted === true,
+      ...normalizeAppearance(parsed),
       // The assistant is off. There is no switch for it in this version.
       aiEnabled: false,
     };
   } catch (error) {
     logProblem("settings unreadable", error);
   }
+}
+
+function appearanceOf(settings) {
+  const { theme, fontSize, editorWidth, sidebarWidth } = settings;
+  return { theme, fontSize, editorWidth, sidebarWidth };
 }
 
 async function saveSettings() {
@@ -522,6 +530,14 @@ function fillStaticText() {
   el("newFolder").replaceChildren(icon("folder"), document.createTextNode(strings.sidebar.newFolder));
   el("openOther").textContent = strings.sidebar.openFolder;
   el("penTest").textContent = strings.sidebar.penTest;
+  el("openSettings").textContent = strings.settings.open;
+  el("openSettings").addEventListener("click", () => {
+    openSettings(el("settings"), appearanceOf(app.settings), (next) => {
+      Object.assign(app.settings, next);
+      applyAppearance(document.documentElement, app.settings);
+      saveSettings();
+    });
+  });
   el("empty").textContent = strings.editor.noNoteOpen;
   el("title").setAttribute("aria-label", strings.editor.titleLabel);
   el("toggle").replaceChildren(icon("menu"));
@@ -594,6 +610,7 @@ async function start() {
   startFlushTriggers();
 
   await loadSettings();
+  applyAppearance(document.documentElement, app.settings);
   if (!app.settings.disclosureAccepted) {
     await showDisclosure();
     app.settings.disclosureAccepted = true;
