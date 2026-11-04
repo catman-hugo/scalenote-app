@@ -114,3 +114,9 @@ Context. The first test of 0.2 on Windows found four small interface problems (W
 Decision. They go into a patch release 0.2.1 that comes before 0.3 and holds no new features. That keeps 0.3 (search, links) free of interface repairs, and lets findings from the Android phone and Linux be added to the same patch. The gear icon is an svg using the theme colour, and no emoji is used anywhere in the app. The list is in `PROGRESS.md`.
 Alternatives. Waiting for the 1.0.0 hardening (rejected: the problems are visible every day). Mixing them into 0.3 (rejected: it makes 0.3 harder to test).
 Cost. One more release to build and test.
+
+## 2026-11-04: Keep formatting inside the markdown file, no sidecar file
+Context. Markdown cannot store text colour, underline, sub and superscript. The owner asked whether a separate file next to each note could hold them, with a button to convert to and from Obsidian, so the raw text stays free of syntax.
+Decision. Formatting stays inside the note. Highlight is written as `==text==` (Obsidian reads it natively). Colour, underline, subscript and superscript are written as small inline html tags, using a fixed palette that follows the theme. Only text the user actually styled gets tags. The editor shows the result, so the raw syntax is only seen in the markdown view. The exact tags are checked against Obsidian's documentation before building.
+Alternatives. A sidecar file per note. Not chosen: formatting tied to text positions drifts or vanishes when the note is edited in another program or moved without its partner file, two files per note add sync and backup risk, colours would not show in Obsidian without a conversion, and it needs a lossy two-way converter, which 0.2 dropped on purpose.
+Cost. Notes with colour contain html that other markdown programs may show as raw tags. Undoing this later means writing a converter.

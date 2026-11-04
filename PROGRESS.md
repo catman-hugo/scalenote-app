@@ -18,7 +18,9 @@ The note width setting works (checked by the owner with a note open); it only lo
 6. Block handle position: it sits at the top edge of its block, so it looks off-centre next to headings, code and lists, and badly placed next to the divider (a 2 pixel line). Centre it on the first line of the block, and give the divider a proper spot.
 7. While dragging, the handle that was grabbed stays visible. Hide it (or turn it into the drag preview) during the drag.
 
-Also still open for 0.2.1 or later: the owner's decision on inline html styles (underline, highlight, colour, sub and superscript), and anything found on the Android phone and Linux.
+8. Selection bar: Notion also shows a block type row there. Notes and a proposed split are in `docs/notion-reference-notes.md`.
+
+Also still open for 0.2.1 or later: the inline styles (decided 2026-11-04, see DECISIONS.md: highlight as `==text==`, colour, underline, sub and superscript as inline html from a fixed palette; not built yet, to be placed in a release), and anything found on the Android phone and Linux.
 
 ## 0.2 state (branch feature/v0.2-editor, pull request #9)
 
@@ -34,7 +36,7 @@ Built and tried only where the builder can run it (a test browser with a pretend
 Tests: `npm test` (JS, 53 tests), `cargo test -p scalenote-core --locked` (33 unit, 1 crash test, 14 vault tests), `node tests/editor.spec.mjs` (browser tests, they also fail on any page error or policy violation). The browser tests never reach the real GitHub.
 
 Not done:
-- Underline, highlight, colour, subscript and superscript: waiting for the owner's decision on which inline html is allowed.
+- Underline, highlight, colour, subscript and superscript: decided 2026-11-04: highlight as `==text==`, the others as inline html from a fixed palette. Not built yet.
 - Automatic installing of updates: needs a signing key in GitHub secrets. Until then the notice opens the download page.
 - Following block links (`[[Note#^id]]`): 0.3.
 - Only text blocks can be turned into other block types. Callouts, toggles and tables cannot be dragged into each other.
@@ -71,7 +73,7 @@ Not done or not tested:
 |---|---|---|
 | 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress. Builds for Windows, Linux and Android are made by GitHub and published as a release. Tested by hand: Linux Mint (opens, mouse works) and Windows 11 (mouse, touchpad, finger, pen pressure and eraser button work). Android (POCO F7 Pro, Android 16): installs, runs and finger drawing works; the top bar was hidden under the status bar (fixed, not yet re-tested). Not tested: Android pen, Fedora, pen barrel button (does not work on the test pen in other apps either), tilt (not reported on the test pen), an editor saving a markdown file |
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | built, not tested on a device (see above) |
-| 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline html styles waiting for a decision |
+| 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline styles decided, not built |
 | 0.2.1 | Polish from the first device test of 0.2 (see "Planned for 0.2.1"). No new features | planned, comes before 0.3 |
 | 0.2.2 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together | planned, after 0.2.1 |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
@@ -105,3 +107,5 @@ Nothing has been reviewed by a human yet.
 
 ## Block layout: columns (waiting for a decision)
 Owner request (2026-11-04): drag a block next to another one to make columns. Markdown has no columns, and the notes must stay plain markdown that Obsidian can open. A format has to be chosen first, for example an Obsidian-style callout block holding the columns, or a small html table. The choice affects what other programs show, so it needs the owner's decision before anything is built. Proposed home: after 0.3, as its own slice, once 0.2.2 has the drag preview and multi-select in place.
+
+The owner's Notion screenshots (drop on the left or right edge of a block makes columns, vertical and horizontal drop lines, a half see-through drag preview) are written up in `docs/notion-reference-notes.md`. The format has to hold two or more columns of several blocks each.
