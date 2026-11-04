@@ -33,6 +33,9 @@
   --space-5: 24px;
   --space-6: 40px;
 
+  /* Lets the system draw scrollbars and form controls in the matching light or dark style. */
+  color-scheme: light dark;
+
   --radius: 4px;
   --sidebar-width: 280px;
 }
@@ -411,6 +414,11 @@ body:not(.sidebar-open) .sidebar {
 
 .note-body ul[data-type="taskList"] li > div {
   flex: 1;
+}
+
+.note-body ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--text-soft);
+  text-decoration: line-through;
 }
 
 .note-body blockquote {
