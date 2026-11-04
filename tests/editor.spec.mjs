@@ -1140,7 +1140,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -1232,6 +1232,133 @@ await test("the menu stays inside the window when opened near the bottom right",
   const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
   assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= size.w && box.y + box.height <= size.h, JSON.stringify({ box, size }));
 }, ctxOpts);
+
+// ---------- 0.2.5: moving pages and folders in the page list ----------
+
+async function dragEntry(page, fromPath, to, { drop = true } = {}) {
+  const from = await page.locator(`.tree-button[data-path="${fromPath}"]`).boundingBox();
+  let x, y;
+  if (to === "empty") {
+    const tree = await page.locator("#tree").boundingBox();
+    x = tree.x + tree.width / 2; y = tree.y + tree.height - 20;
+  } else {
+    const target = await page.locator(`.tree-button[data-path="${to}"]`).boundingBox();
+    x = target.x + target.width / 2; y = target.y + target.height / 2;
+  }
+  await page.mouse.move(from.x + 30, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 30, from.y + from.height / 2 + 20, { steps: 4 });
+  await page.mouse.move(x, y, { steps: 8 });
+  if (drop) await page.mouse.up();
+}
+const mockState = (page) => page.evaluate(() => ({ folders: [...window.__mock.folders].filter(Boolean).sort(), files: [...window.__mock.files.keys()].sort() }));
+async function moveSetup(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    for (const f of ["Biology", "Archive", "Archive/Old"]) window.__mock.folders.add(f);
+    window.__mock.files.set("Biology/Cells.md", "cells\n");
+    window.__mock.files.set("Plan.md", "plan\n");
+    window.__mock.files.set("Archive/Old/Deep.md", "deep\n");
+  });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+}
+
+await test("dragging a page onto a folder moves it in, shows a preview while dragging, and opens the folder", async (page) => {
+  await moveSetup(page);
+  await dragEntry(page, "Plan.md", "Biology", { drop: false });
+  assert.equal(await page.locator(".drag-preview").count(), 1, "a preview follows the pointer");
+  assert.match(await page.textContent(".drag-preview"), /Plan/);
+  assert.equal(await page.locator(".tree-row.drop-target").count(), 1, "the receiving folder is marked");
+  await page.mouse.up();
+  await page.waitForSelector('.tree-button[data-path="Biology/Plan.md"]');
+  assert.equal(await page.locator(".drag-preview").count(), 0);
+  assert.equal(await page.evaluate(() => document.body.classList.contains("tree-dragging")), false);
+  const state = await mockState(page);
+  assert.ok(state.files.includes("Biology/Plan.md") && !state.files.includes("Plan.md"), JSON.stringify(state));
+  assert.equal(await page.locator('.tree-button[data-path="Plan.md"]').count(), 0);
+}, { settings: existingUser({ updates: false }) });
+
+await test("dragging a folder moves everything in it, and dragging to the empty space moves to the top", async (page) => {
+  await moveSetup(page);
+  await dragEntry(page, "Biology", "Archive");
+  await page.waitForSelector('.tree-button[data-path="Archive/Biology"]');
+  let state = await mockState(page);
+  assert.ok(state.files.includes("Archive/Biology/Cells.md") && !state.folders.includes("Biology"), JSON.stringify(state));
+  await dragEntry(page, "Archive/Biology", "empty");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  state = await mockState(page);
+  assert.ok(state.files.includes("Biology/Cells.md") && !state.folders.includes("Archive/Biology"), JSON.stringify(state));
+}, { settings: existingUser({ updates: false }) });
+
+await test("a folder cannot be dropped into itself or below itself, and Escape cancels a drag", async (page) => {
+  await moveSetup(page);
+  await page.click('.tree-button[data-path="Archive"]'); // open it, so its subfolder is in the list
+  await page.waitForSelector('.tree-button[data-path="Archive/Old"]');
+  const before = await mockState(page);
+  await dragEntry(page, "Archive", "Archive/Old", { drop: false });
+  assert.equal(await page.locator(".tree-row.drop-target").count(), 0, "no folder is offered");
+  await page.mouse.up();
+  await dragEntry(page, "Archive", "Archive", { drop: false });
+  assert.equal(await page.locator(".tree-row.drop-target").count(), 0);
+  await page.mouse.up();
+  await dragEntry(page, "Plan.md", "Biology", { drop: false });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".drag-preview").count(), 0, "Escape ends the drag");
+  await page.mouse.up();
+  assert.deepEqual(await mockState(page), before, "nothing moved");
+}, { settings: existingUser({ updates: false }) });
+
+await test("a drag does not open the page it started on, and a plain click still does", async (page) => {
+  await moveSetup(page);
+  await dragEntry(page, "Plan.md", "Biology", { drop: false });
+  await page.mouse.up();
+  await page.waitForSelector('.tree-button[data-path="Biology/Plan.md"]');
+  assert.equal(await page.locator(".tree-row.current").count(), 0, "no page was opened by the drag");
+  await page.click('.tree-button[data-path="Biology/Plan.md"]');
+  await page.waitForSelector("#editor .note-body");
+}, { settings: existingUser({ updates: false }) });
+
+await test("a name that is already taken in the target stops the move and says so", async (page) => {
+  await moveSetup(page);
+  await page.evaluate(() => window.__mock.files.set("Biology/Plan.md", "other\n"));
+  await page.click("#newFolder");
+  await dragEntry(page, "Plan.md", "Biology");
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.match(await page.textContent("#bannerText"), /already exists/);
+  const state = await mockState(page);
+  assert.ok(state.files.includes("Plan.md") && state.files.includes("Biology/Plan.md"), JSON.stringify(state));
+}, { settings: existingUser({ updates: false }) });
+
+await test("moving the open page keeps what was typed and keeps the page open", async (page) => {
+  await moveSetup(page);
+  await page.click('.tree-button[data-path="Plan.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await page.locator(".note-body p").click();
+  await page.keyboard.type(" typed");
+  await dragEntry(page, "Plan.md", "Biology");
+  await page.waitForSelector('.tree-button[data-path="Biology/Plan.md"]');
+  const saved = await files(page);
+  assert.ok(/plan typed/.test(saved["Biology/Plan.md"]) && !("Plan.md" in saved), JSON.stringify(saved));
+  assert.equal(await page.inputValue("#title"), "Plan");
+  assert.equal(await page.locator('.tree-row.current > .tree-button[data-path="Biology/Plan.md"]').count(), 1);
+}, { settings: existingUser({ updates: false }) });
+
+await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
+  await moveSetup(page);
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to"]);
+  await page.click(".context-menu .menu-item:has-text('Move to')");
+  const names = await page.locator(".context-menu .menu-item").allTextContents();
+  assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
+  assert.equal(names.includes("Top level"), false, "it is already at the top");
+  await page.click(".context-menu .menu-item:has-text('Archive')");
+  await page.waitForSelector('.tree-button[data-path="Archive/Biology"]');
+  await page.click('.tree-button[data-path="Archive/Biology"]', { button: "right" });
+  await page.click(".context-menu .menu-item:has-text('Move to')");
+  await page.click(".context-menu .menu-item:has-text('Top level')");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+}, { settings: existingUser({ updates: false }) });
 
 if (shots) {
   for (const scheme of ["light", "dark"]) {

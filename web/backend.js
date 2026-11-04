@@ -32,6 +32,8 @@ export const backend = {
   createNote: (parent, title) => call("create_note", { parent, title }),
   createFolder: (parent, name) => call("create_folder", { parent, name }),
   rename: (path, newName) => call("rename_entry", { path, newName }),
+  // Moves a note or folder into another folder ("" is the top). Returns the new path.
+  move: (path, newParent) => call("move_entry", { path, newParent }),
   // `data` is the picture as base64 text. Returns the path to write into the note.
   saveAttachment: (name, data) => call("save_attachment", { name, data }),
   // Returns the picture as a data: address.

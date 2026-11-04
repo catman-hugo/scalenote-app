@@ -39,6 +39,9 @@ export const strings = {
   contextMenu: {
     label: "Actions for this entry",
     rename: "Rename",
+    move: "Move to",
+    moveLabel: "Move to a folder",
+    moveTop: "Top level",
     renameFolderLabel: "Folder name",
     renamePageLabel: "Page name",
   },

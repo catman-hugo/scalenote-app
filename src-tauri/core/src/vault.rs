@@ -382,6 +382,41 @@ impl Vault {
         self.relative_for_new(&target)
     }
 
+    /// Moves a note or a folder (with everything in it) into another folder, keeping its
+    /// name. `new_parent` is the target folder, or "" for the top of the vault. Never
+    /// replaces anything, and a folder cannot be moved into itself or into one of its own
+    /// subfolders. Moving something to the place it already is changes nothing.
+    pub fn move_entry(&self, relative: &str, new_parent: &str) -> Result<String> {
+        if relative.is_empty() {
+            return Err(VaultError::InvalidPath);
+        }
+        let path = self.resolve(relative)?;
+        if !path.exists() {
+            return Err(VaultError::NotFound);
+        }
+        let is_note = path.is_file();
+        if is_note && !has_md_extension(relative) {
+            return Err(VaultError::NotANote);
+        }
+        // Compared as text on purpose: the target is checked to be inside the vault by
+        // `folder_path`, and a folder is only "inside itself" if its own path leads to it.
+        let inside_itself = new_parent == relative || new_parent.starts_with(&format!("{relative}/"));
+        if !is_note && inside_itself {
+            return Err(VaultError::InvalidPath);
+        }
+        let target_folder = self.folder_path(new_parent)?;
+        let file_name = path.file_name().ok_or(VaultError::InvalidPath)?;
+        let target = target_folder.join(file_name);
+        if target == path {
+            return self.relative_for_new(&path);
+        }
+        if target.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        fs::rename(&path, &target)?;
+        self.relative_for_new(&target)
+    }
+
     fn note_path(&self, relative: &str) -> Result<PathBuf> {
         if relative.is_empty() || !has_md_extension(relative) {
             return Err(VaultError::NotANote);

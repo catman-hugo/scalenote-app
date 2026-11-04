@@ -15,6 +15,7 @@ import { createEditor } from "./editor.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
 import { openContextMenu } from "./contextmenu.js";
+import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { pathForVault } from "./images.js";
 import { strings } from "./strings.js";
 
@@ -408,10 +409,50 @@ function drawTree() {
         drawTree();
       },
       renameEntry: (node, button) => renameEntryInline(node, button),
-      entryMenu: (node, x, y, button) =>
-        openContextMenu(x, y, [{ label: strings.contextMenu.rename, run: () => renameEntryInline(node, button) }], { returnFocus: button }),
+      entryMenu: (node, x, y, button) => openEntryMenu(node, x, y, button),
     },
   );
+}
+
+// The menu for one entry: Rename, and Move to when there is somewhere to move it.
+function openEntryMenu(node, x, y, button) {
+  const c = strings.contextMenu;
+  const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
+  const targets = moveTargets(node.path);
+  if (targets.length) {
+    const choose = () =>
+      openContextMenu(x, y, targets.map((t) => ({ label: t.label, indent: t.depth, run: () => moveEntry(node.path, t.folder) })), {
+        returnFocus: button,
+        label: c.moveLabel,
+      });
+    items.push({ label: c.move, run: choose });
+  }
+  openContextMenu(x, y, items, { returnFocus: button });
+}
+
+// Every folder `path` could be moved into, the top of the vault first, in list order.
+function moveTargets(path) {
+  const list = [];
+  if (canMoveInto(path, "")) list.push({ folder: "", label: strings.contextMenu.moveTop, depth: 0 });
+  for (const entry of app.entries) {
+    if (entry.kind === "folder" && canMoveInto(path, entry.path)) list.push({ folder: entry.path, label: entry.name, depth: entry.path.split("/").length });
+  }
+  return list;
+}
+
+// Moves a page or folder into another folder (from a drag or from the menu).
+async function moveEntry(path, folder) {
+  try {
+    // An open page is saved first, so nothing typed so far is written to the old place.
+    if (app.autosave) await app.autosave.flush();
+    const newPath = await backend.move(path, folder);
+    remapPaths(path, newPath);
+    if (folder) app.expanded.add(folder); // so the result can be seen
+  } catch (error) {
+    logProblem("move failed", error);
+    showBanner(errorText(error));
+  }
+  await refreshTree();
 }
 
 // Renames a folder or a page in the list, in place. Enter keeps the new name, Escape or
@@ -777,6 +818,7 @@ function guardFileDrops() {
 
 function wireEvents() {
   guardFileDrops();
+  enableTreeDrag(el("tree"), moveEntry);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("vaultButton").addEventListener("click", showFolderMenu);
