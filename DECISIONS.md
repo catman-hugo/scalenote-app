@@ -110,7 +110,7 @@ Decision. The viewport has `interactive-widget=resizes-content` and the page hei
 Underline, highlight, colour, subscript and superscript (stored as inline html). The list of html tags and attributes that may be kept needs the owner's decision first. The converter for old ScaleNote notes was dropped by the owner.
 
 ## 2026-11-04: A 0.2.1 polish release before 0.3
-Context. The first test of 0.2 on Windows found five small interface problems (What's new box too small, Settings link hard to see, Open another folder in the wrong place, note width seeming to do nothing, a squished sidebar when narrow). The owner wants them fixed before 1.0.0 but not right now.
+Context. The first test of 0.2 on Windows found four small interface problems (What's new box too small, Settings link hard to see, Open another folder in the wrong place, a squished sidebar when narrow). A fifth, note width seeming to do nothing, was not a bug: no note was open. The owner wants them fixed before 1.0.0 but not right now.
 Decision. They go into a patch release 0.2.1 that comes before 0.3 and holds no new features. That keeps 0.3 (search, links) free of interface repairs, and lets findings from the Android phone and Linux be added to the same patch. The gear icon is an svg using the theme colour, and no emoji is used anywhere in the app. The list is in `PROGRESS.md`.
 Alternatives. Waiting for the 1.0.0 hardening (rejected: the problems are visible every day). Mixing them into 0.3 (rejected: it makes 0.3 harder to test).
 Cost. One more release to build and test.

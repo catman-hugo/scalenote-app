@@ -11,8 +11,9 @@ A small fix release between 0.2 and 0.3, so these are done well before 1.0.0 and
 1. The "What's new" box is too small for its text and scrolls inside a small area. Make the box taller and wider (it can use most of the window), and keep the release notes short.
 2. The Settings link at the bottom left is hard to see. Replace it with a gear icon drawn as an svg that takes its colour from the theme, with the text label kept as its accessible name. No emoji anywhere in the app. The same pass moves any remaining typed symbols (the block handle dots and the toggle arrow) into the svg icon set, so there is one icon set.
 3. Move "Open another folder" to the top of the sidebar.
-4. The note width setting seemed to do nothing. The browser tests show it working with a note open, so the first step is to reproduce it in the real window (was a note open? is the width capped by something else?), then fix the cause and add a test that checks the real page width.
-5. The sidebar items get squished when the list is dragged narrow (the New note and New folder buttons wrap, the bottom links stack). Find a layout that holds up: for example icon-only buttons below a width, a sensible minimum list width, and bottom links that do not wrap.
+4. The sidebar items get squished when the list is dragged narrow (the New note and New folder buttons wrap, the bottom links stack). Find a layout that holds up: for example icon-only buttons below a width, a sensible minimum list width, and bottom links that do not wrap.
+
+The note width setting works (checked by the owner with a note open); it only looked unchanged because no note was open. Possible small improvement: say so in the settings or show a preview.
 
 Also still open for 0.2.1 or later: the owner's decision on inline html styles (underline, highlight, colour, sub and superscript), and anything found on the Android phone and Linux.
 
