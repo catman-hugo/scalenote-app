@@ -16,6 +16,9 @@
   --warn-bg: #fbeeda;
   --warn-text: #5c3a00;
   --bad: #a3231b;
+  --kind-ok: #2f7a3d;
+  --kind-warn: #a15c00;
+  --kind-info: #1f5fa8;
 
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
@@ -55,6 +58,9 @@
     --warn-bg: #3d3018;
     --warn-text: #f2d9a6;
     --bad: #f08a80;
+    --kind-ok: #7fd18f;
+    --kind-warn: #f0b45a;
+    --kind-info: #8fbcf0;
   }
 }
 
@@ -495,6 +501,139 @@ body:not(.sidebar-open) .sidebar {
 .raw-text:focus-visible {
   outline: none;
 }
+
+/* ---------- callouts, toggles, tables, pictures ---------- */
+
+.callout {
+  --kind: var(--accent);
+  border-left: 3px solid var(--kind);
+  background: var(--bg-code);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+.callout[data-kind="tip"],
+.callout[data-kind="success"] { --kind: var(--kind-ok); }
+.callout[data-kind="warning"] { --kind: var(--kind-warn); }
+.callout[data-kind="danger"] { --kind: var(--bad); }
+.callout[data-kind="info"],
+.callout[data-kind="question"] { --kind: var(--kind-info); }
+
+.callout-head,
+.toggle-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.callout-kind,
+.callout-title,
+.toggle-summary,
+.image-alt,
+.link-input {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px var(--space-2);
+  min-height: 30px;
+}
+
+.callout-kind { flex: none; color: var(--kind); font-weight: 600; }
+.callout-title,
+.toggle-summary { flex: 1; min-width: 0; font-weight: 600; }
+
+.callout-body > * + *,
+.toggle-body > * + * { margin-top: var(--space-2); }
+
+.toggle {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+.toggle-fold {
+  flex: none;
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-color: transparent;
+}
+
+.toggle.folded .toggle-body { display: none; }
+.toggle.folded .toggle-fold { transform: rotate(-90deg); }
+
+.note-body table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.note-body th,
+.note-body td {
+  border: 1px solid var(--line);
+  padding: var(--space-1) var(--space-2);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.note-body th {
+  background: var(--bg-code);
+  text-align: left;
+}
+
+.note-body td p,
+.note-body th p { margin: 0; }
+.note-body .selectedCell { background: var(--accent-soft); }
+
+.image-block { margin: 0; }
+.image-frame { display: flex; justify-content: center; }
+.image-img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.image-img:not([src]) { display: none; }
+.image-missing { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
+.image-alt { display: block; width: 100%; margin-top: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.image-block.ProseMirror-selectednode .image-img { outline: 2px solid var(--accent); }
+
+/* ---------- floating toolbars ---------- */
+
+.float-bar {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: calc(100vw - 16px);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: var(--space-1);
+}
+
+.float-bar[hidden],
+.link-row[hidden],
+.bar-button[hidden] { display: none; }
+
+.bar-button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border-color: transparent;
+}
+
+.bar-button.active { background: var(--accent-soft); }
+.mark-bold { font-weight: 700; }
+.mark-italic { font-style: italic; }
+.mark-strike { text-decoration: line-through; }
+.mark-code { font-family: var(--mono); font-size: var(--text-s); }
+
+.link-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.link-input { min-width: 14rem; flex: 1; }
+.link-error { color: var(--bad); font-size: var(--text-s); width: 100%; }
+.link-error:empty { display: none; }
 
 /* ---------- slash menu ---------- */
 

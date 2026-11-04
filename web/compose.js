@@ -4,6 +4,7 @@
 // file can be tested without an editor.
 
 import { newNoteId, splitBlocks, splitFrontmatter, withNoteId } from "./blocks.js";
+import { readRichBlock, writeBlock } from "./richblocks.js";
 
 // Block types the editor can show and edit. Anything else is kept as a raw block.
 const EDITABLE_TYPES = new Set([
@@ -19,6 +20,15 @@ const EDITABLE_TYPES = new Set([
 
 function rawNode(src, gap) {
   return { type: "rawBlock", attrs: { src, base: src, gap } };
+}
+
+// Callouts, toggles, tables and images: editable only when they match a strict shape.
+function richNode(kind, src, io) {
+  try {
+    return readRichBlock(kind, src, io);
+  } catch {
+    return null;
+  }
 }
 
 function oneEditableNode(src, parse) {
@@ -46,9 +56,10 @@ export function loadNote(text, { parse, serialize }) {
   const { lead, blocks } = splitBlocks(body);
   const content = blocks.map(({ src, gap, kind }) => {
     if (kind === "raw") return rawNode(src, gap);
-    const node = oneEditableNode(src, parse);
+    const isRich = ["callout", "details", "table", "image"].includes(kind);
+    const node = isRich ? richNode(kind, src, { parse, serialize }) : oneEditableNode(src, parse);
     if (!node) return rawNode(src, gap);
-    const base = trimNewlines(serialize({ type: "doc", content: [node] }));
+    const base = writeBlock(node, serialize);
     return { ...node, attrs: { ...(node.attrs || {}), src, base, gap } };
   });
   const doc = { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
@@ -80,7 +91,7 @@ export function composeNote(parts, doc, { serialize, assignId = true, makeId = n
       const src = attrs.src || "";
       return { type: node.type, text: src, unchanged: src === attrs.base && attrs.gap != null, gap: attrs.gap };
     }
-    const markdown = trimNewlines(serialize({ type: "doc", content: [node] }));
+    const markdown = writeBlock(node, serialize);
     const unchanged = typeof attrs.src === "string" && markdown === attrs.base;
     return { type: node.type, text: unchanged ? attrs.src : markdown, unchanged: unchanged && attrs.gap != null, gap: attrs.gap };
   });

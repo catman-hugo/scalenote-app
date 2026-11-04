@@ -7,6 +7,17 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
 import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
+import { Callout, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
+import { attachToolbars } from "./toolbar.js";
+
+// Set by createEditor; lets the Mod-k shortcut open the link box in the toolbar.
+let toolbars = null;
+const LinkShortcut = Extension.create({
+  name: "linkShortcut",
+  addKeyboardShortcuts() {
+    return { "Mod-k": () => (toolbars && !this.editor.state.selection.empty ? (toolbars.openLink(), true) : false) };
+  },
+});
 
 // Remembers, on every block, the exact text it had when the note was opened (`src`), how
 // the editor wrote that same block back then (`base`), and the blank lines after it
@@ -17,7 +28,7 @@ const SourceKeeper = Extension.create({
     const keep = { default: null, rendered: false };
     return [
       {
-        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule"],
+        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "toggle", "table", "imageBlock"],
         attributes: { src: keep, base: keep, gap: keep },
       },
     ];
@@ -98,12 +109,29 @@ function slashItems() {
     { title: s.quote, words: "quote blockquote", run: (e, r) => clear(e, r).toggleBlockquote().run() },
     { title: s.codeBlock, words: "code block", run: (e, r) => clear(e, r).toggleCodeBlock().run() },
     { title: s.divider, words: "divider rule line hr", run: (e, r) => clear(e, r).setHorizontalRule().run() },
+    {
+      id: "callout",
+      title: s.callout,
+      words: "callout note info box admonition",
+      run: (e, r) => clear(e, r).insertContent({ type: "callout", attrs: { kind: "note" }, content: [{ type: "paragraph" }] }).run(),
+    },
+    {
+      id: "toggle",
+      title: s.toggle,
+      words: "toggle details collapse fold summary",
+      run: (e, r) => clear(e, r).insertContent({ type: "toggle", attrs: { summary: "" }, content: [{ type: "paragraph" }] }).run(),
+    },
+    { id: "table", title: s.table, words: "table grid rows columns", run: (e, r) => clear(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   ];
 }
 
-function filterItems(query) {
+// Blocks that cannot sit inside a callout or a toggle (see richnodes.js).
+const TOP_LEVEL_ONLY = new Set(["callout", "toggle", "table", "image"]);
+
+function filterItems(query, editor) {
   const q = query.trim().toLowerCase();
-  return slashItems().filter((item) => !q || `${item.title} ${item.words}`.toLowerCase().includes(q));
+  const inside = editor && (editor.isActive("callout") || editor.isActive("toggle"));
+  return slashItems().filter((item) => (!inside || !TOP_LEVEL_ONLY.has(item.id)) && (!q || `${item.title} ${item.words}`.toLowerCase().includes(q)));
 }
 
 // The floating list. Plain DOM, positioned under the cursor, closed by Escape or by
@@ -202,7 +230,7 @@ const SlashMenu = Extension.create({
         char: "/",
         startOfLine: false,
         allowSpaces: false,
-        items: ({ query }) => filterItems(query),
+        items: ({ query, editor }) => filterItems(query, editor),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: renderSlashMenu,
       }),
@@ -210,7 +238,8 @@ const SlashMenu = Extension.create({
   },
 });
 
-export function createEditor(element, onChange) {
+// `options.loadImage(path)` gives the picture for an image block as a data: address.
+export function createEditor(element, onChange, options = {}) {
   const editor = new Editor({
     element,
     // The page has a strict content security policy that forbids injected styles, so the
@@ -229,7 +258,12 @@ export function createEditor(element, onChange) {
       Placeholder.configure({ placeholder: strings.editor.placeholder }),
       SourceKeeper,
       RawBlock,
+      Callout,
+      Toggle,
+      ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
+      ...tableExtensions,
       SlashMenu,
+      LinkShortcut,
     ],
     content: { type: "doc", content: [{ type: "paragraph" }] },
     editorProps: {
@@ -237,5 +271,6 @@ export function createEditor(element, onChange) {
     },
     onUpdate: () => onChange(),
   });
+  toolbars = attachToolbars(editor);
   return editor;
 }

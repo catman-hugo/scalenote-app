@@ -46,10 +46,10 @@ test("random documents always come back byte for byte", () => {
 });
 
 test("syntax the editor does not know is kept as raw blocks", () => {
-  assert.deepEqual(kinds("| a | b |\n|---|---|\n| 1 | 2 |"), ["raw"]);
+  assert.deepEqual(kinds("| a | b |\n|---|---|\n| 1 | 2 |"), ["table"]); // a candidate: richblocks.js may still refuse it
   assert.deepEqual(kinds("See [[Other note]] for more"), ["raw"]);
   assert.deepEqual(kinds("<div>html</div>"), ["raw"]);
-  assert.deepEqual(kinds("> [!note] Title\n> body"), ["raw"]);
+  assert.deepEqual(kinds("> [!note] Title\n> body"), ["callout"]);
   assert.deepEqual(kinds("$$\nx^2\n$$"), ["raw"]);
   assert.deepEqual(kinds("Text with ==highlight== inside"), ["raw"]);
   assert.deepEqual(kinds("![[image.png]]"), ["raw"]);

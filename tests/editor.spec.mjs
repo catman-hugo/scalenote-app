@@ -99,8 +99,8 @@ await test("slash menu offers every block and filters", async (page) => {
   await page.click("#editor .note-body");
   await page.keyboard.type("/");
   await page.waitForSelector(".slash-menu");
-  assert.equal(await page.locator(".slash-item").count(), 11);
-  await page.keyboard.type("to");
+  assert.equal(await page.locator(".slash-item").count(), 14);
+  await page.keyboard.type("to-do");
   assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["To-do list"]);
   await page.keyboard.press("Enter");
   await page.keyboard.type("buy milk");
@@ -153,15 +153,15 @@ await test("editing one paragraph leaves every other byte alone", async (page) =
 
 await test("a raw block can be edited as text and is saved exactly", async (page) => {
   await start(page);
-  await seed(page, "R.md", "before\n\n| a | b |\n|---|---|\n\nafter\n");
+  await seed(page, "R.md", "before\n\n<div>a</div>\n\nafter\n");
   await page.click("#newFolder");
   await page.click('.tree-button[data-path="R.md"]');
   await page.waitForSelector(".raw-text");
   await page.locator(".raw-text").click();
   await page.keyboard.press("Control+End");
-  await page.keyboard.type("\n| 1 | 2 |");
+  await page.keyboard.type("\n<div>b</div>");
   await waitSaved(page);
-  assert.match((await files(page))["R.md"], /before\n\n\| a \| b \|\n\|---\|---\|\n\| 1 \| 2 \|\n\nafter\n$/);
+  assert.match((await files(page))["R.md"], /before\n\n<div>a<\/div>\n<div>b<\/div>\n\nafter\n$/);
 });
 
 await test("a change made by another program becomes a conflict copy and the disk version loads", async (page) => {
@@ -224,6 +224,104 @@ await test("tablet width: the list slides over the note and closes after opening
   await page.click("#toggle");
   assert.equal(await page.isVisible("#sidebar"), true);
 }, { viewport: { width: 390, height: 800 } });
+
+// ---------- 0.2.1: formatting toolbar and rich blocks ----------
+
+const RICH = [
+  "# Rich", "", "> [!tip] Remember", "> Cells are small.", "", "<details>", "<summary>Why</summary>", "", "Because.", "", "</details>", "",
+  "| name | qty |", "| :--- | ---: |", "| apple | 3 |", "", "A closing line", "",
+].join("\n");
+
+async function openSeeded(page, name, text) {
+  await start(page);
+  await seed(page, name, text);
+  await page.click("#newFolder");
+  await page.click(`.tree-button[data-path="${name}"]`);
+  await page.waitForSelector("#editor .note-body");
+}
+
+await test("the selection toolbar makes bold, italic, strike and code, and links", async (page) => {
+  await openSeeded(page, "F.md", "alpha beta gamma\n");
+  const p = page.locator(".note-body p");
+  await p.click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+ArrowRight"); // select one character: the bar must appear
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Shift+ArrowRight");
+  await page.waitForSelector(".float-bar:not([hidden])");
+  await page.click('.float-bar [aria-label="Bold"]');
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Shift+ArrowRight");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowRight");
+  await page.click('.float-bar [aria-label="Italic"]');
+  await waitSaved(page);
+  assert.match((await files(page))["F.md"], /\*\*alpha\*\* ?(\*|_)beta(\*|_) gamma/);
+  // link
+  await page.keyboard.press("End");
+  await page.keyboard.press("Shift+Home");
+  await page.click('.float-bar [aria-label="Link"]');
+  await page.fill(".link-input", "javascript:alert(1)");
+  await page.keyboard.press("Enter");
+  assert.match(await page.textContent(".link-error"), /web and mail/);
+  await page.fill(".link-input", "example.local");
+  await page.keyboard.press("Enter");
+  await waitSaved(page);
+  assert.match((await files(page))["F.md"], /\]\(https:\/\/example\.local\)/);
+  assert.doesNotMatch((await files(page))["F.md"], /javascript/);
+});
+
+await test("callouts, toggles and tables are editable blocks and an untouched note saves byte for byte", async (page) => {
+  await openSeeded(page, "Rich.md", RICH);
+  assert.equal(await page.locator(".raw-block").count(), 0);
+  assert.equal(await page.locator(".callout").count(), 1);
+  assert.equal(await page.locator(".toggle").count(), 1);
+  assert.equal(await page.locator(".note-body table").count(), 1);
+  await page.click("#newNote"); // leaving flushes; nothing may be rewritten
+  await page.waitForTimeout(1000);
+  assert.equal((await files(page))["Rich.md"], RICH);
+});
+
+await test("editing a callout title, a toggle and a table cell changes only those blocks", async (page) => {
+  await openSeeded(page, "Rich.md", RICH);
+  await page.fill(".callout-title", "Remember well");
+  await page.fill(".toggle-summary", "Why not");
+  await page.locator(".note-body td").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" pie");
+  await page.click('.float-bar [aria-label="Add row"]');
+  await waitSaved(page);
+  const saved = (await files(page))["Rich.md"].replace(/id: [0-9a-f-]{20,}\n/, "");
+  assert.match(saved, /^# Rich\n\n> \[!tip\] Remember well\n> Cells are small\.\n\n<details>\n<summary>Why not<\/summary>\n\nBecause\.\n\n<\/details>\n\n\| name \| qty \|\n\| :--- \| ---: \|\n\| apple pie \| 3 \|\n\|  \|  \|\n\nA closing line\n$/m);
+});
+
+await test("slash menu inserts a callout, a toggle and a table", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  await page.keyboard.type("/callout");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("inside the callout");
+  await waitSaved(page);
+  assert.match((await files(page))["Untitled.md"], /> \[!note\]\n> inside the callout\n$/);
+  // Enter on an empty last line leaves the callout; no callout or table can nest inside it.
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/");
+  await page.waitForSelector(".slash-menu");
+  assert.equal(await page.locator(".slash-item", { hasText: /^(Callout|Toggle|Table)$/ }).count(), 0);
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/toggle");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("hidden words");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/table");
+  await page.keyboard.press("Enter");
+  await waitSaved(page);
+  assert.equal(await page.locator(".note-body table").count(), 1);
+  const saved = (await files(page))["Untitled.md"];
+  assert.match(saved, /<details>\n<summary><\/summary>\n\nhidden words\n\n<\/details>\n\n\| {2}\| {2}\| {2}\|\n\| --- \| --- \| --- \|/);
+});
 
 const DEMO = "# Cell biology\n\nThe **cell** is the basic unit of life. See also `mitosis`.\n\n- Nucleus\n- Mitochondria\n\nTo do:\n\n- [ ] Review chapter 3\n- [x] Draw the cell\n\n> Everything is made of cells.\n\n| organelle | job |\n|---|---|\n| nucleus | DNA |\n";
 if (shots) {
