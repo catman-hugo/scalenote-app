@@ -786,29 +786,29 @@ for (const fontSize of [100, 125]) await test(`the sidebar keeps its buttons on 
     const labelShown = (id) => { const l = document.querySelector("#" + id + " .btn-label"); return l.getBoundingClientRect().width > 4; };
     return {
       width: document.getElementById("sidebar").getBoundingClientRect().width,
-      newNote: box("newNote"), newFolder: box("newFolder"), openOther: box("openOther"), openSettings: box("openSettings"),
-      labels: { newNote: labelShown("newNote"), openOther: labelShown("openOther"), openSettings: labelShown("openSettings") },
-      icons: ["newNote", "newFolder", "openOther", "openSettings"].map((id) => document.querySelectorAll("#" + id + " svg").length),
-      names: ["newNote", "newFolder", "openOther", "openSettings"].map((id) => document.getElementById(id).getAttribute("aria-label")),
+      newNote: box("newNote"), newFolder: box("newFolder"), vault: box("vaultButton"), openSettings: box("openSettings"),
+      labels: { newNote: labelShown("newNote"), newFolder: labelShown("newFolder") },
+      icons: ["newNote", "newFolder", "openSettings"].map((id) => document.querySelectorAll("#" + id + " svg").length),
+      names: ["newNote", "newFolder", "openSettings"].map((id) => document.getElementById(id).getAttribute("aria-label")),
       overflow: document.getElementById("sidebar").scrollWidth > document.getElementById("sidebar").clientWidth,
     };
   });
   assert.equal(m.width, 200);
-  assert.ok(m.newNote.height <= 48 && m.newFolder.height <= 48 && m.openOther.height <= 48 && m.openSettings.height <= 48, JSON.stringify(m));
-  assert.ok(Math.abs(m.newNote.y - m.newFolder.y) < 1, "New note and New folder share one row");
+  assert.ok(m.newNote.height <= 48 && m.newFolder.height <= 48 && m.vault.height <= 48 && m.openSettings.height <= 48, JSON.stringify(m));
+  assert.ok(Math.abs(m.newNote.y - m.newFolder.y) < 1, "New page and New folder share one row");
   assert.equal(m.labels.newNote, false);
-  assert.equal(m.labels.openOther, false);
+  assert.equal(m.labels.newFolder, false);
   assert.ok(m.icons.every((n) => n === 1), "every sidebar button has an icon: " + m.icons);
   assert.ok(m.names.every((n) => n && n.length > 3), "every button keeps a name: " + m.names);
   assert.equal(m.overflow, false);
 }, { settings: { vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, sidebarWidth: 200, fontSize }, viewport: { width: 1100, height: 760 } });
 
-await test("at the normal width the sidebar shows labels, with Open another folder at the top and a gear for Settings", async (page) => {
+await test("at the normal width the sidebar shows labels, with the folder name on top and a gear for Settings", async (page) => {
   await page.waitForSelector("#newNote");
   const m = await page.evaluate(() => {
     const y = (id) => document.getElementById(id).getBoundingClientRect().y;
-    const label = (id) => document.querySelector("#" + id + " .btn-label").getBoundingClientRect().width;
-    return { open: y("openOther"), actions: y("newNote"), tree: y("tree"), foot: y("openSettings"), openLabel: label("openOther"), noteLabel: label("newNote"), settingsLabel: label("openSettings"), svg: document.querySelectorAll("#openSettings svg path").length, text: document.getElementById("openSettings").textContent };
+    const label = (id) => (id === "vaultName" ? document.getElementById(id) : document.querySelector("#" + id + " .btn-label")).getBoundingClientRect().width;
+    return { open: y("vaultButton"), actions: y("newNote"), tree: y("tree"), foot: y("openSettings"), openLabel: 20 + label("vaultName"), noteLabel: label("newNote"), settingsLabel: label("openSettings"), svg: document.querySelectorAll("#openSettings svg path").length, text: document.getElementById("openSettings").textContent };
   });
   assert.ok(m.open < m.actions && m.actions < m.tree && m.tree < m.foot, JSON.stringify(m));
   assert.ok(m.openLabel > 40 && m.noteLabel > 30 && m.settingsLabel > 30, JSON.stringify(m));
@@ -900,7 +900,7 @@ await test("the update setting is one switch in Settings and is saved", async (p
   assert.equal(await box.isChecked(), true);
   await box.uncheck();
   assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).updates, false);
-  assert.match(await page.textContent("#settings"), /Nothing from your notes is sent/);
+  assert.match(await page.textContent("#settings"), /Nothing from your pages is sent/);
 }, { settings: existingUser(), before: githubReturns([]) });
 
 await test("Check now says when the version is current, and a failed check is calm", async (page) => {
@@ -937,6 +937,168 @@ await test("the content security policy lets the app talk to the app itself and 
   const connect = CSP.split(";").map((p) => p.trim()).find((p) => p.startsWith("connect-src"));
   assert.equal(connect, "connect-src ipc: http://ipc.localhost https://api.github.com");
   assert.ok(!/unsafe/.test(CSP) && !/\*/.test(CSP));
+});
+
+// ---------- 0.2.2: folder menu, dialogs, text sizes, toggles ----------
+
+const FOLDER_SETTINGS = { vaultPath: "/home/alice/Documents/ScaleNote", recentVaults: ["/home/alice/Documents/ScaleNote", "/home/alice/Work", "/home/alice/gone"], disclosureAccepted: true, lastSeenVersion: VERSION, updates: false };
+const settingsNow = (page) => page.evaluate(() => JSON.parse(window.__mock.getSettings()));
+
+await test("the folder name opens a menu with recent folders, and choosing one switches to it", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.evaluate(() => window.__mock.files.set("Page.md", "hello\n"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Page.md"]');
+  await page.waitForSelector(".note-body");
+  await page.click(".note-body p");
+  await page.keyboard.type(" edited");
+  await page.click("#vaultButton");
+  await page.waitForSelector(".folder-menu");
+  const labels = await page.locator(".folder-menu .menu-item").allTextContents();
+  assert.deepEqual(labels, ["ScaleNote", "Work", "gone", "Open another folder", "Use the default folder"]);
+  assert.equal(await page.locator('.folder-menu [aria-current="true"]').count(), 1);
+  assert.equal(await page.getAttribute("#vaultButton", "aria-expanded"), "true");
+  await page.click('.folder-menu .menu-item:has-text("Work")');
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).vaultPath === "/home/alice/Work");
+  assert.equal(await page.locator(".folder-menu").count(), 0);
+  const now = await settingsNow(page);
+  assert.deepEqual(now.recentVaults.slice(0, 3), ["/home/alice/Work", "/home/alice/Documents/ScaleNote", "/home/alice/gone"]);
+  assert.ok((await files(page))["Page.md"].endsWith("hello edited\n"), "the open page was saved before switching");
+  assert.equal(await page.isVisible("#welcome"), false, "no first-run screen");
+}, { settings: FOLDER_SETTINGS });
+
+await test("Open another folder goes straight to the picker, and Use the default folder works", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.click("#vaultButton");
+  await page.click('.folder-menu .menu-item:has-text("Open another folder")');
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).vaultPath === "/picked/folder");
+  assert.equal(await page.isVisible("#welcome"), false, "the first-run screen is not shown again");
+  assert.equal((await settingsNow(page)).recentVaults[0], "/picked/folder");
+  await page.click("#vaultButton");
+  await page.click('.folder-menu .menu-item:has-text("Use the default folder")');
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).vaultPath === "/vault");
+}, { settings: FOLDER_SETTINGS });
+
+await test("the folder menu closes with Escape and by clicking elsewhere", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.click("#vaultButton");
+  await page.waitForSelector(".folder-menu");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".folder-menu").count(), 0);
+  await page.click("#vaultButton");
+  await page.mouse.click(700, 400);
+  assert.equal(await page.locator(".folder-menu").count(), 0);
+  assert.equal((await settingsNow(page)).vaultPath, FOLDER_SETTINGS.vaultPath, "nothing changed");
+}, { settings: FOLDER_SETTINGS });
+
+await test("a recent folder that cannot be opened gives a calm message and is removed from the list", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.click("#vaultButton");
+  await page.click('.folder-menu .menu-item:has-text("gone")');
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.match(await page.textContent("#bannerText"), /could not be opened, so it was removed/);
+  const now = await settingsNow(page);
+  assert.ok(!now.recentVaults.includes("/home/alice/gone"), JSON.stringify(now.recentVaults));
+  assert.equal(now.vaultPath, FOLDER_SETTINGS.vaultPath, "the folder that was open stays the saved one");
+}, { settings: FOLDER_SETTINGS });
+
+await test("recent folders from a damaged settings file are cleaned, not trusted", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.click("#vaultButton");
+  const labels = await page.locator(".folder-menu .menu-item").allTextContents();
+  assert.deepEqual(labels.slice(0, 2), ["ScaleNote", "Work"]);
+  assert.equal(labels.length, 4, "the bad entries are gone: " + labels);
+}, { settings: { ...FOLDER_SETTINGS, recentVaults: [5, null, "", "/home/alice/Work", "/home/alice/Work", "bad\u0000path", { a: 1 }] } });
+
+await test("Settings and What's new close with Escape or by clicking outside the box; the first-run screens do not", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isVisible("#settings"), false);
+  await page.click("#openSettings");
+  const box = await page.locator("#settings").boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + 20); // inside: stays open
+  assert.equal(await page.isVisible("#settings"), true);
+  await page.mouse.click(5, 5); // outside
+  assert.equal(await page.isVisible("#settings"), false);
+  await page.click("#updateDetails");
+  await page.waitForSelector("#whatsnew[open]");
+  await page.mouse.click(5, 5);
+  assert.equal(await page.isVisible("#whatsnew"), false);
+}, { settings: { ...FOLDER_SETTINGS, updates: true }, before: githubReturns(NEWER) });
+
+await test("the first-run disclosure and folder choice cannot be dismissed", async (page) => {
+  await page.waitForSelector("#disclosure[open]");
+  await page.keyboard.press("Escape");
+  await page.mouse.click(5, 5);
+  assert.equal(await page.isVisible("#disclosure"), true);
+  await page.click("#disclosure button");
+  await page.waitForSelector("#welcome[open]");
+  await page.keyboard.press("Escape");
+  await page.mouse.click(5, 5);
+  assert.equal(await page.isVisible("#welcome"), true);
+});
+
+await test("there are five text sizes, the smallest is 80 percent, and the icons scale with the text", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  const iconWidth = () => page.evaluate(() => document.querySelector("#newNote svg").getBoundingClientRect().width);
+  const normal = await iconWidth();
+  await page.click("#openSettings");
+  const options = await page.locator("#settings select").nth(1).locator("option").allTextContents();
+  assert.deepEqual(options, ["Smallest", "Small", "Normal", "Large", "Largest"]);
+  await page.locator("#settings select").nth(1).selectOption("80");
+  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "80%");
+  const small = await iconWidth();
+  await page.locator("#settings select").nth(1).selectOption("125");
+  const large = await iconWidth();
+  assert.ok(small < normal && normal < large, `icon widths ${small}, ${normal}, ${large}`);
+  assert.equal((await settingsNow(page)).fontSize, 125);
+}, { settings: FOLDER_SETTINGS });
+
+await test("the sidebar says page, not note", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  assert.equal(await page.textContent("#newNote"), "New page");
+  assert.match(await page.textContent("#empty"), /Open a page from the list/);
+  const text = await page.evaluate(() => document.getElementById("app").innerText);
+  assert.ok(!/\bnotes?\b/i.test(text), "the word note is still on screen: " + text);
+}, { settings: FOLDER_SETTINGS });
+
+const TOGGLE = ["Intro", "", "<details>", "<summary>Title</summary>", "", "Hello", "", "flip", "", "</details>", ""].join("\n");
+
+await test("a toggle folds and unfolds, and folding is not an edit", async (page) => {
+  await openSeeded(page, "T.md", TOGGLE);
+  await page.waitForSelector(".toggle");
+  const state = () => page.evaluate(() => ({ folded: document.querySelector(".toggle").classList.contains("folded"), body: getComputedStyle(document.querySelector(".toggle-body")).display, expanded: document.querySelector(".toggle-fold").getAttribute("aria-expanded") }));
+  assert.deepEqual(await state(), { folded: false, body: "block", expanded: "true" });
+  await page.click(".toggle-fold");
+  assert.deepEqual(await state(), { folded: true, body: "none", expanded: "false" });
+  // Typing in the title must not unfold it.
+  await page.click(".toggle-summary");
+  await page.keyboard.type("x");
+  assert.equal((await state()).folded, true);
+  await page.click(".toggle-fold");
+  assert.deepEqual(await state(), { folded: false, body: "block", expanded: "true" });
+  await page.waitForTimeout(700);
+  await waitSaved(page).catch(() => {});
+  const saved = (await files(page))["T.md"];
+  assert.ok(saved.includes("<summary>Titlex</summary>"), saved);
+  assert.ok(!/folded/.test(saved), "the fold state is never written to the page");
+});
+
+await test("a toggle shows only its arrow and title until you work in it", async (page) => {
+  await openSeeded(page, "T.md", TOGGLE);
+  await page.waitForSelector(".toggle");
+  const edge = (selector) => page.evaluate((sel) => { const c = getComputedStyle(document.querySelector(sel)); return [c.borderTopColor, c.backgroundColor]; }, selector);
+  const clear = (rgba) => /rgba\(0, 0, 0, 0\)|transparent/.test(rgba);
+  await page.locator(".note-body p").first().click(); // outside the toggle
+  assert.ok(clear((await edge(".toggle"))[0]), "no outline around the block");
+  assert.ok(clear((await edge(".toggle-summary"))[0]) && clear((await edge(".toggle-summary"))[1]), "no field around the title");
+  await page.click(".toggle-summary");
+  assert.ok(!clear((await edge(".toggle"))[0]), "outline while working in the toggle");
+  assert.ok(!clear((await edge(".toggle-summary"))[0]), "the title field shows when selected");
+  await page.locator(".note-body p").first().click();
+  assert.ok(clear((await edge(".toggle"))[0]), "hidden again after leaving");
 });
 
 await test("on a phone the note list is open at the start", async (page) => {
@@ -1109,6 +1271,44 @@ if (shots) {
     await up.waitForSelector("#whatsnew[open]");
     await up.screenshot({ path: `${shots}/v021-desktop-${scheme}-4-whats-new.png` });
     await update.close();
+  }
+  // 0.2.2 screens: the folder menu, the sidebar at the smallest and largest text size, the
+  // settings with five sizes, and a toggle quiet and in use.
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      for (const fontSize of label === "desktop" ? [80, 100, 125] : [100]) {
+        const context = await browser.newContext({ viewport, colorScheme: scheme });
+        await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false, fontSize, vaultPath: "/home/alice/Documents/ScaleNote", recentVaults: ["/home/alice/Documents/ScaleNote", "/home/alice/Work", "/home/alice/School"] }));
+        await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+        const page = await context.newPage();
+        await prepare(page, {});
+        const name = (n) => `${shots}/v022-${label}-${scheme}-${fontSize}-${n}.png`;
+        await page.goto(url);
+        await page.waitForSelector("#newNote");
+        await page.evaluate(([text]) => window.__mock.files.set("Toggle page.md", text), [["Intro", "", "<details>", "<summary>Title of the toggle</summary>", "", "Hello", "", "flip", "", "</details>", ""].join("\n")]);
+        await page.click("#newFolder");
+        await page.screenshot({ path: name("1-sidebar") });
+        await page.click("#vaultButton");
+        await page.waitForSelector(".folder-menu");
+        await page.screenshot({ path: name("2-folder-menu") });
+        await page.keyboard.press("Escape");
+        if (fontSize !== 100) { await context.close(); continue; }
+        await page.click('.tree-button[data-path="Toggle page.md"]');
+        await page.waitForSelector(".toggle");
+        await page.locator(".note-body p").first().click();
+        if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+        await page.screenshot({ path: name("3-toggle-quiet") });
+        await page.click(".toggle-summary");
+        await page.screenshot({ path: name("4-toggle-focused") });
+        await page.click(".toggle-fold");
+        await page.screenshot({ path: name("5-toggle-folded") });
+        if (label === "phone") await page.click("#toggle");
+        await page.click("#openSettings");
+        await page.waitForSelector("#settings[open]");
+        await page.screenshot({ path: name("6-settings") });
+        await context.close();
+      }
+    }
   }
   // Every theme, desktop only. The named themes do not depend on the system setting.
   for (const theme of ["light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"]) {

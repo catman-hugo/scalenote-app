@@ -126,3 +126,15 @@ Context. The note list can be made narrow in Settings (200 to 420 pixels). At th
 Decision. Every sidebar button is an icon plus a label that never wraps. Below a width the labels are hidden with a container query (the label stays as tooltip and accessible name), and the Pen test link is hidden below a smaller width.
 Alternatives. Raising the minimum list width to hide the problem (still breaks with larger text), or media queries on the window (the list width is a setting, not the window width).
 Cost. Container queries need a reasonably recent web view. Current WebView2 (Windows) and Android System WebView are Chromium based and should have them, and recent WebKitGTK (Linux) should too, but I have not checked the exact versions. On an older view the labels would stay visible and be cut with an ellipsis instead of hidden, which is still readable. Not yet tried on a real device.
+
+## 2026-11-04: Folder switcher with a recent list
+Context. The owner wants separate folders for separate subjects and found that "Open another folder" showed the first-run Welcome screen, which could not be closed.
+Decision. The folder name at the top left opens a menu: recent folders, Open another folder (straight to the picker) and Use the default folder. The Welcome screen is only for first run or a missing saved folder. The recent list holds paths only, lives only in settings.json, keeps at most 8, and is validated on load (strings only, length limit, no control characters, no duplicates). A folder that fails to open is dropped from the list.
+Alternatives. Keeping a separate button (rejected by the owner). Storing the list in the vault (rejected: it would put machine paths into notes that may be synced or shared).
+Cost. Paths of recent folders sit in settings.json on the device. No new network or Rust code, so the security checklist is unchanged apart from this.
+
+## 2026-11-04: "Page" instead of "note" in the interface
+Context. The owner wants the app to be for notes but also usable for quick writing in daily life, and asked for "page" instead of "list"/"note".
+Decision. The interface says "page" everywhere it said "note" (New page, Pages, Page width). The callout kind "Note" stays, since it is a different thing. Files stay plain markdown notes; only the wording changed. All text is in `web/strings.js`, so it can be changed in one place.
+Alternatives. Keeping "note" (rejected by the owner).
+Cost. Older docs and release notes still say "note"; they describe past versions and are left as they were.

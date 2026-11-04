@@ -145,6 +145,9 @@ a:focus-visible {
 
 .icon {
   flex: none;
+  /* rem, not px: the root size is the text size setting, so icons grow and shrink with it. */
+  width: 1rem;
+  height: 1rem;
 }
 
 /* ---------- layout ---------- */
@@ -190,7 +193,28 @@ body:not(.sidebar-open) .sidebar {
   border-radius: var(--radius);
 }
 
+.vault-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border-color: transparent;
+  text-align: left;
+}
+
+.vault-button:disabled {
+  cursor: default;
+  color: inherit;
+}
+
+.vault-button:disabled:hover {
+  background: transparent;
+}
+
 .vault-name {
+  flex: 1;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -205,14 +229,12 @@ body:not(.sidebar-open) .sidebar {
   container-name: side;
 }
 
-.side-open,
 .side-actions {
   display: flex;
   gap: var(--space-2);
   padding: 0 var(--space-4) var(--space-2);
 }
 
-.side-open button,
 .side-actions button,
 .side-foot button {
   display: flex;
@@ -223,13 +245,8 @@ body:not(.sidebar-open) .sidebar {
   font-size: var(--text-s);
 }
 
-.side-open button,
 .side-actions button {
   flex: 1;
-}
-
-.side-open button {
-  justify-content: flex-start;
 }
 
 .btn-label {
@@ -265,8 +282,7 @@ body:not(.sidebar-open) .sidebar {
 }
 
 @container side (max-width: 17rem) {
-  .side-actions .btn-label,
-  .side-open .btn-label {
+  .side-actions .btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -274,10 +290,6 @@ body:not(.sidebar-open) .sidebar {
     clip-path: inset(50%);
   }
 
-  .side-open button,
-  .side-actions button {
-    justify-content: center;
-  }
 }
 
 @container side (max-width: 13rem) {
@@ -611,7 +623,7 @@ body.block-dragging * { cursor: grabbing; user-select: none; }
 /* The grabbed handle is hidden while the block moves. It stays in the layout (not display:
    none) so it keeps receiving the pointer until the drop. */
 body.block-dragging .gutter-handle { opacity: 0; }
-.gutter-handle .icon { width: 20px; height: 20px; }
+.gutter-handle .icon { width: 1.25rem; height: 1.25rem; }
 
 .gutter-menu {
   position: fixed;
@@ -637,6 +649,11 @@ body.block-dragging .gutter-handle { opacity: 0; }
 
 .menu-item:disabled { color: var(--text-soft); opacity: 0.5; cursor: default; }
 .menu-item:disabled:hover { background: transparent; }
+.folder-menu-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.folder-menu-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-menu { max-width: min(22rem, calc(100vw - 16px)); }
+.folder-menu-heading:empty { padding: 0; }
+.folder-menu .menu-label:first-child { border-top: none; margin-top: 0; }
 .menu-label { padding: var(--space-2) var(--space-3) var(--space-1); color: var(--text-soft); font-size: var(--text-s); border-top: 1px solid var(--line); margin-top: var(--space-1); }
 
 .drop-line {
@@ -736,10 +753,25 @@ body.block-dragging .gutter-handle { opacity: 0; }
 .callout-body > * + *,
 .toggle-body > * + * { margin-top: var(--space-2); }
 
+/* A toggle is quiet until you work in it: only the arrow and the title show. The outline of
+   the block and of the title field appear while the focus is inside. */
 .toggle {
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
+}
+
+.toggle:focus-within { border-color: var(--line); }
+
+.toggle-summary {
+  background: transparent;
+  border-color: transparent;
+}
+
+.toggle-summary:focus,
+.toggle-summary:focus-visible {
+  background: var(--bg);
+  border-color: var(--line);
 }
 
 .toggle-fold {

@@ -18,7 +18,7 @@
     log_line: ({ level, message }) => { logs.push(level + " " + message); },
     open_default_vault: () => ({ name: "ScaleNote", path: "/vault" }),
     default_vault_path: () => "/home/alice/Documents/ScaleNote",
-    open_vault: ({ path }) => ({ name: "Picked", path }),
+    open_vault: ({ path }) => { if (path.includes("/gone")) fail("not_found"); return { name: "Picked", path }; },
     vault_tree: () => {
       const entries = [];
       for (const f of [...folders].filter(Boolean).sort()) entries.push({ path: f, name: f.split("/").pop(), kind: "folder" });
