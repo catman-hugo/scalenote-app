@@ -17,6 +17,7 @@
     set_settings: ({ json }) => { settings = json; },
     log_line: ({ level, message }) => { logs.push(level + " " + message); },
     open_default_vault: () => ({ name: "ScaleNote", path: "/vault" }),
+    default_vault_path: () => "/home/alice/Documents/ScaleNote",
     open_vault: ({ path }) => ({ name: "Picked", path }),
     vault_tree: () => {
       const entries = [];

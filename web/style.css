@@ -893,6 +893,9 @@ body.block-dragging .gutter-handle { opacity: 0; }
   margin: var(--space-4) 0;
 }
 
+.default-path { overflow-wrap: anywhere; margin-bottom: var(--space-1); }
+.default-path[hidden] { display: none; }
+
 .hint {
   color: var(--text-soft);
   font-size: var(--text-s);

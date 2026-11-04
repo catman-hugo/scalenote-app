@@ -282,7 +282,20 @@ function showWelcome() {
       textElement("h2", w.title),
       textElement("p", w.body),
       actions,
-      textElement("p", w.defaultHint, "hint"),
+    );
+    // The real location of the default folder, so the choice is not blind. If it cannot be
+    // read the line is left out; the buttons still work.
+    const where = textElement("p", "", "hint default-path");
+    where.hidden = true;
+    dialog.append(where, textElement("p", w.defaultHint, "hint"));
+    if (isAndroid) dialog.append(textElement("p", w.defaultPrivate, "hint"));
+    backend.defaultVaultPath().then(
+      (path) => {
+        if (typeof path !== "string" || !path) return;
+        where.textContent = fill(w.defaultPath, { path });
+        where.hidden = false;
+      },
+      (error) => logProblem("default folder path unavailable", error),
     );
     const logo = dialog.querySelector("img");
     logo.src = "logo.png";

@@ -6,7 +6,7 @@ Last updated: 2026-11-04, 0.2.1 built (branch feature/v0.2.1-polish).
 
 ## 0.2.1: built, not tried on a device (from the owner's first test of 0.2 on the Windows portable build, 2026-11-04)
 
-Items 1 to 4, 6 and 7 below are built and tried in the test browser only (desktop and phone width, light and dark). Item 8 (a block type row in the selection bar) was not part of this release. Needs a try on a real device: the gear and icons in the real window, the sidebar when narrow (Settings, note list width 200), the What's new box, the handle position on every block type, and dragging with the handle hidden. Release notes: `docs/release-notes/0.2.1.md`.
+Items 1 to 4, 6 and 7 below are built and tried in the test browser only (desktop and phone width, light and dark). Also built: the first-run screen shows the default folder's location (new Rust command `default_vault_path`, not compiled here, GitHub Actions compiles it). Item 8 (a block type row in the selection bar) was not part of this release. Needs a try on a real device: the gear and icons in the real window, the sidebar when narrow (Settings, note list width 200), the What's new box, the default folder path on the first-run screen (Windows, Linux, and Android where the folder is private to the app), the handle position on every block type, and dragging with the handle hidden. Release notes: `docs/release-notes/0.2.1.md`.
 
 A small fix release between 0.2 and 0.3, so these are done well before 1.0.0 and more findings from the other devices can be added to it first. No new features. Each item needs a screenshot check in light and dark at desktop and phone width.
 

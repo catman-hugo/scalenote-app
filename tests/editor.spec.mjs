@@ -70,6 +70,11 @@ await test("first run shows the disclosure, then the folder choice, then an empt
   assert.match(await page.textContent("#disclosure"), /side project/);
   await page.click("#disclosure button");
   await page.waitForSelector("#welcome[open]");
+  // The first-run screen says where the default folder is, under the buttons.
+  await page.waitForSelector("#welcome .default-path:not([hidden])");
+  assert.equal(await page.textContent("#welcome .default-path"), "Default folder: /home/alice/Documents/ScaleNote");
+  const order = await page.evaluate(() => { const y = (s) => document.querySelector(s).getBoundingClientRect().y; return [y("#welcome .dialog-actions"), y("#welcome .default-path")]; });
+  assert.ok(order[0] < order[1], "the path is below the buttons");
   await page.click("#welcome button:last-of-type");
   await page.waitForSelector("#tree .tree-empty");
   assert.equal(await page.isVisible("#editor"), false);
@@ -1082,6 +1087,17 @@ if (shots) {
         await page.mouse.up();
         await context.close();
       }
+    }
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const first = await browser.newContext({ viewport, colorScheme: scheme });
+      await first.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const fp = await first.newPage();
+      await prepare(fp, {});
+      await fp.goto(url);
+      await fp.click("#disclosure button");
+      await fp.waitForSelector("#welcome .default-path:not([hidden])");
+      await fp.screenshot({ path: `${shots}/v021-${label}-${scheme}-5-welcome.png` });
+      await first.close();
     }
     const update = await browser.newContext({ viewport: { width: 1100, height: 760 }, colorScheme: scheme });
     await update.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, lastSeenVersion: "0.1.1" }));
