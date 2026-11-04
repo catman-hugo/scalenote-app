@@ -138,3 +138,9 @@ Context. The owner wants the app to be for notes but also usable for quick writi
 Decision. The interface says "page" everywhere it said "note" (New page, Pages, Page width). The callout kind "Note" stays, since it is a different thing. Files stay plain markdown notes; only the wording changed. All text is in `web/strings.js`, so it can be changed in one place.
 Alternatives. Keeping "note" (rejected by the owner).
 Cost. Older docs and release notes still say "note"; they describe past versions and are left as they were.
+
+## 2026-11-04: The update check counts pre-releases
+Context. The check skipped releases labelled Pre-release. All releases are labelled that way until 1.0, so a device on 0.2.1 never saw 0.2.2. The owner confirmed that switching the label to None made it show.
+Decision. Only drafts are skipped. Tags must still be a plain x.y.z number. Releases stay labelled Pre-release until 1.0, and the check works with either label. Once 1.0 exists, a rule to hold back test builds (for example, ignoring pre-releases for people on stable) can be added.
+Alternatives. Publishing every release as None (works, but relies on remembering it, and loses the label as a warning). A setting for "include test builds" (not needed while everything is a test build).
+Cost. A version published by mistake as Pre-release is offered to everyone. Builds older than 0.2.3 still cannot see pre-releases.
