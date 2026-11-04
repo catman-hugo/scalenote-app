@@ -9,6 +9,8 @@ export const strings = {
     chooseFolder: "Choose a folder",
     useDefault: "Use the default folder",
     defaultHint: "The default folder is created for you if it does not exist yet.",
+    defaultPath: "Default folder: {path}",
+    defaultPrivate: "On this device the default folder is private to ScaleNote, so other apps cannot open it.",
   },
 
   disclosure: {
@@ -77,7 +79,6 @@ export const strings = {
   },
 
   gutter: {
-    handleMark: "⋮⋮",
     handleLabel: "Block actions",
     moveUp: "Move up",
     moveDown: "Move down",
@@ -156,7 +157,6 @@ export const strings = {
 
   toggle: {
     fold: "Show or hide the toggle content",
-    foldMark: "▾",
     summaryLabel: "Toggle title",
     summaryPlaceholder: "Toggle title",
   },

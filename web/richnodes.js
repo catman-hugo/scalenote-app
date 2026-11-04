@@ -4,6 +4,7 @@
 import { Node } from "@tiptap/core";
 import { liftEmptyBlock } from "@tiptap/pm/commands";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -149,7 +150,7 @@ export const Toggle = Node.create({
       fold.type = "button";
       fold.setAttribute("aria-expanded", "true");
       fold.setAttribute("aria-label", strings.toggle.fold);
-      fold.textContent = strings.toggle.foldMark;
+      fold.append(icon("chevronDown"));
       const summary = make("input", "toggle-summary");
       summary.type = "text";
       summary.maxLength = 200;

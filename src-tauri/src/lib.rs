@@ -111,6 +111,13 @@ fn open_default_vault(state: State<AppState>) -> Result<OpenedVault, String> {
     install_vault(&state, vault)
 }
 
+/// Where "Use the default folder" will put the notes. The first-run screen shows it so the
+/// choice is not blind. It only reads a path; nothing is created or opened here.
+#[tauri::command]
+fn default_vault_path(state: State<AppState>) -> String {
+    state.default_vault.to_string_lossy().into_owned()
+}
+
 #[tauri::command]
 fn vault_tree(state: State<AppState>) -> Result<TreeReply, String> {
     with_vault(&state, "list vault", |vault| {
@@ -251,6 +258,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_vault,
             open_default_vault,
+            default_vault_path,
             vault_tree,
             read_note,
             write_note,

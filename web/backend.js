@@ -24,6 +24,8 @@ async function call(command, args) {
 export const backend = {
   openVault: (path) => call("open_vault", { path }),
   openDefaultVault: () => call("open_default_vault"),
+  // The folder "Use the default folder" would open, as text for the first-run screen.
+  defaultVaultPath: () => call("default_vault_path"),
   tree: () => call("vault_tree"),
   readNote: (path) => call("read_note", { path }),
   writeNote: (path, text, expected) => call("write_note", { path, text, expected }),

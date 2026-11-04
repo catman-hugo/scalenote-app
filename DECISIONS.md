@@ -104,7 +104,7 @@ Alternatives. Showing the link as text (rejected: poor for a non-programmer). Th
 Cost. Existing 0.1 users get the check without having seen the disclosure line; the What's new screen tells them. The connect policy had to be written out (`ipc:`, `http://ipc.localhost`, GitHub), so a mistake there would break the app's own commands. Needs a device check.
 
 ## 2026-11-04: Phone keyboard (0.2)
-Decision. The viewport has `interactive-widget=resizes-content` and the page height uses `100dvh`, so the on-screen keyboard shrinks the page instead of pushing the top bar under the status bar. Needs a check on the POCO F7 Pro.
+Decision. The viewport has `interactive-widget=resizes-content` and the page height uses `100dvh`, so the on-screen keyboard shrinks the page instead of pushing the top bar under the status bar. Needs a check on an Android phone.
 
 ## 2026-11-04: Not built in 0.2
 Underline, highlight, colour, subscript and superscript (stored as inline html). The list of html tags and attributes that may be kept needs the owner's decision first. The converter for old ScaleNote notes was dropped by the owner.
@@ -120,3 +120,9 @@ Context. Markdown cannot store text colour, underline, sub and superscript. The 
 Decision. Formatting stays inside the note. Highlight is written as `==text==` (Obsidian reads it natively). Colour, underline, subscript and superscript are written as small inline html tags, using a fixed palette that follows the theme. Only text the user actually styled gets tags. The editor shows the result, so the raw syntax is only seen in the markdown view. The exact tags are checked against Obsidian's documentation before building.
 Alternatives. A sidecar file per note. Not chosen: formatting tied to text positions drifts or vanishes when the note is edited in another program or moved without its partner file, two files per note add sync and backup risk, colours would not show in Obsidian without a conversion, and it needs a lossy two-way converter, which 0.2 dropped on purpose.
 Cost. Notes with colour contain html that other markdown programs may show as raw tags. Undoing this later means writing a converter.
+
+## 2026-11-04: Sidebar buttons shrink to icons with a container query
+Context. The note list can be made narrow in Settings (200 to 420 pixels). At the narrow end the New note and New folder buttons wrapped and the bottom links stacked.
+Decision. Every sidebar button is an icon plus a label that never wraps. Below a width the labels are hidden with a container query (the label stays as tooltip and accessible name), and the Pen test link is hidden below a smaller width.
+Alternatives. Raising the minimum list width to hide the problem (still breaks with larger text), or media queries on the window (the list width is a setting, not the window width).
+Cost. Container queries need a reasonably recent web view. Current WebView2 (Windows) and Android System WebView are Chromium based and should have them, and recent WebKitGTK (Linux) should too, but I have not checked the exact versions. On an older view the labels would stay visible and be cut with an ellipsis instead of hidden, which is still readable. Not yet tried on a real device.

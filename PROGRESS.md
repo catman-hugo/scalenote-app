@@ -2,9 +2,11 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-04, end of the 0.2 build session.
+Last updated: 2026-11-04, 0.2.1 built (branch feature/v0.2.1-polish).
 
-## Planned for 0.2.1 (from the owner's first test of 0.2 on the Windows portable build, 2026-11-04)
+## 0.2.1: built, not tried on a device (from the owner's first test of 0.2 on the Windows portable build, 2026-11-04)
+
+Items 1 to 4, 6 and 7 below are built and tried in the test browser only (desktop and phone width, light and dark). Also built: the first-run screen shows the default folder's location (new Rust command `default_vault_path`, not compiled here, GitHub Actions compiles it). Item 8 (a block type row in the selection bar) was not part of this release. Needs a try on a real device: the gear and icons in the real window, the sidebar when narrow (Settings, note list width 200), the What's new box, the default folder path on the first-run screen (Windows, Linux, and Android where the folder is private to the app), the handle position on every block type, and dragging with the handle hidden. Release notes: `docs/release-notes/0.2.1.md`.
 
 A small fix release between 0.2 and 0.3, so these are done well before 1.0.0 and more findings from the other devices can be added to it first. No new features. Each item needs a screenshot check in light and dark at desktop and phone width.
 
@@ -41,7 +43,7 @@ Not done:
 - Following block links (`[[Note#^id]]`): 0.3.
 - Only text blocks can be turned into other block types. Callouts, toggles and tables cannot be dragged into each other.
 
-Needs a try on a real device (Windows 11 .msi, POCO F7 Pro Android, Linux):
+Needs a try on a real device (Windows .msi, Android phone, Linux):
 - The real window with the new page policy (`connect-src ipc: http://ipc.localhost https://api.github.com`): if notes will not open, this is the first suspect.
 - Dropping a file into the note on Windows (`dragDropEnabled: false`), choosing and pasting pictures on Android.
 - Dragging blocks by finger and by pen; the handle next to the on-screen keyboard.
@@ -71,10 +73,10 @@ Not done or not tested:
 
 | Version | What it adds | Status |
 |---|---|---|
-| 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress. Builds for Windows, Linux and Android are made by GitHub and published as a release. Tested by hand: Linux Mint (opens, mouse works) and Windows 11 (mouse, touchpad, finger, pen pressure and eraser button work). Android (POCO F7 Pro, Android 16): installs, runs and finger drawing works; the top bar was hidden under the status bar (fixed, not yet re-tested). Not tested: Android pen, Fedora, pen barrel button (does not work on the test pen in other apps either), tilt (not reported on the test pen), an editor saving a markdown file |
+| 0.0 | Spikes: Tauri on Windows and Linux including pen pressure, an Android hello-world, an editor saving a markdown file | in progress. Builds for Windows, Linux and Android are made by GitHub and published as a release. Tested by hand: Linux (opens, mouse works) and Windows (mouse, touchpad, finger, pen pressure and eraser button work). Android phone: installs, runs and finger drawing works; the top bar was hidden under the status bar (fixed, not yet re-tested). Not tested: Android pen, Fedora, pen barrel button (does not work on the test pen in other apps either), tilt (not reported on the test pen), an editor saving a markdown file |
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | built, not tested on a device (see above) |
 | 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline styles decided, not built |
-| 0.2.1 | Polish from the first device test of 0.2 (see "Planned for 0.2.1"). No new features | planned, comes before 0.3 |
+| 0.2.1 | Polish from the first device test of 0.2 (see "0.2.1: built"). No new features | built, not tried on a device; comes before 0.3 |
 | 0.2.2 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together | planned, after 0.2.1 |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |

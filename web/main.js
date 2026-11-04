@@ -282,7 +282,20 @@ function showWelcome() {
       textElement("h2", w.title),
       textElement("p", w.body),
       actions,
-      textElement("p", w.defaultHint, "hint"),
+    );
+    // The real location of the default folder, so the choice is not blind. If it cannot be
+    // read the line is left out; the buttons still work.
+    const where = textElement("p", "", "hint default-path");
+    where.hidden = true;
+    dialog.append(where, textElement("p", w.defaultHint, "hint"));
+    if (isAndroid) dialog.append(textElement("p", w.defaultPrivate, "hint"));
+    backend.defaultVaultPath().then(
+      (path) => {
+        if (typeof path !== "string" || !path) return;
+        where.textContent = fill(w.defaultPath, { path });
+        where.hidden = false;
+      },
+      (error) => logProblem("default folder path unavailable", error),
     );
     const logo = dialog.querySelector("img");
     logo.src = "logo.png";
@@ -625,11 +638,22 @@ function closeSidebarOnPhone() {
 }
 
 function fillStaticText() {
-  el("newNote").replaceChildren(icon("plus"), document.createTextNode(strings.sidebar.newNote));
-  el("newFolder").replaceChildren(icon("folder"), document.createTextNode(strings.sidebar.newFolder));
-  el("openOther").textContent = strings.sidebar.openFolder;
+  // Each sidebar button is an icon plus a label. The label can be hidden when the list is
+  // narrow, so the text is also the tooltip and the accessible name.
+  const withIcon = (id, name, text) => {
+    const button = el(id);
+    const label = document.createElement("span");
+    label.className = "btn-label";
+    label.textContent = text;
+    button.replaceChildren(icon(name), label);
+    button.title = text;
+    button.setAttribute("aria-label", text);
+  };
+  withIcon("newNote", "plus", strings.sidebar.newNote);
+  withIcon("newFolder", "folder", strings.sidebar.newFolder);
+  withIcon("openOther", "folderOpen", strings.sidebar.openFolder);
+  withIcon("openSettings", "settings", strings.settings.open);
   el("penTest").textContent = strings.sidebar.penTest;
-  el("openSettings").textContent = strings.settings.open;
   el("updateDownload").textContent = strings.update.download;
   el("updateDetails").textContent = strings.update.details;
   el("updateLater").textContent = strings.update.later;
