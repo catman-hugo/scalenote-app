@@ -38,55 +38,108 @@ function placeCursor(tr, pos) {
   tr.setSelection(Selection.near(tr.doc.resolve(target)));
 }
 
-/** Moves unit `from` so it sits before unit `slot` (slot = units.length means "at the end"). */
-export function moveUnit(editor, from, slot) {
+/**
+ * Moves units `first` to `last` (a run of neighbouring blocks) so they sit before unit `slot`
+ * (slot = units.length means "at the end"). They keep their order and stay together.
+ */
+export function moveUnits(editor, first, last, slot) {
   const { state, view } = editor;
   const units = unitsOf(state.doc);
-  if (from < 0 || from >= units.length || slot < 0 || slot > units.length) return false;
-  if (slot === from || slot === from + 1) return false;
-  const unit = units[from];
-  const content = state.doc.slice(unit.from, unit.to).content;
+  if (first < 0 || last < first || last >= units.length || slot < 0 || slot > units.length) return false;
+  if (slot >= first && slot <= last + 1) return false; // it would stay where it is
+  const content = state.doc.slice(units[first].from, units[last].to).content;
   const insertAt = slot === units.length ? state.doc.content.size : units[slot].from;
-  const tr = state.tr.delete(unit.from, unit.to);
+  const tr = state.tr.delete(units[first].from, units[last].to);
   const pos = tr.mapping.map(insertAt);
   tr.insert(pos, content);
-  placeCursor(tr, pos);
+  if (last > first) {
+    // Several blocks stay selected after the move, so the same keys or the handle move them again.
+    const end = Math.min(pos + content.size, tr.doc.content.size);
+    tr.setSelection(TextSelection.between(tr.doc.resolve(pos + 1), tr.doc.resolve(Math.max(pos + 1, end - 1))));
+  } else {
+    placeCursor(tr, pos);
+  }
   view.dispatch(tr.scrollIntoView());
   return true;
+}
+
+/** Moves unit `from` so it sits before unit `slot`. */
+export function moveUnit(editor, from, slot) {
+  return moveUnits(editor, from, from, slot);
 }
 
 export function moveUnitBy(editor, from, step) {
   return moveUnit(editor, from, step > 0 ? from + 2 : from - 1);
 }
 
-export function deleteUnit(editor, index) {
+/** Moves a run of blocks one place up (step -1) or down (step 1). */
+export function moveUnitsBy(editor, first, last, step) {
+  return moveUnits(editor, first, last, step > 0 ? last + 2 : first - 1);
+}
+
+/**
+ * The run of blocks a selection covers, as { first, last } unit indexes. A cursor or a
+ * selection inside one block gives one block. A selection that ends at the very start of a
+ * block does not count that block.
+ */
+export function unitRangeOf(doc, selection) {
+  const first = unitIndexAt(doc, selection.from);
+  const last = selection.empty ? first : unitIndexAt(doc, Math.max(selection.from, selection.to - 1));
+  return { first, last: Math.max(first, last) };
+}
+
+export function deleteUnits(editor, first, last) {
   const { state, view } = editor;
   const units = unitsOf(state.doc);
-  const unit = units[index];
-  if (!unit) return false;
+  if (first < 0 || last >= units.length || last < first) return false;
   const tr = state.tr;
-  if (units.length === 1) {
+  if (first === 0 && last === units.length - 1) {
     tr.replaceWith(0, state.doc.content.size, state.schema.nodes.paragraph.create());
   } else {
-    tr.delete(unit.from, unit.to);
+    tr.delete(units[first].from, units[last].to);
   }
-  placeCursor(tr, Math.min(unit.from, tr.doc.content.size));
+  placeCursor(tr, Math.min(units[first].from, tr.doc.content.size));
   view.dispatch(tr.scrollIntoView());
   return true;
 }
 
-/** A copy of the block right after it. The copy has no block id: ids must be unique. */
+export function deleteUnit(editor, index) {
+  return deleteUnits(editor, index, index);
+}
+
+/** Copies of the blocks `first` to `last`, right after them. The copies have no block id: ids must be unique. */
+export function duplicateUnits(editor, first, last) {
+  const { state, view } = editor;
+  const units = unitsOf(state.doc);
+  if (first < 0 || last >= units.length || last < first) return false;
+  const copies = [];
+  for (let i = first; i <= last; i++) {
+    const unit = units[i];
+    const node = unit.node;
+    if (isIdLine(node)) continue;
+    // The copy keeps the original text (src, base), so an untouched block is written back as it
+    // was; it has no gap and no position, so spacing is worked out fresh.
+    copies.push(node.type.create({ ...node.attrs, gap: null, idx: null, blockId: null }, node.content, node.marks));
+  }
+  if (copies.length === 0) return false;
+  const insertAt = units[last].to;
+  const tr = state.tr.insert(insertAt, copies);
+  placeCursor(tr, insertAt);
+  view.dispatch(tr.scrollIntoView());
+  return true;
+}
+
 export function duplicateUnit(editor, index) {
+  return duplicateUnits(editor, index, index);
+}
+
+/** An empty paragraph right after unit `index`, with the cursor in it. */
+export function addParagraphAfter(editor, index) {
   const { state, view } = editor;
   const unit = unitsOf(state.doc)[index];
   if (!unit) return false;
-  const node = unit.node;
-  // The copy keeps the original text (src, base), so an untouched block is written back as it
-  // was; it has no gap and no position, so spacing is worked out fresh.
-  const copy = node.type.create({ ...node.attrs, gap: null, idx: null, blockId: null }, node.content, node.marks);
-  const insertAt = state.doc.resolve(unit.from).nodeAfter === node ? unit.from + node.nodeSize : unit.to;
-  const tr = state.tr.insert(insertAt, copy);
-  placeCursor(tr, insertAt);
+  const tr = state.tr.insert(unit.to, state.schema.nodes.paragraph.create());
+  placeCursor(tr, unit.to);
   view.dispatch(tr.scrollIntoView());
   return true;
 }
@@ -157,6 +210,28 @@ const TURNS = {
 };
 
 export const TURN_NAMES = Object.keys(TURNS);
+
+/** The name (a key of TURN_NAMES) of what a text block is now, or null for other blocks. */
+export function turnNameOf(node) {
+  switch (node.type.name) {
+    case "paragraph":
+      return "text";
+    case "heading":
+      return ["heading1", "heading2", "heading3", "heading4"][node.attrs.level - 1] || null;
+    case "bulletList":
+      return "bulletList";
+    case "orderedList":
+      return "orderedList";
+    case "taskList":
+      return "taskList";
+    case "blockquote":
+      return "quote";
+    case "codeBlock":
+      return "codeBlock";
+    default:
+      return null;
+  }
+}
 
 /** Changes the kind of a text block (paragraph, heading, list, quote, code). */
 export function turnInto(editor, index, kind) {

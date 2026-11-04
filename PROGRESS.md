@@ -108,6 +108,16 @@ Owner request (2026-11-04): a right-click menu in the page list, like the old se
 - Not tried on a device: the long press on the Android phone (it relies on the web view sending the contextmenu event on a long press), the menu key on Linux and Windows, and everything else above.
 - Release notes: `docs/release-notes/0.2.4.md`. Block editing polish moved to 0.2.5.
 
+## 0.2.5: built
+Owner request (2026-11-04): move pages and folders into other folders by dragging them in the sidebar, together with the planned block editing polish.
+- Moving: new `Vault::move_entry` in the Rust core (3 new vault tests: moves of a note and a folder with contents, refusals for a folder into itself or below itself, name clashes, missing or non-folder targets, odd paths, and the no-op case) and a `move_entry` command in `src-tauri/src/lib.rs`, which mirrors `rename_entry`. The command is only proven by GitHub's build, as before. In the app, `web/treedrag.js` drives the drag with pointer events (mouse and pen). A flat label follows the pointer, the receiving folder is outlined, the empty space below the list means the top level, Escape cancels. Touch does not start a drag (it would fight with scrolling); the right-click menu has Move to, which lists only valid folders. An open page is saved before its file moves.
+- Block polish: a see-through copy of the block follows the pointer (kept at the grab distance, no ids or editable parts), several blocks selected by text selection move together by drag, by the menu and by Alt+Up/Down and stay selected, one Undo reverts a move, a plus button left of the grip (only when the margin has room, else "Add block below" in the menu), and a block type button at the start of the selection bar (hidden when the selection spans blocks).
+- Found and fixed while testing: pressing Undo right after opening a page emptied the editor, because loading a page was an undoable step, and autosave then could save the empty page. Loading now uses `addToHistory: false`. A browser test checks that Undo on an untouched page changes nothing and nothing is written. This bug existed in all versions since 0.1.
+- Tested here: 57 unit tests, Rust tests (33 + 1 + 17), the browser tests (7 new for moving, 7 new for blocks, 1 for the Undo fix) and screenshots in light and dark, desktop and phone width.
+- Not tried on a device: everything above. In particular the drag in the list with a real mouse and pen, Move to on the Android phone, and the long press that opens the menu.
+- Known limits: no auto-opening of a folder while dragging over it (open it first), no dragging with a finger in the list, and the plus button needs a wider window than the smallest ones.
+- Release notes: `docs/release-notes/0.2.5.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -119,7 +129,7 @@ Owner request (2026-11-04): a right-click menu in the page list, like the old se
 | 0.2.2 | Folder switcher, five text sizes with scaling icons, "page" wording, toggle fix (see "0.2.2: built") | built, not tried on a device |
 | 0.2.3 | Update check also finds pre-releases (see "0.2.3: built") | built, not tried on a device |
 | 0.2.4 | Right-click menu with Rename on folders and pages (see "0.2.4: built") | built, not tried on a device |
-| 0.2.5 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together, plus button, block type row in the selection bar | planned, after 0.2.4 |
+| 0.2.5 | Move pages and folders by dragging (and Move to), block editing polish (drag copy, several blocks together, plus button, block type row), and an Undo-after-open data-loss fix (see "0.2.5: built") | built, not tried on a device |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

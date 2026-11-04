@@ -37,3 +37,8 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 ## Addendum for 0.2.4
 - No new network calls, no new Rust code, no new permissions. Renaming uses the existing `rename_entry` command, which sanitises the new name, refuses names that exist and never replaces anything.
 - Names typed in the list are set as text (never as html), and are limited to 100 characters in the field.
+
+## Addendum for 0.2.5
+- New Rust command `move_entry`. Both paths go through `resolve`, which refuses empty parts, `.` and `..`, hidden names, absolute paths and backslashes, and checks that nothing leaves the vault through a symlink. It never replaces an existing entry, refuses a folder into itself or below itself, and a note must end in .md. Covered by vault tests, including odd paths. Compiled and run only by GitHub's build.
+- No new network calls and no new permissions. The drag copy of a block is a clone of the page's own content with ids and editable parts removed; it never leaves the page.
+- Names shown in the drag label are set as text, never as html.

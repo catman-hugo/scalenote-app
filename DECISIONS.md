@@ -150,3 +150,15 @@ Context. The owner liked the right-click menu of the old server-only ScaleNote a
 Decision. Right-click, long press and the menu key open a small menu at the entry. It only holds actions that exist: Rename, for folders and pages. More entries are added when their features exist (delete with the trash in 0.3). No emoji or icons are in the menu text; it uses the same flat menu style as the block menu. The rename field replaces the entry's button instead of sitting inside it. F2 renames the focused entry.
 Alternatives. Showing Delete, Duplicate and Share greyed out (rejected: dead entries). A rename button on every row (rejected: clutter, and no room on the phone).
 Cost. Long press relies on the Android web view sending the contextmenu event; this is not tried on the phone yet. If it does not, a second way (a button in the row) will be needed there.
+
+## 2026-11-04: Moving pages and folders is a Rust command, and the drag uses pointer events
+Context. The owner wants to drag pages and folders onto other folders in the list. Renaming already goes through the Rust core, which owns every change to the vault.
+Decision. A new `Vault::move_entry` moves a note or a folder into another folder with `fs::rename`, keeps the name, never replaces anything, refuses a folder inside itself, and sanity-checks paths like the other functions. The web side only asks. The drag uses pointer events rather than the browser's own drag and drop, because that does not work with a finger on the Android web view and cannot be styled. A finger scrolls the list, so touch gets Move to in the right-click menu instead.
+Alternatives. A copy-then-delete move (rejected: not atomic, and a crash could duplicate or lose notes). Letting the web side rename the path (rejected: all vault changes stay in Rust).
+Cost. `fs::rename` fails across file systems (for example a symlinked subfolder on another disk); that shows as a calm error and nothing is lost. Links between pages are not rewritten when a page moves, because links by path do not exist yet (0.3 decides how links follow moves).
+
+## 2026-11-04: Undo must never go back past opening a page
+Context. Testing the block move found that Undo right after opening a page emptied the editor, since loading counted as an edit. Autosave could then have written the empty page over the real one.
+Decision. Loading a page into the editor (and switching from the source view) is not part of the undo history.
+Alternatives. Disabling autosave for empty documents (rejected: it hides the symptom and breaks legitimate emptying).
+Cost. None known: Undo now stops at the state the page was opened in.

@@ -4,14 +4,14 @@
 import { strings } from "./strings.js";
 
 /**
- * Opens a menu at (x, y). `items` is a list of { label, run }. Returns a function that closes it.
+ * Opens a menu at (x, y). `items` is a list of { label, run, indent } (indent is how many levels to push it in). Returns a function that closes it.
  * Closes on Escape, a click or touch outside, or after an item is chosen.
  */
-export function openContextMenu(x, y, items, { returnFocus = null } = {}) {
+export function openContextMenu(x, y, items, { returnFocus = null, label = strings.contextMenu.label } = {}) {
   const menu = document.createElement("div");
   menu.className = "gutter-menu context-menu";
   menu.setAttribute("role", "menu");
-  menu.setAttribute("aria-label", strings.contextMenu.label);
+  menu.setAttribute("aria-label", label);
 
   let closed = false;
   const close = (refocus = true) => {
@@ -44,6 +44,7 @@ export function openContextMenu(x, y, items, { returnFocus = null } = {}) {
     button.className = "menu-item";
     button.setAttribute("role", "menuitem");
     button.textContent = entry.label;
+    if (entry.indent) button.style.paddingLeft = `calc(var(--space-3) + ${entry.indent} * var(--space-3))`;
     // The menu is closed before the action runs, so an action that opens an input can take the focus.
     button.addEventListener("click", () => {
       close(false);

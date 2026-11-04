@@ -178,6 +178,12 @@ fn rename_entry(path: String, new_name: String, state: State<AppState>) -> Resul
     with_vault(&state, "rename", |vault| vault.rename(&path, &new_name))
 }
 
+/// Moves a note or folder into another folder. `new_parent` is "" for the top of the vault.
+#[tauri::command]
+fn move_entry(path: String, new_parent: String, state: State<AppState>) -> Result<String, String> {
+    with_vault(&state, "move", |vault| vault.move_entry(&path, &new_parent))
+}
+
 /// Copies a picture into the vault's `attachments` folder. `data` is the picture as base64
 /// text; the file type is decided from its content, not from `name`. Returns the path to
 /// write into the note.
@@ -265,6 +271,7 @@ pub fn run() {
             create_note,
             create_folder,
             rename_entry,
+            move_entry,
             save_attachment,
             read_attachment,
             log_line,

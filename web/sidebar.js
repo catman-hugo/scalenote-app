@@ -53,6 +53,7 @@ function renderNode(node, state, actions) {
   button.type = "button";
   button.className = "tree-button";
   button.dataset.path = node.path;
+  button.dataset.kind = node.kind === "folder" ? "folder" : "note";
 
   if (node.kind === "folder") {
     const open = state.expanded.has(node.path);

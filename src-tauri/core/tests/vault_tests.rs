@@ -145,6 +145,60 @@ fn rename_keeps_extension_and_refuses_to_overwrite() {
 }
 
 #[test]
+fn move_puts_notes_and_folders_into_other_folders_and_keeps_their_contents() {
+    let (v, dir) = vault("move");
+    v.create_folder("", "Biology").expect("folder");
+    v.create_folder("", "Archive").expect("folder");
+    v.create_note("Biology", "Cells").expect("note");
+    v.create_note("", "Plan").expect("note");
+    // A note into a folder, and back to the top.
+    assert_eq!(v.move_entry("Plan.md", "Archive").expect("move"), "Archive/Plan.md");
+    assert!(dir.join("Archive/Plan.md").is_file() && !dir.join("Plan.md").exists());
+    assert_eq!(v.move_entry("Archive/Plan.md", "").expect("move back"), "Plan.md");
+    // A folder with a note inside, into another folder.
+    assert_eq!(v.move_entry("Biology", "Archive").expect("move folder"), "Archive/Biology");
+    assert!(dir.join("Archive/Biology/Cells.md").is_file() && !dir.join("Biology").exists());
+}
+
+#[test]
+fn move_refuses_loops_clashes_and_bad_targets_and_changes_nothing() {
+    let (v, dir) = vault("move-refuse");
+    v.create_folder("", "A").expect("folder");
+    v.create_folder("A", "B").expect("folder");
+    v.create_note("", "Same").expect("note");
+    v.create_folder("", "Target").expect("folder");
+    v.create_note("Target", "Same").expect("note with the same name");
+    // A folder cannot go into itself or into its own subfolder.
+    assert_eq!(v.move_entry("A", "A"), Err(VaultError::InvalidPath));
+    assert_eq!(v.move_entry("A", "A/B"), Err(VaultError::InvalidPath));
+    // A folder whose name only starts the same is a different folder.
+    v.create_folder("", "A2").expect("folder");
+    assert_eq!(v.move_entry("A2", "A").expect("different folder"), "A/A2");
+    // A name already used in the target is never replaced.
+    assert_eq!(v.move_entry("Same.md", "Target"), Err(VaultError::AlreadyExists));
+    assert!(dir.join("Same.md").is_file() && dir.join("Target/Same.md").is_file());
+    // Missing things, a note as target, odd paths.
+    assert_eq!(v.move_entry("Missing.md", "A"), Err(VaultError::NotFound));
+    // A target that is missing or is a note is not a folder.
+    assert_eq!(v.move_entry("Same.md", "Nowhere"), Err(VaultError::NotADirectory));
+    assert_eq!(v.move_entry("Same.md", "Target/Same.md"), Err(VaultError::NotADirectory));
+    assert_eq!(v.move_entry("", "A"), Err(VaultError::InvalidPath));
+    assert_eq!(v.move_entry("Same.md", "../outside"), Err(VaultError::InvalidPath));
+    assert_eq!(v.move_entry("../x.md", "A"), Err(VaultError::InvalidPath));
+    assert_eq!(v.move_entry("Same.md", "/abs"), Err(VaultError::InvalidPath));
+}
+
+#[test]
+fn moving_to_where_it_already_is_changes_nothing() {
+    let (v, dir) = vault("move-noop");
+    v.create_folder("", "A").expect("folder");
+    v.create_note("A", "N").expect("note");
+    assert_eq!(v.move_entry("A/N.md", "A").expect("noop"), "A/N.md");
+    assert_eq!(v.move_entry("A", "").expect("noop"), "A");
+    assert!(dir.join("A/N.md").is_file());
+}
+
+#[test]
 fn oversized_and_non_utf8_notes_are_refused_not_converted() {
     let (v, dir) = vault("limits");
     fs::write(dir.join("bin.md"), [0xff, 0xfe, 0x00]).expect("seed");

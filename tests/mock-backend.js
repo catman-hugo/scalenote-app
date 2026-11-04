@@ -53,6 +53,23 @@
     read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return "data:image/png;base64," + attachments.get(path); },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },
+    move_entry: ({ path, newParent }) => {
+      const isNote = files.has(path);
+      const name = path.split("/").pop();
+      if (!isNote && !folders.has(path)) fail("not_found");
+      if (newParent && !folders.has(newParent)) fail("not_a_directory");
+      if (!isNote && (newParent === path || newParent.startsWith(path + "/"))) fail("invalid_path");
+      const target = (newParent ? newParent + "/" : "") + name;
+      if (target === path) return path;
+      if (files.has(target) || folders.has(target)) fail("already_exists");
+      if (isNote) { files.set(target, files.get(path)); files.delete(path); }
+      else {
+        folders.delete(path); folders.add(target);
+        for (const f of [...folders]) if (f.startsWith(path + "/")) { folders.delete(f); folders.add(target + f.slice(path.length)); }
+        for (const [k, v] of [...files]) if (k.startsWith(path + "/")) { files.delete(k); files.set(target + k.slice(path.length), v); }
+      }
+      return target;
+    },
     rename_entry: ({ path, newName }) => {
       const isNote = files.has(path); const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
       const target = dir + newName.replace(/[\/\\:*?"<>|]/g, "") + (isNote ? ".md" : "");

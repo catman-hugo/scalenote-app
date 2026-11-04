@@ -39,6 +39,9 @@ export const strings = {
   contextMenu: {
     label: "Actions for this entry",
     rename: "Rename",
+    move: "Move to",
+    moveLabel: "Move to a folder",
+    moveTop: "Top level",
     renameFolderLabel: "Folder name",
     renamePageLabel: "Page name",
   },
@@ -94,12 +97,16 @@ export const strings = {
 
   gutter: {
     handleLabel: "Block actions",
+    handleHint: "Drag to move. Click for the menu.",
+    plusLabel: "Add a block below",
+    addBelow: "Add block below",
     moveUp: "Move up",
     moveDown: "Move down",
     duplicate: "Duplicate",
     delete: "Delete",
     copyLink: "Copy block link",
     turnInto: "Turn into",
+    selectedBlocks: "Selected blocks",
     linkCopied: "Block link copied",
     linkNotCopied: "The block now has a link id, but the link could not be copied. Switch to the markdown view to copy it.",
   },
@@ -134,6 +141,7 @@ export const strings = {
 
   format: {
     barLabel: "Text formatting",
+    blockType: "Block type",
     bold: "Bold",
     italic: "Italic",
     strike: "Strikethrough",

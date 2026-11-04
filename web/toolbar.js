@@ -3,6 +3,8 @@
 // They are plain DOM placed with `position: fixed`. Buttons use pointerdown + preventDefault
 // so pressing one never moves focus out of the editor and never loses the selection.
 
+import { canTurnInto, TURN_NAMES, turnInto, turnNameOf, unitRangeOf, unitsOf } from "./blockops.js";
+import { icon } from "./icons.js";
 import { normalizeUrl } from "./links.js";
 import { strings } from "./strings.js";
 
@@ -70,6 +72,59 @@ export function attachToolbars(editor) {
     { label: f.code, text: f.codeMark, name: "code", cls: "mark-code", run: () => editor.chain().focus().toggleCode().run() },
     { label: f.link, text: f.linkMark, name: "link", cls: "", run: () => openLink() },
   ];
+  // The block type row: shows what kind of block the selection is in and opens the same
+  // "Turn into" list as the block menu. It only shows for a selection inside one block.
+  const typeButton = button(f.blockType, "", "type-button");
+  typeButton.setAttribute("aria-haspopup", "menu");
+  typeButton.setAttribute("aria-expanded", "false");
+  const typeLabel = document.createElement("span");
+  typeLabel.className = "type-label";
+  typeButton.textContent = "";
+  typeButton.append(typeLabel, icon("chevronDown"));
+  const typeMenu = document.createElement("div");
+  typeMenu.className = "gutter-menu type-menu";
+  typeMenu.setAttribute("role", "menu");
+  typeMenu.setAttribute("aria-label", f.blockType);
+  typeMenu.hidden = true;
+  let typeUnit = -1;
+
+  function closeTypeMenu() {
+    typeMenu.hidden = true;
+    typeButton.setAttribute("aria-expanded", "false");
+  }
+  function openTypeMenu() {
+    const unit = unitsOf(editor.state.doc)[typeUnit];
+    if (!unit) return;
+    const now = turnNameOf(unit.node);
+    typeMenu.replaceChildren();
+    for (const name of TURN_NAMES) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "menu-item folder-menu-item";
+      item.setAttribute("role", "menuitem");
+      const text = document.createElement("span");
+      text.textContent = strings.slash[name];
+      item.append(text);
+      if (name === now) {
+        item.setAttribute("aria-current", "true");
+        item.append(icon("check"));
+      }
+      keepFocus(item, () => {
+        closeTypeMenu();
+        turnInto(editor, typeUnit, name);
+        refresh();
+      });
+      typeMenu.append(item);
+    }
+    typeMenu.hidden = false;
+    typeButton.setAttribute("aria-expanded", "true");
+    place(typeMenu, typeButton.getBoundingClientRect(), "below");
+  }
+  keepFocus(typeButton, () => (typeMenu.hidden ? openTypeMenu() : closeTypeMenu()));
+  document.addEventListener("pointerdown", (event) => {
+    if (!typeMenu.hidden && !typeMenu.contains(event.target) && !typeButton.contains(event.target)) closeTypeMenu();
+  });
+
   const buttons = marks.map((mark) => {
     const node = button(mark.label, mark.text, mark.cls);
     keepFocus(node, mark.run);
@@ -91,8 +146,8 @@ export function attachToolbars(editor) {
   linkError.className = "link-error";
   linkRow.append(linkInput, apply, remove, cancel, linkError);
   linkRow.hidden = true;
-  bar.append(...buttons.map((b) => b.node), linkRow);
-  document.body.append(bar);
+  bar.append(typeButton, ...buttons.map((b) => b.node), linkRow);
+  document.body.append(bar, typeMenu);
 
   function openLink() {
     linkMode = true;
@@ -100,6 +155,8 @@ export function attachToolbars(editor) {
     linkError.textContent = "";
     remove.hidden = !editor.isActive("link");
     buttons.forEach((b) => (b.node.hidden = true));
+    typeButton.hidden = true;
+    closeTypeMenu();
     linkRow.hidden = false;
     linkInput.focus();
     linkInput.select();
@@ -169,8 +226,17 @@ export function attachToolbars(editor) {
     const hasText = !selection.empty && selection.$from.parent.isTextblock && !editor.isActive("codeBlock");
     const show = hasText && (editor.isFocused || linkMode) && !pointerDown;
     bar.hidden = !show;
+    if (!show) closeTypeMenu();
     if (show) {
       buttons.forEach((b) => b.node.classList.toggle("active", editor.isActive(b.name)));
+      // The type row shows for a selection inside one text block.
+      const { first, last } = unitRangeOf(editor.state.doc, selection);
+      const unit = unitsOf(editor.state.doc)[first];
+      const name = unit && first === last && canTurnInto(unit.node) ? turnNameOf(unit.node) : null;
+      typeUnit = name ? first : -1;
+      typeButton.hidden = !name || linkMode;
+      if (name) typeLabel.textContent = strings.slash[name];
+      if (typeMenu.hidden === false && !name) closeTypeMenu();
       const end = editor.view.coordsAtPos(selection.to);
       const start = editor.view.coordsAtPos(selection.from);
       place(bar, { left: Math.min(start.left, end.left), top: start.top, bottom: end.bottom }, "below");
@@ -197,6 +263,7 @@ export function attachToolbars(editor) {
         linkRow.hidden = true;
         buttons.forEach((b) => (b.node.hidden = false));
         bar.hidden = true;
+        closeTypeMenu();
         tableBar.hidden = true;
       }
     }, 0);
