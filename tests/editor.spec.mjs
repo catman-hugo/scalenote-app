@@ -773,7 +773,12 @@ await test("the grabbed handle is hidden while a block is dragged and comes back
   // Grab the middle of the handle: a fixed offset can miss it when the handle is smaller on another machine.
   const cx = h.x + h.width / 2, cy = h.y + h.height / 2;
   await page.mouse.move(cx, cy);
-  const under = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.tagName + "." + e.className : "nothing"; }, [cx, cy]);
+  const under = await page.evaluate(([x, y]) => {
+    const h = document.querySelector(".gutter-handle");
+    const cs = getComputedStyle(h);
+    const stack = document.elementsFromPoint(x, y).slice(0, 5).map((e) => e.tagName + "." + e.className).join(" > ");
+    return stack + " | handle z=" + cs.zIndex + " pe=" + cs.pointerEvents + " display=" + cs.display + " vis=" + cs.visibility + " viewport=" + innerWidth + "x" + innerHeight;
+  }, [cx, cy]);
   await page.mouse.down();
   await page.mouse.move(cx, cy + 44, { steps: 5 });
   await page.waitForFunction(() => getComputedStyle(document.querySelector(".gutter-handle")).opacity === "0", null, { timeout: 2000 }).catch(() => {});
