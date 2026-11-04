@@ -1439,8 +1439,18 @@ await test("the plus button adds an empty block below and puts the cursor in it"
   await openSeeded(page, "G.md", GUT);
   await page.locator(".note-body p", { hasText: "First" }).click();
   await page.waitForSelector(".gutter-plus:not([hidden])");
-  const p = await page.locator(".gutter-plus").boundingBox();
-  const h = await page.locator(".gutter-handle").boundingBox();
+  // Read both boxes in one browser call, and wait for the layout to settle: two separate
+  // reads can straddle a refresh and see the buttons at different moments.
+  const box = () => page.evaluate(() => {
+    const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width }; };
+    return { p: r(".gutter-plus"), h: r(".gutter-handle") };
+  });
+  let last = await box();
+  for (let i = 0; i < 20 && Math.abs(last.p.y - last.h.y) > 1; i++) {
+    await page.waitForTimeout(100);
+    last = await box();
+  }
+  const { p, h } = last;
   assert.ok(p.x + p.width <= h.x + 1 && Math.abs(p.y - h.y) <= 1, "the plus sits left of the grip on the same line: plus " + JSON.stringify(p) + " grip " + JSON.stringify(h));
   await page.click(".gutter-plus");
   await page.keyboard.type("brand new");
