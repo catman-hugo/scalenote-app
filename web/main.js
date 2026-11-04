@@ -25,6 +25,11 @@ const app = {
   lastSavedText: null,
   editor: null,
   autosave: null,
+  // "editor" shows blocks, "source" shows the whole note as markdown text. The choice stays
+  // when another note is opened.
+  mode: "editor",
+  // The line ending of the note in source view; a text box always uses "\n" inside.
+  lineEnding: "\n",
 };
 
 // ---------- small helpers ----------
@@ -278,6 +283,8 @@ async function showNoNote() {
   await closeCurrentNote();
   el("empty").hidden = false;
   el("editor").hidden = true;
+  el("source").hidden = true;
+  el("sourceToggle").hidden = true;
   el("title").hidden = true;
   setStatus("");
 }
@@ -313,13 +320,79 @@ function showNote(path, note) {
   app.lastSavedText = note.text;
   app.editor.commands.setContent(doc, { emitUpdate: false });
   el("empty").hidden = true;
-  el("editor").hidden = false;
   el("title").hidden = false;
+  el("sourceToggle").hidden = false;
+  fillSource(note.text);
+  applyMode();
   el("title").value = noteTitle(path);
   setStatus("");
   app.selectedFolder = parentOf(path);
   for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
   drawTree();
+}
+
+// ---------- markdown source view ----------
+
+// A text box turns every line ending into "\n" inside. A note with Windows line endings
+// (all "\r\n") is shown with "\n" and gets "\r\n" back when saved, so nothing changes. A note
+// that mixes both cannot be given back exactly, so it is shown read-only.
+function fillSource(text) {
+  const box = el("source");
+  const crlfCount = (text.match(/\r\n/g) || []).length;
+  const lfCount = (text.match(/\n/g) || []).length;
+  const loneCr = /\r(?!\n)/.test(text);
+  const consistent = !loneCr && (crlfCount === 0 || crlfCount === lfCount);
+  app.lineEnding = crlfCount > 0 && consistent ? "\r\n" : "\n";
+  box.readOnly = !consistent;
+  box.value = text;
+  box.setAttribute("aria-label", strings.source.textLabel);
+}
+
+function sourceText() {
+  const value = el("source").value;
+  return app.lineEnding === "\r\n" ? value.replace(/\n/g, "\r\n") : value;
+}
+
+// The text the open note has right now, without adding anything (no id is created here).
+function plainCurrentText() {
+  return composeNote(app.current.parts, app.editor.getJSON(), {
+    serialize: (json) => app.editor.markdown.serialize(json),
+    assignId: false,
+  });
+}
+
+function applyMode() {
+  const source = app.mode === "source" && app.current;
+  el("editor").hidden = !app.current || source;
+  el("source").hidden = !source;
+  const toggle = el("sourceToggle");
+  toggle.textContent = source ? strings.source.hide : strings.source.show;
+  toggle.setAttribute("aria-label", source ? strings.source.hideLabel : strings.source.showLabel);
+  toggle.setAttribute("aria-pressed", String(Boolean(source)));
+  if (source && el("source").readOnly) showBanner(strings.source.mixedLineEndings);
+}
+
+async function toggleSource() {
+  if (!app.current) return;
+  if (app.mode === "editor") {
+    // The note on screen is the truth: show exactly what saving it would write.
+    fillSource(plainCurrentText());
+    app.mode = "source";
+    applyMode();
+    el("source").focus();
+    return;
+  }
+  // Back to blocks. Whatever is in the box is saved first, then read again as blocks.
+  await app.autosave.flush();
+  const text = sourceText();
+  const { parts, doc } = loadNote(text, {
+    parse: (md) => app.editor.markdown.parse(md),
+    serialize: (json) => app.editor.markdown.serialize(json),
+  });
+  app.current.parts = parts;
+  app.editor.commands.setContent(doc, { emitUpdate: false });
+  app.mode = "editor";
+  applyMode();
 }
 
 function currentText() {
@@ -336,7 +409,8 @@ async function saveCurrent() {
   const { current } = app;
   if (!current) return;
   const path = current.path;
-  const text = currentText();
+  // In source view the box is saved exactly as it is: no id is added, nothing is tidied.
+  const text = app.mode === "source" ? sourceText() : currentText();
   if (text === app.lastSavedText) return;
   try {
     current.version = await backend.writeNote(path, text, current.version);
@@ -479,6 +553,8 @@ function wireEvents() {
     await chooseVault();
   });
   el("toggle").addEventListener("click", toggleSidebar);
+  el("sourceToggle").addEventListener("click", toggleSource);
+  el("source").addEventListener("input", () => app.autosave.touch());
   el("scrim").addEventListener("click", toggleSidebar);
   el("bannerClose").addEventListener("click", hideBanner);
   el("title").addEventListener("keydown", (event) => {

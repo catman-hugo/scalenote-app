@@ -44,6 +44,15 @@ export const strings = {
     unsaved: "Not saved yet",
   },
 
+  source: {
+    show: "Markdown",
+    hide: "Editor",
+    showLabel: "Show the note as markdown text",
+    hideLabel: "Back to the block editor",
+    textLabel: "Markdown text of the note",
+    mixedLineEndings: "This note mixes two kinds of line endings, so it is shown here but cannot be edited as text without changing them. Use the block editor instead.",
+  },
+
   slash: {
     text: "Text",
     heading1: "Heading 1",

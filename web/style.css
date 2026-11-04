@@ -502,6 +502,35 @@ body:not(.sidebar-open) .sidebar {
   outline: none;
 }
 
+/* ---------- markdown source view ---------- */
+
+.source-toggle {
+  flex: none;
+  font-size: var(--text-s);
+}
+
+.source-toggle[aria-pressed="true"] { background: var(--accent-soft); }
+.source-toggle[hidden] { display: none; }
+
+.source {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: none;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: var(--text-s);
+  line-height: 1.6;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.source[hidden] { display: none; }
+.source:focus-visible { outline: none; }
+
 /* ---------- callouts, toggles, tables, pictures ---------- */
 
 .callout {

@@ -412,6 +412,78 @@ await test("picture links that are not safe stay raw blocks", async (page) => {
   assert.equal(await page.locator(".image-block").count(), 0);
 });
 
+// ---------- 0.2.4: markdown source view ----------
+
+await test("source view shows the note exactly, and going back and forth changes nothing on disk", async (page) => {
+  await openSeeded(page, "Tricky.md", TRICKY);
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#source:not([hidden])");
+  assert.equal(await page.inputValue("#source"), TRICKY);
+  assert.equal(await page.isVisible("#editor"), false);
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#editor .note-body");
+  assert.equal(await page.isVisible("#source"), false);
+  await page.click("#sourceToggle");
+  await page.click("#sourceToggle");
+  await page.waitForTimeout(1200);
+  assert.equal((await files(page))["Tricky.md"], TRICKY);
+});
+
+await test("saving from source view writes exactly what is in the box, with no id added", async (page) => {
+  await openSeeded(page, "S.md", "# Title\n\n* odd bullet\n");
+  await page.click("#sourceToggle");
+  await page.click("#source");
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\n\n==not tidied==  \n  [[x]]\n");
+  await waitSaved(page);
+  assert.equal((await files(page))["S.md"], "# Title\n\n* odd bullet\n\n\n==not tidied==  \n  [[x]]\n");
+});
+
+await test("switching back reads the edited text as blocks again", async (page) => {
+  await openSeeded(page, "S.md", "plain\n");
+  await page.click("#sourceToggle");
+  await page.click("#source");
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\n# A new heading\n\n- one\n- two\n");
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#editor .note-body h1");
+  assert.equal(await page.textContent(".note-body h1"), "A new heading");
+  assert.equal(await page.locator(".note-body li").count(), 2);
+  assert.equal((await files(page))["S.md"], "plain\n\n# A new heading\n\n- one\n- two\n");
+});
+
+await test("source view keeps the mode when another note is opened, and edits in the editor show up", async (page) => {
+  await openSeeded(page, "A.md", "first\n");
+  await seed(page, "B.md", "second\n");
+  await page.click("#newFolder");
+  await page.click("#sourceToggle");
+  await page.click('.tree-button[data-path="B.md"]');
+  await page.waitForFunction(() => document.getElementById("source").value === "second\n");
+  await page.click("#sourceToggle");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" edited");
+  await page.click("#sourceToggle");
+  assert.match(await page.inputValue("#source"), /second edited/);
+});
+
+await test("a note with Windows line endings keeps them; a note that mixes both is read-only in source view", async (page) => {
+  await openSeeded(page, "W.md", "one\r\n\r\ntwo\r\n");
+  await page.click("#sourceToggle");
+  await page.click("#source");
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("three");
+  await waitSaved(page);
+  assert.equal((await files(page))["W.md"], "one\r\n\r\ntwo\r\nthree");
+  await seed(page, "M.md", "a\r\nb\nc\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="M.md"]');
+  await page.waitForFunction(() => document.getElementById("source").readOnly === true);
+  assert.match(await page.textContent("#bannerText"), /mixes two kinds/);
+  await page.waitForTimeout(800);
+  assert.equal((await files(page))["M.md"], "a\r\nb\nc\n");
+});
+
 const DEMO = "# Cell biology\n\nThe **cell** is the basic unit of life. See also `mitosis`.\n\n- Nucleus\n- Mitochondria\n\nTo do:\n\n- [ ] Review chapter 3\n- [x] Draw the cell\n\n> Everything is made of cells.\n\n| organelle | job |\n|---|---|\n| nucleus | DNA |\n";
 if (shots) {
   for (const scheme of ["light", "dark"]) {
