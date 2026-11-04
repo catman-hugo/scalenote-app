@@ -32,6 +32,7 @@ const GITHUB = "https://api.github.com/repos/catman-hugo/scalenote-app/releases?
 const browser = await chromium.launch();
 let failures = 0;
 async function test(name, fn, opts = {}) {
+  if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light" });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   await context.addInitScript({ path: path.join(here, "mock-backend.js") });
@@ -838,14 +839,105 @@ if (shots) {
       await page.waitForSelector(".note-body");
       await page.screenshot({ path: name("4-note") });
       if (label === "phone") { await page.click("#toggle"); await page.screenshot({ path: name("5-list") }); await page.click("#scrim", { position: { x: 380, y: 400 } }); }
-      await page.locator(".note-body p", { hasText: "basic unit" }).click();
+      // A short plain paragraph: it does not wrap on a phone and does not end in inline code.
+      await page.locator(".note-body p", { hasText: "To do:" }).click();
+      // Wait until the editor itself has moved its cursor there; keys sent before that act on the old cursor.
+      await page.waitForFunction(() => document.querySelector(".note-body").editor.state.selection.$from.parent.textContent === "To do:");
       await page.keyboard.press("End");
       await page.keyboard.press("Enter");
       await page.keyboard.type("/");
-      await page.waitForSelector(".slash-menu");
+      await page.waitForSelector(".slash-menu", { timeout: 8000 }).catch(async (error) => { await page.screenshot({ path: name("FAILED-slash") }); throw error; });
       await page.screenshot({ path: name("6-slash") });
       await context.close();
     }
+  }
+}
+
+// Screenshots of the screens added in 0.2 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  const PICTURE = "iVBORw0KGgoAAAANSUhEUgAAAPAAAACMCAIAAADN17N/AAACbklEQVR4nO3dQQ3AMAwEQeMMpgILjYDovzAibUcygbH2f7PPe+XWs68cb9s7fwPztr2C5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15x6N5S15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeW2s8Ka8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/LaWOFNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjfl/QC99AwHVDSuFQAAAABJRU5ErkJggg==";
+  const NOTE = ["# Photosynthesis", "", "Plants turn **light** into *sugar*. See [the guide](https://example.local/guide).", "", "> [!tip] Remember", "> Chlorophyll absorbs red and blue light.", "", "> [!warning]- Common mistake", "> Plants do not eat soil.", "", "<details>", "<summary>Why are leaves green?</summary>", "", "Green light is reflected, not absorbed.", "", "</details>", "", "| stage | where |", "| :--- | ---: |", "| light reactions | thylakoid |", "| Calvin cycle | stroma |", "", "![A diagram of a leaf](attachments/leaf.png)", "", "Last line ^last1", ""].join("\n");
+  const prepare = async (page, settings) => {
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(settings.releases || []) }) : route.abort()));
+  };
+  const open = async (page) => {
+    await page.evaluate(([note, picture]) => { window.__mock.files.set("Photosynthesis.md", note); window.__mock.attachments.set("attachments/leaf.png", picture); }, [NOTE, PICTURE]);
+    await page.click("#newFolder");
+    await page.click('.tree-button[data-path="Photosynthesis.md"]');
+    await page.waitForSelector(".note-body");
+    await page.waitForSelector(".image-img[src]");
+  };
+  const baseSettings = { vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION };
+  const phoneClose = async (page, label) => { if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open")); };
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await prepare(page, {});
+      const name = (n) => `${shots}/v02-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await open(page);
+      await phoneClose(page, label);
+      await page.screenshot({ path: name("1-rich-note") });
+      await page.locator(".note-body p", { hasText: "Plants turn" }).click();
+      await page.waitForSelector(".gutter-handle:not([hidden])");
+      await page.screenshot({ path: name("2-handle") });
+      await page.click(".gutter-handle");
+      await page.waitForSelector(".gutter-menu:not([hidden])");
+      await page.screenshot({ path: name("3-block-menu") });
+      await page.keyboard.press("Escape");
+      await page.locator(".note-body p", { hasText: "Plants turn" }).click();
+      await page.keyboard.press("Home");
+      for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
+      await page.waitForSelector(".float-bar:not([hidden])");
+      await page.screenshot({ path: name("4-format-bar") });
+      await page.locator(".note-body table td").first().click();
+      await page.waitForSelector(".float-bar:not([hidden])");
+      await page.screenshot({ path: name("5-table-bar") });
+      await page.click("#sourceToggle");
+      await page.waitForSelector("#source:not([hidden])");
+      await page.screenshot({ path: name("6-source") });
+      await page.click("#sourceToggle");
+      if (label === "phone") await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.waitForSelector("#settings[open]");
+      await page.screenshot({ path: name("7-settings") });
+      await context.close();
+
+      const update = await browser.newContext({ viewport, colorScheme: scheme });
+      await update.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, lastSeenVersion: "0.1.1" }));
+      await update.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const up = await update.newPage();
+      await prepare(up, { releases: [{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: "# ScaleNote 9.9.9\n\n## New\n- Something nice\n- Another thing\n\n## Fixed\n- A small bug", draft: false, prerelease: false }] });
+      await up.goto(url);
+      await up.waitForSelector("#whatsnew[open]");
+      await up.screenshot({ path: name("8-whats-new") });
+      await up.click("#whatsnew button");
+      await up.waitForSelector("#updateNotice:not([hidden])");
+      await phoneClose(up, label);
+      await up.screenshot({ path: name("9-update-notice") });
+      await update.close();
+    }
+  }
+  // Every theme, desktop only. The named themes do not depend on the system setting.
+  for (const theme of ["light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"]) {
+    const context = await browser.newContext({ viewport: { width: 1100, height: 760 }, colorScheme: "light" });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false, theme }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await prepare(page, {});
+    await page.goto(url);
+    await page.waitForSelector("#newNote");
+    await open(page);
+    await page.locator(".note-body p", { hasText: "Plants turn" }).click();
+    await page.keyboard.press("Home");
+    for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
+    await page.waitForSelector(".float-bar:not([hidden])");
+    await page.screenshot({ path: `${shots}/theme-${theme}.png` });
+    await context.close();
   }
 }
 

@@ -1,9 +1,12 @@
 // Shows release notes. The notes may come from the internet (the update notice), so they are
 // only ever put on the page as text: this builds a few plain elements and never uses html.
 
+// The notes are markdown, but only plain text is shown, so code and bold marks are dropped.
+const plain = (text) => text.replace(/`/g, "").replace(/\*\*/g, "");
+
 function make(tag, text) {
   const node = document.createElement(tag);
-  node.textContent = text;
+  node.textContent = plain(text);
   return node;
 }
 

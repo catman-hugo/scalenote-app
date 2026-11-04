@@ -75,3 +75,36 @@ Cost. On Android the notes are not visible to other apps until a folder choice i
 ## 2026-11-03: Testing without a device
 Decision. File logic lives in a std-only Rust crate so it can be tested here. The interface is tested in Chromium against an in-memory stand-in for the Rust commands. Neither replaces trying the packaged app.
 Cost. The Tauri glue is only compiled by GitHub.
+
+## 2026-11-04: Rich blocks are read strictly, otherwise they stay raw (0.2)
+Context. Callouts, toggles, tables and pictures must become editable without ever changing a note that was only opened.
+Decision. Each kind has a strict reader (`web/richblocks.js`). A block that is not exactly the expected shape stays a raw block. An untouched block is written back byte for byte; the writers only run for blocks the user changed, and then write one fixed style (`> [!kind]- Title`, `<details><summary>`, pipe tables with a divider line, `![alt](attachments/name.ext)`). Callouts and toggles may only hold paragraphs, headings, lists, to-do lists, quotes, code and dividers, so what the editor shows always reads back the same. Tables have one line of text per cell. Cells with wikilinks, tags, math, html or images keep the whole table raw.
+Cost. Some valid markdown (nested callouts, tables with multi-line cells) stays raw text.
+
+## 2026-11-04: Pictures (0.2)
+Decision. Pictures are copied into an `attachments/` folder at the root of the vault. The file type is decided by the first bytes (png, jpg, gif, webp); SVG is refused because it can carry scripts. Limit 10 MiB, checked on the encoded text before decoding. Names are reduced to letters, digits, `_` and `-`. The same bytes pasted twice are stored once. The folder is hidden from the note list. Bytes cross the Tauri bridge as base64 because the commands carry text. Tauri's own file-drop handling is switched off (`dragDropEnabled: false`) because on Windows it swallows browser drag-and-drop of files.
+Alternatives. Folder next to each note (rejected: Obsidian's default and sync are simpler with one folder). Raw byte transfer (rejected: not needed for a 10 MiB limit).
+Cost. Base64 makes transfers a third larger. Not tried in a real window; the Windows drop setting is taken from Tauri's documentation and needs a device check.
+
+## 2026-11-04: Markdown source view and line endings (0.2)
+Decision. A button switches the whole note to a text box. Saving from the box writes exactly the box content. The text box turns line endings into `\n`, so a note with Windows line endings is shown with `\n` and written back with `\r\n`. A note that mixes both kinds is shown read-only in source view, because editing it there would silently change line endings.
+
+## 2026-11-04: Block handle, block ids and moving blocks (0.2)
+Decision. The handle uses pointer events so mouse, finger and pen share one code path (touch-action none on the handle only). The menu has move up and move down as well, so moving never depends on dragging. Alt+Up and Alt+Down move the block you are in. A block link uses Obsidian's own marker: a paragraph gets ` ^id` at the end of its last line; any other block gets a separate `^id` line after it. A block and its id line move, duplicate and delete as one unit. A duplicate gets no id, and duplicate ids are dropped when saving, so ids stay unique. Blocks remember their original position, and the blank-line spacing of a note is reused only next to the same neighbour, so reordering cannot glue blocks together.
+Cost. Links of the form `[[Note#^id]]` are written but not followed until 0.3. Only text blocks can be turned into other types.
+
+## 2026-11-04: Themes (0.2)
+Decision. Eight themes plus "follow the system" (the default). Values come from the first ScaleNote, with translucent borders and tints blended to solid colours. Colours that failed the contrast test were darkened or lightened (sage and lavender accents, light-theme status colours, the dark-theme red). `tests/themes.test.mjs` reads `web/themes.css` and checks every theme has every colour and that text, accent and status colours reach 4.5:1 (main text 7:1). Theme files are plain data, so community themes can be added later.
+Cost. Some accents are a little darker than in the first version (for example sage's green).
+
+## 2026-11-04: Update check on by default, no automatic install yet (0.2)
+Context. The owner wants the check and automatic updating on by default, with one setting for both.
+Decision. One setting (`updates`, default on) controls both. The check reads only `api.github.com/repos/catman-hugo/scalenote-app/releases`, at most every 12 hours, with no body, cookies, referrer or credentials, and a 10 second and 512 KiB limit. Only published non-pre-release plain `x.y.z` tags count. Release notes are untrusted and shown with `textContent` only. Installing by itself needs a signing key in GitHub secrets that does not exist, so the notice offers a download button that opens only the project's releases page (`tauri-plugin-opener` 2.7.2, scoped in the capability file). The first-run text and Settings both say the check exists and that GitHub sees the internet address. The "What's new" screen shows the bundled notes of the running version once after an update, never on a fresh install. The app version is built into the interface from `package.json`; a test checks all version numbers agree.
+Alternatives. Showing the link as text (rejected: poor for a non-programmer). The updater plugin (rejected until a signing key exists).
+Cost. Existing 0.1 users get the check without having seen the disclosure line; the What's new screen tells them. The connect policy had to be written out (`ipc:`, `http://ipc.localhost`, GitHub), so a mistake there would break the app's own commands. Needs a device check.
+
+## 2026-11-04: Phone keyboard (0.2)
+Decision. The viewport has `interactive-widget=resizes-content` and the page height uses `100dvh`, so the on-screen keyboard shrinks the page instead of pushing the top bar under the status bar. Needs a check on the POCO F7 Pro.
+
+## 2026-11-04: Not built in 0.2
+Underline, highlight, colour, subscript and superscript (stored as inline html). The list of html tags and attributes that may be kept needs the owner's decision first. The converter for old ScaleNote notes was dropped by the owner.

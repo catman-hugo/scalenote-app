@@ -89,10 +89,22 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
+
+select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  min-height: 36px;
+}
+
+input[type="range"],
+input[type="checkbox"] { accent-color: var(--accent); }
 
 button {
   background: transparent;
@@ -115,6 +127,8 @@ button.primary {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
+.notes:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
@@ -699,7 +713,7 @@ body.block-dragging * { cursor: grabbing; user-select: none; }
 .note-body th p { margin: 0; }
 .note-body .selectedCell { background: var(--accent-soft); }
 
-.image-block { margin: 0; }
+.image-block { margin: var(--space-3) 0; }
 .image-frame { display: flex; justify-content: center; }
 .image-img { max-width: 100%; height: auto; border-radius: var(--radius); }
 .image-img:not([src]) { display: none; }
@@ -866,5 +880,6 @@ body.block-dragging * { cursor: grabbing; user-select: none; }
 .notes { max-height: 50vh; overflow-y: auto; margin: var(--space-3) 0; overflow-wrap: anywhere; }
 .notes h3, .notes h4 { margin: var(--space-3) 0 var(--space-1); }
 .notes p, .notes ul { margin: var(--space-1) 0; }
-.update-notice { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.update-notice { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-3); flex-wrap: wrap; }
+.update-notice span { flex: 1; min-width: 12rem; }
 .update-notice[hidden] { display: none; }
