@@ -485,6 +485,171 @@ await test("a note with Windows line endings keeps them; a note that mixes both 
 });
 
 const DEMO = "# Cell biology\n\nThe **cell** is the basic unit of life. See also `mitosis`.\n\n- Nucleus\n- Mitochondria\n\nTo do:\n\n- [ ] Review chapter 3\n- [x] Draw the cell\n\n> Everything is made of cells.\n\n| organelle | job |\n|---|---|\n| nucleus | DNA |\n";
+// ---------- block handle ----------
+
+const GUT = ["# Title", "", "First", "", "Second ^keep1", "", "- a", "- b", "", "```js", "code", "```", "", "Last", ""].join("\n");
+const order = async (page) => page.evaluate(() => [...document.querySelectorAll(".note-body > *")].map((n) => n.textContent.trim().slice(0, 12)));
+
+async function dragHandle(page, fromText, toText, below = false, type = "mouse") {
+  const target = page.locator(".note-body > *", { hasText: toText }).first();
+  const source = page.locator(".note-body > *", { hasText: fromText }).first();
+  await source.click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const h = await page.locator(".gutter-handle").boundingBox();
+  const t = await target.boundingBox();
+  const y = below ? t.y + t.height - 2 : t.y + 2;
+  await page.mouse.move(h.x + 16, h.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y + 40, { steps: 3 });
+  await page.mouse.move(h.x + 16, y, { steps: 8 });
+  await page.mouse.up();
+}
+
+await test("the block handle follows the block you are in and moves blocks with the menu", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "Second" }).click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  await page.click(".gutter-handle");
+  await page.waitForSelector(".gutter-menu:not([hidden])");
+  await page.click('.gutter-menu >> text="Move up"');
+  await waitSaved(page);
+  let text = (await files(page))["G.md"];
+  assert.ok(text.indexOf("Second ^keep1") < text.indexOf("First"), text);
+  assert.ok(text.includes("- a\n- b"), "list untouched");
+  assert.ok(text.includes("```js\ncode\n```"), "code untouched");
+  // keyboard move back down
+  await page.locator(".note-body p", { hasText: "Second" }).click();
+  await page.keyboard.press("Alt+ArrowDown");
+  await waitSaved(page);
+  text = (await files(page))["G.md"];
+  assert.ok(text.indexOf("First") < text.indexOf("Second ^keep1"), text);
+});
+
+await test("duplicate gives a copy without the block id, delete removes one block, one undo takes it back", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "Second" }).click();
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu >> text="Duplicate"');
+  await waitSaved(page);
+  let text = (await files(page))["G.md"];
+  assert.equal((text.match(/Second/g) || []).length, 2, text);
+  assert.equal((text.match(/\^keep1/g) || []).length, 1, "ids stay unique");
+  await page.locator(".note-body p", { hasText: "Last" }).click();
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu >> text="Delete"');
+  await waitSaved(page);
+  assert.ok(!(await files(page))["G.md"].includes("Last"));
+  await page.keyboard.press("Control+z");
+  await waitSaved(page);
+  assert.ok((await files(page))["G.md"].includes("Last"));
+});
+
+await test("turn into changes a paragraph to a heading and a list to a quote", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu >> text="Heading 2"');
+  await waitSaved(page);
+  assert.ok((await files(page))["G.md"].includes("## First"));
+  await page.locator(".note-body li", { hasText: "a" }).first().click();
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu >> text="Quote"');
+  await waitSaved(page);
+  assert.match((await files(page))["G.md"], /> a\n> b|> a\n>\n> b/);
+});
+
+await test("copy block link adds an id once and puts [[Note#^id]] on the clipboard", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.evaluate(() => { window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; });
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu >> text="Copy block link"');
+  await waitSaved(page);
+  const copied = await page.evaluate(() => window.__copied);
+  assert.match(copied, /^\[\[G#\^[a-z0-9]+\]\]$/);
+  const id = copied.match(/\^([a-z0-9]+)\]\]/)[1];
+  assert.ok((await files(page))["G.md"].includes(`First ^${id}`));
+  // a list gets an id line after it
+  await page.locator(".note-body li", { hasText: "a" }).first().click();
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu >> text="Copy block link"');
+  await waitSaved(page);
+  assert.match((await files(page))["G.md"], /- a\n- b\n\n\^[a-z0-9]+\n/);
+  await page.waitForSelector(".toast:not([hidden])");
+});
+
+await test("dragging the handle with the mouse moves a block, and Escape cancels", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await dragHandle(page, "Last", "First");
+  await waitSaved(page);
+  let text = (await files(page))["G.md"];
+  assert.ok(text.indexOf("Last") < text.indexOf("First"), text);
+  assert.ok(text.includes("```js\ncode\n```"));
+  // cancel
+  const before = await order(page);
+  const src = page.locator(".note-body > *", { hasText: "Second" }).first();
+  await src.click();
+  const h = await page.locator(".gutter-handle").boundingBox();
+  await page.mouse.move(h.x + 16, h.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y - 120, { steps: 6 });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  assert.deepEqual(await order(page), before);
+});
+
+await test("touch and pen: dragging the handle moves a block (pointer events, not mouse only)", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  const cdp = await page.context().newCDPSession(page);
+  await page.locator(".note-body p", { hasText: "Last" }).click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const h = await page.locator(".gutter-handle").boundingBox();
+  const t = await page.locator(".note-body > *", { hasText: "First" }).first().boundingBox();
+  const x = h.x + 16, y0 = h.y + 16;
+  for (const pointerType of ["touch", "pen"]) {
+    const send = (type, y) => pointerType === "touch"
+      ? cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] })
+      : cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mouseReleased" ? 0 : 1, pointerType: "pen", clickCount: 1 });
+    const [start, move, end] = pointerType === "touch" ? ["touchStart", "touchMove", "touchEnd"] : ["mousePressed", "mouseMoved", "mouseReleased"];
+    const hh = await page.locator(".gutter-handle").boundingBox();
+    const yy = hh.y + 16;
+    await send(start, yy);
+    for (let i = 1; i <= 10; i++) await send(move, yy + (t.y + 2 - yy) * (i / 10));
+    await send(end, t.y + 2);
+    await waitSaved(page);
+    const text = (await files(page))["G.md"];
+    assert.ok(text.indexOf("Last") < text.indexOf("First"), pointerType + "\n" + text);
+    // put it back for the second round: move Last down with the menu command
+    await page.locator(".note-body p", { hasText: "Last" }).click();
+    for (let i = 0; i < 6; i++) await page.keyboard.press("Alt+ArrowDown");
+    await waitSaved(page);
+    await page.locator(".note-body p", { hasText: "Last" }).click();
+  }
+});
+
+await test("a tap on the handle opens the menu and does not move anything", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  const before = (await files(page))["G.md"];
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.click(".gutter-handle");
+  await page.waitForSelector(".gutter-menu:not([hidden])");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".gutter-menu", { state: "hidden" });
+  assert.equal((await files(page))["G.md"], before);
+});
+
+await test("a moved note with a shuffled order opens and saves again without loss", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  for (const [from, to] of [["Last", "Title"], ["Second", "Last"], ["First", "Second"]]) await dragHandle(page, from, to);
+  await waitSaved(page);
+  const saved = (await files(page))["G.md"];
+  for (const part of ["# Title", "First", "Second ^keep1", "- a\n- b", "```js\ncode\n```", "Last"]) assert.ok(saved.includes(part), part + "\n" + saved);
+  await page.click("#sourceToggle");
+  await page.click("#sourceToggle");
+  await page.waitForTimeout(400);
+  assert.equal((await files(page))["G.md"], saved);
+});
+
 if (shots) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {

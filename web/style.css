@@ -340,7 +340,8 @@ body:not(.sidebar-open) .sidebar {
 .editor {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-5) var(--space-4) var(--space-6);
+  /* Left room for the block handle. */
+  padding: var(--space-5) var(--space-4) var(--space-6) calc(var(--space-4) + 36px);
 }
 
 .note-body {
@@ -500,6 +501,84 @@ body:not(.sidebar-open) .sidebar {
 
 .raw-text:focus-visible {
   outline: none;
+}
+
+/* ---------- block handle and its menu ---------- */
+
+.gutter-handle {
+  position: fixed;
+  z-index: 25;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-color: transparent;
+  color: var(--text-soft);
+  font-size: var(--text-s);
+  letter-spacing: -2px;
+  cursor: grab;
+  /* A finger drag on the handle moves the block; it must not scroll the page. */
+  touch-action: none;
+  user-select: none;
+}
+
+.gutter-handle[hidden],
+.gutter-menu[hidden],
+.drop-line[hidden],
+.toast[hidden] { display: none; }
+
+body.block-dragging,
+body.block-dragging * { cursor: grabbing; user-select: none; }
+
+.gutter-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 200px;
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: var(--space-1);
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+}
+
+.menu-item:disabled { color: var(--text-soft); opacity: 0.5; cursor: default; }
+.menu-item:disabled:hover { background: transparent; }
+.menu-label { padding: var(--space-2) var(--space-3) var(--space-1); color: var(--text-soft); font-size: var(--text-s); border-top: 1px solid var(--line); margin-top: var(--space-1); }
+
+.drop-line {
+  position: fixed;
+  z-index: 35;
+  height: 3px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.toast {
+  position: fixed;
+  z-index: 50;
+  left: 50%;
+  bottom: var(--space-5);
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  background: var(--text);
+  color: var(--bg);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-s);
 }
 
 /* ---------- markdown source view ---------- */
@@ -768,7 +847,7 @@ body:not(.sidebar-open) .sidebar {
   }
 
   .editor {
-    padding-left: var(--space-3);
+    padding-left: calc(var(--space-2) + 36px);
     padding-right: var(--space-3);
   }
 }

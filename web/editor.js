@@ -9,6 +9,7 @@ import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
 import { Callout, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
 import { attachToolbars } from "./toolbar.js";
+import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
 import { choosePicture, checkPicture, storePicture } from "./images.js";
 
@@ -66,6 +67,16 @@ const PictureInput = Extension.create({
 
 // Set by createEditor; lets the Mod-k shortcut open the link box in the toolbar.
 let toolbars = null;
+let gutter = null;
+const BlockMoveShortcuts = Extension.create({
+  name: "blockMoveShortcuts",
+  addKeyboardShortcuts() {
+    return {
+      "Alt-ArrowUp": () => Boolean(gutter && gutter.moveCurrent(-1)),
+      "Alt-ArrowDown": () => Boolean(gutter && gutter.moveCurrent(1)),
+    };
+  },
+});
 const LinkShortcut = Extension.create({
   name: "linkShortcut",
   addKeyboardShortcuts() {
@@ -83,8 +94,10 @@ const SourceKeeper = Extension.create({
     return [
       {
         types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "toggle", "table", "imageBlock"],
-        attributes: { src: keep, base: keep, gap: keep },
+        attributes: { src: keep, base: keep, gap: keep, idx: keep },
       },
+      // Only paragraphs can carry a block link id on their last line.
+      { types: ["paragraph"], attributes: { blockId: keep } },
     ];
   },
 });
@@ -102,6 +115,7 @@ const RawBlock = Node.create({
       src: { default: "", rendered: false },
       base: { default: null, rendered: false },
       gap: { default: null, rendered: false },
+      idx: { default: null, rendered: false },
     };
   },
   parseHTML() {
@@ -328,6 +342,7 @@ export function createEditor(element, onChange, options = {}) {
       ...tableExtensions,
       SlashMenu,
       LinkShortcut,
+      BlockMoveShortcuts,
       PictureInput,
     ],
     content: { type: "doc", content: [{ type: "paragraph" }] },
@@ -337,5 +352,10 @@ export function createEditor(element, onChange, options = {}) {
     onUpdate: () => onChange(),
   });
   toolbars = attachToolbars(editor);
+  gutter = attachGutter(editor, {
+    scroller: element,
+    noteTitle: options.noteTitle || (() => ""),
+    notify: options.notify || (() => {}),
+  });
   return editor;
 }

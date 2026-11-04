@@ -53,6 +53,15 @@ function hideBanner() {
   el("banner").hidden = true;
 }
 
+let toastTimer = null;
+// A short message that goes away by itself (for example "Block link copied").
+function showToast(text) {
+  el("toast").textContent = text;
+  el("toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el("toast").hidden = true), 3500);
+}
+
 function setStatus(kind) {
   const labels = {
     saved: strings.editor.saved,
@@ -578,6 +587,8 @@ async function start() {
   app.editor = createEditor(el("editor"), () => app.autosave.touch(), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
     noteKey: () => (app.current ? app.current.path : null),
+    noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
+    notify: showToast,
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
   startFlushTriggers();

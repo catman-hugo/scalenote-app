@@ -44,6 +44,19 @@ export const strings = {
     unsaved: "Not saved yet",
   },
 
+  gutter: {
+    handleMark: "⋮⋮",
+    handleLabel: "Block actions",
+    moveUp: "Move up",
+    moveDown: "Move down",
+    duplicate: "Duplicate",
+    delete: "Delete",
+    copyLink: "Copy block link",
+    turnInto: "Turn into",
+    linkCopied: "Block link copied",
+    linkNotCopied: "The block now has a link id, but the link could not be copied. Switch to the markdown view to copy it.",
+  },
+
   source: {
     show: "Markdown",
     hide: "Editor",
