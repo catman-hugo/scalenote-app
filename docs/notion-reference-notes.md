@@ -17,7 +17,7 @@ What ScaleNote has today: a bar with bold, italic, strike, code and link, and no
 
 Proposed use:
 - 0.2.1 or 0.2.2: add the block type row to the selection bar by reusing the existing "Turn into" code.
-- Underline, colour and background colour wait for the owner's html styles decision, because markdown has no way to store them.
+- Highlight is stored as `==text==`, which Obsidian supports natively. Underline, colour and background colour are stored as small inline html tags from a fixed, theme-aware palette (see DECISIONS.md, 2026-11-04). The exact tag list is checked against Obsidian's documentation before building.
 - 0.3: the link input also searches notes by title when wikilinks arrive.
 - Clear formatting is a small, safe addition.
 
