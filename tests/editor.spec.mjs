@@ -1441,7 +1441,7 @@ await test("the plus button adds an empty block below and puts the cursor in it"
   await page.waitForSelector(".gutter-plus:not([hidden])");
   const p = await page.locator(".gutter-plus").boundingBox();
   const h = await page.locator(".gutter-handle").boundingBox();
-  assert.ok(p.x + p.width <= h.x + 1 && Math.abs(p.y - h.y) <= 1, "the plus sits left of the grip on the same line");
+  assert.ok(p.x + p.width <= h.x + 1 && Math.abs(p.y - h.y) <= 1, "the plus sits left of the grip on the same line: plus " + JSON.stringify(p) + " grip " + JSON.stringify(h));
   await page.click(".gutter-plus");
   await page.keyboard.type("brand new");
   const now = await order(page);
