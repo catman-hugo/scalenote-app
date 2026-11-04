@@ -93,12 +93,20 @@ From the owner's test of 0.2.1 on Linux (2026-11-04).
 - Toggle: the fold bug was a class change on the node view being treated as an edit and undone; fixed and covered by a test that fails without the fix. A toggle shows only arrow and title until focus is inside it.
 - Tested here: 57 unit tests, the browser tests (including new ones for each item above) and screenshots in light and dark, desktop and phone width, at text sizes 80, 100 and 125. No Rust changes, so the Rust tests are unchanged.
 - Not tried on a device: everything above. Needs a real test on Linux, Windows and the Android phone (folder menu on the phone is disabled by design; check that it looks right).
-- Moved to 0.2.4: drag preview, multi-select, plus button, block type row in the selection bar.
+- Moved to 0.2.5: drag preview, multi-select, plus button, block type row in the selection bar.
 - Release notes: `docs/release-notes/0.2.2.md`.
 
 ## 0.2.3: built
-Found on a device (2026-11-04): the update check ignored releases labelled Pre-release, and every release so far has that label, so 0.2.1 said "latest version" while 0.2.2 was out. Setting 0.2.2 to None made it appear, which proved the cause. `newestRelease` in `web/updates.js` now skips only drafts. Tags that are not a plain x.y.z are still ignored. Unit test covers pre-release only lists, drafts and the current version. Block editing polish moved to 0.2.4.
+Found on a device (2026-11-04): the update check ignored releases labelled Pre-release, and every release so far has that label, so 0.2.1 said "latest version" while 0.2.2 was out. Setting 0.2.2 to None made it appear, which proved the cause. `newestRelease` in `web/updates.js` now skips only drafts. Tags that are not a plain x.y.z are still ignored. Unit test covers pre-release only lists, drafts and the current version. Block editing polish moved to 0.2.5.
 - Not tried on a device. Builds older than 0.2.3 cannot see pre-releases, so 0.2.2 and older need one manual install. Release notes: `docs/release-notes/0.2.3.md`.
+
+## 0.2.4: built
+Owner request (2026-11-04): a right-click menu in the page list, like the old server-only ScaleNote, starting with renaming folders. Renaming a folder already worked, but only by double-click, which nobody can discover and which does not work with a finger.
+- New `web/contextmenu.js`: a small menu opened by the `contextmenu` event (right-click, long press on a touch screen, menu key). It holds one entry, Rename, for folders and pages. Delete, Duplicate and Share are not offered because they do not exist yet (trash is planned for 0.3).
+- Renaming happens in the list. The field replaces the button instead of sitting inside it, because a text field inside a button loses focus when clicked in Chromium. F2 on a focused entry renames it too. An open page is saved before its file is renamed, and the title follows the new name. The Rust `rename` is unchanged.
+- Tested here: 57 unit tests, the browser tests (7 new: menu on a folder and a page, Escape and outside click, F2 and clicks inside the field, a taken or empty name, menu kept inside the window) and screenshots in light and dark, desktop and phone width. Rust tests unchanged (no Rust changes).
+- Not tried on a device: the long press on the Android phone (it relies on the web view sending the contextmenu event on a long press), the menu key on Linux and Windows, and everything else above.
+- Release notes: `docs/release-notes/0.2.4.md`. Block editing polish moved to 0.2.5.
 
 ## Versions
 
@@ -110,7 +118,8 @@ Found on a device (2026-11-04): the update check ignored releases labelled Pre-r
 | 0.2.1 | Polish from the first device test of 0.2 (see "0.2.1: built"). No new features | built, not tried on a device; comes before 0.3 |
 | 0.2.2 | Folder switcher, five text sizes with scaling icons, "page" wording, toggle fix (see "0.2.2: built") | built, not tried on a device |
 | 0.2.3 | Update check also finds pre-releases (see "0.2.3: built") | built, not tried on a device |
-| 0.2.4 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together, plus button, block type row in the selection bar | planned, after 0.2.3 |
+| 0.2.4 | Right-click menu with Rename on folders and pages (see "0.2.4: built") | built, not tried on a device |
+| 0.2.5 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together, plus button, block type row in the selection bar | planned, after 0.2.4 |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

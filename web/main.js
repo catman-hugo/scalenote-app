@@ -14,6 +14,7 @@ import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
+import { openContextMenu } from "./contextmenu.js";
 import { pathForVault } from "./images.js";
 import { strings } from "./strings.js";
 
@@ -406,31 +407,50 @@ function drawTree() {
         else app.expanded.add(path);
         drawTree();
       },
-      renameFolder: (path, button) => renameFolderInline(path, button),
+      renameEntry: (node, button) => renameEntryInline(node, button),
+      entryMenu: (node, x, y, button) =>
+        openContextMenu(x, y, [{ label: strings.contextMenu.rename, run: () => renameEntryInline(node, button) }], { returnFocus: button }),
     },
   );
 }
 
-function renameFolderInline(path, button) {
+// Renames a folder or a page in the list, in place. Enter keeps the new name, Escape or
+// leaving the field is handled below. The vault refuses names that already exist.
+function renameEntryInline(node, button) {
+  const path = node.path;
+  const isFolder = node.kind === "folder";
   const label = button.querySelector(".tree-label");
+  if (!label) return;
   const input = document.createElement("input");
   input.type = "text";
   input.className = "inline-rename";
   input.value = label.textContent;
   input.maxLength = 100;
-  label.replaceWith(input);
+  input.setAttribute("aria-label", isFolder ? strings.contextMenu.renameFolderLabel : strings.contextMenu.renamePageLabel);
+  // A text field inside a button does not work properly (a click in it counts as a click on the
+  // button and takes the focus away), so the button is swapped for a plain box with the same
+  // icons and the field.
+  const holder = document.createElement("div");
+  holder.className = "tree-button tree-renaming";
+  for (const child of [...button.children]) if (child !== label) holder.append(child.cloneNode(true));
+  holder.append(input);
+  button.replaceWith(holder);
   input.focus();
   input.select();
   let finished = false;
   const finish = async (commit) => {
     if (finished) return;
     finished = true;
-    if (commit && input.value.trim() && input.value !== label.textContent) {
+    const wanted = input.value.trim();
+    if (commit && wanted && wanted !== label.textContent) {
       try {
-        const newPath = await backend.rename(path, input.value);
+        // An open page is saved first, so nothing typed so far is written to the old name.
+        if (app.autosave) await app.autosave.flush();
+        const newPath = await backend.rename(path, wanted);
         remapPaths(path, newPath);
+        if (app.current) el("title").value = noteTitle(app.current.path);
       } catch (error) {
-        logProblem("rename folder failed", error);
+        logProblem("rename failed", error);
         showBanner(errorText(error));
       }
     }

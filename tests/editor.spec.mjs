@@ -1120,6 +1120,119 @@ await test("on a phone the note list is open at the start", async (page) => {
   assert.equal(await page.isVisible("#sidebar"), true);
 }, { viewport: { width: 390, height: 780 }, settings: existingUser({ updates: false }) });
 
+// ---------- 0.2.4: the right-click menu and renaming in the page list ----------
+
+const ctxOpts = { settings: existingUser({ updates: false }) };
+const treeNames = (page) => page.evaluate(() => [...document.querySelectorAll(".tree-label")].map((n) => n.textContent));
+async function withFolderAndPage(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => { window.__mock.folders.add("Biology"); window.__mock.files.set("Biology/Cells.md", "cells\n"); window.__mock.files.set("Plan.md", "plan\n"); });
+  await page.click("#newFolder"); // draws the list again; also adds "New folder", which these tests ignore
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+}
+
+await test("right-clicking a folder opens a menu with Rename, and renaming keeps the pages inside", async (page) => {
+  await withFolderAndPage(page);
+  const prevented = await page.evaluate(() => new Promise((resolve) => {
+    const b = document.querySelector('.tree-button[data-path="Biology"]');
+    b.addEventListener("contextmenu", (e) => queueMicrotask(() => resolve(e.defaultPrevented)), { once: true });
+    b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 80 }));
+  }));
+  assert.equal(prevented, true, "the browser's own menu is replaced");
+  await page.waitForSelector(".context-menu");
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename"]);
+  await page.click(".context-menu .menu-item");
+  assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
+  const input = page.locator(".inline-rename");
+  assert.equal(await input.inputValue(), "Biology");
+  assert.equal(await page.evaluate(() => document.activeElement.className), "inline-rename");
+  await input.fill("Plants");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Plants"]');
+  const state = await page.evaluate(() => ({ folders: [...window.__mock.folders], files: [...window.__mock.files.keys()] }));
+  assert.ok(state.folders.includes("Plants") && !state.folders.includes("Biology"), JSON.stringify(state));
+  assert.ok(state.files.includes("Plants/Cells.md") && !state.files.includes("Biology/Cells.md"), JSON.stringify(state));
+}, ctxOpts);
+
+await test("right-clicking a page renames it, and an open page follows its new name", async (page) => {
+  await withFolderAndPage(page);
+  await page.click('.tree-button[data-path="Plan.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await page.locator(".note-body p").click();
+  await page.keyboard.type(" more");
+  await page.click('.tree-button[data-path="Plan.md"]', { button: "right" });
+  await page.click(".context-menu .menu-item");
+  const input = page.locator(".inline-rename");
+  assert.equal(await input.inputValue(), "Plan", "the .md ending is not shown");
+  await input.fill("Schedule");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Schedule.md"]');
+  assert.equal(await page.inputValue("#title"), "Schedule");
+  const saved = await files(page);
+  assert.ok(!("Plan.md" in saved) && /plan more/.test(saved["Schedule.md"]), "what was typed before the rename is kept: " + JSON.stringify(saved["Schedule.md"]));
+}, ctxOpts);
+
+await test("the menu closes with Escape or a click elsewhere, and Escape in the name field changes nothing", async (page) => {
+  await withFolderAndPage(page);
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.waitForSelector(".context-menu");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".context-menu").count(), 0);
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.waitForSelector(".context-menu");
+  await page.click("#empty");
+  assert.equal(await page.locator(".context-menu").count(), 0);
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.click(".context-menu .menu-item");
+  await page.locator(".inline-rename").fill("Nope");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  assert.ok(!(await treeNames(page)).includes("Nope"));
+  assert.equal(await page.evaluate(() => window.__mock.folders.has("Biology")), true);
+}, ctxOpts);
+
+await test("F2 renames the focused entry, and clicking inside the name field does not fold or open it", async (page) => {
+  await withFolderAndPage(page);
+  await page.focus('.tree-button[data-path="Biology"]');
+  await page.keyboard.press("F2");
+  const input = page.locator(".inline-rename");
+  await input.waitFor();
+  await input.click();
+  await input.click();
+  assert.equal(await page.locator(".inline-rename").count(), 1, "still editing after clicks in the field");
+  assert.equal(await page.locator('.tree-button[data-path="Biology/Cells.md"]').count(), 0, "the folder did not open");
+  await page.keyboard.press("Space");
+  await input.fill("Life");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Life"]');
+}, ctxOpts);
+
+await test("a name that is taken or empty leaves things as they are and says so calmly", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => window.__mock.folders.add("Chemistry"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.click(".context-menu .menu-item");
+  await page.locator(".inline-rename").fill("Chemistry");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.equal(await page.evaluate(() => window.__mock.folders.has("Biology")), true);
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.click(".context-menu .menu-item");
+  await page.locator(".inline-rename").fill("   ");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  assert.equal(await page.locator(".inline-rename").count(), 0);
+}, ctxOpts);
+
+await test("the menu stays inside the window when opened near the bottom right", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => document.querySelector('.tree-button[data-path="Biology"]').dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })));
+  const box = await page.locator(".context-menu").boundingBox();
+  const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+  assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= size.w && box.y + box.height <= size.h, JSON.stringify({ box, size }));
+}, ctxOpts);
+
 if (shots) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
@@ -1284,6 +1397,28 @@ if (shots) {
     await up.waitForSelector("#whatsnew[open]");
     await up.screenshot({ path: `${shots}/v021-desktop-${scheme}-4-whats-new.png` });
     await update.close();
+  }
+  // 0.2.4 screens: the right-click menu on a folder, and the name field while renaming.
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false, vaultPath: "/home/alice/Documents/ScaleNote" }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await prepare(page, {});
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate(() => { window.__mock.folders.add("Biology"); window.__mock.files.set("Biology/Cells.md", "cells\n"); window.__mock.files.set("Plan.md", "plan\n"); });
+      await page.click("#newFolder");
+      const row = page.locator('.tree-button[data-path="Biology"]');
+      await row.click({ button: "right" });
+      await page.waitForSelector(".context-menu");
+      await page.screenshot({ path: `${shots}/v024-${label}-${scheme}-1-menu.png` });
+      await page.click(".context-menu .menu-item");
+      await page.waitForSelector(".inline-rename");
+      await page.screenshot({ path: `${shots}/v024-${label}-${scheme}-2-renaming.png` });
+      await context.close();
+    }
   }
   // 0.2.2 screens: the folder menu, the sidebar at the smallest and largest text size, the
   // settings with five sizes, and a toggle quiet and in use.

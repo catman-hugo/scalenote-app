@@ -33,3 +33,7 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 ## Addendum for 0.2.2
 - Recent folders are paths stored only in settings.json. They are validated on load (strings, length limit, no control characters, duplicates removed, at most 8). They are never sent anywhere.
 - No new network calls, no new Rust code, no new permissions. The content security policy is unchanged. Builder-checked, not an outside review.
+
+## Addendum for 0.2.4
+- No new network calls, no new Rust code, no new permissions. Renaming uses the existing `rename_entry` command, which sanitises the new name, refuses names that exist and never replaces anything.
+- Names typed in the list are set as text (never as html), and are limited to 100 characters in the field.
