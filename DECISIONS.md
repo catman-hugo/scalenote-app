@@ -144,3 +144,9 @@ Context. The check skipped releases labelled Pre-release. All releases are label
 Decision. Only drafts are skipped. Tags must still be a plain x.y.z number. Releases stay labelled Pre-release until 1.0, and the check works with either label. Once 1.0 exists, a rule to hold back test builds (for example, ignoring pre-releases for people on stable) can be added.
 Alternatives. Publishing every release as None (works, but relies on remembering it, and loses the label as a warning). A setting for "include test builds" (not needed while everything is a test build).
 Cost. A version published by mistake as Pre-release is offered to everyone. Builds older than 0.2.3 still cannot see pre-releases.
+
+## 2026-11-04: A right-click menu in the page list, starting with Rename
+Context. The owner liked the right-click menu of the old server-only ScaleNote and wants folders to be renamed from it. Folders could already be renamed by double-click, which is hidden and does not work on touch.
+Decision. Right-click, long press and the menu key open a small menu at the entry. It only holds actions that exist: Rename, for folders and pages. More entries are added when their features exist (delete with the trash in 0.3). No emoji or icons are in the menu text; it uses the same flat menu style as the block menu. The rename field replaces the entry's button instead of sitting inside it. F2 renames the focused entry.
+Alternatives. Showing Delete, Duplicate and Share greyed out (rejected: dead entries). A rename button on every row (rejected: clutter, and no room on the phone).
+Cost. Long press relies on the Android web view sending the contextmenu event; this is not tried on the phone yet. If it does not, a second way (a button in the row) will be needed there.

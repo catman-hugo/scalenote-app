@@ -36,6 +36,13 @@ export const strings = {
     expand: "Expand folder",
   },
 
+  contextMenu: {
+    label: "Actions for this entry",
+    rename: "Rename",
+    renameFolderLabel: "Folder name",
+    renamePageLabel: "Page name",
+  },
+
   editor: {
     titleLabel: "Page title",
     placeholder: "Type / for blocks",

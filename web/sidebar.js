@@ -20,7 +20,8 @@ export function buildTree(entries) {
 /**
  * Draws the tree into `container`.
  * `state` holds { expanded: Set, currentPath, selectedFolder }.
- * `actions` has { openNote, toggleFolder, selectFolder, renameFolder }.
+ * `actions` has { openNote, toggleFolder, selectFolder, renameEntry, entryMenu }.
+ * `entryMenu(node, x, y, button)` opens the right-click menu; `renameEntry(node, button)` renames in place.
  */
 export function renderTree(container, entries, state, actions) {
   const root = buildTree(entries);
@@ -60,7 +61,7 @@ function renderNode(node, state, actions) {
     button.title = open ? strings.sidebar.collapse : strings.sidebar.expand;
     if (state.selectedFolder === node.path) row.classList.add("selected-folder");
     button.addEventListener("click", () => actions.toggleFolder(node.path));
-    button.addEventListener("dblclick", () => actions.renameFolder(node.path, button));
+    button.addEventListener("dblclick", () => actions.renameEntry(node, button));
     row.append(button);
     item.append(row);
     if (open && node.children.length) item.append(renderList(node.children, state, actions));
@@ -74,7 +75,26 @@ function renderNode(node, state, actions) {
     row.append(button);
     item.append(row);
   }
+  wireEntryMenu(button, node, actions);
   return item;
+}
+
+// Right-click, a long press on a touch screen and the menu key all arrive as "contextmenu".
+// F2 renames the focused entry, the same shortcut file managers use.
+function wireEntryMenu(button, node, actions) {
+  button.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    // From the keyboard the event has no useful position, so the menu opens under the entry.
+    const box = button.getBoundingClientRect();
+    const fromKeyboard = event.clientX === 0 && event.clientY === 0;
+    actions.entryMenu(node, fromKeyboard ? box.left + 16 : event.clientX, fromKeyboard ? box.bottom : event.clientY, button);
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "F2") {
+      event.preventDefault();
+      actions.renameEntry(node, button);
+    }
+  });
 }
 
 function label(text) {
