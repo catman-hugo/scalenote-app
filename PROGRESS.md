@@ -15,6 +15,9 @@ A small fix release between 0.2 and 0.3, so these are done well before 1.0.0 and
 
 The note width setting works (checked by the owner with a note open); it only looked unchanged because no note was open. Possible small improvement: say so in the settings or show a preview.
 
+6. Block handle position: it sits at the top edge of its block, so it looks off-centre next to headings, code and lists, and badly placed next to the divider (a 2 pixel line). Centre it on the first line of the block, and give the divider a proper spot.
+7. While dragging, the handle that was grabbed stays visible. Hide it (or turn it into the drag preview) during the drag.
+
 Also still open for 0.2.1 or later: the owner's decision on inline html styles (underline, highlight, colour, sub and superscript), and anything found on the Android phone and Linux.
 
 ## 0.2 state (branch feature/v0.2-editor, pull request #9)
@@ -70,6 +73,7 @@ Not done or not tested:
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | built, not tested on a device (see above) |
 | 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline html styles waiting for a decision |
 | 0.2.1 | Polish from the first device test of 0.2 (see "Planned for 0.2.1"). No new features | planned, comes before 0.3 |
+| 0.2.2 | Block editing polish: a preview of the block being dragged, selecting several blocks and moving them together | planned, after 0.2.1 |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
@@ -98,3 +102,6 @@ Not planned: voice calls, and Apple hardware.
 ## Human review
 
 Nothing has been reviewed by a human yet.
+
+## Block layout: columns (waiting for a decision)
+Owner request (2026-11-04): drag a block next to another one to make columns. Markdown has no columns, and the notes must stay plain markdown that Obsidian can open. A format has to be chosen first, for example an Obsidian-style callout block holding the columns, or a small html table. The choice affects what other programs show, so it needs the owner's decision before anything is built. Proposed home: after 0.3, as its own slice, once 0.2.2 has the drag preview and multi-select in place.
