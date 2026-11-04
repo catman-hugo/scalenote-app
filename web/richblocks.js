@@ -245,7 +245,11 @@ export function writeBlock(node, serialize) {
       return writeTable(node, serialize);
     case "imageBlock":
       return writeImage(node);
-    default:
-      return trimEnd(serialize({ type: "doc", content: [node] }));
+    default: {
+      const text = trimEnd(serialize({ type: "doc", content: [node] }));
+      // A paragraph can carry a block link id at the end of its last line.
+      const id = node.type === "paragraph" && node.attrs && node.attrs.blockId;
+      return id && text !== "" ? `${text} ^${id}` : text;
+    }
   }
 }

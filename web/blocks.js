@@ -48,6 +48,14 @@ const UNSAFE_INLINE = [
   /~~~/,
 ];
 
+/** Block ids are letters, digits and hyphens, as in Obsidian. */
+export const BLOCK_ID = /[ \t]+\^([A-Za-z0-9-]+)$/;
+
+/** Removes a closing " ^id" from the end of a paragraph's text. */
+export function stripBlockId(text) {
+  return text.replace(BLOCK_ID, "");
+}
+
 function hasUnsafeInline(text) {
   return UNSAFE_INLINE.some((pattern) => pattern.test(text));
 }
@@ -174,7 +182,9 @@ function readParagraph(lines, i) {
   if (j === i && IMAGE_ONLY.test(text)) return [j, "image"];
   const isTable = j > i && TABLE_DIVIDER.test(lines[i + 1].text) && text.includes("|");
   if (isTable) return [j, "table"]; // a candidate; compose.js may still keep it raw
-  const unsafe = hasUnsafeInline(text) || /^\|.*\|[ \t]*$/m.test(text);
+  // A block link id (" ^abc123") closing the paragraph is part of how the editor keeps the
+  // paragraph, so it is not a reason to keep the paragraph raw.
+  const unsafe = hasUnsafeInline(stripBlockId(text)) || /^\|.*\|[ \t]*$/m.test(text);
   return [j, unsafe ? "raw" : "paragraph"];
 }
 

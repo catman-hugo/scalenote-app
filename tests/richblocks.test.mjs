@@ -137,3 +137,54 @@ test("random documents with rich blocks always come back byte for byte", () => {
 test("writeBlock writes plain editor nodes through the editor's own serializer", () => {
   assert.equal(writeBlock({ type: "paragraph", content: [text("hi")] }, serialize), "hi");
 });
+
+// ---------- moving blocks around ----------
+
+// Every block of a note is moved to a random place. The text must still be the same blocks,
+// each one intact and still separate from the others, never glued together.
+test("moving blocks never glues two blocks together or changes one", () => {
+  const notes = [
+    "# One\ntext right below\n\nSecond paragraph\n\n- a\n- b\n\n> quote\n\n```\ncode\n```\n\n---\n\nLast paragraph",
+    "---\nid: 1\n---\n\n# Title\n\n> [!note] C\n> body\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n<div>raw</div>\n\n![](attachments/a.png)\n\nlast\n",
+    "alpha\n\nbeta\n\n\n\ngamma\n",
+    "a\n\nb ^abc123\n\nc\n",
+  ];
+  let seed = 4242;
+  const rand = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
+  for (const original of notes) {
+    const before = splitBlocks(splitFrontmatter(original).body).blocks.map((b) => b.src);
+    for (let round = 0; round < 300; round++) {
+      const loaded = loadNote(original, io);
+      const doc = { type: "doc", content: [...loaded.doc.content] };
+      // shuffle
+      for (let i = doc.content.length - 1; i > 0; i--) {
+        const j = rand(i + 1);
+        [doc.content[i], doc.content[j]] = [doc.content[j], doc.content[i]];
+      }
+      const out = composeNote(loaded.parts, doc, { ...io, assignId: false });
+      const after = splitBlocks(splitFrontmatter(out).body).blocks.map((b) => b.src);
+      assert.deepEqual([...after].sort(), [...before].sort(), JSON.stringify({ original, out }));
+      // A file that ended with a line break still does. (One that did not may gain one.)
+      if (original.endsWith("\n")) assert.ok(out.endsWith("\n"), JSON.stringify({ original, out }));
+    }
+  }
+});
+
+test("a paragraph's block id is kept apart from its text and written back", () => {
+  const loaded = loadNote("hello world ^abc-1\n", io);
+  assert.equal(loaded.doc.content[0].type, "paragraph");
+  assert.equal(loaded.doc.content[0].attrs.blockId, "abc-1");
+  assert.equal(composeNote(loaded.parts, loaded.doc, { ...io, assignId: false }), "hello world ^abc-1\n");
+  // a new id on a paragraph that had none
+  const plain = loadNote("hello\n", io);
+  plain.doc.content[0].attrs.blockId = "x1y2";
+  assert.equal(composeNote(plain.parts, plain.doc, { ...io, assignId: false }), "hello ^x1y2\n");
+});
+
+test("a block id is never written twice, and an id line after a list stays raw", () => {
+  const loaded = loadNote("one ^dup\n\ntwo\n", io);
+  loaded.doc.content[1].attrs.blockId = "dup";
+  assert.equal(composeNote(loaded.parts, loaded.doc, { ...io, assignId: false }), "one ^dup\n\ntwo\n");
+  const list = loadNote("- a\n- b\n\n^list-id\n", io);
+  assert.deepEqual(list.doc.content.map((n) => n.type), ["bulletList", "rawBlock"]);
+});
