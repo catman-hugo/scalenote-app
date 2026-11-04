@@ -546,6 +546,13 @@ async function openNote(path) {
   closeSidebarOnPhone();
 }
 
+// Puts a loaded page into the editor. This must not count as an edit the user can undo: if it
+// did, pressing Undo straight after opening a page would go back to the empty editor, and
+// autosave would then write that empty page over the real one.
+function putInEditor(doc) {
+  app.editor.chain().setMeta("addToHistory", false).setContent(doc, { emitUpdate: false }).run();
+}
+
 function showNote(path, note) {
   const { parts, doc } = loadNote(note.text, {
     parse: (md) => app.editor.markdown.parse(md),
@@ -553,7 +560,7 @@ function showNote(path, note) {
   });
   app.current = { path, version: note.version, parts };
   app.lastSavedText = note.text;
-  app.editor.commands.setContent(doc, { emitUpdate: false });
+  putInEditor(doc);
   el("empty").hidden = true;
   el("title").hidden = false;
   el("sourceToggle").hidden = false;
@@ -625,7 +632,7 @@ async function toggleSource() {
     serialize: (json) => app.editor.markdown.serialize(json),
   });
   app.current.parts = parts;
-  app.editor.commands.setContent(doc, { emitUpdate: false });
+  putInEditor(doc);
   app.mode = "editor";
   applyMode();
 }

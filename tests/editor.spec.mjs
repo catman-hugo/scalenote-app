@@ -33,6 +33,7 @@ const browser = await chromium.launch();
 let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return; // run the tests whose name contains this text
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light" });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   await context.addInitScript({ path: path.join(here, "mock-backend.js") });
@@ -50,7 +51,7 @@ async function test(name, fn, opts = {}) {
     console.log("ok   - " + name);
   } catch (error) {
     failures++;
-    console.log("FAIL - " + name + "\n       " + String(error.message).split("\n").join("\n       "));
+    console.log("FAIL - " + name + "\n       " + String(error.message).split("\n").join("\n       ") + (problems.length ? "\n       page problems: " + problems.join(" | ") : ""));
   } finally {
     await context.close();
   }
@@ -1360,6 +1361,161 @@ await test("the right-click menu has Move to, which lists only folders it can go
   await page.waitForSelector('.tree-button[data-path="Biology"]');
 }, { settings: existingUser({ updates: false }) });
 
+// ---------- 0.2.5: block editing polish ----------
+
+await test("a see-through copy of the block follows the pointer while it is dragged, and the original stays", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const original = await page.locator(".note-body > *", { hasText: "First" }).first().boundingBox();
+  await page.locator(".gutter-handle").hover();
+  const h = await page.locator(".gutter-handle").boundingBox();
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y + 16 + 30, { steps: 4 });
+  await page.mouse.move(h.x + 16, h.y + 16 + 80, { steps: 4 });
+  await page.waitForSelector(".drag-ghost");
+  const ghost = await page.locator(".drag-ghost").boundingBox();
+  assert.match(await page.textContent(".drag-ghost"), /First/);
+  assert.ok(Math.abs(ghost.y - (original.y + 80)) <= 3, `the copy keeps the grab distance: ${ghost.y} vs ${original.y + 80}`);
+  assert.ok(Number(await page.evaluate(() => getComputedStyle(document.querySelector(".drag-ghost")).opacity)) < 1, "it is see-through");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".drag-ghost")).pointerEvents), "none");
+  assert.equal(await page.locator(".note-body > *", { hasText: "First" }).count(), 1, "the original is still in the page");
+  assert.equal(await page.locator(".drag-ghost [id], .drag-ghost [contenteditable]").count(), 0, "the copy has no ids or editable parts");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  assert.equal(await page.locator(".drag-ghost").count(), 0, "the copy is gone after the drag");
+});
+
+// Selects "First" and "Second" together with the keyboard.
+async function selectFirstTwo(page) {
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.keyboard.press("Home");
+  await page.keyboard.down("Shift");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("End");
+  await page.keyboard.up("Shift");
+  // The editor learns about a selection made with the keyboard a moment later; the bar showing
+  // up is the sign that it has.
+  await page.waitForSelector(".float-bar:not([hidden])");
+}
+
+await test("several selected blocks move together by dragging, and one Undo puts them back", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await selectFirstTwo(page);
+  const before = await order(page);
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  await page.locator(".gutter-handle").hover();
+  const h = await page.locator(".gutter-handle").boundingBox();
+  const last = await page.locator(".note-body > *", { hasText: "Last" }).first().boundingBox();
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y + 16 + 30, { steps: 3 });
+  await page.waitForSelector(".drag-ghost");
+  assert.match(await page.textContent(".drag-ghost"), /First[\s\S]*Second/, "the copy holds both blocks");
+  await page.mouse.move(h.x + 16, last.y + last.height - 2, { steps: 10 });
+  await page.mouse.up();
+  const after = await order(page);
+  assert.ok(after.indexOf("Last") < after.indexOf("First") && after.indexOf("First") + 1 === after.indexOf(after.find((x) => x.startsWith("Second"))), "First and Second now come after Last, in the same order: " + JSON.stringify(after));
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(await order(page), before, "one Undo restores both");
+});
+
+await test("with several blocks selected the menu and Alt+Arrow act on all of them", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await selectFirstTwo(page);
+  await page.keyboard.press("Alt+ArrowDown");
+  let now = await order(page);
+  const firstAt = now.findIndex((x) => x.startsWith("First"));
+  assert.ok(firstAt > 1 && now[firstAt + 1].startsWith("Second"), "both moved down one place together: " + JSON.stringify(now));
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  await page.click(".gutter-handle");
+  const items = await page.locator(".gutter-menu .menu-item").allTextContents();
+  assert.ok(!items.includes("Copy block link") && !items.includes("Heading 1"), "single-block actions are not offered: " + JSON.stringify(items));
+  await page.click(".gutter-menu .menu-item:has-text('Delete')");
+  now = await order(page);
+  assert.ok(!now.some((x) => x.startsWith("First") || x.startsWith("Second")), "both were deleted: " + JSON.stringify(now));
+});
+
+await test("the plus button adds an empty block below and puts the cursor in it", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.waitForSelector(".gutter-plus:not([hidden])");
+  const p = await page.locator(".gutter-plus").boundingBox();
+  const h = await page.locator(".gutter-handle").boundingBox();
+  assert.ok(p.x + p.width <= h.x + 1 && Math.abs(p.y - h.y) <= 1, "the plus sits left of the grip on the same line");
+  await page.click(".gutter-plus");
+  await page.keyboard.type("brand new");
+  const now = await order(page);
+  assert.equal(now[now.findIndex((x) => x.startsWith("First")) + 1], "brand new", JSON.stringify(now));
+}, { viewport: { width: 1400, height: 800 } });
+
+await test("on a narrow screen the plus button is hidden and the menu has Add block below", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  assert.equal(await page.locator(".gutter-plus:not([hidden])").count(), 0);
+  await page.click(".gutter-handle");
+  await page.click(".gutter-menu .menu-item:has-text('Add block below')");
+  await page.keyboard.type("from menu");
+  const now = await order(page);
+  assert.equal(now[now.findIndex((x) => x.startsWith("First")) + 1], "from menu", JSON.stringify(now));
+}, { viewport: { width: 390, height: 800 } });
+
+await test("the selection bar starts with the block type, and choosing another type changes the block", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await page.locator(".note-body p", { hasText: "Second" }).click();
+  await page.keyboard.press("Home");
+  await page.keyboard.down("Shift");
+  await page.keyboard.press("End");
+  await page.keyboard.up("Shift");
+  await page.waitForSelector(".float-bar:not([hidden]) .type-button:not([hidden])");
+  assert.equal((await page.textContent(".type-button .type-label")).trim(), "Text");
+  const barLeft = await page.evaluate(() => [...document.querySelector(".float-bar").children].filter((n) => !n.hidden)[0].className);
+  assert.match(barLeft, /type-button/, "the block type is the first thing in the bar");
+  await page.click(".type-button");
+  await page.waitForSelector(".type-menu:not([hidden])");
+  assert.equal(await page.locator(".type-menu .menu-item").count(), 10);
+  assert.equal((await page.textContent(".type-menu .menu-item[aria-current]")).trim(), "Text");
+  await page.click(".type-menu .menu-item:has-text('Heading 2')");
+  assert.equal(await page.locator(".note-body h2", { hasText: "Second" }).count(), 1, "the block is now a heading");
+  assert.equal(await page.locator(".type-menu:not([hidden])").count(), 0, "the list closes");
+  assert.equal((await page.textContent(".type-button .type-label")).trim(), "Heading 2");
+});
+
+await test("the block type button is not shown when the selection covers several blocks, and a click elsewhere closes the list", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  await selectFirstTwo(page);
+  await page.waitForSelector(".float-bar:not([hidden])");
+  assert.equal(await page.locator(".type-button:not([hidden])").count(), 0);
+  await page.locator(".note-body p", { hasText: "Last" }).click();
+  await page.keyboard.press("Home");
+  await page.keyboard.down("Shift");
+  await page.keyboard.press("End");
+  await page.keyboard.up("Shift");
+  await page.click(".type-button");
+  await page.waitForSelector(".type-menu:not([hidden])");
+  await page.click("#title");
+  assert.equal(await page.locator(".type-menu:not([hidden])").count(), 0, "a click elsewhere closes the list");
+});
+
+await test("Undo right after opening a page changes nothing and nothing is written", async (page) => {
+  await openSeeded(page, "G.md", GUT);
+  const before = await order(page);
+  const saved = (await files(page))["G.md"];
+  await page.locator(".note-body p", { hasText: "First" }).click();
+  await page.waitForTimeout(1000);
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(await order(page), before, "the page is still all there");
+  await page.waitForTimeout(1200); // longer than the autosave delay
+  assert.equal((await files(page))["G.md"], saved, "the file on disk was not touched");
+  // Undo still works for what was typed.
+  await page.keyboard.press("End");
+  await page.keyboard.type("XYZ");
+  assert.ok((await order(page)).includes("FirstXYZ"));
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(await order(page), before, "Undo takes back the typing and no more");
+});
+
 if (shots) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
@@ -1524,6 +1680,70 @@ if (shots) {
     await up.waitForSelector("#whatsnew[open]");
     await up.screenshot({ path: `${shots}/v021-desktop-${scheme}-4-whats-new.png` });
     await update.close();
+  }
+  // 0.2.5 screens: dragging in the page list, the block drag copy, the plus button and the
+  // block type row of the selection bar.
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1400, height: 800 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false, vaultPath: "/home/alice/Documents/ScaleNote" }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await prepare(page, {});
+      const name = (n) => `${shots}/v025-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate(([text]) => {
+        window.__mock.folders.add("Biology"); window.__mock.folders.add("Archive");
+        window.__mock.files.set("Plan.md", "plan\n");
+        window.__mock.files.set("Notes.md", text);
+      }, [GUT]);
+      await page.click("#newFolder");
+      if (label === "desktop") {
+        const from = await page.locator('.tree-button[data-path="Plan.md"]').boundingBox();
+        const to = await page.locator('.tree-button[data-path="Biology"]').boundingBox();
+        await page.mouse.move(from.x + 30, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(from.x + 40, from.y + 30, { steps: 4 });
+        await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+        await page.screenshot({ path: name("1-drag-in-list") });
+        await page.keyboard.press("Escape");
+        await page.mouse.up();
+      }
+      if (label === "phone") await page.click("#sidebarToggle").catch(() => {});
+      await page.click('.tree-button[data-path="Notes.md"]');
+      await page.waitForSelector("#editor .note-body");
+      await page.locator(".note-body p", { hasText: "First" }).click();
+      await page.waitForSelector(".gutter-handle:not([hidden])");
+      await page.screenshot({ path: name("2-handle-and-plus") });
+      await page.keyboard.press("Home");
+      await page.keyboard.down("Shift");
+      await page.keyboard.press("End");
+      await page.keyboard.up("Shift");
+      await page.waitForSelector(".type-button:not([hidden])");
+      await page.screenshot({ path: name("3-type-row") });
+      await page.click(".type-button");
+      await page.waitForSelector(".type-menu:not([hidden])");
+      await page.screenshot({ path: name("4-type-menu") });
+      await page.keyboard.press("Escape");
+      await page.click("#title");
+      await page.locator(".note-body p", { hasText: "First" }).click();
+      await page.keyboard.press("Home");
+      await page.keyboard.down("Shift");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("End");
+      await page.keyboard.up("Shift");
+      await page.waitForSelector(".float-bar:not([hidden])");
+      await page.locator(".gutter-handle").hover();
+      const h = await page.locator(".gutter-handle").boundingBox();
+      await page.mouse.down();
+      await page.mouse.move(h.x + 16, h.y + 60, { steps: 4 });
+      await page.mouse.move(h.x + 40, h.y + 150, { steps: 6 });
+      await page.screenshot({ path: name("5-drag-blocks") });
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await context.close();
+    }
   }
   // 0.2.4 screens: the right-click menu on a folder, and the name field while renaming.
   for (const scheme of ["light", "dark"]) {

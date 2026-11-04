@@ -619,7 +619,8 @@ body.tree-dragging * { cursor: grabbing; user-select: none; }
 
 /* ---------- block handle and its menu ---------- */
 
-.gutter-handle {
+.gutter-handle,
+.gutter-plus {
   position: fixed;
   z-index: 25;
   width: 32px;
@@ -638,6 +639,7 @@ body.tree-dragging * { cursor: grabbing; user-select: none; }
 }
 
 .gutter-handle[hidden],
+.gutter-plus[hidden],
 .gutter-menu[hidden],
 .drop-line[hidden],
 .toast[hidden] { display: none; }
@@ -646,8 +648,26 @@ body.block-dragging,
 body.block-dragging * { cursor: grabbing; user-select: none; }
 /* The grabbed handle is hidden while the block moves. It stays in the layout (not display:
    none) so it keeps receiving the pointer until the drop. */
-body.block-dragging .gutter-handle { opacity: 0; }
-.gutter-handle .icon { width: 1.25rem; height: 1.25rem; }
+body.block-dragging .gutter-handle,
+body.block-dragging .gutter-plus { opacity: 0; }
+body.block-dragging .float-bar { visibility: hidden; }
+.gutter-plus { cursor: pointer; }
+.gutter-handle .icon,
+.gutter-plus .icon { width: 1.25rem; height: 1.25rem; }
+
+/* The copy of the block that follows the pointer while it is dragged: see-through, solid
+   colours only, and it never takes the pointer. */
+.drag-ghost {
+  position: fixed;
+  z-index: 45;
+  overflow: hidden;
+  max-height: 15rem;
+  opacity: 0.55;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
 
 .gutter-menu {
   position: fixed;
@@ -1007,3 +1027,7 @@ body.block-dragging .gutter-handle { opacity: 0; }
 .update-notice { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-3); flex-wrap: wrap; }
 .update-notice span { flex: 1; min-width: 12rem; }
 .update-notice[hidden] { display: none; }
+
+/* The block type button at the start of the formatting bar: the name, then an arrow. */
+.type-button { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 5.5rem; justify-content: space-between; }
+.type-menu { z-index: 41; }

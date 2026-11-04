@@ -1,7 +1,7 @@
 {
   "name": "scalenote",
   "private": true,
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "ScaleNote: a local-first markdown note app.",
   "scripts": {
     "tauri": "tauri",

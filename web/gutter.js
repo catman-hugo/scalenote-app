@@ -2,7 +2,7 @@
 // for a menu (move, turn into, duplicate, delete, copy link); press and drag it to move the
 // block. It uses pointer events, so the same code serves mouse, finger and pen.
 
-import { canTurnInto, deleteUnit, duplicateUnit, ensureBlockId, moveUnit, moveUnitBy, TURN_NAMES, turnInto, unitIndexAt, unitsOf } from "./blockops.js";
+import { addParagraphAfter, canTurnInto, deleteUnits, duplicateUnits, ensureBlockId, moveUnits, moveUnitsBy, TURN_NAMES, turnInto, unitIndexAt, unitRangeOf, unitsOf } from "./blockops.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -61,12 +61,21 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
   handle.setAttribute("aria-label", g.handleLabel);
   handle.setAttribute("aria-haspopup", "menu");
   handle.setAttribute("aria-expanded", "false");
+  handle.title = g.handleHint;
+  // The plus button adds an empty block below. It only shows when the margin is wide enough;
+  // the menu always has the same action.
+  const plus = el("button", "gutter-plus");
+  plus.append(icon("plus"));
+  plus.type = "button";
+  plus.hidden = true;
+  plus.setAttribute("aria-label", g.plusLabel);
+  plus.title = g.plusLabel;
   const menu = el("div", "gutter-menu");
   menu.setAttribute("role", "menu");
   menu.hidden = true;
   const dropLine = el("div", "drop-line");
   dropLine.hidden = true;
-  document.body.append(handle, menu, dropLine);
+  document.body.append(plus, handle, menu, dropLine);
 
   let active = -1; // index of the unit the handle belongs to
   let hovering = false;
@@ -101,17 +110,25 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
     const visible = unit && dom instanceof HTMLElement && (editor.isFocused || hovering || !menu.hidden || drag || handle.matches(":focus"));
     if (!visible) {
       handle.hidden = true;
+      plus.hidden = true;
       return;
     }
     const rect = dom.getBoundingClientRect();
     const area = scroller.getBoundingClientRect();
     if (rect.bottom < area.top || rect.top > area.bottom) {
       handle.hidden = true;
+      plus.hidden = true;
       return;
     }
     handle.hidden = false;
-    handle.style.left = `${Math.max(2, rect.left - HANDLE_SIZE - 4)}px`;
-    handle.style.top = `${Math.max(area.top, firstLineMiddle(dom) - HANDLE_SIZE / 2)}px`;
+    const left = Math.max(2, rect.left - HANDLE_SIZE - 4);
+    const top = Math.max(area.top, firstLineMiddle(dom) - HANDLE_SIZE / 2);
+    handle.style.left = `${left}px`;
+    handle.style.top = `${top}px`;
+    // The plus sits left of the grip, and only when it fits inside the note's own area.
+    plus.hidden = left - HANDLE_SIZE < area.left;
+    plus.style.left = `${left - HANDLE_SIZE}px`;
+    plus.style.top = `${top}px`;
   }
 
   function followSelection() {
@@ -149,18 +166,35 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
     if (event.pointerType !== "mouse") return;
     // Moving onto the handle itself is not leaving.
     setTimeout(() => {
-      hovering = handle.matches(":hover");
+      hovering = handle.matches(":hover") || plus.matches(":hover");
       refresh();
     }, 0);
   });
   scroller.addEventListener("scroll", refresh, { passive: true });
   window.addEventListener("resize", refresh);
 
+  // The blocks an action applies to: the run of blocks the selection covers when the handle
+  // belongs to one of them, else just the block the handle is on.
+  function targetRange() {
+    const range = unitRangeOf(editor.state.doc, editor.state.selection);
+    if (!editor.state.selection.empty && range.last > range.first && active >= range.first && active <= range.last) return range;
+    return { first: active, last: active };
+  }
+
+  plus.addEventListener("mousedown", (event) => event.preventDefault());
+  plus.addEventListener("click", () => {
+    if (active < 0) return;
+    addParagraphAfter(editor, targetRange().last);
+    editor.view.focus();
+  });
+
   // ----- the menu -----
   function openMenu() {
     const units = unitsOf(editor.state.doc);
     const unit = units[active];
     if (!unit) return;
+    const { first, last } = targetRange();
+    const several = last > first;
     menu.replaceChildren();
     const add = (label, run, enabled = true) => {
       const item = el("button", "menu-item", label);
@@ -174,12 +208,13 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
       });
       menu.append(item);
     };
-    add(g.moveUp, () => moveUnitBy(editor, active, -1), active > 0);
-    add(g.moveDown, () => moveUnitBy(editor, active, 1), active < units.length - 1);
-    add(g.duplicate, () => duplicateUnit(editor, active));
-    add(g.delete, () => deleteUnit(editor, active));
-    add(g.copyLink, () => copyLink(active));
-    if (canTurnInto(unit.node)) {
+    add(g.moveUp, () => moveUnitsBy(editor, first, last, -1), first > 0);
+    add(g.moveDown, () => moveUnitsBy(editor, first, last, 1), last < units.length - 1);
+    add(g.duplicate, () => duplicateUnits(editor, first, last));
+    add(g.delete, () => deleteUnits(editor, first, last));
+    add(g.addBelow, () => addParagraphAfter(editor, last));
+    if (!several) add(g.copyLink, () => copyLink(active));
+    if (!several && canTurnInto(unit.node)) {
       menu.append(el("div", "menu-label", g.turnInto));
       for (const name of TURN_NAMES) add(strings.slash[name], () => turnInto(editor, active, name));
     }
@@ -190,8 +225,8 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
     const height = menu.offsetHeight;
     menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - height - 8))}px`;
-    const first = menu.querySelector("button:not(:disabled)");
-    if (first) first.focus();
+    const firstButton = menu.querySelector("button:not(:disabled)");
+    if (firstButton) firstButton.focus();
   }
 
   function closeMenu() {
@@ -245,12 +280,49 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
     dropLine.style.top = `${Math.max(area.top, Math.min(target.y, area.bottom))}px`;
   }
 
+  // The half see-through copy of the block (or blocks) that follows the pointer. The original
+  // stays where it is until the drop. The copy keeps the distance the pointer had when the
+  // block was grabbed.
+  function makeGhost(range) {
+    const units = unitsOf(editor.state.doc);
+    const first = blockDom(units[range.first]);
+    if (!(first instanceof HTMLElement)) return null;
+    const top = first.getBoundingClientRect();
+    const ghost = el("div", "drag-ghost");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.inert = true;
+    ghost.style.width = `${top.width}px`;
+    for (let i = range.first; i <= range.last; i++) {
+      const dom = blockDom(units[i]);
+      if (!(dom instanceof HTMLElement)) continue;
+      const copy = dom.cloneNode(true);
+      copy.removeAttribute("id");
+      for (const node of copy.querySelectorAll("[id]")) node.removeAttribute("id");
+      for (const node of copy.querySelectorAll("[contenteditable]")) node.removeAttribute("contenteditable");
+      // The copy sits outside the editor, so it does not get the editor's spacing between blocks.
+      const look = getComputedStyle(dom);
+      copy.style.marginTop = look.marginTop;
+      copy.style.marginBottom = look.marginBottom;
+      copy.style.fontSize = look.fontSize;
+      ghost.append(copy);
+    }
+    document.body.append(ghost);
+    return { node: ghost, left: top.left, top: top.top };
+  }
+
+  function moveGhost(x, y) {
+    if (!drag || !drag.ghost) return;
+    drag.ghost.node.style.left = `${drag.ghost.left + (x - drag.startX)}px`;
+    drag.ghost.node.style.top = `${drag.ghost.top + (y - drag.startY)}px`;
+  }
+
   function endDrag(apply) {
     if (!drag) return;
     const { pointerId, last } = drag;
     const wasDragging = drag.dragging;
-    const from = drag.from;
+    const range = drag.range;
     cancelAnimationFrame(drag.frame);
+    if (drag.ghost) drag.ghost.node.remove();
     drag = null;
     document.body.classList.remove("block-dragging");
     dropLine.hidden = true;
@@ -260,7 +332,7 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
       // The capture may already be gone (for example after a cancel); nothing to undo.
     }
     if (!apply) return;
-    if (wasDragging) moveUnit(editor, from, slotAt(last).slot);
+    if (wasDragging) moveUnits(editor, range.first, range.last, slotAt(last).slot);
     else if (menu.hidden) openMenu();
     else closeMenu();
     refresh();
@@ -284,7 +356,7 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
     event.preventDefault();
     if (active < 0) return;
     handle.setPointerCapture(event.pointerId);
-    drag = { pointerId: event.pointerId, startY: event.clientY, startX: event.clientX, last: event.clientY, dragging: false, from: active, frame: 0 };
+    drag = { pointerId: event.pointerId, startY: event.clientY, startX: event.clientX, last: event.clientY, dragging: false, range: targetRange(), ghost: null, frame: 0 };
   });
   handle.addEventListener("pointermove", (event) => {
     if (!drag || event.pointerId !== drag.pointerId) return;
@@ -293,9 +365,13 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
       drag.dragging = true;
       closeMenu();
       document.body.classList.add("block-dragging");
+      drag.ghost = makeGhost(drag.range);
       drag.frame = requestAnimationFrame(autoScroll);
     }
-    if (drag.dragging) showDropLine(slotAt(event.clientY));
+    if (drag.dragging) {
+      moveGhost(event.clientX, event.clientY);
+      showDropLine(slotAt(event.clientY));
+    }
   });
   handle.addEventListener("pointerup", (event) => {
     if (drag && event.pointerId === drag.pointerId) endDrag(true);
@@ -316,8 +392,8 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
   return {
     // Alt+Up and Alt+Down move the block you are in.
     moveCurrent(step) {
-      const index = unitIndexAt(editor.state.doc, editor.state.selection.from);
-      return moveUnitBy(editor, index, step);
+      const { first, last } = unitRangeOf(editor.state.doc, editor.state.selection);
+      return moveUnitsBy(editor, first, last, step);
     },
   };
 }
