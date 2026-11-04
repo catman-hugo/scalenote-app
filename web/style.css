@@ -71,6 +71,9 @@
 html,
 body {
   height: 100%;
+  /* dvh follows the visible area, so the on-screen keyboard shrinks the page instead of
+     pushing the top bar under the status bar. Browsers without dvh keep the 100% above. */
+  height: 100dvh;
   margin: 0;
 }
 
@@ -858,3 +861,10 @@ body.block-dragging * { cursor: grabbing; user-select: none; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .setting-label { color: var(--text); }
 .setting-row select, .setting-row input[type="range"] { min-width: 12rem; max-width: 60%; }
+
+.setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
+.notes { max-height: 50vh; overflow-y: auto; margin: var(--space-3) 0; overflow-wrap: anywhere; }
+.notes h3, .notes h4 { margin: var(--space-3) 0 var(--space-1); }
+.notes p, .notes ul { margin: var(--space-1) 0; }
+.update-notice { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.update-notice[hidden] { display: none; }

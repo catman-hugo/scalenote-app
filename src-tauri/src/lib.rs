@@ -242,6 +242,7 @@ pub fn run() {
     // nothing to show. We still report why, instead of panicking with unwrap/expect.
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);

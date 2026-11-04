@@ -2,7 +2,7 @@
 // Run with: npm run build
 
 import { build } from "esbuild";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -12,6 +12,11 @@ const dist = path.join(root, "dist");
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
+
+// The version and this version's release notes are built into the interface, so the update
+// check knows what it is running and the "What's new" screen needs no network.
+const version = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
+const notes = await readFile(path.join(root, "docs", "release-notes", `${version}.md`), "utf8").catch(() => "");
 
 // Two bundles: the notes screen and the pen test page.
 await build({
@@ -23,6 +28,7 @@ await build({
   minify: true,
   sourcemap: false,
   legalComments: "none",
+  define: { __APP_VERSION__: JSON.stringify(version), __RELEASE_NOTES__: JSON.stringify(notes) },
   logLevel: "info",
 });
 

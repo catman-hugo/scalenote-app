@@ -4,7 +4,7 @@
 (() => {
   const files = new Map(); // path -> text
   const folders = new Set([""]);
-  let settings = "";
+  let settings = window.__seedSettings || "";
   const logs = [];
   const attachments = new Map(); // path -> base64 text
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
@@ -70,10 +70,11 @@
     invoke: async (cmd, args) => {
       if (cmd.startsWith("plugin:event|")) return 1;
       if (cmd === "plugin:dialog|open") return "/picked/folder";
+      if (cmd === "plugin:opener|open_url") { window.__mock.opened.push(args.url); return; }
       const h = handlers[cmd];
       if (!h) throw "unknown";
       return h(args || {});
     },
   };
-  window.__mock = { files, folders, attachments, logs, hash, getSettings: () => settings };
+  window.__mock = { opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, logs, hash, getSettings: () => settings };
 })();

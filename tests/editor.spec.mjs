@@ -26,15 +26,21 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const url = `http://127.0.0.1:${server.address().port}/`;
 
+// The app looks for updates by default. Tests must never reach the real GitHub, so every page
+// gets an empty release list unless a test sets up its own answer (a later route wins).
+const GITHUB = "https://api.github.com/repos/catman-hugo/scalenote-app/releases?per_page=20";
 const browser = await chromium.launch();
 let failures = 0;
 async function test(name, fn, opts = {}) {
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light" });
+  if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   await context.addInitScript({ path: path.join(here, "mock-backend.js") });
   const page = await context.newPage();
   const problems = [];
   page.on("pageerror", (e) => problems.push("pageerror: " + e.message));
-  page.on("console", (m) => { if (m.type() === "error") problems.push("console: " + m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !(opts.allow || []).some((re) => re.test(m.text()))) problems.push("console: " + m.text()); });
+  await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+  if (opts.before) await opts.before(page);
   await page.addInitScript(() => document.addEventListener("securitypolicyviolation", (e) => console.error("CSP violation: " + e.violatedDirective + " " + e.blockedURI)));
   try {
     await page.goto(url);
@@ -691,6 +697,123 @@ await test("every theme draws the whole interface without errors", async (page) 
     assert.notEqual(colours[0], colours[1], theme + ": page and list differ");
   }
 });
+
+// ---------- update check and what's new ----------
+
+const VERSION = JSON.parse(fs.readFileSync(path.join(here, "..", "package.json"), "utf8")).version;
+const RELEASE_URL = "https://github.com/catman-hugo/scalenote-app/releases/tag/v9.9.9";
+const EVIL_NOTES = "## Fixed\n- a thing\n<img src=x onerror=\"window.__pwned=1\">\n<script>window.__pwned=1</script>";
+const existingUser = (extra = {}) => ({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, ...extra });
+function githubReturns(list, seen = []) {
+  return async (page) => {
+    await page.route(GITHUB, (route) => {
+      seen.push({ headers: route.request().headers(), body: route.request().postData(), method: route.request().method() });
+      route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(list) });
+    });
+  };
+}
+const NEWER = [{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: EVIL_NOTES, draft: false, prerelease: false }];
+
+await test("a newer release shows a notice with a download button and its notes as plain text", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  assert.match(await page.textContent("#updateText"), /ScaleNote 9\.9\.9 is available/);
+  await page.click("#updateDetails");
+  await page.waitForSelector("#whatsnew[open]");
+  const dialog = await page.evaluate(() => ({ imgs: document.querySelectorAll("#whatsnew img, #whatsnew script").length, text: document.querySelector("#whatsnew").textContent, pwned: window.__pwned || 0 }));
+  assert.equal(dialog.imgs, 0, "no html from the notes became elements");
+  assert.equal(dialog.pwned, 0);
+  assert.ok(dialog.text.includes("<img src=x"), "the notes are shown as text");
+  await page.click("#whatsnew button");
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
+}, { settings: existingUser(), before: githubReturns(NEWER) });
+
+await test("Not now hides the notice and remembers that version", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateLater");
+  assert.equal(await page.isVisible("#updateNotice"), false);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).dismissedUpdate, "9.9.9");
+}, { settings: existingUser(), before: githubReturns(NEWER) });
+
+await test("a dismissed version is not offered again", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.waitForTimeout(500);
+  assert.equal(await page.isVisible("#updateNotice"), false);
+}, { settings: existingUser({ dismissedUpdate: "9.9.9" }), before: githubReturns(NEWER) });
+
+const seenRequests = [];
+await test("the check sends no vault data, no cookies and no referrer", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  assert.equal(seenRequests.length, 1);
+  const r = seenRequests[0];
+  assert.equal(r.method, "GET");
+  assert.equal(r.body, null);
+  assert.equal(r.headers.cookie, undefined);
+  assert.equal(r.headers.referer, undefined);
+  assert.equal(r.headers.authorization, undefined);
+}, { settings: existingUser(), before: (page) => githubReturns(NEWER, seenRequests)(page) });
+
+await test("with the update setting off, nothing is requested and no notice appears", async (page) => {
+  let asked = 0;
+  await page.route(GITHUB, (route) => { asked++; route.abort(); });
+  await page.reload();
+  await page.waitForSelector("#newNote");
+  await page.waitForTimeout(500);
+  assert.equal(asked, 0);
+  assert.equal(await page.isVisible("#updateNotice"), false);
+}, { settings: existingUser({ updates: false }) });
+
+await test("the update setting is one switch in Settings and is saved", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  const box = page.locator('#settings input[type="checkbox"]');
+  assert.equal(await box.isChecked(), true);
+  await box.uncheck();
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).updates, false);
+  assert.match(await page.textContent("#settings"), /Nothing from your notes is sent/);
+}, { settings: existingUser(), before: githubReturns([]) });
+
+await test("Check now says when the version is current, and a failed check is calm", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click('#settings button:has-text("Check now")');
+  await page.waitForFunction(() => /latest version/.test(document.querySelector("#settings").textContent));
+  await page.unroute(GITHUB);
+  await page.route(GITHUB, (route) => route.fulfill({ status: 503, body: "no" }));
+  await page.click('#settings button:has-text("Check now")');
+  await page.waitForFunction(() => /Could not check/.test(document.querySelector("#settings").textContent));
+  assert.equal(await page.isVisible("#banner"), false);
+}, { settings: existingUser({ lastUpdateCheck: Date.now() }), before: githubReturns([]), allow: [/Failed to load resource/] });
+
+await test("after an update the new notes are shown once; a new install sees nothing", async (page) => {
+  await page.waitForSelector("#whatsnew[open]");
+  assert.match(await page.textContent("#whatsnew h2"), new RegExp("ScaleNote was updated to " + VERSION.replace(/\./g, "\\.")));
+  await page.click("#whatsnew button");
+  await page.waitForSelector("#newNote");
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).lastSeenVersion, VERSION);
+}, { settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
+
+await test("a fresh install shows the disclosure with the update line and no what's new screen", async (page) => {
+  await page.waitForSelector("#disclosure[open]");
+  assert.match(await page.textContent("#disclosure"), /looks for new versions on GitHub/);
+  assert.match(await page.textContent("#disclosure"), /turn this off in Settings/);
+  await page.click("#disclosure button");
+  await page.waitForSelector("#welcome[open]");
+  assert.equal(await page.isVisible("#whatsnew"), false);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).lastSeenVersion, VERSION);
+}, { before: githubReturns([]) });
+
+await test("the content security policy lets the app talk to the app itself and to GitHub's release list only", async () => {
+  const connect = CSP.split(";").map((p) => p.trim()).find((p) => p.startsWith("connect-src"));
+  assert.equal(connect, "connect-src ipc: http://ipc.localhost https://api.github.com");
+  assert.ok(!/unsafe/.test(CSP) && !/\*/.test(CSP));
+});
+
+await test("on a phone the note list is open at the start", async (page) => {
+  await page.waitForSelector("#newNote");
+  assert.equal(await page.evaluate(() => document.body.classList.contains("sidebar-open")), true);
+  assert.equal(await page.isVisible("#sidebar"), true);
+}, { viewport: { width: 390, height: 780 }, settings: existingUser({ updates: false }) });
 
 if (shots) {
   for (const scheme of ["light", "dark"]) {

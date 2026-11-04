@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>ScaleNote</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="themes.css" />
@@ -38,6 +38,12 @@
           <span id="bannerText"></span>
           <button id="bannerClose" type="button" class="link-button"></button>
         </div>
+        <div id="updateNotice" class="banner update-notice" role="status" hidden>
+          <span id="updateText"></span>
+          <button id="updateDownload" type="button"></button>
+          <button id="updateDetails" type="button" class="link-button"></button>
+          <button id="updateLater" type="button" class="link-button"></button>
+        </div>
         <p id="empty" class="empty"></p>
         <div id="editor" class="editor" hidden></div>
         <textarea id="source" class="source" spellcheck="false" autocapitalize="off" autocomplete="off" hidden></textarea>
@@ -48,6 +54,7 @@
     <dialog id="disclosure" class="dialog"></dialog>
     <dialog id="welcome" class="dialog"></dialog>
     <dialog id="settings" class="dialog"></dialog>
+    <dialog id="whatsnew" class="dialog"></dialog>
 
     <script type="module" src="main.js"></script>
   </body>
