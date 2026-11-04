@@ -50,3 +50,28 @@ Cost. A failed build is only seen after pushing. Nothing built here has been run
 ## 2026-11-03: Placeholder icon
 Context. The real logo has not been supplied.
 Decision. A plain generated square is used until it is.
+
+## 2026-11-03: App icon is the owner's logo on a white tile
+Context. The logo has a transparent background and a transparent middle, and its outline is dark, so it disappears on dark taskbars and home screens.
+Decision. Desktop icons use the logo on a white rounded tile. Android uses a plain white square with extra margin so the system's icon shapes do not cut into the logo. The original is kept in assets/logo.png.
+Alternatives. Transparent logo (unreadable on dark), and a light purple tile (purple on purple).
+Cost. Icons are generated from a script-made tile, so changing the logo means regenerating them.
+
+## 2026-11-03: Editor stack and how notes are kept safe (0.1)
+Context. A markdown editor rewrites markdown in its own style, which would change notes the user only opened, and would damage syntax it does not know (wikilinks, callouts, tables).
+Decision. The note is cut into blocks. Each block keeps its original text, and a block the user did not change is written back byte for byte. Unknown syntax becomes a raw block, shown and edited as plain text. If a note ever fails the open-and-save-unchanged check, the whole note is shown as one raw block. Tiptap 3.32.2 with its markdown extension, bundled with esbuild 0.28.2 (all pinned). Underline is off because markdown has none.
+Alternatives. Let the editor rewrite everything (rejected: loses content). A source-only editor (rejected: not a block editor).
+Cost. Loose lists and anything with wikilinks, tags, html or images edit as plain text for now. More block types become editable in later versions.
+
+## 2026-11-03: Frontmatter id on first save
+Context. The plan gives every note an id in its frontmatter.
+Decision. The id is added the first time ScaleNote saves an edited note, not when a note is only opened. Existing frontmatter is kept as written and the id line is added before the closing line.
+Cost. An Obsidian note edited in ScaleNote gains one `id:` line.
+
+## 2026-11-03: Conflicts, vault location, no delete
+Decision. If a file changed on disk while open, the disk version wins and the user's text is saved as "<name> (conflict copy).md" next to it, with a message. Android has no folder picker in Tauri, so Android uses an app-private vault for now. The default vault on desktop is Documents/ScaleNote. There is no delete or move until 0.3 (trash). The AI setting is stored as off and has no switch in 0.1.
+Cost. On Android the notes are not visible to other apps until a folder choice is added.
+
+## 2026-11-03: Testing without a device
+Decision. File logic lives in a std-only Rust crate so it can be tested here. The interface is tested in Chromium against an in-memory stand-in for the Rust commands. Neither replaces trying the packaged app.
+Cost. The Tauri glue is only compiled by GitHub.

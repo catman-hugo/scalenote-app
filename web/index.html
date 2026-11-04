@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>ScaleNote</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <aside id="sidebar" class="sidebar">
+        <div class="side-head">
+          <img src="logo.png" class="logo" alt="" width="24" height="24" />
+          <span id="vaultName" class="vault-name"></span>
+        </div>
+        <div class="side-actions">
+          <button id="newNote" type="button"></button>
+          <button id="newFolder" type="button"></button>
+        </div>
+        <nav id="tree" class="tree" aria-label="Notes"></nav>
+        <div class="side-foot">
+          <button id="openOther" type="button" class="link-button"></button>
+          <a id="penTest" href="pentest.html"></a>
+        </div>
+      </aside>
+      <div id="scrim" class="scrim"></div>
+
+      <main class="main">
+        <header class="topbar">
+          <button id="toggle" type="button" class="icon-button"></button>
+          <input id="title" class="title" type="text" maxlength="100" autocomplete="off" hidden />
+          <span id="status" class="status" role="status"></span>
+        </header>
+        <div id="banner" class="banner" role="alert" hidden>
+          <span id="bannerText"></span>
+          <button id="bannerClose" type="button" class="link-button"></button>
+        </div>
+        <p id="empty" class="empty"></p>
+        <div id="editor" class="editor" hidden></div>
+      </main>
+    </div>
+
+    <dialog id="disclosure" class="dialog"></dialog>
+    <dialog id="welcome" class="dialog"></dialog>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

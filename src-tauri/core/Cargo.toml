@@ -1,0 +1,16 @@
+[package]
+name = "scalenote-core"
+version = "0.1.0"
+description = "Vault logic with no window or web view in it, so it can be tested anywhere."
+edition = "2021"
+rust-version = "1.77"
+
+# Only the standard library on purpose: every extra library is something that can
+# change or break, and the vault code is the part that must never lose a note.
+[dependencies]
+
+[[bin]]
+# Used only by the tests. It writes a note over and over so a test can kill it
+# at a random moment and check the file is never half written.
+name = "sn-crash-writer"
+path = "src/bin/crash_writer.rs"
