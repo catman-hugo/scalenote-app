@@ -115,6 +115,12 @@ Decision. They go into a patch release 0.2.1 that comes before 0.3 and holds no 
 Alternatives. Waiting for the 1.0.0 hardening (rejected: the problems are visible every day). Mixing them into 0.3 (rejected: it makes 0.3 harder to test).
 Cost. One more release to build and test.
 
+## 2026-11-04: Keep formatting inside the markdown file, no sidecar file
+Context. Markdown cannot store text colour, underline, sub and superscript. The owner asked whether a separate file next to each note could hold them, with a button to convert to and from Obsidian, so the raw text stays free of syntax.
+Decision. Formatting stays inside the note. Highlight is written as `==text==` (Obsidian reads it natively). Colour, underline, subscript and superscript are written as small inline html tags, using a fixed palette that follows the theme. Only text the user actually styled gets tags. The editor shows the result, so the raw syntax is only seen in the markdown view. The exact tags are checked against Obsidian's documentation before building.
+Alternatives. A sidecar file per note. Not chosen: formatting tied to text positions drifts or vanishes when the note is edited in another program or moved without its partner file, two files per note add sync and backup risk, colours would not show in Obsidian without a conversion, and it needs a lossy two-way converter, which 0.2 dropped on purpose.
+Cost. Notes with colour contain html that other markdown programs may show as raw tags. Undoing this later means writing a converter.
+
 ## 2026-11-04: Sidebar buttons shrink to icons with a container query
 Context. The note list can be made narrow in Settings (200 to 420 pixels). At the narrow end the New note and New folder buttons wrapped and the bottom links stacked.
 Decision. Every sidebar button is an icon plus a label that never wraps. Below a width the labels are hidden with a container query (the label stays as tooltip and accessible name), and the Pen test link is hidden below a smaller width.
