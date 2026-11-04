@@ -773,10 +773,12 @@ await test("the grabbed handle is hidden while a block is dragged and comes back
   // Grab the middle of the handle: a fixed offset can miss it when the handle is smaller on another machine.
   const cx = h.x + h.width / 2, cy = h.y + h.height / 2;
   await page.mouse.move(cx, cy);
+  const under = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? e.tagName + "." + e.className : "nothing"; }, [cx, cy]);
   await page.mouse.down();
   await page.mouse.move(cx, cy + 44, { steps: 5 });
   await page.waitForFunction(() => getComputedStyle(document.querySelector(".gutter-handle")).opacity === "0", null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await opacity(), "0", "hidden while dragging");
+  const info = await page.evaluate(() => ({ body: document.body.className, handle: document.querySelector(".gutter-handle").getBoundingClientRect().toJSON(), hidden: document.querySelector(".gutter-handle").hidden }));
+  assert.equal(await opacity(), "0", "hidden while dragging; under the pointer: " + under + "; grabbed at " + JSON.stringify(h) + "; now " + JSON.stringify(info));
   await page.keyboard.press("Escape");
   await page.mouse.up();
   assert.equal(await opacity(), "1", "visible again");
