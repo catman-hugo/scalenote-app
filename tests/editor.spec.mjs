@@ -772,8 +772,11 @@ await test("the grabbed handle is hidden while a block is dragged and comes back
   assert.equal(await opacity(), "1");
   // Grab the middle of the handle: a fixed offset can miss it when the handle is smaller on another machine.
   const cx = h.x + h.width / 2, cy = h.y + h.height / 2;
+  // hover() waits until the handle really receives the pointer, and says what is in the way if it never does.
+  let hoverNote = "hover ok";
+  await page.locator(".gutter-handle").hover({ timeout: 8000 }).catch((e) => { hoverNote = "hover failed: " + String(e.message).split("\n").slice(0, 6).join(" / "); });
   await page.mouse.move(cx, cy);
-  const under = await page.evaluate(([x, y]) => {
+  const under = hoverNote + " | " + await page.evaluate(([x, y]) => {
     const h = document.querySelector(".gutter-handle");
     const cs = getComputedStyle(h);
     const stack = document.elementsFromPoint(x, y).slice(0, 5).map((e) => e.tagName + "." + e.className).join(" > ");
