@@ -4,6 +4,18 @@ Status key: not started, in progress, built (tried only where the builder can ru
 
 Last updated: 2026-11-04, end of the 0.2 build session.
 
+## Planned for 0.2.1 (from the owner's first test of 0.2 on the Windows portable build, 2026-11-04)
+
+A small fix release between 0.2 and 0.3, so these are done well before 1.0.0 and more findings from the other devices can be added to it first. No new features. Each item needs a screenshot check in light and dark at desktop and phone width.
+
+1. The "What's new" box is too small for its text and scrolls inside a small area. Make the box taller and wider (it can use most of the window), and keep the release notes short.
+2. The Settings link at the bottom left is hard to see. Replace it with a gear icon drawn as an svg that takes its colour from the theme, with the text label kept as its accessible name. No emoji anywhere in the app. The same pass moves any remaining typed symbols (the block handle dots and the toggle arrow) into the svg icon set, so there is one icon set.
+3. Move "Open another folder" to the top of the sidebar.
+4. The note width setting seemed to do nothing. The browser tests show it working with a note open, so the first step is to reproduce it in the real window (was a note open? is the width capped by something else?), then fix the cause and add a test that checks the real page width.
+5. The sidebar items get squished when the list is dragged narrow (the New note and New folder buttons wrap, the bottom links stack). Find a layout that holds up: for example icon-only buttons below a width, a sensible minimum list width, and bottom links that do not wrap.
+
+Also still open for 0.2.1 or later: the owner's decision on inline html styles (underline, highlight, colour, sub and superscript), and anything found on the Android phone and Linux.
+
 ## 0.2 state (branch feature/v0.2-editor, pull request #9)
 
 Built and tried only where the builder can run it (a test browser with a pretend backend, and Rust tests). Nothing has been run in the real window on any device.
@@ -56,6 +68,7 @@ Not done or not tested:
 | 0.0 | Spikes: Tauri on Windows 11 and Linux Mint including pen pressure, an Android hello-world, an editor saving a markdown file | in progress. Builds for Windows, Linux and Android are made by GitHub and published as a release. Tested by hand: Linux Mint (opens, mouse works) and Windows 11 (mouse, touchpad, finger, pen pressure and eraser button work). Android (POCO F7 Pro, Android 16): installs, runs and finger drawing works; the top bar was hidden under the status bar (fixed, not yet re-tested). Not tested: Android pen, Fedora, pen barrel button (does not work on the test pen in other apps either), tilt (not reported on the test pen), an editor saving a markdown file |
 | 0.1 | Vault, sidebar tree, block editor and slash menu, autosave, logging, the AI off-switch, first-run disclosure, logo | built, not tested on a device (see above) |
 | 0.2 | Editor completion, markdown source view, block gutter, themes, settings, update notice (converter dropped) | built, not tested on a device (see above); inline html styles waiting for a decision |
+| 0.2.1 | Polish from the first device test of 0.2 (see "Planned for 0.2.1"). No new features | planned, comes before 0.3 |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
