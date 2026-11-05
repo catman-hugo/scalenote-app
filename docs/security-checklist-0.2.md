@@ -42,3 +42,7 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 - New Rust command `move_entry`. Both paths go through `resolve`, which refuses empty parts, `.` and `..`, hidden names, absolute paths and backslashes, and checks that nothing leaves the vault through a symlink. It never replaces an existing entry, refuses a folder into itself or below itself, and a note must end in .md. Covered by vault tests, including odd paths. Compiled and run only by GitHub's build.
 - No new network calls and no new permissions. The drag copy of a block is a clone of the page's own content with ids and editable parts removed; it never leaves the page.
 - Names shown in the drag label are set as text, never as html.
+
+## Addendum for 0.2.6
+- No new network calls, no new permissions, no new dependencies and no change to the content security policy. The Android change is a build-time patch to two generated files (the manifest keyboard setting and a small activity that pads the content by the keyboard height); it reads nothing from outside and stores nothing.
+- The patch script only edits files under `src-tauri/gen/android` and stops if they do not look as expected. Compiled and run only by GitHub's Android build, and then on the phone.

@@ -1458,6 +1458,52 @@ await test("the plus button adds an empty block below and puts the cursor in it"
   assert.equal(now[now.findIndex((x) => x.startsWith("First")) + 1], "brand new", JSON.stringify(now));
 }, { viewport: { width: 1400, height: 800 } });
 
+// The Android half of the keyboard fix (the window gets shorter) cannot run here. This tests what
+// the page does once the window is shorter: the top bar stays, and the cursor is kept in view.
+const LONG = Array.from({ length: 40 }, (_, i) => `Line number ${i + 1} of a long page`).join("\n\n") + "\n";
+const PHONE = { viewport: { width: 412, height: 860 } };
+
+await test("when the keyboard shortens the window the top bar stays and the cursor is scrolled into view", async (page) => {
+  await openSeeded(page, "K.md", LONG);
+  await page.locator(".note-body p", { hasText: /^Line number 40 of/ }).click();
+  await page.keyboard.press("End");
+  await page.setViewportSize({ width: 412, height: 420 }); // about what is left above a keyboard
+  await page.waitForFunction(() => {
+    const ed = document.querySelector("#editor").getBoundingClientRect();
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return false;
+    const node = sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode;
+    const line = node.closest("p").getBoundingClientRect();
+    return line.bottom <= ed.bottom + 1 && line.top >= ed.top - 1;
+  }, null, { timeout: 3000 });
+  const bar = await page.locator(".topbar").boundingBox();
+  assert.ok(bar.y >= 0 && bar.y + bar.height <= 420, "the top bar is on screen: " + JSON.stringify(bar));
+  assert.equal(await page.evaluate(() => window.scrollY + document.documentElement.scrollTop + document.body.scrollTop), 0, "the page itself never scrolls");
+}, PHONE);
+
+await test("when the cursor is already visible the keyboard does not scroll the note", async (page) => {
+  await openSeeded(page, "K.md", LONG);
+  // The cursor must really be on line 2 before the window shrinks. Clicking once is not enough
+  // on a slow machine, because opening a note can still be placing the cursor at the end.
+  const line2 = page.locator(".note-body p", { hasText: /^Line number 2 of/ });
+  const onLine2 = () => page.evaluate(() => {
+    const node = window.getSelection().anchorNode;
+    const p = node && (node.nodeType === 3 ? node.parentElement : node).closest("p");
+    return !!p && p.textContent.startsWith("Line number 2 of");
+  });
+  for (let i = 0; i < 10 && !(await onLine2()); i++) {
+    await line2.click();
+    await page.keyboard.press("End");
+    await page.waitForTimeout(100);
+  }
+  assert.ok(await onLine2(), "the cursor is on line 2");
+  const before = await page.evaluate(() => document.querySelector("#editor").scrollTop);
+  await page.setViewportSize({ width: 412, height: 420 });
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => document.querySelector("#editor").scrollTop);
+  assert.equal(after, before, "the note stays where it was");
+}, PHONE);
+
 await test("on a narrow screen the plus button is hidden and the menu has Add block below", async (page) => {
   await openSeeded(page, "G.md", GUT);
   await page.locator(".note-body p", { hasText: "First" }).click();
@@ -1814,6 +1860,29 @@ if (shots) {
         await context.close();
       }
     }
+  }
+  // 0.2.6: a phone window as short as it is with the keyboard open. The keyboard itself is not
+  // drawn (it belongs to Android); the window height is what the page gets to work with.
+  for (const scheme of ["light", "dark"]) {
+    const context = await browser.newContext({ viewport: { width: 412, height: 860 }, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await prepare(page, {});
+    await page.goto(url);
+    await page.waitForSelector("#newNote");
+    await page.evaluate(([text]) => window.__mock.files.set("Long.md", text), [LONG]);
+    await page.click("#newFolder");
+    await page.click("#sidebarToggle").catch(() => {});
+    await page.click('.tree-button[data-path="Long.md"]');
+    await page.waitForSelector("#editor .note-body");
+    await page.locator(".note-body p", { hasText: /^Line number 40 of/ }).click();
+    await page.keyboard.press("End");
+    await page.screenshot({ path: `${shots}/v026-phone-${scheme}-1-keyboard-closed.png` });
+    await page.setViewportSize({ width: 412, height: 420 });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${shots}/v026-phone-${scheme}-2-keyboard-open.png` });
+    await context.close();
   }
   // Every theme, desktop only. The named themes do not depend on the system setting.
   for (const theme of ["light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"]) {
