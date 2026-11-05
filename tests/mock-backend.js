@@ -7,6 +7,8 @@
   let settings = window.__seedSettings || "";
   const logs = [];
   const attachments = new Map(); // path -> base64 text
+  const trashed = []; // oldest first
+  let trashSeq = 0;
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
   const fail = (code) => { throw code; };
   const unique = (parent, stem, ext, exists) => {
@@ -57,6 +59,70 @@
       if (window.__failExport) fail(window.__failExport);
       return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
     },
+    // Stand-ins for the trash and search commands. The real rules are tested in Rust with real
+    // folders; these follow the same shapes and error codes so the screens can be driven.
+    trash_entry: ({ path }) => {
+      const isNote = files.has(path);
+      if (!path || (!isNote && !folders.has(path))) fail(path ? "not_found" : "invalid_path");
+      const name = path.split("/").pop();
+      const from = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      const item = { id: `${1730000000000 + trashSeq}-${trashSeq++}`, name: name + (isNote ? "" : ""), from, is_folder: !isNote, deleted_at: 1730000000 + trashSeq, files: new Map(), folders: new Set() };
+      if (isNote) { item.files.set("", files.get(path)); files.delete(path); }
+      else {
+        for (const [k, v] of [...files]) if (k.startsWith(path + "/")) { item.files.set(k.slice(path.length + 1), v); files.delete(k); }
+        for (const f of [...folders]) if (f === path || f.startsWith(path + "/")) { item.folders.add(f.slice(path.length + 1)); folders.delete(f); }
+      }
+      trashed.push(item);
+      const { files: _f, folders: _d, ...plain } = item;
+      return plain;
+    },
+    trash_list: () => [...trashed].reverse().map(({ files: _f, folders: _d, ...plain }) => plain),
+    trash_restore: ({ id }) => {
+      const at = trashed.findIndex((i) => i.id === id);
+      if (at < 0) fail(/^[0-9-]+$/.test(id) ? "not_found" : "invalid_path");
+      const item = trashed[at];
+      const parent = item.from === "" || folders.has(item.from) ? item.from : "";
+      const taken = (n) => files.has(n) || folders.has(n);
+      let name = item.name;
+      const base = (n) => (parent ? parent + "/" : "") + n;
+      if (taken(base(name))) name = item.is_folder ? `${name} (restored)` : name.replace(/\.md$/i, " (restored).md");
+      const target = base(name);
+      if (item.is_folder) {
+        folders.add(target);
+        for (const f of item.folders) if (f) folders.add(target + "/" + f);
+        for (const [k, v] of item.files) files.set(target + "/" + k, v);
+      } else files.set(target, item.files.get(""));
+      trashed.splice(at, 1);
+      return target;
+    },
+    trash_delete_forever: ({ id }) => {
+      const at = trashed.findIndex((i) => i.id === id);
+      if (at < 0) fail("not_found");
+      trashed.splice(at, 1);
+    },
+    trash_empty: () => { const n = trashed.length; trashed.length = 0; return n; },
+    search_vault: async ({ query, limit }) => {
+      window.__searches = (window.__searches || 0) + 1;
+      if (window.__failSearch) fail(window.__failSearch);
+      if (window.__searchDelay) await new Promise((r) => setTimeout(r, window.__searchDelay));
+      const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+      if (!words.length) return { hits: [], truncated: false };
+      const hits = [];
+      for (const [path, text] of files) {
+        const title = path.split("/").pop().replace(/\.md$/i, "");
+        const lower = text.toLowerCase();
+        if (!words.every((w) => title.toLowerCase().includes(w) || lower.includes(w))) continue;
+        const line = text.split("\n").find((l) => words.some((w) => l.toLowerCase().includes(w))) || "";
+        const snippet = [];
+        const re = new RegExp("(" + words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "gi");
+        for (const [i, piece] of line.split(re).entries()) if (piece) snippet.push([piece, i % 2 === 1]);
+        const exact = title.toLowerCase() === words.join(" ");
+        const inTitle = words.every((w) => title.toLowerCase().includes(w));
+        hits.push({ rank: exact ? 0 : inTitle ? 1 : 2, path, title, snippet });
+      }
+      hits.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
+      return { hits: hits.slice(0, Math.max(1, Math.min(limit, 50))).map(({ rank, ...h }) => h), truncated: false };
+    },
     read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return "data:image/png;base64," + attachments.get(path); },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },
@@ -106,5 +172,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, logs, hash, getSettings: () => settings };
+  window.__mock = { opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, logs, hash, getSettings: () => settings };
 })();

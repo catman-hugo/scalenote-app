@@ -1149,3 +1149,117 @@ body.block-dragging .float-bar { visibility: hidden; }
 .colour-letter { font-weight: 700; line-height: 1.1; border-bottom: 3px solid var(--line); }
 .colour-letter[class*="sn-text-"] { border-bottom-color: currentColor; }
 .colour-letter[class*="sn-bg-"] { padding: 0 2px; border-bottom-color: transparent; }
+
+/* ---------- search and commands ---------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.side-search { padding: 0 var(--space-4) var(--space-2); }
+.search-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+  text-align: left;
+}
+.search-button .btn-label { flex: 1; }
+.search-button .shortcut {
+  font-family: var(--font);
+  font-size: var(--text-s);
+  color: var(--text-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1);
+}
+@container side (max-width: 13rem) {
+  .search-button .shortcut { display: none; }
+}
+
+.dialog.palette {
+  padding: 0;
+  max-width: 40rem;
+  margin: 10dvh auto auto;
+  overflow: hidden;
+}
+.palette-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: var(--space-4);
+  font-size: var(--text-m);
+  background: transparent;
+  color: var(--text);
+}
+.palette-input:focus-visible { outline-offset: -2px; }
+.dialog.palette .palette-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  max-height: min(60dvh, 26rem);
+  overflow-y: auto;
+}
+.dialog.palette .palette-heading {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+.dialog.palette .palette-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: baseline;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  min-height: 36px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.palette-row.active { background: var(--accent-soft); }
+.palette-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-where { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-soft); font-size: var(--text-s); }
+.palette-snippet { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-soft); font-size: var(--text-s); }
+.palette-snippet mark { background: none; color: var(--text); font-weight: 600; }
+.palette-command { display: block; }
+.palette-note, .palette-hint { margin: 0; padding: var(--space-2) var(--space-4); font-size: var(--text-s); color: var(--text-soft); }
+.palette-hint { border-top: 1px solid var(--line); }
+@media (hover: none) {
+  .palette-hint { display: none; }
+}
+
+/* ---------- trash ---------- */
+
+.trash-dialog .trash-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; max-height: 50dvh; overflow-y: auto; }
+.trash-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.trash-text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.trash-name { font-weight: 500; }
+.trash-kind { margin-left: var(--space-2); padding: 0 var(--space-1); border: 1px solid var(--line); border-radius: var(--radius); font-size: var(--text-s); font-weight: 400; color: var(--text-soft); }
+.trash-meta { font-size: var(--text-s); color: var(--text-soft); }
+.trash-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.trash-question { font-weight: 500; }
+.trash-empty { margin: var(--space-4) 0; color: var(--text-soft); }
+.trash-error { margin: var(--space-3) 0 0; color: var(--bad); }
+button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
+button.danger:hover { background: var(--bg-hover); }

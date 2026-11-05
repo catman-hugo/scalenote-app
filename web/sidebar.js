@@ -20,7 +20,7 @@ export function buildTree(entries) {
 /**
  * Draws the tree into `container`.
  * `state` holds { expanded: Set, currentPath, selectedFolder }.
- * `actions` has { openNote, toggleFolder, selectFolder, renameEntry, entryMenu }.
+ * `actions` has { openNote, toggleFolder, selectFolder, renameEntry, entryMenu, trashEntry }.
  * `entryMenu(node, x, y, button)` opens the right-click menu; `renameEntry(node, button)` renames in place.
  */
 export function renderTree(container, entries, state, actions) {
@@ -81,7 +81,8 @@ function renderNode(node, state, actions) {
 }
 
 // Right-click, a long press on a touch screen and the menu key all arrive as "contextmenu".
-// F2 renames the focused entry, the same shortcut file managers use.
+// F2 renames the focused entry and Delete moves it to the trash, the same shortcuts file
+// managers use. Delete is safe to offer on a key because the trash can give the page back.
 function wireEntryMenu(button, node, actions) {
   button.addEventListener("contextmenu", (event) => {
     event.preventDefault();
@@ -94,6 +95,9 @@ function wireEntryMenu(button, node, actions) {
     if (event.key === "F2") {
       event.preventDefault();
       actions.renameEntry(node, button);
+    } else if (event.key === "Delete" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      actions.trashEntry(node, button);
     }
   });
 }

@@ -16,6 +16,9 @@
             <span id="vaultName" class="vault-name"></span>
           </button>
         </div>
+        <div class="side-search">
+          <button id="openSearch" type="button" class="search-button" aria-haspopup="dialog"></button>
+        </div>
         <div class="side-actions">
           <button id="newNote" type="button"></button>
           <button id="newFolder" type="button"></button>
@@ -23,6 +26,7 @@
         <nav id="tree" class="tree" aria-label="Notes"></nav>
         <div class="side-foot">
           <button id="openSettings" type="button" class="link-button"></button>
+          <button id="openTrash" type="button" class="link-button" aria-haspopup="dialog"></button>
           <a id="penTest" href="pentest.html"></a>
         </div>
       </aside>
@@ -56,6 +60,8 @@
     <dialog id="welcome" class="dialog"></dialog>
     <dialog id="settings" class="dialog"></dialog>
     <dialog id="whatsnew" class="dialog"></dialog>
+    <dialog id="trash" class="dialog"></dialog>
+    <dialog id="palette" class="dialog"></dialog>
 
     <script type="module" src="main.js"></script>
   </body>

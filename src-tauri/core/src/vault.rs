@@ -445,8 +445,11 @@ fn numbered(stem: &str, attempt: usize) -> String {
     }
 }
 
-fn has_md_extension(name: &str) -> bool {
-    name.len() > 3 && name[name.len() - 3..].eq_ignore_ascii_case(".md")
+/// Works on bytes, not on a slice of the text: slicing a name that ends in a multi-byte
+/// character (for example "aéé") at a fixed offset would panic.
+pub(crate) fn has_md_extension(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    bytes.len() > 3 && bytes[bytes.len() - 3..].eq_ignore_ascii_case(b".md")
 }
 
 #[cfg(test)]

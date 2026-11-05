@@ -55,13 +55,12 @@ fn parse_open(s: &str) -> Option<OpenTag> {
                     return None;
                 }
                 text = true;
-            } else if let Some(name) = class.strip_prefix("sn-bg-") {
+            } else {
+                let name = class.strip_prefix("sn-bg-")?;
                 if !is_colour_name(name) || background {
                     return None;
                 }
                 background = true;
-            } else {
-                return None;
             }
         }
         if !text && !background {

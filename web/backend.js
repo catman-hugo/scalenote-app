@@ -41,6 +41,16 @@ export const backend = {
   // Makes a copy of the vault next to it with the colours turned into plain highlights, for
   // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
   exportObsidianCopy: () => call("export_obsidian_copy"),
+  // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
+  trash: (path) => call("trash_entry", { path }),
+  // Items in the trash, newest first: { id, name, from, is_folder, deleted_at }.
+  trashList: () => call("trash_list"),
+  // Puts an item back. Returns the path it now has.
+  trashRestore: (id) => call("trash_restore", { id }),
+  trashDeleteForever: (id) => call("trash_delete_forever", { id }),
+  trashEmpty: () => call("trash_empty"),
+  // Returns { hits: [{ path, title, snippet: [[text, matched], ...] }], truncated }.
+  search: (query, limit) => call("search_vault", { query, limit }),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),

@@ -204,3 +204,21 @@ Context. The copy reads and writes every file in the notes folder.
 Decision. It lives in `scalenote-core` (tested with real folders), runs as an `async` Tauri command so a big folder does not freeze the window, reserves its folder name with a single create call so nothing can be replaced, writes every file atomically, skips hidden entries and links, and removes the half-made folder if it fails.
 Alternatives. Doing it in the interface by reading and writing note by note (rejected: thousands of calls, no way to copy pictures, and the rules would not be testable in Rust).
 Cost. The copy is written outside the notes folder, which is new for the app (only the parent of the notes folder, and only a brand new folder).
+
+## 2026-11-05: Delete moves to a hidden `.trash` folder in the notes folder, and nothing is emptied by itself
+Context. Delete was left out of the menu until it could be undone. The owner wants it in 0.3.0.
+Decision. Delete moves the page or folder into `<notes folder>/.trash/<id>/item`, with small plain-text files for the name, the folder it came from and the time. The menu and the Delete key ask nothing, because it is reversible; Delete forever and Empty trash ask in the box. Restore puts it back (top level if its folder is gone, "(restored)" in the name if the name is taken, never replacing). No automatic emptying.
+Alternatives. The system recycle bin (rejected: different on Windows, Linux and Android, not possible in Android's private storage, not testable here). A trash folder outside the notes folder (rejected: a different disk may not allow a quick move, and it would be lost if the folder is moved). A confirmation on every Delete (rejected: slows normal use and the trash already protects).
+Cost. The trash takes disk space until emptied. The hidden folder is inside the notes folder, so a backup of it includes the trash. Pictures of a deleted page stay behind. Obsidian also uses `.trash` for its own deletions, so the two share a folder name; ours holds numbered folders, which Obsidian ignores.
+
+## 2026-11-05: Search has no index and reads the pages on every search
+Context. DECISIONS 2026-11 allows an index only as a cache that can be rebuilt from the files. Other programs (Obsidian, sync) change the notes folder at any time.
+Decision. 0.3.0 has no index: each search reads the pages, with limits on query size, results, pages collected and text read. It does not hold the vault lock while it works.
+Alternatives. A saved index (rejected for now: needs updating and repair rules, and nothing shows yet that it is needed). 
+Cost. Slower in a very large notes folder (3,000 pages take about 0.4 s here, on a fast disk; a phone may be several times slower). If that turns out to be too slow, a rebuildable cache is the next step. The search also needs to run again on every typed pause.
+
+## 2026-11-05: Ctrl+K is the search box, except in a page with text selected
+Context. Ctrl+K already adds a link to selected text in the editor.
+Decision. Ctrl+K opens the search from anywhere, but with text selected in a page it keeps adding a link. The Search button is always there, and is the only way on a touch screen.
+Cost. Two meanings for one key, split by whether text is selected.
+
