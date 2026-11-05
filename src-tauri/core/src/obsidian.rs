@@ -406,6 +406,17 @@ fn copy_file(source: &Path, target: &Path, name: &str, counts: &mut Counts) -> R
     Ok(())
 }
 
+/// A path as a person should read it. On Windows the vault path can come back in the long
+/// "\\?\C:\..." form, which is correct for the system but odd to show; the prefix is dropped
+/// for drive paths. Other paths (including network shares) are shown unchanged.
+pub fn friendly_path(path: &Path) -> String {
+    let text = path.to_string_lossy().into_owned();
+    match text.strip_prefix("\\\\?\\") {
+        Some(rest) if rest.len() > 2 && rest.as_bytes()[1] == b':' => rest.to_string(),
+        _ => text,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,6 +559,18 @@ mod tests {
         assert_eq!(to_obsidian(&shallow), "x");
     }
 
+    // Two spellings of one folder (short or long Windows names, the "\\?\" prefix) are the same place.
+    fn assert_same_place(a: &Path, b: &Path) {
+        assert_eq!(fs::canonicalize(a).expect("a exists"), fs::canonicalize(b).expect("b exists"));
+    }
+
+    #[test]
+    fn long_windows_paths_are_shown_without_the_prefix() {
+        assert_eq!(friendly_path(Path::new("\\\\?\\C:\\Users\\alice\\Notes")), "C:\\Users\\alice\\Notes");
+        assert_eq!(friendly_path(Path::new("\\\\?\\UNC\\server\\share")), "\\\\?\\UNC\\server\\share");
+        assert_eq!(friendly_path(Path::new("/home/alice/Notes")), "/home/alice/Notes");
+    }
+
     fn sample_vault(name: &str) -> (PathBuf, Vault) {
         let parent = temp_dir(name);
         let root = parent.join("My Notes");
@@ -567,7 +590,7 @@ mod tests {
     fn the_copy_is_converted_and_the_vault_is_untouched() {
         let (parent, vault) = sample_vault("copy");
         let report = export_obsidian_copy(&vault).expect("export");
-        assert_eq!(report.path, parent.join("My Notes (Obsidian copy)"));
+        assert_same_place(&report.path, &parent.join("My Notes (Obsidian copy)"));
         assert_eq!((report.notes, report.changed, report.files, report.skipped), (3, 1, 1, 0));
         assert_eq!(fs::read_to_string(report.path.join("a.md")).expect("a"), "a ==x==\n");
         assert_eq!(fs::read_to_string(report.path.join("sub").join("b.md")).expect("b"), "plain\n");
@@ -591,7 +614,7 @@ mod tests {
         let first = export_obsidian_copy(&vault).expect("first");
         fs::write(first.path.join("a.md"), "edited by the owner\n").expect("edit");
         let second = export_obsidian_copy(&vault).expect("second");
-        assert_eq!(second.path, parent.join("My Notes (Obsidian copy) 2"));
+        assert_same_place(&second.path, &parent.join("My Notes (Obsidian copy) 2"));
         assert_eq!(fs::read_to_string(first.path.join("a.md")).expect("kept"), "edited by the owner\n");
         let _ = fs::remove_dir_all(parent);
     }

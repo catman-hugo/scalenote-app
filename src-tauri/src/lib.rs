@@ -226,7 +226,7 @@ fn export_obsidian_copy(state: State<AppState>) -> Result<ExportReply, String> {
     with_vault(&state, "export copy", |vault| {
         let report = scalenote_core::obsidian::export_obsidian_copy(vault)?;
         Ok(ExportReply {
-            path: report.path.to_string_lossy().into_owned(),
+            path: scalenote_core::obsidian::friendly_path(&report.path),
             notes: report.notes,
             changed: report.changed,
             files: report.files,
