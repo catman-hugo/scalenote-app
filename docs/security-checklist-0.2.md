@@ -51,3 +51,6 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 - No new network request: the file addresses come from the release list that was already fetched. Everything in it stays untrusted: a file address is used only if it starts with this project's releases download address, has no spaces, quotes, angle brackets or backslashes, is under 400 characters, belongs to a file whose upload is finished and whose name ends as expected. Anything else falls back to the release page address, which has the same check.
 - Permissions: one new opener address pattern, `https://github.com/catman-hugo/scalenote-app/releases/download/*/*`, the same project only. The app opens the address in the system browser and reads nothing back; it never runs or installs the file itself.
 - No new Rust code and no new dependencies. A downloaded installer is not signed or checked by the app yet (known, already listed as open before 2.0.0).
+
+## Addendum for 0.2.8
+- No new network calls, permissions, dependencies or Rust code. The build step copies picture and xml files from the repository into the generated Android project and reads nothing from outside.

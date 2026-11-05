@@ -138,6 +138,14 @@ Owner request (2026-11-05): after Check now found a newer version there was no w
 - NOT tested, needs devices: that the Android web view really hands the address to the browser and the apk downloads and installs (Android may ask to allow installing from the browser), that the Windows .msi opens, and that the new opener address pattern is accepted by Tauri's permission check (only GitHub's build and a device show that).
 - Release notes: `docs/release-notes/0.2.7.md`.
 
+## 0.2.8: built
+Owner request (2026-11-05): the Android app showed the default Tauri logo (seen in the list of open apps); it should have the ScaleNote logo like Windows and Linux.
+- Cause: `tauri android init` writes Tauri's own launcher icon files into the generated project and does not use `src-tauri/icons/android`, where the ScaleNote icons (logo on a white tile, adaptive foreground inside the safe area) were already committed. I read this from the CLI's embedded template.
+- Fix: the Android patch step (`scripts/patch-android.mjs`, run in CI right after init) now copies `src-tauri/icons/android` over the generated `res` folder and checks the adaptive icon file was replaced. It stops the build if the icons are missing. 3 new unit tests on the real function, including that the icon set in the repository is complete.
+- Tested here: 72 unit tests, the Rust tests, the whole patch script run on a fake generated project that holds default icon files (the foreground and adaptive icon end up byte for byte ours). A preview of the round, squircle and adaptive-circle shapes was looked at.
+- NOT tested, needs the Android phone: how the icon looks on the home screen and in the recents list, and whether Android shows the old icon until the launcher restarts.
+- Release notes: `docs/release-notes/0.2.8.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -152,6 +160,7 @@ Owner request (2026-11-05): after Check now found a newer version there was no w
 | 0.2.5 | Move pages and folders by dragging (and Move to), block editing polish (drag copy, several blocks together, plus button, block type row), and an Undo-after-open data-loss fix (see "0.2.5: built") | built, not tried on a device |
 | 0.2.6 | Phone keyboard covers the bottom of the page instead of sliding the whole screen away (see "0.2.6: built") | built, not tried on a device |
 | 0.2.7 | Download button after Check now: the file for the system in the browser, else the release page (see "0.2.7: built") | built, not tried on a device |
+| 0.2.8 | ScaleNote logo as the Android app icon (see "0.2.8: built") | built, not tried on a device |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

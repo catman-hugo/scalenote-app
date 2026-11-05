@@ -6,12 +6,14 @@
 // disappears. We want the keyboard to sit on top of the bottom of the page: the window gets
 // shorter, the top bar stays, and the page scrolls only as far as the text cursor needs.
 //
+// It also installs the launcher icons (see installIcons).
+//
 // The Android project is generated in the build and not stored in the repository, so the
 // change is applied here as a small text patch. Each patch refuses to run if the generated
 // file does not look as expected, so a changed template fails the build instead of being
 // silently ignored.
 
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { cp, readFile, writeFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,6 +67,20 @@ class MainActivity : TauriActivity() {
 `;
 }
 
+// `tauri android init` writes Tauri's own launcher icons into the generated project and does not
+// use the ones in src-tauri/icons/android, so the app showed the Tauri logo. The ScaleNote icons
+// are copied over them. Files with the same name are replaced; the rest of the project is left alone.
+export async function installIcons(from, to) {
+  const entries = await readdir(from).catch(() => []);
+  if (!entries.some((name) => name.startsWith("mipmap-"))) throw new Error(`no launcher icons found in ${from}`);
+  await cp(from, to, { recursive: true, force: true });
+  // Trust but check: the adaptive icon must now be ours, byte for byte.
+  const ours = await readFile(path.join(from, "mipmap-anydpi-v26", "ic_launcher.xml"));
+  const copied = await readFile(path.join(to, "mipmap-anydpi-v26", "ic_launcher.xml"));
+  if (!ours.equals(copied)) throw new Error("the launcher icons were not copied");
+  return entries;
+}
+
 async function findFile(dir, name) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -87,6 +103,8 @@ async function main() {
   await writeFile(activity, patchActivity(await readFile(activity, "utf8")));
   console.log("patched", manifest);
   console.log("patched", activity);
+  await installIcons(path.join("src-tauri", "icons", "android"), path.join(root, "res"));
+  console.log("installed the ScaleNote launcher icons");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -174,3 +174,9 @@ Context. Check now found a new version but offered nothing usable. The owner wan
 Decision. The Download button gives the address of the matching release file to the system browser (Android .apk, Windows .msi); where no single file fits (Linux) or the file cannot be opened it falls back to the release page. The file addresses come from the release list the app already reads.
 Alternatives. Downloading inside the app (rejected: it needs network code and file writing in Rust and a new dependency for secure connections, and it would still end with the person opening the file). Installing by itself (rejected for now: needs signed installers, and an Android install needs a new permission). Guessing the Linux package type (rejected: a wrong guess installs the wrong thing).
 Cost. The person still opens the downloaded file, and Android may ask to allow installs from the browser. Linux takes one more tap.
+
+## 2026-11-05: The Android icons are copied in by the build
+Context. The generated Android project carries Tauri's default icons and ignores `src-tauri/icons/android`.
+Decision. The Android patch step copies the committed ScaleNote icons over the generated ones after init, and fails the build if they are missing.
+Alternatives. Running `tauri icon` in the build (rejected: needs the source tile image, which is not in the repository, and would regenerate what is already committed). Storing the whole generated Android project (rejected earlier, see the keyboard decision).
+Cost. Changing the logo still means regenerating `src-tauri/icons/android` by hand.
