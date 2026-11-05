@@ -11,6 +11,10 @@ pub mod base64;
 pub mod logger;
 pub mod names;
 pub mod obsidian;
+pub mod search;
+pub mod trash;
 pub mod vault;
 
+pub use search::SearchHit;
+pub use trash::TrashItem;
 pub use vault::{Entry, EntryKind, NoteContent, NoteVersion, Tree, Vault, VaultError};

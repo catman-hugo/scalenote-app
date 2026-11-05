@@ -169,6 +169,17 @@ Owner request (2026-11-05): the colour menu only had a few text colours and high
 - Not done: Notion's "Recently used" colour row.
 - Release notes: `docs/release-notes/0.2.10.md`.
 
+## 0.3.0: built
+Owner request (2026-11-05): "build 0.3.0". Scope he chose: search and command palette, and delete with trash. Wikilinks, backlinks, tags, favorites, covers, export and page history are the next 0.3.x slices (not started). Columns are still waiting for a format decision. The plan is in `docs/v0.3-plan.md`.
+- Trash (`scalenote_core::trash`): Delete moves a page or folder to `<notes folder>/.trash/<id>/` with small text files for its name, where it came from and when. Restore returns it (parent gone: top level; name taken: "(restored)" added; nothing replaced). Delete forever and Empty trash remove for good, after a question in the box. The id is digits and "-" only, so it cannot point outside the trash. A damaged entry cannot be used to reach other files (tested). The vault root and `.trash` itself cannot be deleted. No automatic emptying.
+- Search (`scalenote_core::search`): no index; each search reads the pages. Case-insensitive, letters of any language, every word must be in the title or the text, titles rank first (exact, then contains), the matching line comes back as pieces marked match / no match so the interface never counts letters. Limits: query 200 letters and 8 words, 50 results, 2,000 collected, 512 MiB read, notes over 8 MiB or not valid text skipped, no hidden folders (so no trash), no links followed. The command does not keep the vault locked while it searches, so saving is never blocked.
+- Interface: Search box on Ctrl+K and a Search button (touch), with the ARIA combobox/listbox pattern; Enter right after typing waits for the answer; answers that arrive late for an older query are dropped. Delete in the right-click and long-press menu, Delete key on a page or folder in the list, Trash dialog. Ctrl+K still adds a link when text is selected in a page.
+- Found while testing and fixed: `has_md_extension` sliced a name at a fixed byte offset and would panic on a name like "aéé" (it is used for every file in the list); pressing Enter on a button in Settings closed the box (a keyboard click has position 0,0 and looked like a click outside).
+- Tested here: Rust 73 core tests (24 new: trash and search on real folders, links, damaged entries, hostile and odd queries, 3,000 pages searched in 0.37 s), 84 unit tests, the whole browser suite (new: delete from the menu and the key, folder delete, restore, name clash, already-gone item, typed-then-deleted text, confirmations and focus, Ctrl+K, ranking, snippet marks, late answers, text from pages shown as text, failed search, commands, link shortcut kept, phone with touch), screenshots in light and dark, desktop and phone width.
+- NOT tested, needs real devices: the six new Tauri commands (`trash_entry`, `trash_list`, `trash_restore`, `trash_delete_forever`, `trash_empty`, `search_vault`) are compiled only by GitHub's build, and the browser tests use a stand-in backend; moving to the trash and restoring on a real Windows and Linux folder (including a folder with Obsidian files); the Search button, the box with the on-screen keyboard and the long-press Delete on the Android phone; search speed on a really big notes folder.
+- Not done: jumping to the match inside the page; search in picture names; deleting pictures with their page; automatic emptying of the trash; undo button on the "moved to the trash" message.
+- Release notes: `docs/release-notes/0.3.0.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -186,7 +197,8 @@ Owner request (2026-11-05): the colour menu only had a few text colours and high
 | 0.2.8 | ScaleNote logo as the Android app icon (see "0.2.8: built") | built, not tried on a device |
 | 0.2.9 | Inline styles (highlight, underline, sub, superscript, colour) and the selection bar on Android (see "0.2.9: built") | built, not tried on a device |
 | 0.2.10 | Notion colour palette for text and background, and a copy for Obsidian in Settings (see "0.2.10: built") | built, not tried on a device |
-| 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
+| 0.3.0 | Search, command palette, delete and trash (see "0.3.0: built") | built, not tried on a device |
+| 0.3.x | Wikilinks, backlinks, tags, favorites, covers, export and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |

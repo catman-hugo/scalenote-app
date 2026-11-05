@@ -15,6 +15,8 @@ import { createEditor } from "./editor.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
 import { openContextMenu } from "./contextmenu.js";
+import { openPalette, SEARCH_LIMIT } from "./palette.js";
+import { openTrash } from "./trashdialog.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { pathForVault } from "./images.js";
 import { strings } from "./strings.js";
@@ -39,6 +41,8 @@ const app = {
   mode: "editor",
   // The line ending of the note in source view; a text box always uses "\n" inside.
   lineEnding: "\n",
+  // Pages opened in this session, newest first, for the search box before anything is typed.
+  recent: [],
 };
 
 // ---------- small helpers ----------
@@ -458,12 +462,13 @@ function drawTree() {
         drawTree();
       },
       renameEntry: (node, button) => renameEntryInline(node, button),
+      trashEntry: (node, button) => trashEntry(node, button),
       entryMenu: (node, x, y, button) => openEntryMenu(node, x, y, button),
     },
   );
 }
 
-// The menu for one entry: Rename, and Move to when there is somewhere to move it.
+// The menu for one entry: Rename, Move to when there is somewhere to move it, and Delete.
 function openEntryMenu(node, x, y, button) {
   const c = strings.contextMenu;
   const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
@@ -476,6 +481,8 @@ function openEntryMenu(node, x, y, button) {
       });
     items.push({ label: c.move, run: choose });
   }
+  // No question is asked: Delete only moves the entry to the trash, where it can be restored.
+  items.push({ label: c.delete, run: () => trashEntry(node, button) });
   openContextMenu(x, y, items, { returnFocus: button });
 }
 
@@ -556,9 +563,93 @@ function renameEntryInline(node, button) {
 // After a folder is renamed, paths that started with the old name must follow it.
 function remapPaths(oldPath, newPath) {
   const fix = (p) => (p === oldPath || p.startsWith(oldPath + "/") ? newPath + p.slice(oldPath.length) : p);
+  app.recent = app.recent.map(fix);
   app.expanded = new Set([...app.expanded].map(fix));
   app.selectedFolder = fix(app.selectedFolder);
   if (app.current) app.current.path = fix(app.current.path);
+}
+
+// ---------- trash ----------
+
+const isInside = (path, folder) => path === folder || path.startsWith(folder + "/");
+
+// Moves a page or folder to the trash. The open page is saved first, so what was typed last is
+// in the trash copy too, and is closed afterwards if it was the one deleted (or inside it).
+async function trashEntry(node, button) {
+  try {
+    if (app.autosave) await app.autosave.flush();
+    await backend.trash(node.path);
+    const closing = app.current && isInside(app.current.path, node.path);
+    // The page is gone from its place, so a save must not be tried for it again.
+    if (closing) {
+      app.autosave.cancel();
+      app.current = null;
+    }
+    app.recent = app.recent.filter((p) => !isInside(p, node.path));
+    app.expanded = new Set([...app.expanded].filter((p) => !isInside(p, node.path)));
+    if (isInside(app.selectedFolder, node.path)) app.selectedFolder = parentOf(node.path);
+    showToast(fill(strings.trash.movedToTrash, { name: node.name.replace(/\.md$/i, "") }));
+    if (closing) await showNoNote();
+  } catch (error) {
+    logProblem("trash failed", error);
+    showBanner(errorText(error));
+  }
+  await refreshTree();
+  // The entry that had the focus is gone; the list is the next best place for it.
+  if (button && !button.isConnected) el("tree").querySelector(".tree-button")?.focus();
+}
+
+function openTrashDialog() {
+  return openTrash(el("trash"), {
+    api: {
+      list: () => backend.trashList(),
+      restore: (id) => backend.trashRestore(id),
+      deleteForever: (id) => backend.trashDeleteForever(id),
+      empty: () => backend.trashEmpty(),
+    },
+    onRestored(path, name) {
+      for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
+      showToast(fill(strings.trash.restored, { name }));
+    },
+    onChanged: () => refreshTree(),
+    onError(error) {
+      logProblem("trash action failed", error);
+      return error instanceof BackendError && error.code === "not_found" ? strings.trash.gone : errorText(error);
+    },
+  });
+}
+
+// ---------- search and commands ----------
+
+function openSearch() {
+  const c = strings.search.commands;
+  const commands = [
+    { label: c.newNote, run: createNote },
+    { label: c.newFolder, run: createFolder },
+    { label: c.settings, run: () => el("openSettings").click() },
+    { label: c.trash, run: openTrashDialog },
+    { label: c.sidebar, run: toggleSidebar },
+  ];
+  if (app.current) commands.push({ label: c.source, run: toggleSource });
+  openPalette(el("palette"), {
+    recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
+    commands,
+    search: (query) => backend.search(query, SEARCH_LIMIT),
+    openPage: (path) => openNote(path),
+  });
+}
+
+// Ctrl+K opens the search box from anywhere. In the editor with text selected it keeps its
+// older job, adding a link, so that shortcut does not change.
+function searchShortcut(event) {
+  const wanted = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k";
+  if (!wanted || event.isComposing) return;
+  if (app.editor && app.editor.isFocused && !app.editor.state.selection.empty) return;
+  if (document.querySelector("dialog[open]:not(#palette)")) return;
+  event.preventDefault();
+  const palette = el("palette");
+  if (palette.open) palette.querySelector("input")?.select();
+  else openSearch();
 }
 
 // ---------- the open note ----------
@@ -608,6 +699,7 @@ function showNote(path, note) {
     serialize: (json) => app.editor.markdown.serialize(json),
   });
   app.current = { path, version: note.version, parts };
+  app.recent = [path, ...app.recent.filter((p) => p !== path)].slice(0, 20);
   app.lastSavedText = note.text;
   putInEditor(doc);
   el("empty").hidden = true;
@@ -814,6 +906,15 @@ function fillStaticText() {
   withIcon("newNote", "plus", strings.sidebar.newNote);
   withIcon("newFolder", "folder", strings.sidebar.newFolder);
   withIcon("openSettings", "settings", strings.settings.open);
+  withIcon("openTrash", "trash", strings.sidebar.trash);
+  // The search button shows its shortcut where there is a keyboard to use it.
+  const search = el("openSearch");
+  const searchLabel = document.createElement("span");
+  searchLabel.className = "btn-label";
+  searchLabel.textContent = strings.sidebar.search;
+  search.replaceChildren(icon("search"), searchLabel);
+  if (!isAndroid) search.append(Object.assign(document.createElement("kbd"), { className: "shortcut", textContent: strings.search.shortcut }));
+  search.setAttribute("aria-label", strings.sidebar.search);
   el("penTest").textContent = strings.sidebar.penTest;
   // The folder name opens the folder menu. On Android the folder is fixed, so it is plain text.
   el("vaultButton").append(icon("chevronDown"));
@@ -893,14 +994,20 @@ function keepCaretVisible() {
 function wireEvents() {
   guardFileDrops();
   enableTreeDrag(el("tree"), moveEntry);
+  el("openSearch").addEventListener("click", openSearch);
+  el("openTrash").addEventListener("click", openTrashDialog);
+  document.addEventListener("keydown", searchShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("vaultButton").addEventListener("click", showFolderMenu);
   // Settings and What's new can be closed by clicking outside the box (or Escape, or Close).
   // The first-run screens cannot: they need an answer.
-  for (const id of ["settings", "whatsnew"]) {
+  for (const id of ["settings", "whatsnew", "trash", "palette"]) {
     const dialog = el(id);
     dialog.addEventListener("click", (event) => {
+      // Pressing Enter on a button also sends a click, with its position at 0,0, which would
+      // look like a click outside the box. Only a click on the box itself (its backdrop) counts.
+      if (event.target !== dialog) return;
       const box = dialog.getBoundingClientRect();
       const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
       if (!inside) dialog.close();

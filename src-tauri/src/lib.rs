@@ -235,6 +235,91 @@ fn export_obsidian_copy(state: State<AppState>) -> Result<ExportReply, String> {
     })
 }
 
+#[derive(Serialize)]
+struct TrashEntry {
+    id: String,
+    name: String,
+    /// The folder it was deleted from, "" for the top of the vault.
+    from: String,
+    is_folder: bool,
+    /// Seconds since 1970.
+    deleted_at: u64,
+}
+
+impl From<scalenote_core::TrashItem> for TrashEntry {
+    fn from(item: scalenote_core::TrashItem) -> Self {
+        TrashEntry {
+            id: item.id,
+            name: item.name,
+            from: item.from,
+            is_folder: item.is_folder,
+            deleted_at: item.deleted_at,
+        }
+    }
+}
+
+/// "Delete" moves a page or folder into the vault's hidden trash folder; nothing is removed
+/// until the person chooses "Delete forever" or "Empty trash".
+#[tauri::command]
+fn trash_entry(path: String, state: State<AppState>) -> Result<TrashEntry, String> {
+    with_vault(&state, "move to trash", |vault| vault.move_to_trash(&path).map(TrashEntry::from))
+}
+
+#[tauri::command]
+fn trash_list(state: State<AppState>) -> Result<Vec<TrashEntry>, String> {
+    with_vault(&state, "list trash", |vault| {
+        Ok(vault.trash_list()?.into_iter().map(TrashEntry::from).collect())
+    })
+}
+
+/// Returns the path the item was put back at.
+#[tauri::command]
+fn trash_restore(id: String, state: State<AppState>) -> Result<String, String> {
+    with_vault(&state, "restore from trash", |vault| vault.restore_from_trash(&id))
+}
+
+#[tauri::command]
+fn trash_delete_forever(id: String, state: State<AppState>) -> Result<(), String> {
+    with_vault(&state, "delete forever", |vault| vault.delete_forever(&id))
+}
+
+#[tauri::command]
+fn trash_empty(state: State<AppState>) -> Result<usize, String> {
+    with_vault(&state, "empty trash", |vault| vault.empty_trash())
+}
+
+#[derive(Serialize)]
+struct SearchHitReply {
+    path: String,
+    title: String,
+    /// Pieces of one line of the page; `true` marks the pieces that matched the query.
+    snippet: Vec<(String, bool)>,
+}
+
+#[derive(Serialize)]
+struct SearchReply {
+    hits: Vec<SearchHitReply>,
+    truncated: bool,
+}
+
+/// Searches the pages. It runs away from the main thread and does not keep the vault locked
+/// while it reads: the lock is held only to learn the folder, so saving a note is never
+/// blocked by a slow search. The query is not written to the log.
+#[tauri::command(async)]
+fn search_vault(query: String, limit: usize, state: State<AppState>) -> Result<SearchReply, String> {
+    let root = with_vault(&state, "search", |vault| Ok(vault.root().to_path_buf()))?;
+    let vault = Vault::open(&root).map_err(|e| code(e, &state, "search"))?;
+    let results = vault.search(&query, limit).map_err(|e| code(e, &state, "search"))?;
+    Ok(SearchReply {
+        truncated: results.truncated,
+        hits: results
+            .hits
+            .into_iter()
+            .map(|h| SearchHitReply { path: h.path, title: h.title, snippet: h.snippet })
+            .collect(),
+    })
+}
+
 /// The interface logs short fixed messages through here. The length limit is applied again
 /// by the logger.
 #[tauri::command]
@@ -307,6 +392,12 @@ pub fn run() {
             save_attachment,
             read_attachment,
             export_obsidian_copy,
+            trash_entry,
+            trash_list,
+            trash_restore,
+            trash_delete_forever,
+            trash_empty,
+            search_vault,
             log_line,
             get_settings,
             set_settings

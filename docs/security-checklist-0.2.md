@@ -66,3 +66,10 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 - The log gets only counts and error codes, never paths. The Settings message shows the path of the copy to the person.
 - No new network calls, permissions or dependencies.
 
+## Addendum for 0.3.0
+- Six new Rust commands: `trash_entry`, `trash_list`, `trash_restore`, `trash_delete_forever`, `trash_empty` and `search_vault`. They only work inside the open notes folder. A path for Delete goes through the same check as every other path (no `..`, no hidden parts, no backslashes, nothing that leaves the folder through a link), so `.trash` itself and the folder top cannot be deleted. Trash ids come from the interface, so they are checked to be digits and "-" only (tested with `..`, slashes and letters). The name and place read back from a trash entry are checked again before use: a damaged entry with `../escape.md` is refused and one with a bad place restores at the top (tested).
+- Nothing is removed except by Delete forever or Empty trash, and removing an item removes the item's own folder without following links (tested with a link to a folder outside the notes folder: its content stays). Moves use rename inside the same folder, so they cannot leave a half-copied page.
+- Search reads untrusted page text: only plain text comparison (no patterns, so no pattern-attack), limits on query (200 letters, 8 words), results (50), pages collected (2,000), text read (512 MiB), page size (8 MiB); invalid text and links skipped. The query is never written to the log (only "search failed" and an error code). The result text is put in the page with text nodes, never as html; a test with a page containing `<img onerror>` shows it as text and runs nothing.
+- Search runs without holding the vault lock, so a slow search cannot block saving.
+- A page name ending in an accented letter could panic the page list (byte slicing); fixed and tested. No new network calls, permissions or dependencies.
+

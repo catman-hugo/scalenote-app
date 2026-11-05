@@ -35,7 +35,7 @@ let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
   if (process.env.ONLY && !name.includes(process.env.ONLY)) return; // run the tests whose name contains this text
-  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}) });
+  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}), ...(opts.hasTouch ? { hasTouch: true } : {}) });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   await context.addInitScript({ path: path.join(here, "mock-backend.js") });
   const page = await context.newPage();
@@ -1216,7 +1216,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -1423,7 +1423,7 @@ await test("moving the open page keeps what was typed and keeps the page open", 
 await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
   await moveSetup(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
   await page.click(".context-menu .menu-item:has-text('Move to')");
   const names = await page.locator(".context-menu .menu-item").allTextContents();
   assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
@@ -1783,6 +1783,338 @@ await test("the Obsidian copy button is not offered on an Android phone", async 
   assert.equal(await page.locator('#settings button:has-text("Make a copy for Obsidian")').count(), 0);
   assert.doesNotMatch(await page.textContent("#settings"), /Obsidian/);
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
+// ---------- 0.3.0: delete and trash ----------
+
+const treePaths = (page) => page.$$eval(".tree-button", (b) => b.map((x) => x.dataset.path));
+const treeItem = (page, p) => page.locator(`.tree-button[data-path="${p}"]`);
+async function rightClick(page, p) {
+  await treeItem(page, p).click({ button: "right" });
+  await page.waitForSelector(".context-menu");
+}
+const trashed = (page) => page.evaluate(() => window.__mock.trashed.map((i) => ({ name: i.name, from: i.from, folder: i.is_folder, files: Object.fromEntries(i.files) })));
+
+await test("Delete in the right-click menu moves a page to the trash without asking, and Restore puts it back unchanged", async (page) => {
+  await withFolderAndPage(page);
+  await page.click('.tree-button[data-path="Plan.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await rightClick(page, "Plan.md");
+  await page.click('.context-menu .menu-item:has-text("Delete")');
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Plan.md"]'));
+  assert.match(await page.textContent("#toast"), /Moved to the trash: Plan/);
+  assert.equal(await page.isVisible("#editor"), false, "the deleted page is closed");
+  assert.equal(await page.isVisible("#empty"), true);
+  assert.equal("Plan.md" in (await files(page)), false);
+  assert.deepEqual((await trashed(page)).map((i) => [i.name, i.from]), [["Plan.md", ""]]);
+  // The trash lists it, with where it came from, and Restore puts it back with the same text.
+  await page.click("#openTrash");
+  await page.waitForSelector("#trash[open] .trash-row");
+  assert.match(await page.textContent("#trash .trash-row"), /Plan/);
+  assert.match(await page.textContent("#trash .trash-row"), /From the top level/);
+  await page.click('#trash .trash-row button:has-text("Restore")');
+  await page.waitForSelector("#trash .trash-empty");
+  assert.equal((await files(page))["Plan.md"], "plan\n");
+  assert.match(await page.textContent("#toast"), /Restored: Plan/);
+  await page.click('#trash button:has-text("Close")');
+  assert.ok((await treePaths(page)).includes("Plan.md"), "it is in the list again");
+}, ctxOpts);
+
+await test("the Delete key moves the focused page to the trash, and a folder goes with everything in it", async (page) => {
+  await withFolderAndPage(page);
+  await page.click('.tree-button[data-path="Biology"]'); // opens the folder
+  await page.click('.tree-button[data-path="Biology/Cells.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await treeItem(page, "Biology").focus();
+  await page.keyboard.press("Delete");
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Biology"]'));
+  assert.equal(await page.isVisible("#editor"), false, "a page inside a deleted folder is closed too");
+  assert.equal(await page.evaluate(() => [...window.__mock.folders].includes("Biology")), false);
+  const items = await trashed(page);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].folder, true);
+  assert.equal(items[0].files["Cells.md"], "cells\n");
+  // Focus is not lost to the page body.
+  assert.equal(await page.evaluate(() => document.activeElement.closest("#tree") !== null), true);
+  await page.click("#openTrash");
+  await page.click('#trash .trash-row button:has-text("Restore")');
+  await page.waitForSelector("#trash .trash-empty");
+  await page.click('#trash button:has-text("Close")');
+  assert.equal((await files(page))["Biology/Cells.md"], "cells\n");
+  assert.ok((await treePaths(page)).includes("Biology"));
+}, ctxOpts);
+
+await test("what was typed just before deleting is in the trash, and no conflict copy appears", async (page) => {
+  await openSeeded(page, "Typed.md", "start\n");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" last words");
+  await rightClick(page, "Typed.md");
+  await page.click('.context-menu .menu-item:has-text("Delete")');
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Typed.md"]'));
+  await page.waitForTimeout(1500); // longer than the save delay: a late save would show up now
+  const items = await trashed(page);
+  assert.match(items[0].files[""], /start last words/);
+  assert.deepEqual(Object.keys(await files(page)).filter((n) => n.includes("Typed")), [], "nothing was written back");
+});
+
+await test("Delete forever and Empty trash ask first, Cancel keeps everything, and Cancel has the focus", async (page) => {
+  await start(page);
+  await page.evaluate(() => { window.__mock.files.set("One.md", "1\n"); window.__mock.files.set("Two.md", "2\n"); });
+  await page.click("#newFolder");
+  for (const p of ["One.md", "Two.md"]) { await treeItem(page, p).focus(); await page.keyboard.press("Delete"); await page.waitForFunction((x) => !document.querySelector(`.tree-button[data-path="${x}"]`), p); }
+  await page.click("#openTrash");
+  await page.waitForSelector("#trash .trash-row");
+  assert.equal(await page.locator("#trash .trash-row").count(), 2);
+  // Newest first.
+  assert.match(await page.locator("#trash .trash-row").first().textContent(), /Two/);
+  await page.locator('#trash .trash-row button:has-text("Delete forever")').first().click();
+  assert.match(await page.textContent("#trash"), /cannot be brought back/);
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), "Cancel");
+  await page.keyboard.press("Enter"); // Enter on the focused button cancels
+  assert.equal(await page.locator("#trash .trash-row").count(), 2);
+  assert.equal((await trashed(page)).length, 2);
+  await page.locator('#trash .trash-row button:has-text("Delete forever")').first().click();
+  await page.click('#trash button:has-text("Yes, delete")');
+  await page.waitForFunction(() => document.querySelectorAll("#trash .trash-row").length === 1);
+  assert.deepEqual((await trashed(page)).map((i) => i.name), ["One.md"]);
+  // Empty trash also asks.
+  await page.click('#trash button:has-text("Empty trash")');
+  assert.match(await page.textContent("#trash"), /everything in the trash/);
+  await page.click('#trash button:has-text("Cancel")');
+  assert.equal((await trashed(page)).length, 1);
+  await page.click('#trash button:has-text("Empty trash")');
+  await page.click('#trash button:has-text("Yes, delete")');
+  await page.waitForSelector("#trash .trash-empty");
+  assert.equal((await trashed(page)).length, 0);
+  assert.equal(await page.locator('#trash button:has-text("Empty trash")').count(), 0, "nothing to empty");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isVisible("#trash"), false);
+});
+
+await test("restoring while the old name is taken keeps both, and an item that is already gone is explained inside the box", async (page) => {
+  await start(page);
+  await page.evaluate(() => window.__mock.files.set("Same.md", "old\n"));
+  await page.click("#newFolder");
+  await treeItem(page, "Same.md").focus();
+  await page.keyboard.press("Delete");
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Same.md"]'));
+  await page.evaluate(() => window.__mock.files.set("Same.md", "new\n"));
+  await page.click("#openTrash");
+  await page.click('#trash button:has-text("Restore")');
+  await page.waitForSelector("#trash .trash-empty");
+  const now = await files(page);
+  assert.equal(now["Same.md"], "new\n");
+  assert.equal(now["Same (restored).md"], "old\n");
+  // Another window emptied the trash in the meantime.
+  await page.evaluate(() => window.__mock.files.set("Gone.md", "g\n"));
+  await page.click('#trash button:has-text("Close")');
+  await page.click("#newFolder");
+  await treeItem(page, "Gone.md").focus();
+  await page.keyboard.press("Delete");
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Gone.md"]'));
+  await page.click("#openTrash");
+  await page.waitForSelector("#trash .trash-row");
+  await page.evaluate(() => { window.__mock.trashed.length = 0; });
+  await page.click('#trash button:has-text("Delete forever")');
+  await page.click('#trash button:has-text("Yes, delete")');
+  await page.waitForSelector("#trash .trash-error");
+  assert.match(await page.textContent("#trash .trash-error"), /already gone/);
+});
+
+// ---------- 0.3.0: search and commands ----------
+
+const openPaletteBox = async (page) => { await page.keyboard.press("Control+k"); await page.waitForSelector("#palette[open] .palette-input"); };
+const rowTexts = (page) => page.$$eval("#palette .palette-row", (r) => r.map((x) => x.textContent));
+
+async function searchVault(page) {
+  await start(page);
+  await page.evaluate(() => {
+    const f = window.__mock.files;
+    window.__mock.folders.add("School");
+    f.set("Biology.md", "Cells and Mitochondria\nthe powerhouse of the cell\n");
+    f.set("School/Maths.md", "Nothing here\nthe quadratic formula\n");
+    f.set("Plants.md", "all about plants\n");
+    f.set("Notes on plants.md", "x\n");
+    f.set("Html.md", "<b>bold</b> <img src=x onerror=\"window.__pwned=1\"> text\n");
+  });
+  await page.click("#newFolder");
+}
+
+await test("Ctrl+K opens the search box with recent pages and commands, and Escape closes it", async (page) => {
+  await searchVault(page);
+  await page.click('.tree-button[data-path="Biology.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await page.click('.tree-button[data-path="Plants.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plants");
+  await openPaletteBox(page);
+  assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
+  const texts = await rowTexts(page);
+  assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
+  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Show or hide the page list", "Show or hide the markdown text of this page"]);
+  assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
+  assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
+  assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
+  assert.equal(await page.getAttribute(".palette-input", "aria-activedescendant"), await page.getAttribute(".palette-row >> nth=0", "id"));
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isVisible("#palette"), false);
+});
+
+await test("typing finds pages by title and text, ranks titles first, marks the match, and Enter opens the page", async (page) => {
+  await searchVault(page);
+  await openPaletteBox(page);
+  await page.keyboard.type("plants");
+  await page.waitForSelector("#palette .palette-row .palette-title");
+  const titles = await page.$$eval("#palette .palette-title", (t) => t.map((x) => x.textContent));
+  assert.deepEqual(titles, ["Plants", "Notes on plants"], "the exact title first, then titles that contain it");
+  await page.keyboard.press("Escape");
+  await openPaletteBox(page);
+  await page.keyboard.type("quadratic");
+  await page.waitForSelector('#palette .palette-title:has-text("Maths")');
+  assert.equal(await page.locator("#palette .palette-where").first().textContent(), "School");
+  assert.equal(await page.locator("#palette .palette-snippet mark").first().textContent(), "quadratic");
+  assert.equal(await page.locator("#palette .palette-snippet").first().textContent(), "the quadratic formula");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector("#title").value === "Maths");
+  assert.equal(await page.isVisible("#palette"), false);
+  assert.ok(await page.evaluate(() => document.querySelector('.tree-button[data-path="School/Maths.md"]')?.getAttribute("aria-current")) === "page");
+});
+
+await test("Up and Down move through the results, and Enter straight after typing opens the page typed for", async (page) => {
+  await searchVault(page);
+  await page.evaluate(() => { window.__searchDelay = 400; });
+  await openPaletteBox(page);
+  await page.keyboard.type("mitochondria");
+  await page.keyboard.press("Enter"); // before the answer arrives
+  await page.waitForFunction(() => document.querySelector("#title").value === "Biology", null, { timeout: 5000 });
+  await page.evaluate(() => { window.__searchDelay = 0; });
+  await openPaletteBox(page);
+  await page.keyboard.type("plants");
+  await page.waitForSelector("#palette .palette-title");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator("#palette .palette-row.active .palette-title").textContent(), "Notes on plants");
+  await page.keyboard.press("ArrowDown");
+  assert.match(await page.locator("#palette .palette-row.active").textContent(), /./);
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  assert.equal(await page.getAttribute(".palette-input", "aria-activedescendant"), await page.locator("#palette .palette-row").last().getAttribute("id"), "it wraps around");
+});
+
+await test("an older answer arriving late never replaces the newer results", async (page) => {
+  await searchVault(page);
+  await openPaletteBox(page);
+  await page.evaluate(() => { window.__searchDelay = 700; });
+  await page.keyboard.type("quadratic");
+  await page.waitForTimeout(250); // the slow search has started
+  await page.evaluate(() => { window.__searchDelay = 0; });
+  await page.locator(".palette-input").fill("powerhouse");
+  await page.waitForSelector('#palette .palette-title:has-text("Biology")');
+  await page.waitForTimeout(900);
+  const titles = await page.$$eval("#palette .palette-title", (t) => t.map((x) => x.textContent));
+  assert.deepEqual(titles, ["Biology"]);
+});
+
+await test("text from a page is shown as text, never run, and odd queries and failures stay calm", async (page) => {
+  await searchVault(page);
+  await openPaletteBox(page);
+  await page.keyboard.type("onerror");
+  await page.waitForSelector('#palette .palette-title:has-text("Html")');
+  assert.equal(await page.locator("#palette .palette-snippet b, #palette .palette-snippet img").count(), 0);
+  assert.match(await page.locator("#palette .palette-snippet").textContent(), /<img src=x onerror=/);
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  for (const q of ["(", "[", "\\", ".*", "<script>", "%", "a".repeat(500)]) {
+    await page.locator(".palette-input").fill(q);
+    await page.waitForTimeout(300);
+  }
+  assert.ok((await page.locator(".palette-input").inputValue()).length <= 200, "the box limits the length");
+  await page.locator(".palette-input").fill("zzzzzz");
+  await page.waitForFunction(() => /Nothing found/.test(document.querySelector("#palette").textContent));
+  await page.evaluate(() => { window.__failSearch = "io"; });
+  await page.locator(".palette-input").fill("plants");
+  await page.waitForFunction(() => /search did not work/.test(document.querySelector("#palette").textContent));
+  assert.equal(await page.isVisible("#banner"), false, "no alarm for a failed search");
+});
+
+await test("commands can be found by typing and run with Enter", async (page) => {
+  await searchVault(page);
+  await openPaletteBox(page);
+  await page.keyboard.type("settings");
+  await page.waitForSelector('#palette .palette-command:has-text("Open settings")');
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#settings[open]");
+  await page.click('#settings button:has-text("Close")');
+  await openPaletteBox(page);
+  await page.keyboard.type("trash");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#trash[open]");
+  await page.keyboard.press("Escape");
+  await openPaletteBox(page);
+  await page.keyboard.type("new page");
+  await page.waitForSelector('#palette .palette-command:has-text("New page")');
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector("#title").value === "Untitled");
+  assert.ok(Object.keys(await files(page)).some((n) => n.endsWith("Untitled.md")), "the page was created");
+});
+
+await test("Ctrl+K with text selected in a page still opens the link box, not the search", async (page) => {
+  await openSeeded(page, "Link.md", "alpha beta\n");
+  await select(page, 0, 5);
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector(".link-input", { state: "visible", timeout: 3000 });
+  assert.equal(await page.isVisible("#palette"), false);
+  // With nothing selected it opens the search from inside the page.
+  await page.keyboard.press("Escape");
+  await page.locator(".note-body p").click();
+  await page.waitForTimeout(150); // the editor notices the new cursor position a moment after the click
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector("#palette[open]");
+});
+
+await test("the Search button opens the box, and the page list shows the shortcut", async (page) => {
+  await searchVault(page);
+  assert.match(await page.textContent("#openSearch"), /Search/);
+  assert.match(await page.textContent("#openSearch"), /Ctrl K/);
+  await page.click("#openSearch");
+  await page.waitForSelector("#palette[open]");
+  // Clicking outside the box closes it.
+  await page.mouse.click(5, 5);
+  assert.equal(await page.isVisible("#palette"), false);
+  // Ctrl+K again while it is open keeps one box.
+  await openPaletteBox(page);
+  await page.keyboard.press("Control+k");
+  assert.equal(await page.locator("dialog#palette[open]").count(), 1);
+});
+
+await test("on an Android phone the Search button works with touch, shows no keyboard hint, and fits the screen", async (page) => {
+  await searchVault(page);
+  assert.doesNotMatch(await page.textContent("#openSearch"), /Ctrl/);
+  await page.tap("#openSearch");
+  await page.waitForSelector("#palette[open]");
+  await page.keyboard.type("plants");
+  await page.waitForSelector("#palette .palette-title");
+  const fit = await page.evaluate(() => {
+    const box = document.querySelector("#palette").getBoundingClientRect();
+    return { left: box.left, right: box.right, width: window.innerWidth, scroll: document.documentElement.scrollWidth };
+  });
+  assert.ok(fit.left >= 0 && fit.right <= fit.width && fit.scroll <= fit.width, JSON.stringify(fit));
+  await page.tap('#palette .palette-title:has-text("Notes on plants")');
+  await page.waitForFunction(() => document.querySelector("#title").value === "Notes on plants");
+  assert.equal(await page.isVisible("#palette"), false);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
+await test("Delete works from the long-press menu on a phone and the trash dialog fits the screen", async (page) => {
+  await searchVault(page);
+  await rightClick(page, "Plants.md");
+  await page.click('.context-menu .menu-item:has-text("Delete")');
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Plants.md"]'));
+  await page.tap("#openTrash");
+  await page.waitForSelector("#trash .trash-row");
+  const fit = await page.evaluate(() => { const b = document.querySelector("#trash").getBoundingClientRect(); return { left: b.left, right: b.right, width: window.innerWidth, scroll: document.documentElement.scrollWidth }; });
+  assert.ok(fit.left >= 0 && fit.right <= fit.width && fit.scroll <= fit.width, JSON.stringify(fit));
+  await page.tap('#trash button:has-text("Restore")');
+  await page.waitForSelector("#trash .trash-empty");
+  assert.ok("Plants.md" in (await files(page)));
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
 
 await test("the keyboard shortcuts for underline, highlight, subscript and superscript work", async (page) => {
   await openSeeded(page, "K2.md", "one two three four\n");
@@ -2321,6 +2653,72 @@ if (shots) {
       await page.click("#openSettings");
       await page.waitForSelector("#settings .settings-body");
       await page.screenshot({ path: `${shots}/v0210-${label}-${scheme}-5-settings.png` });
+      await context.close();
+    }
+  }
+  // 0.3.0: search and commands, the Delete entry in the menu, and the trash, desktop and phone width.
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport, userAgent] of [["desktop", { width: 1100, height: 760 }, undefined], ["phone", { width: 412, height: 860 }, ANDROID_UA]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme, ...(userAgent ? { userAgent } : {}), ...(userAgent ? { hasTouch: true } : {}) });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await prepare(page, {});
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate(() => {
+        const f = window.__mock.files;
+        window.__mock.folders.add("School");
+        window.__mock.folders.add("Garden");
+        f.set("School/Biology.md", "# Biology\n\nCells and the powerhouse of the cell: the mitochondria.\n");
+        f.set("School/Maths.md", "Nothing here\nThe quadratic formula solves every equation of the second degree.\n");
+        f.set("Garden/Plants.md", "All about plants and how much water they need in the summer.\n");
+        f.set("Garden/Plant shopping list.md", "seeds, soil, a watering can\n");
+        f.set("Reading plants.md", "A book about plants.\n");
+        f.set("Old plan.md", "never mind\n");
+        f.set("Old folder/x.md", "x\n");
+        window.__mock.folders.add("Old folder");
+      });
+      await page.click("#newFolder");
+      // On a phone the page list slides over the page: open it with the button, close it by tapping beside it.
+      const list = async (open) => {
+        if ((await page.evaluate(() => document.body.classList.contains("sidebar-open"))) === open) return;
+        if (open) await page.click("#toggle"); else await page.mouse.click(404, 400);
+        await page.waitForTimeout(100);
+      };
+      await page.screenshot({ path: `${shots}/v030-${label}-${scheme}-1-sidebar.png` });
+      await page.click('.tree-button[data-path="School"]'); // opens the folder
+      for (const p of ["School/Biology.md", "School/Maths.md"]) {
+        await list(true);
+        await page.click(`.tree-button[data-path="${p}"]`);
+        await page.waitForSelector("#editor .note-body");
+      }
+      await page.evaluate(() => document.activeElement && document.activeElement.blur());
+      if (label === "phone") { await list(true); await page.tap("#openSearch"); } else await page.keyboard.press("Control+k");
+      await page.waitForSelector("#palette[open] .palette-row");
+      await page.screenshot({ path: `${shots}/v030-${label}-${scheme}-2-search-empty.png` });
+      await page.keyboard.type("plants");
+      await page.waitForSelector("#palette .palette-snippet");
+      await page.keyboard.press("ArrowDown");
+      await page.screenshot({ path: `${shots}/v030-${label}-${scheme}-3-search-results.png` });
+      await page.keyboard.press("Escape");
+      await list(true);
+      await page.locator('.tree-button[data-path="Old plan.md"]').click({ button: "right" });
+      await page.waitForSelector(".context-menu");
+      await page.screenshot({ path: `${shots}/v030-${label}-${scheme}-4-menu.png` });
+      await page.click('.context-menu .menu-item:has-text("Delete")');
+      await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Old plan.md"]'));
+      await list(true);
+      await page.locator('.tree-button[data-path="Old folder"]').focus();
+      await page.keyboard.press("Delete");
+      await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Old folder"]'));
+      await page.click("#openTrash");
+      await page.waitForSelector("#trash .trash-row");
+      await page.locator('#trash .trash-row button:has-text("Delete forever")').first().click();
+      await page.screenshot({ path: `${shots}/v030-${label}-${scheme}-5-trash.png` });
+      await page.click('#trash button:has-text("Cancel")');
+      await page.click('#trash button:has-text("Empty trash")');
+      await page.screenshot({ path: `${shots}/v030-${label}-${scheme}-6-trash-empty-ask.png` });
       await context.close();
     }
   }
