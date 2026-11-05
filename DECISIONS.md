@@ -192,3 +192,15 @@ Context. On Android the system takes over a finger selection, so the page may ne
 Decision. Touch input never blocks the bar, a cancelled pointer counts as finished, and for touch the bar sits 36 px lower than on desktop to clear the native selection handles.
 Alternatives. Hiding Android's own Cut/Copy menu (rejected: the page cannot control it).
 Cost. The bar and the native menu may overlap in some positions; only a phone shows how often.
+
+## 2026-11-05: Colours are saved by name, and Obsidian gets a converted copy
+Context. The owner wants Notion's colour scheme for text and background, and wants to be able to leave ScaleNote for Obsidian without odd markup, while ScaleNote itself stays feature rich. Notion's background shades differ between light and dark.
+Decision. A colour is saved by name in a class, `<span class="sn-text-red sn-bg-yellow">` (one span for text and background together), and the theme decides the shade. This replaces the 0.2.9 text colour codes, which are still read. Leaving for Obsidian is a button in Settings that writes a converted copy into a new folder next to the notes folder: background colours become `==text==`, text colours are removed, everything else is kept byte for byte. The owner's own pages are never changed.
+Alternatives. A colour code per colour in the note (rejected: one code cannot be right for both light and dark themes). Converting in place (rejected by the owner: one-way and risky). Keeping colour codes so Obsidian shows text colours (rejected by the owner: he wants no odd colours in Obsidian).
+Cost. Other programs show no colour from ScaleNote pages unless the copy is made. A second way of saving (the copy) has to stay in step with the editor: a test compares the colour names in the Rust converter with the interface. The copy is not available on Android yet.
+
+## 2026-11-05: The Obsidian copy is made in Rust, away from the main thread, and never replaces anything
+Context. The copy reads and writes every file in the notes folder.
+Decision. It lives in `scalenote-core` (tested with real folders), runs as an `async` Tauri command so a big folder does not freeze the window, reserves its folder name with a single create call so nothing can be replaced, writes every file atomically, skips hidden entries and links, and removes the half-made folder if it fails.
+Alternatives. Doing it in the interface by reading and writing note by note (rejected: thousands of calls, no way to copy pictures, and the rules would not be testable in Rust).
+Cost. The copy is written outside the notes folder, which is new for the app (only the parent of the notes folder, and only a brand new folder).
