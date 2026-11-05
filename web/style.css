@@ -328,6 +328,11 @@ body:not(.sidebar-open) .sidebar {
   padding: var(--space-1) var(--space-2);
   min-height: 32px;
   border-radius: var(--radius);
+  /* A long press picks the entry up (see treedrag.js): no text selection and no system
+     press-and-hold callout on it. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .tree-label {
@@ -346,11 +351,19 @@ body:not(.sidebar-open) .sidebar {
 
 /* Dragging an entry in the page list: a flat label follows the pointer and the folder that
    would receive the drop is outlined. */
-body.tree-dragging,
-body.tree-dragging * { cursor: grabbing; user-select: none; }
+body.tree-dragging { cursor: grabbing; user-select: none; }
+body.tree-dragging .tree,
+body.tree-dragging .tree-button { cursor: grabbing; }
 
+/* Held still on a touch screen: the entry is picked up and can now be dragged. */
+.tree-row.picked-up > .tree-button { background: var(--accent-soft); }
+
+/* Placed with a transform, which the browser can move without laying the page out again. */
 .drag-preview {
   position: fixed;
+  left: 0;
+  top: 0;
+  will-change: transform;
   z-index: 50;
   display: flex;
   align-items: center;

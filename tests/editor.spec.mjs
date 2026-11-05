@@ -2127,6 +2127,127 @@ await test("on desktop the folder name keeps its arrow and opens the folder menu
   assert.equal(await page.locator("#vaultButton svg").count(), 1);
 });
 
+// ---------- 0.3.2: new entries at the top, and finger gestures in the page list ----------
+
+await test("New page and New folder go to the top when no folder is open, and into the open folder otherwise", async (page) => {
+  await withFolderAndPage(page); // Biology/Cells.md and Plan.md; "New folder" is also made at the top
+  await page.click('.tree-button[data-path="Biology"]'); // opens it and selects it
+  await page.click("#newNote");
+  await page.waitForFunction(() => document.querySelector("#title").value === "Untitled");
+  assert.ok("Biology/Untitled.md" in (await files(page)), "into the folder that is open");
+  await page.click('.tree-button[data-path="Biology"]'); // closes it again
+  await page.click("#newNote");
+  await page.waitForFunction(() => document.querySelector("#title").value === "Untitled" && document.querySelectorAll(".tree-button").length > 0);
+  assert.ok("Untitled.md" in (await files(page)), "at the top: the folder is closed");
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="New folder 2"], .tree-button[data-path="New folder"]');
+  const folders = await page.evaluate(() => [...window.__mock.folders]);
+  assert.ok(folders.every((f) => !f.startsWith("Biology/")), "no folder was made inside the closed folder: " + folders);
+  // A page opened inside a folder that is then closed does not pull new things into that folder.
+  await page.click('.tree-button[data-path="Biology"]');
+  await page.click('.tree-button[data-path="Biology/Cells.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await page.click('.tree-button[data-path="Biology"]');
+  await page.click("#newNote");
+  await page.waitForFunction(() => document.querySelector("#title").value === "Untitled 2");
+  assert.ok("Untitled 2.md" in (await files(page)));
+}, ctxOpts);
+
+// A finger on the page list, sent as real touch input (the browser turns it into pointer events).
+async function fingerSetup(page) {
+  await start(page);
+  await page.evaluate(() => { window.__mock.folders.add("Biology"); window.__mock.files.set("Plan.md", "plan\n"); window.__mock.files.set("Biology/Cells.md", "cells\n"); });
+  await page.click("#newFolder");
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  const centre = async (p) => { const b = await page.locator(`.tree-button[data-path="${p}"]`).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
+  return { send, centre };
+}
+
+await test("on a touch screen, holding an entry and moving it onto a folder moves it, without a menu or opening it", async (page) => {
+  const { send, centre } = await fingerSetup(page);
+  const [px, py] = await centre("Plan.md");
+  const [fx, fy] = await centre("Biology");
+  await send("touchStart", px, py);
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator(".tree-row.picked-up").count(), 1, "picked up");
+  assert.equal(await page.locator(".context-menu").count(), 0, "no system menu at this point");
+  for (let i = 1; i <= 8; i++) { await send("touchMove", px + ((fx - px) * i) / 8, py + ((fy - py) * i) / 8); await page.waitForTimeout(30); }
+  await page.waitForSelector(".drag-preview");
+  await page.waitForSelector(".tree-row.drop-target");
+  await send("touchEnd");
+  await page.waitForFunction(() => window.__mock.files.has("Biology/Plan.md"));
+  assert.equal("Plan.md" in (await files(page)), false);
+  assert.equal(await page.locator(".drag-preview").count(), 0);
+  assert.equal(await page.isVisible("#editor"), false, "dropping did not open the page");
+  assert.equal(await page.locator(".context-menu").count(), 0);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
+await test("on a touch screen, holding still for longer opens the menu, and nothing is opened or moved", async (page) => {
+  const { send, centre } = await fingerSetup(page);
+  const [px, py] = await centre("Plan.md");
+  await send("touchStart", px, py);
+  await page.waitForTimeout(600);
+  assert.equal(await page.locator(".context-menu").count(), 0, "still only picked up");
+  await page.waitForSelector(".context-menu", { timeout: 2000 });
+  await send("touchEnd");
+  await page.waitForTimeout(200);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
+  assert.ok("Plan.md" in (await files(page)));
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
+await test("on a touch screen, two quick taps open the menu, and a folder is not renamed by them", async (page) => {
+  const { send, centre } = await fingerSetup(page);
+  const [fx, fy] = await centre("Biology");
+  for (let i = 0; i < 2; i++) { await send("touchStart", fx, fy); await page.waitForTimeout(40); await send("touchEnd"); await page.waitForTimeout(80); }
+  await page.waitForSelector(".context-menu");
+  assert.equal(await page.locator(".inline-rename").count(), 0);
+  // Two slow taps are two separate taps, not a menu.
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+  await send("touchStart", fx, fy); await send("touchEnd");
+  await page.waitForTimeout(600);
+  await send("touchStart", fx, fy); await send("touchEnd");
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator(".context-menu").count(), 0);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
+await test("on a touch screen, moving the finger at once scrolls instead of picking up, and a quick tap still opens a page", async (page) => {
+  const { send, centre } = await fingerSetup(page);
+  const [px, py] = await centre("Plan.md");
+  await send("touchStart", px, py);
+  for (let i = 1; i <= 5; i++) { await send("touchMove", px, py + i * 8); await page.waitForTimeout(20); }
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator(".tree-row.picked-up, .drag-preview, .context-menu").count(), 0);
+  await send("touchEnd");
+  assert.ok("Plan.md" in (await files(page)));
+  const [qx, qy] = await centre("Plan.md");
+  await send("touchStart", qx, qy); await page.waitForTimeout(40); await send("touchEnd");
+  await page.waitForSelector("#editor .note-body");
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
+await test("a mouse drag still works and a drag that is interrupted leaves nothing stuck", async (page) => {
+  await withFolderAndPage(page);
+  const from = await page.locator('.tree-button[data-path="Plan.md"]').boundingBox();
+  const to = await page.locator('.tree-button[data-path="Biology"]').boundingBox();
+  await page.mouse.move(from.x + 20, from.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 20, to.y + 10, { steps: 6 });
+  await page.waitForSelector(".drag-preview");
+  await page.dispatchEvent("body", "pointercancel", { pointerId: 1, bubbles: true });
+  await page.waitForFunction(() => !document.querySelector(".drag-preview") && !document.body.classList.contains("tree-dragging"));
+  await page.mouse.up();
+  assert.ok("Plan.md" in (await files(page)), "an interrupted drag moves nothing");
+  // A second drag works afterwards.
+  const again = await page.locator('.tree-button[data-path="Plan.md"]').boundingBox();
+  await page.mouse.move(again.x + 20, again.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 20, to.y + 10, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => window.__mock.files.has("Biology/Plan.md"));
+}, ctxOpts);
+
 await test("the keyboard shortcuts for underline, highlight, subscript and superscript work", async (page) => {
   await openSeeded(page, "K2.md", "one two three four\n");
   await select(page, 0, 3);
