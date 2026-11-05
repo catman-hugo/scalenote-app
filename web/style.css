@@ -1018,6 +1018,8 @@ body.block-dragging .float-bar { visibility: hidden; }
 .setting-label { color: var(--text); }
 .setting-row select, .setting-row input[type="range"] { min-width: 12rem; max-width: 60%; }
 
+.setting-actions { display: flex; flex-direction: column; gap: var(--space-2); }
+.setting-actions:empty { display: none; }
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
 #whatsnew { max-width: min(52rem, calc(100% - 2 * var(--space-4))); }
 #whatsnew .notes { max-height: calc(100dvh - 12rem); }

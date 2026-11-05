@@ -28,13 +28,44 @@ export function safeReleaseUrl(value) {
   return typeof value === "string" && value.length < 300 && value.startsWith(`${RELEASE_PAGE}/`) && !/[\s"'<>\\]/.test(value) ? value : RELEASE_PAGE;
 }
 
+/** Which kind of system this is, from the browser's own description. Only used to pick a file to offer. */
+export function platformOf(userAgent) {
+  const text = String(userAgent || "");
+  // Android's web view also says "Linux", so it is checked first.
+  if (/android/i.test(text)) return "android";
+  if (/windows/i.test(text)) return "windows";
+  if (/linux/i.test(text)) return "linux";
+  return "other";
+}
+
+// The release file that suits each system, best first. Linux has none on purpose: a program cannot
+// tell whether this is a .deb, .rpm or AppImage system, and the wrong one is worse than the list.
+const FILE_ENDINGS = { android: [".apk"], windows: [".msi", "-setup.exe"], linux: [], other: [] };
+
+/**
+ * The direct download address of the file that suits `platform`, or null. Only an address that
+ * really is a file of this project's releases is accepted (the same rule as the release page).
+ */
+export function pickDownload(assets, platform) {
+  if (!Array.isArray(assets)) return null;
+  for (const ending of FILE_ENDINGS[platform] || []) {
+    for (const asset of assets) {
+      if (!asset || typeof asset !== "object" || (asset.state && asset.state !== "uploaded")) continue;
+      const url = asset.browser_download_url;
+      if (typeof asset.name !== "string" || !asset.name.toLowerCase().endsWith(ending)) continue;
+      if (typeof url === "string" && url.length < 400 && url.startsWith(`${RELEASE_PAGE}/download/`) && !/[\s"'<>\\]/.test(url)) return url;
+    }
+  }
+  return null;
+}
+
 /**
  * The newest published release (not a draft) that is newer than `current`, or null.
  * Pre-releases count on purpose: until version 1.0 every release is a test build labelled
  * pre-release, so skipping them meant the check never found anything. Tags that are not a plain
  * x.y.z number are still ignored.
  */
-export function newestRelease(list, current) {
+export function newestRelease(list, current, platform = "other") {
   const have = parseVersion(current);
   if (!have || !Array.isArray(list)) return null;
   let best = null;
@@ -47,6 +78,7 @@ export function newestRelease(list, current) {
       parsed: version,
       version: version.join("."),
       url: safeReleaseUrl(item.html_url),
+      downloadUrl: pickDownload(item.assets, platform),
       notes: typeof item.body === "string" ? item.body.slice(0, MAX_NOTES_CHARS) : "",
     };
   }
@@ -86,8 +118,8 @@ export async function readLimited(response, max = MAX_RESPONSE_BYTES) {
   return new TextDecoder().decode(bytes);
 }
 
-/** Resolves to { release } (a newer one) or { release: null }. Rejects when GitHub cannot be reached or answers oddly. */
-export async function checkForUpdate({ current, fetchImpl = globalThis.fetch, timeoutMs = 10000 }) {
+/** Resolves to { release } (a newer one, with `downloadUrl` set when a file for `platform` exists) or { release: null }. Rejects when GitHub cannot be reached or answers oddly. */
+export async function checkForUpdate({ current, platform = "other", fetchImpl = globalThis.fetch, timeoutMs = 10000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -101,7 +133,7 @@ export async function checkForUpdate({ current, fetchImpl = globalThis.fetch, ti
     });
     if (!response.ok) throw new Error(`update list answered ${response.status}`);
     const list = JSON.parse(await readLimited(response));
-    return { release: newestRelease(list, current) };
+    return { release: newestRelease(list, current, platform) };
   } finally {
     clearTimeout(timer);
   }
