@@ -917,7 +917,7 @@ function fillStaticText() {
   search.setAttribute("aria-label", strings.sidebar.search);
   el("penTest").textContent = strings.sidebar.penTest;
   // The folder name opens the folder menu. On Android the folder is fixed, so it is plain text.
-  el("vaultButton").append(icon("chevronDown"));
+  if (!isAndroid) el("vaultButton").append(icon("chevronDown"));
   el("vaultButton").title = strings.folders.switchLabel;
   el("vaultButton").disabled = isAndroid;
   el("updateDownload").textContent = strings.update.download;

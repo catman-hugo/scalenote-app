@@ -222,3 +222,9 @@ Context. Ctrl+K already adds a link to selected text in the editor.
 Decision. Ctrl+K opens the search from anywhere, but with text selected in a page it keeps adding a link. The Search button is always there, and is the only way on a touch screen.
 Cost. Two meanings for one key, split by whether text is selected.
 
+## 2026-11-05: Android test builds are signed with one fixed test key kept in a GitHub secret
+Context. A debug key made fresh on every build means Android never accepts a build as an update, which deletes the notes and settings on every test.
+Decision. The Android job installs one fixed test key from the secret `ANDROID_DEBUG_KEYSTORE_BASE64` where the debug build looks for it. It is a test key only; the release key and signing (2.0.0) are separate and not decided here.
+Alternatives. Committing the key to the repository (rejected: the repository is public and keys never go in it). Making the notes folder outside the app's private storage (rejected: Android 11 and newer restrict it, and it does not fix the signature). Uninstalling each time (rejected by the owner).
+Cost. The owner has to add the secret once, and the key must be backed up: if it is lost, one more reinstall is needed. Anyone who got the key could sign an app that installs as an update to a test build.
+
