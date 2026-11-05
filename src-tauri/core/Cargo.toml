@@ -1,6 +1,6 @@
 [package]
 name = "scalenote-core"
-version = "0.2.8"
+version = "0.2.9"
 description = "Vault logic with no window or web view in it, so it can be tested anywhere."
 edition = "2021"
 rust-version = "1.77"

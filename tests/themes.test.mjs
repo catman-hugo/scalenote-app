@@ -12,7 +12,7 @@ for (const [, name, body] of css.matchAll(/:root\[data-theme="([a-z]+)"\]\s*\{([
   themes[name] = Object.fromEntries([...body.matchAll(/([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
 
-const TOKENS = ["--bg", "--bg-side", "--bg-hover", "--bg-code", "--text", "--text-soft", "--line", "--accent", "--accent-text", "--accent-soft", "--warn-bg", "--warn-text", "--bad", "--kind-ok", "--kind-warn", "--kind-info"];
+const TOKENS = ["--bg", "--bg-side", "--bg-hover", "--bg-code", "--text", "--text-soft", "--line", "--accent", "--accent-text", "--accent-soft", "--warn-bg", "--warn-text", "--bad", "--kind-ok", "--kind-warn", "--kind-info", "--highlight"];
 
 function luminance(hex) {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
@@ -44,6 +44,7 @@ for (const name of Object.keys(themes)) {
     assert.ok(contrast(t["--warn-text"], t["--warn-bg"]) >= 4.5, `${name}: warning text`);
     assert.ok(contrast(t["--text"], t["--accent-soft"]) >= 7, `${name}: text on soft accent`);
     assert.ok(contrast(t["--text"], t["--bg-code"]) >= 7, `${name}: text on code background`);
+    assert.ok(contrast(t["--text"], t["--highlight"]) >= 7, `${name}: text on highlight`);
     // The border has to be visible against the page, but is not text.
     assert.ok(contrast(t["--line"], t["--bg"]) >= 1.2, `${name}: border visible`);
   });

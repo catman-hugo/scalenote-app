@@ -54,3 +54,7 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 
 ## Addendum for 0.2.8
 - No new network calls, permissions, dependencies or Rust code. The build step copies picture and xml files from the repository into the generated Android project and reads nothing from outside.
+
+## Addendum for 0.2.9
+- No new network calls, permissions, dependencies or Rust code. The style markers are read from notes, which are untrusted: only exact shapes are recognised (fixed colour list, no free css, no nested spans), everything else stays raw and is written back unchanged. Nothing from a note is ever set as html or as an inline style; colour is a class chosen from the fixed list, and the page policy (no inline styles) is unchanged and was checked in the browser tests (no policy errors).
+- Huge or odd input: the marker rules were run on 150 to 580 thousand characters of repeated, unclosed and badly paired markers (`==a ` x 50000, `<u>` x 50000, 20000 colour spans, a long `==a=a=...` with no end); each finished in under 20 ms. The browser tests cover unbalanced and nested markers and styles inside callouts, toggles and tables.

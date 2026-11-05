@@ -146,6 +146,17 @@ Owner request (2026-11-05): the Android app showed the default Tauri logo (seen 
 - NOT tested, needs the Android phone: how the icon looks on the home screen and in the recents list, and whether Android shows the old icon until the launcher restarts.
 - Release notes: `docs/release-notes/0.2.8.md`.
 
+## 0.2.9: built
+Owner request (2026-11-05): build inline styles, and make the selection bar appear on Android too.
+- Styles: highlight `==text==`, underline `<u>`, subscript `<sub>`, superscript `<sup>`, and colour `<span style="color: #hex">` from a fixed palette of eight real colour codes (each at least 3.4 to 1 contrast on every theme; a unit test checks that against themes.css). Buttons on the selection bar (a colour menu opens from the A button), and shortcuts for underline, highlight, subscript and superscript. Code: `web/inlinestyles.js` (rules, no editor code), `web/inlinemarks.js` (Tiptap marks), changes in `blocks.js`, `compose.js`, `editor.js`, `toolbar.js`, `strings.js`, CSS.
+- Safety: the markdown reader silently drops html it does not know (checked in a browser test harness), so a paragraph with style markers is only editable when the markers read back identical after a parse and re-save (`styleSignature`); otherwise it stays raw, byte for byte. Colours outside the palette stay raw. Untouched notes are never rewritten.
+- Colour is drawn with CSS classes, not inline styles, because the page policy forbids inline styles.
+- Android selection bar: on a finger selection the page never gets a pointer-up (the system takes over), so the bar stayed hidden. Touch no longer waits for it, a cancelled pointer counts as finished, and for touch the bar sits 36 px lower to clear the native selection handles.
+- Tested here: 80 unit tests, the whole browser suite (new tests: styles open as styles and stay byte for byte, editing keeps them, unsafe markers stay raw, every button and shortcut, sub/sup exclusive, styles inside callouts, toggles and tables, a simulated touch selection that fails without the fix, phone width), the Rust tests, and screenshots in light and dark, desktop and phone width.
+- Obsidian: the docs confirm `==highlight==`. They do not name `<u>`, `<sub>`, `<sup>` or `<span style>`, so that those render is NOT confirmed by documentation and has not been opened in Obsidian. They state Obsidian does not render markdown inside html tags.
+- NOT tested, needs the Android phone: the bar on a real finger selection and where it lands relative to the native Cut/Copy menu (the native menu cannot be controlled from the page, so it may overlap in some positions), and the 0.2.6 keyboard change, which has not been installed yet. Also not tested: opening a styled note in Obsidian.
+- Release notes: `docs/release-notes/0.2.9.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -161,6 +172,7 @@ Owner request (2026-11-05): the Android app showed the default Tauri logo (seen 
 | 0.2.6 | Phone keyboard covers the bottom of the page instead of sliding the whole screen away (see "0.2.6: built") | built, not tried on a device |
 | 0.2.7 | Download button after Check now: the file for the system in the browser, else the release page (see "0.2.7: built") | built, not tried on a device |
 | 0.2.8 | ScaleNote logo as the Android app icon (see "0.2.8: built") | built, not tried on a device |
+| 0.2.9 | Inline styles (highlight, underline, sub, superscript, colour) and the selection bar on Android (see "0.2.9: built") | built, not tried on a device |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

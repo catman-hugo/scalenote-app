@@ -1532,6 +1532,196 @@ await test("the plus button adds an empty block below and puts the cursor in it"
   assert.equal(now[now.findIndex((x) => x.startsWith("First")) + 1], "brand new", JSON.stringify(now));
 }, { viewport: { width: 1400, height: 800 } });
 
+// ---------- text styles: highlight, underline, subscript, superscript, colour ----------
+const STYLED = 'Plain ==marked== and <u>under</u> and H<sub>2</sub>O x<sup>2</sup> and <span style="color:#F72525">red</span> end\n';
+const bodyOf = (text) => text.replace(/^---\n(id: [^\n]*\n)?---\n\n/, "");
+const select = async (page, from, to) => {
+  // Selects the characters from..to of the first paragraph's text. Done with a DOM range, not
+  // arrow keys, because the cursor takes an extra step at the edge of every styled stretch.
+  await page.locator(".note-body p").first().click();
+  await page.evaluate(([a, b]) => {
+    const paragraph = document.querySelector(".note-body p");
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+    let offset = 0;
+    let start = null;
+    let end = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const length = node.textContent.length;
+      if (start === null && a <= offset + length) start = [node, a - offset];
+      if (b <= offset + length) { end = [node, b - offset]; break; }
+      offset += length;
+    }
+    getSelection().setBaseAndExtent(start[0], start[1], end[0], end[1]);
+  }, [from, to]);
+  // The editor reads the new selection on the browser's own event, a moment later.
+  await page.waitForTimeout(150);
+  await page.waitForSelector(".float-bar:not([hidden])");
+};
+
+await test("styled text opens as styles, shown as such, and an untouched note stays byte for byte", async (page) => {
+  await openSeeded(page, "S.md", STYLED);
+  const dom = await page.evaluate(() => ({
+    mark: document.querySelector(".note-body mark.text-highlight")?.textContent,
+    u: document.querySelector(".note-body u")?.textContent,
+    sub: document.querySelector(".note-body sub")?.textContent,
+    sup: document.querySelector(".note-body sup")?.textContent,
+    red: document.querySelector(".note-body span.tc-red")?.textContent,
+    raw: document.querySelectorAll(".raw-block").length,
+    inline: document.querySelectorAll(".note-body [style]").length,
+  }));
+  assert.deepEqual(dom, { mark: "marked", u: "under", sub: "2", sup: "2", red: "red", raw: 0, inline: 0 });
+  // The colour really is drawn (class, not an inline style attribute: the page forbids those).
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".note-body span.tc-red")).color), "rgb(247, 37, 37)");
+  await page.waitForTimeout(800);
+  assert.equal((await files(page))["S.md"], STYLED, "nothing was rewritten");
+});
+
+await test("editing next to styled text keeps every style and writes them in one spelling", async (page) => {
+  await openSeeded(page, "S.md", STYLED);
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await waitSaved(page);
+  const text = (await files(page))["S.md"];
+  for (const part of ["==marked==", "<u>under</u>", "H<sub>2</sub>O", "x<sup>2</sup>", '<span style="color: #f72525">red</span>', "end more"]) assert.ok(text.includes(part), `${part} in ${JSON.stringify(text)}`);
+});
+
+await test("markers the editor cannot keep safely stay raw blocks and are never changed", async (page) => {
+  const raws = ["a <b>bold</b> b", "a <u>unclosed", "a <u>b <sub>c</u> d</sub>", 'x <span style="color:#123456">y</span> z', "a ==b == c", "a <mark>m</mark> <u>u</u>"];
+  const note = ["Normal one", ...raws].join("\n\n") + "\n";
+  await openSeeded(page, "R.md", note);
+  assert.equal(await page.locator(".raw-block").count(), raws.length);
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" edited");
+  await waitSaved(page);
+  const saved = (await files(page))["R.md"].replace(/id: [0-9a-f-]{20,}\n/, "");
+  assert.ok(saved.includes("Normal one edited"));
+  for (const raw of raws) assert.ok(saved.includes(raw), `${raw} is unchanged`);
+});
+
+await test("styles inside a callout, a toggle and a table are kept when the block is edited", async (page) => {
+  const note = [
+    "> [!note] Title",
+    "> a ==marked== and <u>under</u>",
+    "",
+    "<details>",
+    "<summary>Sum</summary>",
+    "",
+    "x <sub>2</sub> y",
+    "",
+    "</details>",
+    "",
+    "| a | b |",
+    "| - | - |",
+    "| <u>u</u> | ==h== |",
+    "",
+    "Last",
+    "",
+  ].join("\n");
+  await openSeeded(page, "Rich2.md", note);
+  await page.waitForTimeout(500);
+  assert.equal((await files(page))["Rich2.md"], note, "an untouched note stays byte for byte");
+  // Edit the callout text, then check nothing styled was lost anywhere. (A table with html in its
+  // cells is kept as a raw block, so it is written back exactly as it was.)
+  await page.locator(".callout p").last().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await waitSaved(page);
+  const saved = (await files(page))["Rich2.md"];
+  // (typing at the end of underlined text continues the underline, as in any editor)
+  for (const part of ["==marked==", "<u>under more</u>", "<sub>2</sub>", "| <u>u</u> | ==h== |"]) assert.ok(saved.includes(part), `${part} in ${JSON.stringify(saved)}`);
+  assert.ok(saved.includes(" more"));
+});
+
+await test("the selection bar makes underline, highlight, subscript, superscript and colour", async (page) => {
+  await openSeeded(page, "T.md", "alpha beta gamma delta epsilon\n");
+  await select(page, 0, 5);
+  await page.click('.float-bar [aria-label="Underline"]');
+  await page.click('.float-bar [aria-label="Highlight"]');
+  await select(page, 6, 10);
+  await page.click('.float-bar [aria-label="Subscript"]');
+  await select(page, 11, 16);
+  await page.click('.float-bar [aria-label="Superscript"]');
+  await select(page, 17, 22);
+  await page.click('.float-bar [aria-label="Text colour"]');
+  await page.waitForSelector(".colour-menu:not([hidden])");
+  await page.click('.colour-menu [aria-label="Red"]');
+  assert.equal(await page.isVisible(".colour-menu"), false, "choosing a colour closes the palette");
+  assert.match(await page.getAttribute(".float-bar .colour-letter", "class"), /tc-red/, "the button shows the colour in use");
+  await waitSaved(page);
+  assert.equal(bodyOf((await files(page))["T.md"]), '<u>==alpha==</u> <sub>beta</sub> <sup>gamma</sup> <span style="color: #f72525">delta</span> epsilon\n');
+  // clearing the colour
+  await select(page, 17, 22);
+  await page.click('.float-bar [aria-label="Text colour"]');
+  await page.click('.colour-menu >> text=No colour');
+  await waitSaved(page);
+  assert.ok(!(await files(page))["T.md"].includes("<span"));
+  // and the style survives closing and reopening the note
+  assert.equal(await page.locator(".raw-block").count(), 0);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("the keyboard shortcuts for underline, highlight, subscript and superscript work", async (page) => {
+  await openSeeded(page, "K2.md", "one two three four\n");
+  await select(page, 0, 3);
+  await page.keyboard.press("Control+u");
+  await select(page, 4, 7);
+  await page.keyboard.press("Control+Shift+h");
+  await select(page, 8, 13);
+  await page.keyboard.press("Control+,");
+  await select(page, 14, 18);
+  await page.keyboard.press("Control+.");
+  await waitSaved(page);
+  assert.equal(bodyOf((await files(page))["K2.md"]), "<u>one</u> ==two== <sub>three</sub> <sup>four</sup>\n");
+});
+
+await test("subscript and superscript do not apply to the same text at once", async (page) => {
+  await openSeeded(page, "X.md", "abc\n");
+  await select(page, 0, 3);
+  await page.click('.float-bar [aria-label="Subscript"]');
+  await page.click('.float-bar [aria-label="Superscript"]');
+  await waitSaved(page);
+  assert.equal(bodyOf((await files(page))["X.md"]), "<sup>abc</sup>\n");
+});
+
+await test("the selection bar shows for a finger selection that never reports the finger lifting", async (page) => {
+  await openSeeded(page, "A.md", "alpha beta gamma\n");
+  await page.locator(".note-body p").click();
+  // A finger press, then the system takes the touch over (long press and its own selection
+  // handles): the page gets a pointerdown and then nothing, or a pointercancel.
+  await page.evaluate(() => document.querySelector(".note-body").dispatchEvent(new PointerEvent("pointerdown", { pointerType: "touch", pointerId: 7, bubbles: true })));
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("Shift+ArrowRight");
+  await page.waitForSelector(".float-bar:not([hidden])", { timeout: 2000 });
+  // With a finger the bar sits clear of the system's selection handles under the text.
+  const gap = await page.evaluate(() => {
+    const r = getSelection().getRangeAt(0).getBoundingClientRect();
+    return document.querySelector(".float-bar:not([hidden])").getBoundingClientRect().top - r.bottom;
+  });
+  assert.ok(gap >= 30, `the bar is ${gap}px under the selection`);
+}, { viewport: { width: 412, height: 860 } });
+
+await test("with a mouse the bar waits for the button to be released, or the press to be cancelled", async (page) => {
+  await openSeeded(page, "M.md", "alpha beta gamma\n");
+  await page.locator(".note-body p").click();
+  await page.evaluate(() => document.querySelector(".note-body").dispatchEvent(new PointerEvent("pointerdown", { pointerType: "mouse", pointerId: 1, bubbles: true })));
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("Shift+ArrowRight");
+  await page.waitForTimeout(150);
+  assert.equal(await page.isVisible(".float-bar"), false, "hidden while the mouse is down");
+  await page.evaluate(() => document.dispatchEvent(new PointerEvent("pointercancel", { pointerType: "mouse", pointerId: 1, bubbles: true })));
+  await page.waitForSelector(".float-bar:not([hidden])", { timeout: 2000 });
+});
+
+await test("on a phone width the bar with all its buttons stays inside the window", async (page) => {
+  await openSeeded(page, "W.md", "alpha beta gamma\n");
+  await select(page, 0, 5);
+  const box = await page.locator(".float-bar:not([hidden])").boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 412, JSON.stringify(box));
+  const overflow = await page.evaluate(() => [...document.querySelectorAll(".float-bar:not([hidden]) > *")].filter((n) => n.getBoundingClientRect().right > innerWidth).length);
+  assert.equal(overflow, 0, "no button is cut off");
+}, { viewport: { width: 412, height: 860 } });
+
 // The Android half of the keyboard fix (the window gets shorter) cannot run here. This tests what
 // the page does once the window is shorter: the top bar stays, and the cursor is kept in view.
 const LONG = Array.from({ length: 40 }, (_, i) => `Line number ${i + 1} of a long page`).join("\n\n") + "\n";
@@ -1974,6 +2164,30 @@ if (shots) {
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${shots}/v026-phone-${scheme}-2-keyboard-open.png` });
     await context.close();
+  }
+  // 0.2.9: styled text, the selection bar and the colour palette, desktop and phone width.
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport, userAgent] of [["desktop", { width: 1100, height: 760 }, undefined], ["phone", { width: 412, height: 860 }, ANDROID_UA]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme, ...(userAgent ? { userAgent } : {}) });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await prepare(page, {});
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate(([text]) => window.__mock.files.set("Styles.md", text), [`${STYLED}\nOne ==line== with every colour: ${["red", "orange", "yellow", "green", "blue", "purple", "pink", "gray"].map((c) => `<span style="color: ${{ red: "#f72525", orange: "#c2671d", yellow: "#9c7a17", green: "#339142", blue: "#5083b2", purple: "#9465e0", pink: "#eb239b", gray: "#808080" }[c]}">${c}</span>`).join(" ")}\n`]);
+      await page.click("#newFolder");
+      if (label === "phone") await page.click("#sidebarToggle").catch(() => {});
+      await page.click('.tree-button[data-path="Styles.md"]');
+      await page.waitForSelector("#editor .note-body");
+      await page.screenshot({ path: `${shots}/v029-${label}-${scheme}-1-styled.png` });
+      await select(page, 6, 12);
+      await page.screenshot({ path: `${shots}/v029-${label}-${scheme}-2-bar.png` });
+      await page.click('.float-bar [aria-label="Text colour"]');
+      await page.waitForSelector(".colour-menu:not([hidden])");
+      await page.screenshot({ path: `${shots}/v029-${label}-${scheme}-3-colours.png` });
+      await context.close();
+    }
   }
   // Every theme, desktop only. The named themes do not depend on the system setting.
   for (const theme of ["light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"]) {

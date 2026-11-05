@@ -10,6 +10,8 @@
 //
 // This file has no editor code in it, so it can be tested on its own.
 
+import { withoutStyleSyntax } from "./inlinestyles.js";
+
 /** Splits off a leading `--- ... ---` frontmatter block. Returns exact text on both sides. */
 export function splitFrontmatter(text) {
   const match = /^---[ \t]*\r?\n([\s\S]*?\r?\n)?---[ \t]*(\r?\n|$)/.exec(text);
@@ -31,13 +33,17 @@ const DETAILS_ANY_OPEN = /^[ \t]*<details[\s>]/;
 const DETAILS_CLOSE = /^[ \t]*<\/details>[ \t]*$/;
 const CALLOUT_START = /^ {0,3}>[ \t]?\[![A-Za-z][A-Za-z0-9-]*\][+-]?([ \t]|$)/;
 const IMAGE_ONLY = /^!\[[^\[\]\n]*\]\(attachments\/[^\s()<>"\\]+\.(png|jpe?g|gif|webp)\)[ \t]*$/i;
-const RAW_LINE_START = /^(<|\$\$|%%|\[\^[^\]]+\]:|\[[^\]]+\]:[ \t]+\S|!\[\[| {4}|\t)/;
+// A line may start with "<" only for the text style tags (<u>, <sub>, <sup>, a colour span): those
+// are inline, and compose.js still checks that the editor can keep them.
+const RAW_LINE_START = /^(<(?!\/?(?:u|sub|sup)>|span style="color:)|\$\$|%%|\[\^[^\]]+\]:|\[[^\]]+\]:[ \t]+\S|!\[\[| {4}|\t)/;
 
 // Inline syntax the editor cannot round-trip. A block containing any of it is kept raw, so
-// editing around it can never damage it.
+// editing around it can never damage it. The text styles (highlight, underline, sub and
+// superscript, colour) are taken out first: the editor can keep those, and compose.js checks
+// that it really does for each block.
 const UNSAFE_INLINE = [
   /\[\[|\]\]/, // wikilinks and embeds
-  /==[^=\s][^=]*==/, // highlight
+  /==[^=\s][^=]*==/, // a highlight-like "==" pair that is not well formed
   /\$[^$\s][^$\n]*\$/, // inline math
   /<[^>\n]+>/, // html and autolinks
   /!\[/, // images
@@ -57,7 +63,8 @@ export function stripBlockId(text) {
 }
 
 function hasUnsafeInline(text) {
-  return UNSAFE_INLINE.some((pattern) => pattern.test(text));
+  const plain = withoutStyleSyntax(text);
+  return UNSAFE_INLINE.some((pattern) => pattern.test(plain));
 }
 
 function lineInfo(body) {
