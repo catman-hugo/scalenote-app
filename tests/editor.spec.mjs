@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { COLOURS } from "../web/inlinestyles.js";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
@@ -1565,13 +1566,14 @@ await test("styled text opens as styles, shown as such, and an untouched note st
     u: document.querySelector(".note-body u")?.textContent,
     sub: document.querySelector(".note-body sub")?.textContent,
     sup: document.querySelector(".note-body sup")?.textContent,
-    red: document.querySelector(".note-body span.tc-red")?.textContent,
+    red: document.querySelector(".note-body span.sn-text-red")?.textContent,
     raw: document.querySelectorAll(".raw-block").length,
     inline: document.querySelectorAll(".note-body [style]").length,
   }));
   assert.deepEqual(dom, { mark: "marked", u: "under", sub: "2", sup: "2", red: "red", raw: 0, inline: 0 });
   // The colour really is drawn (class, not an inline style attribute: the page forbids those).
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".note-body span.tc-red")).color), "rgb(247, 37, 37)");
+  // STYLED holds a colour in the form 0.2.9 wrote (a colour code); it is read as the colour with that name.
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".note-body span.sn-text-red")).color), "rgb(207, 81, 72)", "Notion's red, light shade");
   await page.waitForTimeout(800);
   assert.equal((await files(page))["S.md"], STYLED, "nothing was rewritten");
 });
@@ -1583,11 +1585,11 @@ await test("editing next to styled text keeps every style and writes them in one
   await page.keyboard.type(" more");
   await waitSaved(page);
   const text = (await files(page))["S.md"];
-  for (const part of ["==marked==", "<u>under</u>", "H<sub>2</sub>O", "x<sup>2</sup>", '<span style="color: #f72525">red</span>', "end more"]) assert.ok(text.includes(part), `${part} in ${JSON.stringify(text)}`);
+  for (const part of ["==marked==", "<u>under</u>", "H<sub>2</sub>O", "x<sup>2</sup>", '<span class="sn-text-red">red</span>', "end more"]) assert.ok(text.includes(part), `${part} in ${JSON.stringify(text)}`);
 });
 
 await test("markers the editor cannot keep safely stay raw blocks and are never changed", async (page) => {
-  const raws = ["a <b>bold</b> b", "a <u>unclosed", "a <u>b <sub>c</u> d</sub>", 'x <span style="color:#123456">y</span> z', "a ==b == c", "a <mark>m</mark> <u>u</u>"];
+  const raws = ["a <b>bold</b> b", "a <u>unclosed", "a <u>b <sub>c</u> d</sub>", 'x <span style="color:#123456">y</span> z', "a ==b == c", "a <mark>m</mark> <u>u</u>", 'x <span class="sn-text-chartreuse">y</span> z', 'x <span class="sn-text-red sn-text-blue">y</span> z', 'x <span class="other">y</span> z', 'x <span class="sn-bg-red">y <span class="sn-text-blue">z</span></span>'];
   const note = ["Normal one", ...raws].join("\n\n") + "\n";
   await openSeeded(page, "R.md", note);
   assert.equal(await page.locator(".raw-block").count(), raws.length);
@@ -1644,22 +1646,143 @@ await test("the selection bar makes underline, highlight, subscript, superscript
   await select(page, 11, 16);
   await page.click('.float-bar [aria-label="Superscript"]');
   await select(page, 17, 22);
-  await page.click('.float-bar [aria-label="Text colour"]');
+  await page.click('.float-bar [aria-label="Colour"]');
   await page.waitForSelector(".colour-menu:not([hidden])");
-  await page.click('.colour-menu [aria-label="Red"]');
+  await page.click('.colour-menu [aria-label="Red text"]');
   assert.equal(await page.isVisible(".colour-menu"), false, "choosing a colour closes the palette");
-  assert.match(await page.getAttribute(".float-bar .colour-letter", "class"), /tc-red/, "the button shows the colour in use");
+  assert.match(await page.getAttribute(".float-bar .colour-letter", "class"), /sn-text-red/, "the button shows the colour in use");
   await waitSaved(page);
-  assert.equal(bodyOf((await files(page))["T.md"]), '<u>==alpha==</u> <sub>beta</sub> <sup>gamma</sup> <span style="color: #f72525">delta</span> epsilon\n');
+  assert.equal(bodyOf((await files(page))["T.md"]), '<u>==alpha==</u> <sub>beta</sub> <sup>gamma</sup> <span class="sn-text-red">delta</span> epsilon\n');
   // clearing the colour
   await select(page, 17, 22);
-  await page.click('.float-bar [aria-label="Text colour"]');
-  await page.click('.colour-menu >> text=No colour');
+  await page.click('.float-bar [aria-label="Colour"]');
+  await page.click('.colour-menu [aria-label="Default text"]');
   await waitSaved(page);
   assert.ok(!(await files(page))["T.md"].includes("<span"));
   // and the style survives closing and reopening the note
   assert.equal(await page.locator(".raw-block").count(), 0);
 }, { viewport: { width: 1100, height: 760 } });
+
+await test("the colour palette has Notion's two rows, with default first, and the current choice marked", async (page) => {
+  await openSeeded(page, "P.md", '<span class="sn-text-blue sn-bg-pink">alpha</span> beta\n');
+  await select(page, 0, 5);
+  await page.click('.float-bar [aria-label="Colour"]');
+  await page.waitForSelector(".colour-menu:not([hidden])");
+  const groups = await page.evaluate(() => [...document.querySelectorAll(".colour-menu [role=group]")].map((g) => ({
+    label: g.getAttribute("aria-label"),
+    tiles: [...g.querySelectorAll(".swatch")].map((t) => t.getAttribute("aria-label")),
+    current: [...g.querySelectorAll('.swatch[aria-current="true"]')].map((t) => t.getAttribute("aria-label")),
+  })));
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].label, "Text colour");
+  assert.equal(groups[1].label, "Background colour");
+  assert.deepEqual(groups[0].tiles, ["Default text", ...COLOURS.map((c) => `${c[0].toUpperCase()}${c.slice(1)} text`)]);
+  assert.deepEqual(groups[1].tiles, ["Default background", ...COLOURS.map((c) => `${c[0].toUpperCase()}${c.slice(1)} background`)]);
+  assert.deepEqual(groups[0].current, ["Blue text"]);
+  assert.deepEqual(groups[1].current, ["Pink background"]);
+  // The tiles are drawn with the colour classes, never with style attributes.
+  assert.equal(await page.locator(".colour-menu [style]").count(), 0);
+  assert.equal(await page.locator(".colour-menu .swatch.sn-bg-pink").count(), 1);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("text and background colours are set, combined in one span, and taken off separately", async (page) => {
+  await openSeeded(page, "C.md", "alpha beta gamma delta\n");
+  const choose = async (label) => {
+    await select(page, 0, 5);
+    await page.click('.float-bar [aria-label="Colour"]');
+    await page.waitForSelector(".colour-menu:not([hidden])");
+    await page.click(`.colour-menu [aria-label="${label}"]`);
+    await waitSaved(page);
+    return bodyOf((await files(page))["C.md"]);
+  };
+  assert.equal(await choose("Yellow background"), '<span class="sn-bg-yellow">alpha</span> beta gamma delta\n');
+  assert.equal(await choose("Red text"), '<span class="sn-text-red sn-bg-yellow">alpha</span> beta gamma delta\n');
+  assert.equal(await choose("Default background"), '<span class="sn-text-red">alpha</span> beta gamma delta\n');
+  assert.equal(await choose("Green background"), '<span class="sn-text-red sn-bg-green">alpha</span> beta gamma delta\n');
+  assert.equal(await choose("Default text"), '<span class="sn-bg-green">alpha</span> beta gamma delta\n');
+  assert.equal(await choose("Default background"), "alpha beta gamma delta\n");
+  assert.equal(await page.locator(".raw-block").count(), 0);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("choosing a text colour over pieces with different backgrounds keeps each background", async (page) => {
+  await openSeeded(page, "M.md", '<span class="sn-bg-blue">one</span> <span class="sn-bg-pink">two</span> three\n');
+  await select(page, 0, 7);
+  await page.click('.float-bar [aria-label="Colour"]');
+  await page.click('.colour-menu [aria-label="Green text"]');
+  await waitSaved(page);
+  const text = (await files(page))["M.md"];
+  assert.ok(text.includes('<span class="sn-text-green sn-bg-blue">one</span>'), text);
+  assert.ok(text.includes('<span class="sn-text-green sn-bg-pink">two</span>'), text);
+  assert.ok(text.endsWith(" three\n"), text);
+  assert.equal(await page.locator(".raw-block").count(), 0);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("the 0.2.9 colour form still opens as that colour, stays byte for byte, and is rewritten in the new form on edit", async (page) => {
+  const old = 'a <span style="color:#339142">green</span> word\n';
+  await openSeeded(page, "L.md", old);
+  assert.equal(await page.locator(".note-body span.sn-text-green").textContent(), "green");
+  await page.waitForTimeout(800);
+  assert.equal((await files(page))["L.md"], old, "nothing rewritten without an edit");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await waitSaved(page);
+  assert.equal(bodyOf((await files(page))["L.md"]), 'a <span class="sn-text-green">green</span> word!\n');
+}, { viewport: { width: 1100, height: 760 } });
+
+for (const [label, scheme, theme, bg, text] of [
+  ["a light system", "light", undefined, "rgb(249, 243, 220)", "rgb(166, 121, 43)"],
+  ["a dark system", "dark", undefined, "rgb(80, 68, 37)", "rgb(203, 148, 52)"],
+  ["the dark theme on a light system", "light", "dark", "rgb(80, 68, 37)", "rgb(203, 148, 52)"],
+  ["the sepia theme on a dark system", "dark", "sepia", "rgb(249, 243, 220)", "rgb(166, 121, 43)"],
+]) {
+  await test(`colours take the light or dark shade of the theme: ${label}`, async (page) => {
+    await openSeeded(page, "D.md", '<span class="sn-text-yellow sn-bg-yellow">shade</span>\n');
+    // The named themes are chosen with this attribute on the page (appearance.js sets it).
+    if (theme) await page.evaluate((name) => document.documentElement.setAttribute("data-theme", name), theme);
+    const [b, t] = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector(".note-body .sn-bg-yellow"));
+      return [style.backgroundColor, style.color];
+    });
+    assert.equal(b, bg);
+    assert.equal(t, text);
+  }, { scheme });
+}
+
+await test("Settings can make a copy for Obsidian, shows where it is, and reports a problem calmly", async (page) => {
+  await openSeeded(page, "O.md", "plain\n");
+  await page.click("#openSettings");
+  const button = page.locator('#settings button:has-text("Make a copy for Obsidian")');
+  await button.waitFor();
+  assert.match(await page.textContent("#settings"), /background colours become a plain highlight/);
+  await button.click();
+  await page.waitForFunction(() => /copy is ready/.test(document.getElementById("settings").textContent));
+  const done = await page.textContent("#settings");
+  assert.match(done, /ready in \/home\/alice\/ScaleNote \(Obsidian copy\)/);
+  assert.match(done, /3 pages \(1 had colours converted\) and 2 other files/);
+  assert.doesNotMatch(done, /left out/);
+  assert.equal(await page.evaluate(() => window.__exports), 1);
+  // Files that were left out are mentioned.
+  await page.evaluate(() => { window.__skippedExport = 4; });
+  await button.click();
+  await page.waitForFunction(() => /4 files were left out/.test(document.getElementById("settings").textContent));
+  // A problem shows the matching sentence and the button works again.
+  await page.evaluate(() => { window.__failExport = "io"; });
+  await button.click();
+  await page.waitForFunction(() => /could not read or write/.test(document.getElementById("settings").textContent));
+  assert.equal(await button.isDisabled(), false);
+  // Making a copy never touches the page that is open.
+  assert.equal((await files(page))["O.md"], "plain\n");
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("the Obsidian copy button is not offered on an Android phone", async (page) => {
+  await openSeeded(page, "O.md", "plain\n");
+  await page.click("#toggle"); // on a phone the page list (with Settings) is closed after a page opens
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings .settings-body");
+  assert.equal(await page.locator('#settings button:has-text("Make a copy for Obsidian")').count(), 0);
+  assert.doesNotMatch(await page.textContent("#settings"), /Obsidian/);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
 
 await test("the keyboard shortcuts for underline, highlight, subscript and superscript work", async (page) => {
   await openSeeded(page, "K2.md", "one two three four\n");
@@ -2175,7 +2298,7 @@ if (shots) {
       await prepare(page, {});
       await page.goto(url);
       await page.waitForSelector("#newNote");
-      await page.evaluate(([text]) => window.__mock.files.set("Styles.md", text), [`${STYLED}\nOne ==line== with every colour: ${["red", "orange", "yellow", "green", "blue", "purple", "pink", "gray"].map((c) => `<span style="color: ${{ red: "#f72525", orange: "#c2671d", yellow: "#9c7a17", green: "#339142", blue: "#5083b2", purple: "#9465e0", pink: "#eb239b", gray: "#808080" }[c]}">${c}</span>`).join(" ")}\n`]);
+      await page.evaluate(([text]) => window.__mock.files.set("Styles.md", text), [`${STYLED}\nText: ${COLOURS.map((c) => `<span class="sn-text-${c}">${c}</span>`).join(" ")}\n\nBackground: ${COLOURS.map((c) => `<span class="sn-bg-${c}">${c}</span>`).join(" ")}\n\nBoth: <span class="sn-text-red sn-bg-yellow">red on yellow</span> and ==plain highlight==\n`]);
       await page.click("#newFolder");
       if (label === "phone") await page.click("#sidebarToggle").catch(() => {});
       await page.click('.tree-button[data-path="Styles.md"]');
@@ -2183,9 +2306,21 @@ if (shots) {
       await page.screenshot({ path: `${shots}/v029-${label}-${scheme}-1-styled.png` });
       await select(page, 6, 12);
       await page.screenshot({ path: `${shots}/v029-${label}-${scheme}-2-bar.png` });
-      await page.click('.float-bar [aria-label="Text colour"]');
+      await page.click('.float-bar [aria-label="Colour"]');
       await page.waitForSelector(".colour-menu:not([hidden])");
-      await page.screenshot({ path: `${shots}/v029-${label}-${scheme}-3-colours.png` });
+      await page.screenshot({ path: `${shots}/v0210-${label}-${scheme}-3-colours.png` });
+      // A range with both kinds of colour, and the Settings box with the Obsidian button.
+      await page.click('.colour-menu [aria-label="Red text"]');
+      await select(page, 6, 12);
+      await page.click('.float-bar [aria-label="Colour"]');
+      await page.click('.colour-menu [aria-label="Yellow background"]');
+      await page.keyboard.press("ArrowRight"); // collapse the selection so the bar goes away
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: `${shots}/v0210-${label}-${scheme}-4-both.png` });
+      if (label === "phone") await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.waitForSelector("#settings .settings-body");
+      await page.screenshot({ path: `${shots}/v0210-${label}-${scheme}-5-settings.png` });
       await context.close();
     }
   }

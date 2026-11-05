@@ -10,6 +10,7 @@ pub mod attachments;
 pub mod base64;
 pub mod logger;
 pub mod names;
+pub mod obsidian;
 pub mod vault;
 
 pub use vault::{Entry, EntryKind, NoteContent, NoteVersion, Tree, Vault, VaultError};

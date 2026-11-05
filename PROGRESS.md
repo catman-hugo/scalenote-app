@@ -157,6 +157,17 @@ Owner request (2026-11-05): build inline styles, and make the selection bar appe
 - NOT tested, needs the Android phone: the bar on a real finger selection and where it lands relative to the native Cut/Copy menu (the native menu cannot be controlled from the page, so it may overlap in some positions), and the 0.2.6 keyboard change, which has not been installed yet. Also not tested: opening a styled note in Obsidian.
 - Release notes: `docs/release-notes/0.2.9.md`.
 
+## 0.2.10: built
+Owner request (2026-11-05): the colour menu only had a few text colours and highlight was only yellow; the owner wants Notion's colour scheme for both, and an Obsidian convert button that drops the colours.
+- Colours: Notion's palette (Gray, Brown, Orange, Yellow, Green, Blue, Purple, Pink, Red, and Default = none) for text AND background. The shades were measured from the owner's Notion screenshots (light and dark), so they are close but not guaranteed exact. Saved by name in one span, `<span class="sn-text-red sn-bg-yellow">`, with the shade chosen by the theme (pale backgrounds in light themes, dark ones in dark themes). A few text shades are slightly darker or lighter than Notion's so they stay readable on all eight themes (a test lists which). The 0.2.9 text colours (colour codes) are still read as the colour with the same name and are rewritten in the new form when the paragraph is edited.
+- The plain `==highlight==` button (H) stays as it was: it is the one Obsidian understands. The owner was not asked whether it should go; it did not seem asked for.
+- "Make a copy for Obsidian" in Settings (desktop only): `scalenote_core::obsidian` makes a new folder next to the notes folder ("<name> (Obsidian copy)", then "... 2" and so on, never replacing), converts every page (background colour becomes `==text==`, text colour removed, other syntax byte for byte, code untouched) and copies the other files. Hidden folders and links are skipped. A half-made copy is removed if something fails. The notes folder is never changed.
+- Found while testing: the first version of the converter took 25 seconds on a note with 20 000 unclosed spans; it is now a single pass with a depth limit and runs in under 0.1 s (test included).
+- Tested here: 84 unit tests (new: palette data checked against themes.css, style.css and the Rust name list; contrast of every shade on every theme), 49 Rust tests (15 new on the real converter and a real folder copy, including links, odd files, a second copy, hostile input), the whole browser suite (new: palette menu, text and background together, mixed backgrounds, 0.2.9 colours, shades per theme including a dark theme on a light system, the Settings button and its absence on Android), screenshots in light and dark.
+- NOT tested, needs real devices: the new Tauri command (`export_obsidian_copy`) is compiled only by GitHub's build; making a copy on Windows and Linux with a real notes folder; opening the copy in Obsidian; the colour menu and the selection bar with a finger on the Android phone. The button is hidden on Android because the notes live in the app's private storage there.
+- Not done: Notion's "Recently used" colour row.
+- Release notes: `docs/release-notes/0.2.10.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -173,6 +184,7 @@ Owner request (2026-11-05): build inline styles, and make the selection bar appe
 | 0.2.7 | Download button after Check now: the file for the system in the browser, else the release page (see "0.2.7: built") | built, not tried on a device |
 | 0.2.8 | ScaleNote logo as the Android app icon (see "0.2.8: built") | built, not tried on a device |
 | 0.2.9 | Inline styles (highlight, underline, sub, superscript, colour) and the selection bar on Android (see "0.2.9: built") | built, not tried on a device |
+| 0.2.10 | Notion colour palette for text and background, and a copy for Obsidian in Settings (see "0.2.10: built") | built, not tried on a device |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

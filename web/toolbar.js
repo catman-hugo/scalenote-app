@@ -6,7 +6,7 @@
 import { canTurnInto, TURN_NAMES, turnInto, turnNameOf, unitRangeOf, unitsOf } from "./blockops.js";
 import { icon } from "./icons.js";
 import { normalizeUrl } from "./links.js";
-import { PALETTE, paletteEntry } from "./inlinestyles.js";
+import { COLOURS } from "./inlinestyles.js";
 import { strings } from "./strings.js";
 
 const MARGIN = 8;
@@ -132,7 +132,9 @@ export function attachToolbars(editor) {
     if (!typeMenu.hidden && !typeMenu.contains(event.target) && !typeButton.contains(event.target)) closeTypeMenu();
   });
 
-  // The text colour button: shows the colour in use under its letter and opens the palette.
+  // The colour button: shows the colours in use on its letter and opens the palette, which has
+  // two rows of choices like Notion's: text colour and background colour. The first choice of
+  // each is "default", which takes that colour off.
   const colourButton = button(f.colour, "", "colour-button");
   colourButton.setAttribute("aria-haspopup", "menu");
   colourButton.setAttribute("aria-expanded", "false");
@@ -146,43 +148,44 @@ export function attachToolbars(editor) {
   colourMenu.setAttribute("role", "menu");
   colourMenu.setAttribute("aria-label", f.colour);
   colourMenu.hidden = true;
-  const swatches = document.createElement("div");
-  swatches.className = "swatches";
-  const swatchButtons = PALETTE.map((entry) => {
-    const node = document.createElement("button");
-    node.type = "button";
-    node.className = `swatch swatch-${entry.name}`;
-    node.title = f.colours[entry.name];
-    node.setAttribute("role", "menuitem");
-    node.setAttribute("aria-label", f.colours[entry.name]);
-    keepFocus(node, () => {
-      closeColourMenu();
-      editor.chain().focus().setTextColor(entry.hex).run();
-      refresh();
-    });
-    swatches.append(node);
-    return { entry, node };
-  });
-  const colourClear = document.createElement("button");
-  colourClear.type = "button";
-  colourClear.className = "menu-item";
-  colourClear.setAttribute("role", "menuitem");
-  colourClear.textContent = f.colourClear;
-  keepFocus(colourClear, () => {
-    closeColourMenu();
-    editor.chain().focus().unsetTextColor().run();
-    refresh();
-  });
-  colourMenu.append(swatches, colourClear);
+  const swatchButtons = [];
+  for (const kind of ["text", "bg"]) {
+    const heading = document.createElement("div");
+    heading.className = "menu-label";
+    heading.textContent = kind === "text" ? f.colourText : f.colourBackground;
+    const swatches = document.createElement("div");
+    swatches.className = "swatches";
+    swatches.setAttribute("role", "group");
+    swatches.setAttribute("aria-label", heading.textContent);
+    for (const name of [null, ...COLOURS]) {
+      const node = document.createElement("button");
+      node.type = "button";
+      node.className = `swatch swatch-${kind}${name ? ` sn-${kind}-${name}` : ""}`;
+      const label = (kind === "text" ? f.textColours : f.backgroundColours)[name || "default"];
+      node.title = label;
+      node.setAttribute("role", "menuitem");
+      node.setAttribute("aria-label", label);
+      // A text choice shows the letter in that colour; a background choice is the filled square.
+      if (kind === "text") node.textContent = f.colourMark;
+      keepFocus(node, () => {
+        closeColourMenu();
+        editor.chain().focus().setColour(kind, name).run();
+        refresh();
+      });
+      swatches.append(node);
+      swatchButtons.push({ kind, name, node });
+    }
+    colourMenu.append(heading, swatches);
+  }
 
   function closeColourMenu() {
     colourMenu.hidden = true;
     colourButton.setAttribute("aria-expanded", "false");
   }
   function openColourMenu() {
-    const current = paletteEntry(editor.getAttributes("textColor").color);
-    swatchButtons.forEach(({ entry, node }) => {
-      if (current && current.name === entry.name) node.setAttribute("aria-current", "true");
+    const current = editor.getAttributes("colour");
+    swatchButtons.forEach(({ kind, name, node }) => {
+      if ((current[kind] || null) === name) node.setAttribute("aria-current", "true");
       else node.removeAttribute("aria-current");
     });
     colourMenu.hidden = false;
@@ -308,9 +311,9 @@ export function attachToolbars(editor) {
     }
     if (show) {
       buttons.forEach((b) => b.node.classList.toggle("active", editor.isActive(b.name)));
-      const colourNow = paletteEntry(editor.getAttributes("textColor").color);
-      colourLetter.className = `colour-letter${colourNow ? ` tc-${colourNow.name}` : ""}`;
-      colourButton.classList.toggle("active", Boolean(colourNow));
+      const colourNow = editor.getAttributes("colour");
+      colourLetter.className = `colour-letter${colourNow.text ? ` sn-text-${colourNow.text}` : ""}${colourNow.bg ? ` sn-bg-${colourNow.bg}` : ""}`;
+      colourButton.classList.toggle("active", Boolean(colourNow.text || colourNow.bg));
       // The type row shows for a selection inside one text block.
       const { first, last } = unitRangeOf(editor.state.doc, selection);
       const unit = unitsOf(editor.state.doc)[first];

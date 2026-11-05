@@ -38,6 +38,9 @@ export const backend = {
   saveAttachment: (name, data) => call("save_attachment", { name, data }),
   // Returns the picture as a data: address.
   readAttachment: (path) => call("read_attachment", { path }),
+  // Makes a copy of the vault next to it with the colours turned into plain highlights, for
+  // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
+  exportObsidianCopy: () => call("export_obsidian_copy"),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),

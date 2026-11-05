@@ -203,6 +203,38 @@ fn read_attachment(path: String, state: State<AppState>) -> Result<String, Strin
     with_vault(&state, "read attachment", |vault| vault.read_attachment_data_url(&path))
 }
 
+#[derive(Serialize)]
+struct ExportReply {
+    /// Where the copy was made, for the message that tells the person.
+    path: String,
+    notes: usize,
+    changed: usize,
+    files: usize,
+    skipped: usize,
+}
+
+/// Makes a copy of the vault next to it, with the colours turned into what Obsidian shows
+/// (see `scalenote_core::obsidian`). The vault itself is never changed. Not offered on
+/// Android, where the vault lives in the app's private storage and nothing else could open a
+/// copy made there. `async` runs it away from the main thread, so a big vault does not freeze
+/// the window.
+#[tauri::command(async)]
+fn export_obsidian_copy(state: State<AppState>) -> Result<ExportReply, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "export copy", |vault| {
+        let report = scalenote_core::obsidian::export_obsidian_copy(vault)?;
+        Ok(ExportReply {
+            path: report.path.to_string_lossy().into_owned(),
+            notes: report.notes,
+            changed: report.changed,
+            files: report.files,
+            skipped: report.skipped,
+        })
+    })
+}
+
 /// The interface logs short fixed messages through here. The length limit is applied again
 /// by the logger.
 #[tauri::command]
@@ -274,6 +306,7 @@ pub fn run() {
             move_entry,
             save_attachment,
             read_attachment,
+            export_obsidian_copy,
             log_line,
             get_settings,
             set_settings

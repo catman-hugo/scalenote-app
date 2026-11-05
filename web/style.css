@@ -1022,6 +1022,7 @@ body.block-dragging .float-bar { visibility: hidden; }
 
 .setting-actions { display: flex; flex-direction: column; gap: var(--space-2); }
 .setting-actions:empty { display: none; }
+.setting-heading { margin: var(--space-3) 0 0; font-size: var(--text-m); font-weight: 600; }
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
 #whatsnew { max-width: min(52rem, calc(100% - 2 * var(--space-4))); }
 #whatsnew .notes { max-height: calc(100dvh - 12rem); }
@@ -1043,29 +1044,108 @@ body.block-dragging .float-bar { visibility: hidden; }
 .mark-underline { text-decoration: underline; }
 .mark-highlight { background: var(--highlight); }
 
-/* Text colours. The same eight colours are written into notes as real colour codes (see
-   inlinestyles.js); the class is how the page draws them, because it may not use inline style
-   attributes. tests/inlinestyles.test.mjs checks that every palette colour has its rules here. */
-.tc-red { color: #f72525; }
-.tc-orange { color: #c2671d; }
-.tc-yellow { color: #9c7a17; }
-.tc-green { color: #339142; }
-.tc-blue { color: #5083b2; }
-.tc-purple { color: #9465e0; }
-.tc-pink { color: #eb239b; }
-.tc-gray { color: #808080; }
-.swatch-red { background: #f72525; }
-.swatch-orange { background: #c2671d; }
-.swatch-yellow { background: #9c7a17; }
-.swatch-green { background: #339142; }
-.swatch-blue { background: #5083b2; }
-.swatch-purple { background: #9465e0; }
-.swatch-pink { background: #eb239b; }
-.swatch-gray { background: #808080; }
+/* Text and background colours: Notion's palette. A note holds the colour NAME in a class
+   (<span class="sn-text-red sn-bg-yellow">); the shade comes from these variables, so a pale
+   background in a light theme becomes a dark one in a dark theme. The text shades are Notion's,
+   moved a little only where they were too faint on one of our themes. tests/inlinestyles.test.mjs
+   checks that every name has a shade here and that all of them stay readable on every theme in
+   themes.css (the list of dark themes below must match the themes whose colour-scheme is dark). */
+:root,
+:root[data-theme="light"],
+:root[data-theme="sepia"],
+:root[data-theme="sage"],
+:root[data-theme="lavender"] {
+  --sn-text-gray: #7d7a75;
+  --sn-text-brown: #9f765a;
+  --sn-text-orange: #bb6d28;
+  --sn-text-yellow: #a6792b;
+  --sn-text-green: #4d8e6a;
+  --sn-text-blue: #387dc9;
+  --sn-text-purple: #9a6bb4;
+  --sn-text-pink: #c14c8a;
+  --sn-text-red: #cf5148;
+  --sn-bg-gray: #f0efed;
+  --sn-bg-brown: #f5ede9;
+  --sn-bg-orange: #fbebde;
+  --sn-bg-yellow: #f9f3dc;
+  --sn-bg-green: #e8f1ec;
+  --sn-bg-blue: #e5f2fc;
+  --sn-bg-purple: #f3ebf9;
+  --sn-bg-pink: #fae9f1;
+  --sn-bg-red: #fce9e7;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sn-text-gray: #807d78;
+    --sn-text-brown: #9f765a;
+    --sn-text-orange: #d27b2d;
+    --sn-text-yellow: #cb9434;
+    --sn-text-green: #50946e;
+    --sn-text-blue: #3c80ca;
+    --sn-text-purple: #9a6bb4;
+    --sn-text-pink: #c45590;
+    --sn-text-red: #d0544c;
+    --sn-bg-gray: #383836;
+    --sn-bg-brown: #45362d;
+    --sn-bg-orange: #53361f;
+    --sn-bg-yellow: #504425;
+    --sn-bg-green: #263d30;
+    --sn-bg-blue: #233850;
+    --sn-bg-purple: #3c2d47;
+    --sn-bg-pink: #4e2b3c;
+    --sn-bg-red: #502c29;
+  }
+}
+:root[data-theme="dark"],
+:root[data-theme="midnight"],
+:root[data-theme="forest"],
+:root[data-theme="dusk"] {
+  --sn-text-gray: #807d78;
+  --sn-text-brown: #9f765a;
+  --sn-text-orange: #d27b2d;
+  --sn-text-yellow: #cb9434;
+  --sn-text-green: #50946e;
+  --sn-text-blue: #3c80ca;
+  --sn-text-purple: #9a6bb4;
+  --sn-text-pink: #c45590;
+  --sn-text-red: #d0544c;
+  --sn-bg-gray: #383836;
+  --sn-bg-brown: #45362d;
+  --sn-bg-orange: #53361f;
+  --sn-bg-yellow: #504425;
+  --sn-bg-green: #263d30;
+  --sn-bg-blue: #233850;
+  --sn-bg-purple: #3c2d47;
+  --sn-bg-pink: #4e2b3c;
+  --sn-bg-red: #502c29;
+}
+.sn-text-gray { color: var(--sn-text-gray); }
+.sn-text-brown { color: var(--sn-text-brown); }
+.sn-text-orange { color: var(--sn-text-orange); }
+.sn-text-yellow { color: var(--sn-text-yellow); }
+.sn-text-green { color: var(--sn-text-green); }
+.sn-text-blue { color: var(--sn-text-blue); }
+.sn-text-purple { color: var(--sn-text-purple); }
+.sn-text-pink { color: var(--sn-text-pink); }
+.sn-text-red { color: var(--sn-text-red); }
+.sn-bg-gray { background: var(--sn-bg-gray); }
+.sn-bg-brown { background: var(--sn-bg-brown); }
+.sn-bg-orange { background: var(--sn-bg-orange); }
+.sn-bg-yellow { background: var(--sn-bg-yellow); }
+.sn-bg-green { background: var(--sn-bg-green); }
+.sn-bg-blue { background: var(--sn-bg-blue); }
+.sn-bg-purple { background: var(--sn-bg-purple); }
+.sn-bg-pink { background: var(--sn-bg-pink); }
+.sn-bg-red { background: var(--sn-bg-red); }
+.note-body [class*="sn-bg-"] { border-radius: 2px; padding: 0 1px; }
 
+/* The palette that opens from the colour button: a row of choices for text, one for backgrounds. */
 .colour-menu { z-index: 41; min-width: 0; }
-.swatches { display: grid; grid-template-columns: repeat(4, 36px); gap: var(--space-1); padding: var(--space-1); }
-.swatch { width: 36px; height: 36px; min-height: 36px; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.swatches { display: grid; grid-template-columns: repeat(5, 36px); gap: var(--space-1); padding: var(--space-1) var(--space-3) var(--space-2); }
+/* :where keeps the defaults weaker than the colour classes on the same button. */
+:where(.swatch) { color: var(--text); background: transparent; }
+.swatch { width: 36px; height: 36px; min-height: 36px; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); font-weight: 700; }
 .swatch[aria-current="true"] { outline: 2px solid var(--text); outline-offset: 1px; }
 .colour-letter { font-weight: 700; line-height: 1.1; border-bottom: 3px solid var(--line); }
-.colour-letter[class*="tc-"] { border-bottom-color: currentColor; }
+.colour-letter[class*="sn-text-"] { border-bottom-color: currentColor; }
+.colour-letter[class*="sn-bg-"] { padding: 0 2px; border-bottom-color: transparent; }

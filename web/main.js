@@ -201,6 +201,28 @@ function updateSettingsRows() {
   return [row, textElement("p", s.updatesHint, "setting-hint"), check, result, actions];
 }
 
+// The converted copy for Obsidian (see DECISIONS.md). Not offered on Android: the notes live in
+// the app's private storage there, so another app could not open a copy made beside them.
+function obsidianRows() {
+  if (isAndroid) return [];
+  const s = strings.settings;
+  const result = textElement("p", "", "setting-hint");
+  const make = buttonElement(s.obsidianButton, async () => {
+    make.disabled = true;
+    result.textContent = s.obsidianWorking;
+    try {
+      const report = await backend.exportObsidianCopy();
+      result.textContent = fill(s.obsidianDone, report) + (report.skipped ? fill(s.obsidianSkipped, report) : "");
+    } catch (error) {
+      logProblem("obsidian copy failed", error);
+      result.textContent = errorText(error);
+    } finally {
+      make.disabled = false;
+    }
+  });
+  return [textElement("h3", s.obsidianHeading, "setting-heading"), textElement("p", s.obsidianHint, "setting-hint"), make, result];
+}
+
 // Opens an address in the system browser. Resolves to false (and logs) when that is not possible.
 async function tryOpen(url) {
   try {
@@ -816,7 +838,7 @@ function fillStaticText() {
         applyAppearance(document.documentElement, app.settings);
         saveSettings();
       },
-      updateSettingsRows(),
+      [...updateSettingsRows(), ...obsidianRows()],
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;

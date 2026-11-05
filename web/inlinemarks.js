@@ -7,7 +7,7 @@
 // security policy does not allow inline style attributes.
 
 import { Mark, mergeAttributes } from "@tiptap/core";
-import { COLOR_OPEN_SOURCE, HIGHLIGHT_SOURCE, PALETTE, colorOpenTag, paletteEntry } from "./inlinestyles.js";
+import { COLOURS, COLOUR_OPEN_SOURCE, HIGHLIGHT_SOURCE, colourOpenTag, isColour, parseColourTag } from "./inlinestyles.js";
 
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -103,48 +103,79 @@ export const Highlight = Mark.create({
   },
 });
 
-// <span style="color: #f72525">text</span>, for the palette colours only. Any other colour (from
-// another program) is not recognised here, so compose.js keeps that paragraph raw instead.
-export const TextColor = Mark.create({
-  name: "textColor",
-  addAttributes() {
-    return {
-      color: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("data-text-color"),
-        renderHTML: (attributes) => {
-          const entry = paletteEntry(attributes.color);
-          return entry ? { "data-text-color": entry.hex, class: `text-color tc-${entry.name}` } : {};
-        },
-      },
-    };
+// <span class="sn-text-red sn-bg-yellow">text</span>: a text colour, a background colour, or
+// both, from the fixed list in inlinestyles.js. One mark holds both, so the words get one span.
+// Colours from another program (any other class or colour code) are not recognised here, so
+// compose.js keeps that paragraph raw instead. The 0.2.9 form (<span style="color: #hex">, for
+// the old eight text colours) is still read.
+const colourAttribute = (kind) => ({
+  default: null,
+  parseHTML: (element) => {
+    const value = element.getAttribute(`data-${kind}-colour`);
+    return isColour(value) ? value : null;
   },
-  parseHTML: () => [{ tag: "span[data-text-color]", getAttrs: (element) => (paletteEntry(element.getAttribute("data-text-color")) ? null : false) }],
-  renderHTML: ({ HTMLAttributes }) => ["span", mergeAttributes(HTMLAttributes), 0],
-  parseMarkdown: (token, helpers) => helpers.applyMark("textColor", helpers.parseInline(token.tokens || []), { color: token.color }),
+  renderHTML: (attributes) => (isColour(attributes[kind]) ? { [`data-${kind}-colour`]: attributes[kind] } : {}),
+});
+
+export const Colour = Mark.create({
+  name: "colour",
+  addAttributes() {
+    return { text: colourAttribute("text"), bg: colourAttribute("bg") };
+  },
+  parseHTML: () => [{ tag: "span[data-text-colour], span[data-bg-colour]" }],
+  renderHTML: ({ mark, HTMLAttributes }) => {
+    const { text, bg } = mark.attrs;
+    // The look comes from classes (the page's security policy does not allow style attributes).
+    const classes = ["text-colour", isColour(text) ? `sn-text-${text}` : "", isColour(bg) ? `sn-bg-${bg}` : ""].filter(Boolean).join(" ");
+    return ["span", mergeAttributes(HTMLAttributes, { class: classes }), 0];
+  },
+  parseMarkdown: (token, helpers) => helpers.applyMark("colour", helpers.parseInline(token.tokens || []), { text: token.colourText, bg: token.colourBg }),
   renderMarkdown: (node, helpers) => {
-    const entry = paletteEntry(node.attrs && node.attrs.color);
+    const text = isColour(node.attrs && node.attrs.text) ? node.attrs.text : null;
+    const bg = isColour(node.attrs && node.attrs.bg) ? node.attrs.bg : null;
     const inner = helpers.renderChildren(node);
-    return entry ? `${colorOpenTag(entry.hex)}${inner}</span>` : inner;
+    return text || bg ? `${colourOpenTag({ text, bg })}${inner}</span>` : inner;
   },
   markdownTokenizer: pairTokenizer({
-    name: "textColor",
-    openStart: /<span style="color:/i,
-    openAnchored: new RegExp(`^${COLOR_OPEN_SOURCE}`, "i"),
+    name: "colour",
+    openStart: /<span (?:class="sn-|style="color:)/i,
+    openAnchored: new RegExp(`^(?:${COLOUR_OPEN_SOURCE})`, "i"),
     close: "</span>",
-    // Only palette colours, and no span inside (spans do not nest here).
-    accept: (text, open) => !/<span/i.test(text) && paletteEntry(open[1]) !== null,
-    extra: (open) => ({ color: paletteEntry(open[1]).hex }),
+    // Only our own forms, and no span inside (spans do not nest here).
+    accept: (text, open) => !/<span/i.test(text) && parseColourTag(open[1] && open[1].toLowerCase(), open[2]) !== null,
+    extra: (open) => {
+      const colour = parseColourTag(open[1] && open[1].toLowerCase(), open[2]);
+      return { colourText: colour.text, colourBg: colour.bg };
+    },
   }),
   addCommands() {
     return {
-      setTextColor: (color) => ({ commands }) => {
-        const entry = paletteEntry(color);
-        return entry ? commands.setMark("textColor", { color: entry.hex }) : false;
+      // Sets one kind ("text" or "bg") to a colour name, or takes it off with null, on every
+      // piece of text in the selection. The other kind is kept as it was on each piece.
+      setColour: (kind, name) => ({ tr, dispatch }) => {
+        if ((kind !== "text" && kind !== "bg") || (name !== null && !isColour(name))) return false;
+        const type = this.type;
+        let changed = false;
+        for (const range of tr.selection.ranges) {
+          const from = range.$from.pos;
+          const to = range.$to.pos;
+          if (from === to) continue;
+          tr.doc.nodesBetween(from, to, (node, pos) => {
+            if (!node.isText) return;
+            const start = Math.max(pos, from);
+            const end = Math.min(pos + node.nodeSize, to);
+            const existing = node.marks.find((mark) => mark.type === type);
+            const attrs = { text: existing ? existing.attrs.text : null, bg: existing ? existing.attrs.bg : null };
+            attrs[kind] = name;
+            tr.removeMark(start, end, type);
+            if (attrs.text || attrs.bg) tr.addMark(start, end, type.create(attrs));
+            changed = true;
+          });
+        }
+        return dispatch ? changed : true;
       },
-      unsetTextColor: () => ({ commands }) => commands.unsetMark("textColor"),
     };
   },
 });
 
-export { PALETTE };
+export { COLOURS };

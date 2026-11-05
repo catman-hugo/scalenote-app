@@ -50,6 +50,13 @@
       attachments.set(path, data);
       return path;
     },
+    // The converted copy is made by Rust (tested there with real files). Here the call is only
+    // counted and answered, so the Settings button can be driven.
+    export_obsidian_copy: () => {
+      window.__exports = (window.__exports || 0) + 1;
+      if (window.__failExport) fail(window.__failExport);
+      return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
+    },
     read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return "data:image/png;base64," + attachments.get(path); },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },

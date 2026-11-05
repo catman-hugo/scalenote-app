@@ -12,7 +12,7 @@ import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
 import { choosePicture, checkPicture, storePicture } from "./images.js";
-import { Highlight, Subscript, Superscript, TextColor } from "./inlinemarks.js";
+import { Highlight, Subscript, Superscript, Colour } from "./inlinemarks.js";
 
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
 // vault first, and only then an image block is placed in the note.
@@ -338,7 +338,7 @@ export function createEditor(element, onChange, options = {}) {
       Highlight,
       Subscript,
       Superscript,
-      TextColor,
+      Colour,
       SourceKeeper,
       RawBlock,
       Callout,

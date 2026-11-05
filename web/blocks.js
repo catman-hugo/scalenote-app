@@ -35,7 +35,7 @@ const CALLOUT_START = /^ {0,3}>[ \t]?\[![A-Za-z][A-Za-z0-9-]*\][+-]?([ \t]|$)/;
 const IMAGE_ONLY = /^!\[[^\[\]\n]*\]\(attachments\/[^\s()<>"\\]+\.(png|jpe?g|gif|webp)\)[ \t]*$/i;
 // A line may start with "<" only for the text style tags (<u>, <sub>, <sup>, a colour span): those
 // are inline, and compose.js still checks that the editor can keep them.
-const RAW_LINE_START = /^(<(?!\/?(?:u|sub|sup)>|span style="color:)|\$\$|%%|\[\^[^\]]+\]:|\[[^\]]+\]:[ \t]+\S|!\[\[| {4}|\t)/;
+const RAW_LINE_START = /^(<(?!\/?(?:u|sub|sup)>|span (?:style="color:|class="sn-))|\$\$|%%|\[\^[^\]]+\]:|\[[^\]]+\]:[ \t]+\S|!\[\[| {4}|\t)/;
 
 // Inline syntax the editor cannot round-trip. A block containing any of it is kept raw, so
 // editing around it can never damage it. The text styles (highlight, underline, sub and
