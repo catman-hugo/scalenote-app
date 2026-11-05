@@ -51,7 +51,8 @@ test("syntax the editor does not know is kept as raw blocks", () => {
   assert.deepEqual(kinds("<div>html</div>"), ["raw"]);
   assert.deepEqual(kinds("> [!note] Title\n> body"), ["callout"]);
   assert.deepEqual(kinds("$$\nx^2\n$$"), ["raw"]);
-  assert.deepEqual(kinds("Text with ==highlight== inside"), ["raw"]);
+  assert.deepEqual(kinds("Text with == highlight == inside"), ["paragraph"], "spaced == is just text");
+  assert.deepEqual(kinds("Text with ==highlight ==  inside"), ["raw"], "a malformed highlight is kept raw");
   assert.deepEqual(kinds("![[image.png]]"), ["raw"]);
   assert.deepEqual(kinds("Title\n====="), ["raw"]);
   assert.deepEqual(kinds("    indented code"), ["raw"]);
@@ -110,5 +111,30 @@ test("huge and odd input does not break the splitter", () => {
   for (const odd of ["", "\n", "\n\n\n", "\u0000", "\r\n\r\n", "---", "---\n", "---\n---", "\u{1F600}\n‮"]) {
     const { front, body } = splitFrontmatter(odd);
     assert.equal(front + joinBlocks(splitBlocks(body)), odd);
+  }
+});
+
+test("well-formed text styles are editable; any other html or marker keeps the block raw", () => {
+  for (const text of [
+    "Text with ==highlight== inside",
+    "x <u>underlined</u> y",
+    "H<sub>2</sub>O and x<sup>2</sup>",
+    '<span style="color: #f72525">red</span> at the start of a line',
+    "<u>underline at the start</u> of a line",
+    "- item with ==mark==",
+    "> quote with <u>u</u>",
+    "# Heading with ==mark==",
+    "x == y and a = b",
+  ]) {
+    assert.notEqual(kinds(text)[0], "raw", text);
+  }
+  for (const text of [
+    "x <b>bold</b> y",
+    "x <span class=\"a\">y</span> z",
+    "x <u>ok</u> and <mark>no</mark>",
+    "<div>block</div>",
+    "a <kbd>k</kbd> <u>u</u>",
+  ]) {
+    assert.equal(kinds(text)[0], "raw", text);
   }
 });

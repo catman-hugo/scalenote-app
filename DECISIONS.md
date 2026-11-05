@@ -180,3 +180,15 @@ Context. The generated Android project carries Tauri's default icons and ignores
 Decision. The Android patch step copies the committed ScaleNote icons over the generated ones after init, and fails the build if they are missing.
 Alternatives. Running `tauri icon` in the build (rejected: needs the source tile image, which is not in the repository, and would regenerate what is already committed). Storing the whole generated Android project (rejected earlier, see the keyboard decision).
 Cost. Changing the logo still means regenerating `src-tauri/icons/android` by hand.
+
+## 2026-11-05: Inline styles are stored as markdown and html, and a paragraph is edited only when they survive
+Context. The owner wants highlight, underline, sub and superscript and colour (DECISIONS 2026-11-04: formatting stays inside the note file, readable by Obsidian). The markdown reader we use silently drops html it does not understand, so a paragraph could lose text on save.
+Decision. Highlight is `==text==`; underline, subscript and superscript are `<u>`, `<sub>`, `<sup>`; colour is `<span style="color: #hex">` for eight fixed colours. A paragraph with these markers opens as editable text only if the markers read back identical after a parse and re-save; otherwise it stays raw and is written byte for byte. Colours outside the palette stay raw.
+Alternatives. A custom syntax or a sidecar file (rejected: other programs would show nothing, and the file would not be self-contained). Free colour choice (rejected: unreadable on some themes, and each colour needs a class because the page forbids inline styles).
+Cost. Obsidian's docs name only `==` for highlight; the html tags are not confirmed there, and Obsidian does not render bold or italic inside html tags. Reading is stricter than writing, so a few odd hand-written lines stay raw.
+
+## 2026-11-05: On touch, the selection bar does not wait for the finger to lift
+Context. On Android the system takes over a finger selection, so the page may never get a pointer-up, and the bar waited for it.
+Decision. Touch input never blocks the bar, a cancelled pointer counts as finished, and for touch the bar sits 36 px lower than on desktop to clear the native selection handles.
+Alternatives. Hiding Android's own Cut/Copy menu (rejected: the page cannot control it).
+Cost. The bar and the native menu may overlap in some positions; only a phone shows how often.

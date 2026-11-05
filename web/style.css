@@ -19,6 +19,7 @@
   --kind-ok: #2f7a3d;
   --kind-warn: #a15c00;
   --kind-info: #1f5fa8;
+  --highlight: #fbe58a;
 
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
@@ -61,6 +62,7 @@
     --kind-ok: #7fd18f;
     --kind-warn: #f0b45a;
     --kind-info: #8fbcf0;
+    --highlight: #4d3d00;
   }
 }
 
@@ -1033,3 +1035,37 @@ body.block-dragging .float-bar { visibility: hidden; }
 /* The block type button at the start of the formatting bar: the name, then an arrow. */
 .type-button { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 5.5rem; justify-content: space-between; }
 .type-menu { z-index: 41; }
+
+/* ---------- text styles ---------- */
+
+.note-body mark.text-highlight { background: var(--highlight); color: inherit; border-radius: 2px; padding: 0 1px; }
+.note-body sub, .note-body sup { line-height: 0; }
+.mark-underline { text-decoration: underline; }
+.mark-highlight { background: var(--highlight); }
+
+/* Text colours. The same eight colours are written into notes as real colour codes (see
+   inlinestyles.js); the class is how the page draws them, because it may not use inline style
+   attributes. tests/inlinestyles.test.mjs checks that every palette colour has its rules here. */
+.tc-red { color: #f72525; }
+.tc-orange { color: #c2671d; }
+.tc-yellow { color: #9c7a17; }
+.tc-green { color: #339142; }
+.tc-blue { color: #5083b2; }
+.tc-purple { color: #9465e0; }
+.tc-pink { color: #eb239b; }
+.tc-gray { color: #808080; }
+.swatch-red { background: #f72525; }
+.swatch-orange { background: #c2671d; }
+.swatch-yellow { background: #9c7a17; }
+.swatch-green { background: #339142; }
+.swatch-blue { background: #5083b2; }
+.swatch-purple { background: #9465e0; }
+.swatch-pink { background: #eb239b; }
+.swatch-gray { background: #808080; }
+
+.colour-menu { z-index: 41; min-width: 0; }
+.swatches { display: grid; grid-template-columns: repeat(4, 36px); gap: var(--space-1); padding: var(--space-1); }
+.swatch { width: 36px; height: 36px; min-height: 36px; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.swatch[aria-current="true"] { outline: 2px solid var(--text); outline-offset: 1px; }
+.colour-letter { font-weight: 700; line-height: 1.1; border-bottom: 3px solid var(--line); }
+.colour-letter[class*="tc-"] { border-bottom-color: currentColor; }

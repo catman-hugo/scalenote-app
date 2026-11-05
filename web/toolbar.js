@@ -6,9 +6,11 @@
 import { canTurnInto, TURN_NAMES, turnInto, turnNameOf, unitRangeOf, unitsOf } from "./blockops.js";
 import { icon } from "./icons.js";
 import { normalizeUrl } from "./links.js";
+import { PALETTE, paletteEntry } from "./inlinestyles.js";
 import { strings } from "./strings.js";
 
 const MARGIN = 8;
+const TOUCH_CLEARANCE = 36;
 
 function button(label, text, className) {
   const node = document.createElement("button");
@@ -57,6 +59,7 @@ export function attachToolbars(editor) {
   const f = strings.format;
   let pointerDown = false;
   let linkMode = false;
+  let touchSelecting = false; // the last press in the note was a finger
 
   // ----- formatting bar -----
   const bar = document.createElement("div");
@@ -68,7 +71,11 @@ export function attachToolbars(editor) {
   const marks = [
     { label: f.bold, text: f.boldMark, name: "bold", cls: "mark-bold", run: () => editor.chain().focus().toggleBold().run() },
     { label: f.italic, text: f.italicMark, name: "italic", cls: "mark-italic", run: () => editor.chain().focus().toggleItalic().run() },
+    { label: f.underline, text: f.underlineMark, name: "underline", cls: "mark-underline", run: () => editor.chain().focus().toggleUnderline().run() },
     { label: f.strike, text: f.strikeMark, name: "strike", cls: "mark-strike", run: () => editor.chain().focus().toggleStrike().run() },
+    { label: f.highlight, text: f.highlightMark, name: "highlight", cls: "mark-highlight", run: () => editor.chain().focus().toggleHighlight().run() },
+    { label: f.subscript, text: f.subscriptMark, name: "subscript", cls: "", run: () => editor.chain().focus().toggleSubscript().run() },
+    { label: f.superscript, text: f.superscriptMark, name: "superscript", cls: "", run: () => editor.chain().focus().toggleSuperscript().run() },
     { label: f.code, text: f.codeMark, name: "code", cls: "mark-code", run: () => editor.chain().focus().toggleCode().run() },
     { label: f.link, text: f.linkMark, name: "link", cls: "", run: () => openLink() },
   ];
@@ -125,6 +132,68 @@ export function attachToolbars(editor) {
     if (!typeMenu.hidden && !typeMenu.contains(event.target) && !typeButton.contains(event.target)) closeTypeMenu();
   });
 
+  // The text colour button: shows the colour in use under its letter and opens the palette.
+  const colourButton = button(f.colour, "", "colour-button");
+  colourButton.setAttribute("aria-haspopup", "menu");
+  colourButton.setAttribute("aria-expanded", "false");
+  const colourLetter = document.createElement("span");
+  colourLetter.className = "colour-letter";
+  colourLetter.textContent = f.colourMark;
+  colourButton.textContent = "";
+  colourButton.append(colourLetter);
+  const colourMenu = document.createElement("div");
+  colourMenu.className = "gutter-menu colour-menu";
+  colourMenu.setAttribute("role", "menu");
+  colourMenu.setAttribute("aria-label", f.colour);
+  colourMenu.hidden = true;
+  const swatches = document.createElement("div");
+  swatches.className = "swatches";
+  const swatchButtons = PALETTE.map((entry) => {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = `swatch swatch-${entry.name}`;
+    node.title = f.colours[entry.name];
+    node.setAttribute("role", "menuitem");
+    node.setAttribute("aria-label", f.colours[entry.name]);
+    keepFocus(node, () => {
+      closeColourMenu();
+      editor.chain().focus().setTextColor(entry.hex).run();
+      refresh();
+    });
+    swatches.append(node);
+    return { entry, node };
+  });
+  const colourClear = document.createElement("button");
+  colourClear.type = "button";
+  colourClear.className = "menu-item";
+  colourClear.setAttribute("role", "menuitem");
+  colourClear.textContent = f.colourClear;
+  keepFocus(colourClear, () => {
+    closeColourMenu();
+    editor.chain().focus().unsetTextColor().run();
+    refresh();
+  });
+  colourMenu.append(swatches, colourClear);
+
+  function closeColourMenu() {
+    colourMenu.hidden = true;
+    colourButton.setAttribute("aria-expanded", "false");
+  }
+  function openColourMenu() {
+    const current = paletteEntry(editor.getAttributes("textColor").color);
+    swatchButtons.forEach(({ entry, node }) => {
+      if (current && current.name === entry.name) node.setAttribute("aria-current", "true");
+      else node.removeAttribute("aria-current");
+    });
+    colourMenu.hidden = false;
+    colourButton.setAttribute("aria-expanded", "true");
+    place(colourMenu, colourButton.getBoundingClientRect(), "below");
+  }
+  keepFocus(colourButton, () => (colourMenu.hidden ? openColourMenu() : closeColourMenu()));
+  document.addEventListener("pointerdown", (event) => {
+    if (!colourMenu.hidden && !colourMenu.contains(event.target) && !colourButton.contains(event.target)) closeColourMenu();
+  });
+
   const buttons = marks.map((mark) => {
     const node = button(mark.label, mark.text, mark.cls);
     keepFocus(node, mark.run);
@@ -146,8 +215,12 @@ export function attachToolbars(editor) {
   linkError.className = "link-error";
   linkRow.append(linkInput, apply, remove, cancel, linkError);
   linkRow.hidden = true;
-  bar.append(typeButton, ...buttons.map((b) => b.node), linkRow);
-  document.body.append(bar, typeMenu);
+  // Order in the bar: block type, then the marks, with the colour button after highlight.
+  const nodes = buttons.map((b) => b.node);
+  const afterHighlight = buttons.findIndex((b) => b.name === "highlight") + 1;
+  nodes.splice(afterHighlight, 0, colourButton);
+  bar.append(typeButton, ...nodes, linkRow);
+  document.body.append(bar, typeMenu, colourMenu);
 
   function openLink() {
     linkMode = true;
@@ -156,7 +229,9 @@ export function attachToolbars(editor) {
     remove.hidden = !editor.isActive("link");
     buttons.forEach((b) => (b.node.hidden = true));
     typeButton.hidden = true;
+    colourButton.hidden = true;
     closeTypeMenu();
+    closeColourMenu();
     linkRow.hidden = false;
     linkInput.focus();
     linkInput.select();
@@ -165,6 +240,7 @@ export function attachToolbars(editor) {
     linkMode = false;
     linkRow.hidden = true;
     buttons.forEach((b) => (b.node.hidden = false));
+    colourButton.hidden = false;
     editor.commands.focus();
     refresh();
   }
@@ -226,9 +302,15 @@ export function attachToolbars(editor) {
     const hasText = !selection.empty && selection.$from.parent.isTextblock && !editor.isActive("codeBlock");
     const show = hasText && (editor.isFocused || linkMode) && !pointerDown;
     bar.hidden = !show;
-    if (!show) closeTypeMenu();
+    if (!show) {
+      closeTypeMenu();
+      closeColourMenu();
+    }
     if (show) {
       buttons.forEach((b) => b.node.classList.toggle("active", editor.isActive(b.name)));
+      const colourNow = paletteEntry(editor.getAttributes("textColor").color);
+      colourLetter.className = `colour-letter${colourNow ? ` tc-${colourNow.name}` : ""}`;
+      colourButton.classList.toggle("active", Boolean(colourNow));
       // The type row shows for a selection inside one text block.
       const { first, last } = unitRangeOf(editor.state.doc, selection);
       const unit = unitsOf(editor.state.doc)[first];
@@ -239,7 +321,10 @@ export function attachToolbars(editor) {
       if (typeMenu.hidden === false && !name) closeTypeMenu();
       const end = editor.view.coordsAtPos(selection.to);
       const start = editor.view.coordsAtPos(selection.from);
-      place(bar, { left: Math.min(start.left, end.left), top: start.top, bottom: end.bottom }, "below");
+      // With a finger the system's own selection handles sit just under the text, so the bar
+      // goes a little lower to leave them free.
+      const clearance = touchSelecting ? TOUCH_CLEARANCE : 0;
+      place(bar, { left: Math.min(start.left, end.left), top: start.top, bottom: end.bottom + clearance }, "below");
     } else if (linkMode && !hasText) {
       closeLink();
     }
@@ -262,21 +347,31 @@ export function attachToolbars(editor) {
         linkMode = false;
         linkRow.hidden = true;
         buttons.forEach((b) => (b.node.hidden = false));
+        colourButton.hidden = false;
         bar.hidden = true;
         closeTypeMenu();
+        closeColourMenu();
         tableBar.hidden = true;
       }
     }, 0);
   });
-  editor.view.dom.addEventListener("pointerdown", () => {
+  editor.view.dom.addEventListener("pointerdown", (event) => {
+    touchSelecting = event.pointerType === "touch";
+    // A finger's selection is made with the system's own handles and menu, and the page may never
+    // hear a pointerup for it (the system takes the touch over and sends pointercancel, or
+    // nothing). Waiting for the pointer to lift would keep the bar hidden for good, so a finger
+    // never counts as "pressed". A mouse or pen drag still hides the bar until it is released.
+    if (touchSelecting) return;
     pointerDown = true;
     bar.hidden = true;
   });
-  document.addEventListener("pointerup", () => {
+  const pointerEnded = () => {
     if (!pointerDown) return;
     pointerDown = false;
     refresh();
-  });
+  };
+  document.addEventListener("pointerup", pointerEnded);
+  document.addEventListener("pointercancel", pointerEnded);
   window.addEventListener("resize", refresh);
   editor.view.dom.parentElement && editor.view.dom.parentElement.addEventListener("scroll", refresh, { passive: true });
 

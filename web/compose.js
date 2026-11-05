@@ -5,6 +5,7 @@
 
 import { BLOCK_ID, newNoteId, splitBlocks, splitFrontmatter, withNoteId } from "./blocks.js";
 import { readRichBlock, writeBlock } from "./richblocks.js";
+import { hasStyleSyntax, sameStyles } from "./inlinestyles.js";
 
 // Block types the editor can show and edit. Anything else is kept as a raw block.
 const EDITABLE_TYPES = new Set([
@@ -63,6 +64,11 @@ export function loadNote(text, { parse, serialize }) {
     if (!node || (idMatch && node.type !== "paragraph")) return rawNode(src, gap, idx);
     if (idMatch) node.attrs = { ...(node.attrs || {}), blockId: idMatch[1] };
     const base = writeBlock(node, serialize);
+    // Text styles (==highlight==, <u>, <sub>, <sup>, colour) are only editable if the editor reads
+    // every marker and writes it back: the editor silently drops html it does not understand, so
+    // a stray or crossed marker would be lost the first time the block is changed. The block
+    // stays raw unless the markers survive a read and write unchanged.
+    if (!isRich && hasStyleSyntax(src) && !sameStyles(src, base)) return rawNode(src, gap, idx);
     return { ...node, attrs: { ...(node.attrs || {}), src, base, gap, idx } };
   });
   const doc = { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };

@@ -12,6 +12,7 @@ import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
 import { choosePicture, checkPicture, storePicture } from "./images.js";
+import { Highlight, Subscript, Superscript, TextColor } from "./inlinemarks.js";
 
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
 // vault first, and only then an image block is placed in the note.
@@ -325,8 +326,8 @@ export function createEditor(element, onChange, options = {}) {
     injectCSS: false,
     extensions: [
       StarterKit.configure({
-        // "++text++" is not standard markdown, so underline is switched off.
-        underline: false,
+        // Underline stays on: this version of the library writes it as <u>text</u>, which
+        // Obsidian shows too (see inlinestyles.js).
         link: { openOnClick: false, autolink: false },
         heading: { levels: [1, 2, 3, 4, 5, 6] },
       }),
@@ -334,6 +335,10 @@ export function createEditor(element, onChange, options = {}) {
       TaskItem.configure({ nested: true }),
       Markdown,
       Placeholder.configure({ placeholder: strings.editor.placeholder }),
+      Highlight,
+      Subscript,
+      Superscript,
+      TextColor,
       SourceKeeper,
       RawBlock,
       Callout,

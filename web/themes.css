@@ -21,6 +21,7 @@
   --bad: #a3231b;
   --kind-ok: #296c36;
   --kind-warn: #8e5100;
+  --highlight: #fbe58a;
   --kind-info: #1f5fa8;
 }
 
@@ -41,6 +42,7 @@
   --bad: #d76a64;
   --kind-ok: #7fd18f;
   --kind-warn: #f0b45a;
+  --highlight: #4d3d00;
   --kind-info: #8fbcf0;
 }
 
@@ -61,6 +63,7 @@
   --bad: #a3231b;
   --kind-ok: #276633;
   --kind-warn: #854c00;
+  --highlight: #fbe58a;
   --kind-info: #1d599e;
 }
 
@@ -81,6 +84,7 @@
   --bad: #f85149;
   --kind-ok: #7fd18f;
   --kind-warn: #f0b45a;
+  --highlight: #4d3d00;
   --kind-info: #8fbcf0;
 }
 
@@ -101,6 +105,7 @@
   --bad: #a3231b;
   --kind-ok: #2c7339;
   --kind-warn: #975600;
+  --highlight: #fbe58a;
   --kind-info: #1f5fa8;
 }
 
@@ -121,6 +126,7 @@
   --bad: #f08a80;
   --kind-ok: #7fd18f;
   --kind-warn: #f0b45a;
+  --highlight: #4d3d00;
   --kind-info: #8fbcf0;
 }
 
@@ -141,6 +147,7 @@
   --bad: #b72020;
   --kind-ok: #296c36;
   --kind-warn: #8e5100;
+  --highlight: #fbe58a;
   --kind-info: #1f5fa8;
 }
 
@@ -161,5 +168,6 @@
   --bad: #f87171;
   --kind-ok: #7fd18f;
   --kind-warn: #f0b45a;
+  --highlight: #4d3d00;
   --kind-info: #8fbcf0;
 }
