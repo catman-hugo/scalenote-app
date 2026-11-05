@@ -118,6 +118,16 @@ Owner request (2026-11-04): move pages and folders into other folders by draggin
 - Known limits: no auto-opening of a folder while dragging over it (open it first), no dragging with a finger in the list, and the plus button needs a wider window than the smallest ones.
 - Release notes: `docs/release-notes/0.2.5.md`.
 
+## 0.2.6: built
+Owner request (2026-11-05): on the Android phone, typing in a page slid the whole screen up and out of view. The keyboard should cover the bottom of the page instead, the page should scroll only as far as needed to show what is being typed, and the page title must always stay visible.
+- Cause: the Android project that `tauri android init` generates draws edge to edge and sets no keyboard behaviour, so Android pans the whole window. I read this from the Tauri 2.12.4 template embedded in the pinned CLI, not from memory.
+- Fix on Android: `scripts/patch-android.mjs` runs in CI right after the init step. It adds `windowSoftInputMode="adjustResize"` to the manifest and replaces the tiny `MainActivity.kt` with one that, on Android 11 and newer, pads the bottom of the content by the keyboard height (the framework does not resize edge to edge windows on its own). The page then ends where the keyboard begins. The script refuses to run, and so fails the build, if the generated files do not look as expected. 7 unit tests call the real patch functions on text shaped like the generated files.
+- Fix in the page: when the window gets shorter and the editor has focus, `keepCaretVisible` in `web/main.js` scrolls the cursor into view only if it is outside the visible note area. The top bar is outside the scrolling area, so it stays. 2 browser tests (a phone window shrunk from 860 to 420 pixels): the cursor on the last of 40 lines ends up visible with the top bar on screen, and a cursor that is already visible does not move the note.
+- Found while testing: asking ProseMirror to scroll blindly nudged the note by 57 pixels even when the cursor was visible, so the handler checks first.
+- Tested here: 64 unit tests, the browser tests, screenshots in light and dark of the shortened phone window (`v026-phone-*`).
+- NOT tested, needs the Android phone: the Kotlin file is only compiled by GitHub's Android build, and whether the real keyboard now shortens the window (and where the page ends relative to the navigation bar) is unknown until it runs on the phone. The browser tests only prove what the page does once the window is shorter.
+- Release notes: `docs/release-notes/0.2.6.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -130,6 +140,7 @@ Owner request (2026-11-04): move pages and folders into other folders by draggin
 | 0.2.3 | Update check also finds pre-releases (see "0.2.3: built") | built, not tried on a device |
 | 0.2.4 | Right-click menu with Rename on folders and pages (see "0.2.4: built") | built, not tried on a device |
 | 0.2.5 | Move pages and folders by dragging (and Move to), block editing polish (drag copy, several blocks together, plus button, block type row), and an Undo-after-open data-loss fix (see "0.2.5: built") | built, not tried on a device |
+| 0.2.6 | Phone keyboard covers the bottom of the page instead of sliding the whole screen away (see "0.2.6: built") | built, not tried on a device |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |

@@ -162,3 +162,9 @@ Context. Testing the block move found that Undo right after opening a page empti
 Decision. Loading a page into the editor (and switching from the source view) is not part of the undo history.
 Alternatives. Disabling autosave for empty documents (rejected: it hides the symptom and breaks legitimate emptying).
 Cost. None known: Undo now stops at the state the page was opened in.
+
+## 2026-11-05: The keyboard shortens the window, and the generated Android project is patched in CI
+Context. The generated Android app is edge to edge with no keyboard setting, so the keyboard made Android slide the whole window up and hide the title bar. The Android project is not stored in the repository.
+Decision. A small script patches the generated manifest and activity right after `tauri android init`: the keyboard makes the window shorter (the title bar stays, the page ends above the keyboard), and the page scrolls the cursor into view only when it is hidden. The script fails the build if the generated files change shape.
+Alternatives. Storing the whole generated Android project in the repository (rejected: it would drift from the Tauri version and is a lot of generated files). Doing it only in the page with `interactive-widget` or the visual viewport (rejected: the web view does not report the keyboard while the window pans). Panning the window as Android does by default (rejected: it hides the title bar).
+Cost. Kotlin code that this workspace cannot compile or run; only GitHub's build and the phone prove it. A Tauri update could change the template, in which case the build stops with a clear message until the script is updated.

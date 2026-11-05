@@ -823,6 +823,24 @@ function guardFileDrops() {
   }
 }
 
+// When the on-screen keyboard opens, the window gets shorter and the page shrinks with it (the
+// top bar stays where it is). The text cursor is then scrolled back into view if the keyboard
+// would have covered it; a cursor that is already visible is not moved.
+function keepCaretVisible() {
+  let waiting = false;
+  window.addEventListener("resize", () => {
+    if (waiting || !app.editor || !app.editor.isFocused) return;
+    waiting = true;
+    requestAnimationFrame(() => {
+      waiting = false;
+      if (!app.editor.isFocused) return;
+      const box = el("editor").getBoundingClientRect();
+      const caret = app.editor.view.coordsAtPos(app.editor.state.selection.head);
+      if (caret.top < box.top || caret.bottom > box.bottom) app.editor.view.dispatch(app.editor.state.tr.scrollIntoView());
+    });
+  });
+}
+
 function wireEvents() {
   guardFileDrops();
   enableTreeDrag(el("tree"), moveEntry);
@@ -869,6 +887,7 @@ async function start() {
     notify: showToast,
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
+  keepCaretVisible();
   startFlushTriggers();
 
   await loadSettings();
