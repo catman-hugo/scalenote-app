@@ -2116,6 +2116,17 @@ await test("Delete works from the long-press menu on a phone and the trash dialo
   assert.ok("Plants.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
 
+await test("on an Android phone the folder name has no arrow, because the folder cannot be changed", async (page) => {
+  await start(page);
+  assert.equal(await page.locator("#vaultButton svg").count(), 0);
+  assert.equal(await page.isDisabled("#vaultButton"), true);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
+await test("on desktop the folder name keeps its arrow and opens the folder menu", async (page) => {
+  await start(page);
+  assert.equal(await page.locator("#vaultButton svg").count(), 1);
+});
+
 await test("the keyboard shortcuts for underline, highlight, subscript and superscript work", async (page) => {
   await openSeeded(page, "K2.md", "one two three four\n");
   await select(page, 0, 3);

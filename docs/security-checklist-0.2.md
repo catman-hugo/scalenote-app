@@ -73,3 +73,6 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 - Search runs without holding the vault lock, so a slow search cannot block saving.
 - A page name ending in an accented letter could panic the page list (byte slicing); fixed and tested. No new network calls, permissions or dependencies.
 
+## Addendum for 0.3.1
+- The test signing key is a GitHub secret, never in the repository, logs or release files. The build only prints the public SHA-256 fingerprint of the certificate. If the secret is missing the build falls back to a throwaway key and says so. Only code in this repository's own branches can read the secret (pull requests from forks cannot). The key signs test builds only. No new permissions, network calls or app code besides hiding one icon on Android.
+

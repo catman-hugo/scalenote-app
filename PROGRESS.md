@@ -180,6 +180,16 @@ Owner request (2026-11-05): "build 0.3.0". Scope he chose: search and command pa
 - Not done: jumping to the match inside the page; search in picture names; deleting pictures with their page; automatic emptying of the trash; undo button on the "moved to the trash" message.
 - Release notes: `docs/release-notes/0.3.0.md`.
 
+## 0.3.1: built
+Owner report (2026-11-05): on Android the arrow at the top left does nothing, and every update means deleting the old app and going through the disclaimer and folder choice again. He wants updating as simple as possible, Android first.
+- Cause found: the Android job builds a debug app, and the debug key is created fresh on every GitHub runner, so each build has a different signature and Android refuses to install it over the old one. Deleting the old app also deletes the notes, which live in the app's private storage on Android.
+- Fix: the build now puts one fixed test key (kept as the GitHub secret `ANDROID_DEBUG_KEYSTORE_BASE64`, set by the owner in the repository settings) where the debug build looks for its key, and prints the SHA-256 of the key that signed the file, so two builds can be compared. Without the secret the build still works but prints a warning and cannot update an older build.
+- The arrow next to the vault name is not drawn on Android (the button was already disabled there because the folder is fixed).
+- ONE LAST REINSTALL is needed when going from a build before 0.3.1 to the first build signed with the fixed key. Notes in the app's private storage go with the old app.
+- NOT tested here (needs the owner): the signing itself. The build runs only on GitHub. It is proven when two builds in a row show the same SHA-256 line and the second one installs over the first on the phone without deleting anything.
+- Not done: an in-app install button (download inside the app and open the installer). It needs native Android code and a permission to install apps, so it is its own slice.
+- Release notes: `docs/release-notes/0.3.1.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -198,6 +208,7 @@ Owner request (2026-11-05): "build 0.3.0". Scope he chose: search and command pa
 | 0.2.9 | Inline styles (highlight, underline, sub, superscript, colour) and the selection bar on Android (see "0.2.9: built") | built, not tried on a device |
 | 0.2.10 | Notion colour palette for text and background, and a copy for Obsidian in Settings (see "0.2.10: built") | built, not tried on a device |
 | 0.3.0 | Search, command palette, delete and trash (see "0.3.0: built") | built, not tried on a device |
+| 0.3.1 | Android builds are signed with a fixed key so they update over each other (see "0.3.1: built") | built, not tried on a device |
 | 0.3.x | Wikilinks, backlinks, tags, favorites, covers, export and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
