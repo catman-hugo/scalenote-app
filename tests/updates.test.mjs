@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { checkForUpdate, compareVersions, newestRelease, parseVersion, readLimited, RELEASE_PAGE, RELEASES_URL, safeReleaseUrl, shouldCheck, CHECK_EVERY_MS } from "../web/updates.js";
+import { checkForUpdate, compareVersions, newestRelease, parseVersion, pickDownload, platformOf, readLimited, RELEASE_PAGE, RELEASES_URL, safeReleaseUrl, shouldCheck, CHECK_EVERY_MS } from "../web/updates.js";
 
 const release = (tag, extra = {}) => ({ tag_name: tag, html_url: `${RELEASE_PAGE}/tag/${tag}`, body: `notes for ${tag}`, draft: false, prerelease: false, ...extra });
 const answer = (body, init = {}) => async () => new Response(typeof body === "string" ? body : JSON.stringify(body), { status: 200, ...init });
@@ -96,4 +96,51 @@ test("every place that holds the version says the same thing", () => {
   assert.equal(tauri, pkg);
   assert.equal(cargo("../src-tauri/Cargo.toml"), pkg);
   assert.equal(cargo("../src-tauri/core/Cargo.toml"), pkg);
+});
+
+const FILES = "https://github.com/catman-hugo/scalenote-app/releases/download/v0.3.0";
+const asset = (name, extra = {}) => ({ name, state: "uploaded", browser_download_url: `${FILES}/${name}`, ...extra });
+const ASSETS = [asset("ScaleNote-0.3.0-1.x86_64.rpm"), asset("ScaleNote_0.3.0_amd64.deb"), asset("ScaleNote_0.3.0_arm64-debug.apk"), asset("ScaleNote_0.3.0_x64-portable.zip"), asset("ScaleNote_0.3.0_x64-setup.exe"), asset("ScaleNote_0.3.0_x64_en-US.msi")];
+
+test("the system is told apart from the browser's own description, Android before Linux", () => {
+  assert.equal(platformOf("Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"), "android");
+  assert.equal(platformOf("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/120"), "windows");
+  assert.equal(platformOf("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15"), "linux");
+  assert.equal(platformOf("something else"), "other");
+  assert.equal(platformOf(undefined), "other");
+});
+
+test("the file for the system is picked: apk on Android, msi (then exe) on Windows, none on Linux", () => {
+  assert.equal(pickDownload(ASSETS, "android"), `${FILES}/ScaleNote_0.3.0_arm64-debug.apk`);
+  assert.equal(pickDownload(ASSETS, "windows"), `${FILES}/ScaleNote_0.3.0_x64_en-US.msi`);
+  assert.equal(pickDownload(ASSETS.filter((a) => !a.name.endsWith(".msi")), "windows"), `${FILES}/ScaleNote_0.3.0_x64-setup.exe`);
+  assert.equal(pickDownload(ASSETS, "linux"), null);
+  assert.equal(pickDownload(ASSETS, "other"), null);
+  assert.equal(pickDownload([], "android"), null);
+  assert.equal(pickDownload(undefined, "android"), null);
+});
+
+test("a file address that is not one of this project's release files is never offered", () => {
+  const bad = (url, extra = {}) => pickDownload([asset("a.apk", { browser_download_url: url, ...extra })], "android");
+  assert.equal(bad("https://example.com/a.apk"), null);
+  assert.equal(bad(`${RELEASE_PAGE}evil/download/a.apk`), null);
+  assert.equal(bad("javascript:alert(1)"), null);
+  assert.equal(bad(`${FILES}/a.apk" onclick="x`), null);
+  assert.equal(bad(`${FILES}/a b.apk`), null);
+  assert.equal(bad(`${FILES}/${"a".repeat(500)}.apk`), null);
+  assert.equal(bad(`${FILES}/a.apk`, { state: "starter" }), null, "a file that is still uploading is not offered");
+  assert.equal(pickDownload([{ name: 7, browser_download_url: `${FILES}/a.apk` }, null, "x"], "android"), null);
+});
+
+test("a found release carries the file for the system, or null when there is none", () => {
+  const list = [release("v0.3.0", { assets: ASSETS })];
+  assert.equal(newestRelease(list, "0.2.0", "android").downloadUrl, `${FILES}/ScaleNote_0.3.0_arm64-debug.apk`);
+  assert.equal(newestRelease(list, "0.2.0", "linux").downloadUrl, null);
+  assert.equal(newestRelease(list, "0.2.0").downloadUrl, null, "no system given, no file");
+  assert.equal(newestRelease([release("v0.3.0")], "0.2.0", "android").downloadUrl, null, "a release without files");
+});
+
+test("checkForUpdate passes the system on, so the answer carries the right file", async () => {
+  const out = await checkForUpdate({ current: "0.2.0", platform: "windows", fetchImpl: answer([release("v0.3.0", { assets: ASSETS })]) });
+  assert.equal(out.release.downloadUrl, `${FILES}/ScaleNote_0.3.0_x64_en-US.msi`);
 });

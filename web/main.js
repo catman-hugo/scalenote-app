@@ -3,7 +3,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appearance.js";
 import { openSettings } from "./settings.js";
-import { checkForUpdate, shouldCheck } from "./updates.js";
+import { checkForUpdate, platformOf, shouldCheck } from "./updates.js";
 import { renderNotes } from "./whatsnew.js";
 import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanRecent, removeRecent } from "./recent.js";
@@ -139,11 +139,12 @@ function showNotes(title, notes) {
 function showUpdateNotice(release) {
   offered = release;
   el("updateText").textContent = fill(strings.update.available, { version: release.version });
+  el("updateDownload").textContent = release.downloadUrl ? strings.update.download : strings.update.openPage;
   el("updateNotice").hidden = false;
 }
 
 async function runUpdateCheck() {
-  const { release } = await checkForUpdate({ current: APP_VERSION });
+  const { release } = await checkForUpdate({ current: APP_VERSION, platform: platformOf(navigator.userAgent) });
   app.settings.lastUpdateCheck = Date.now();
   await saveSettings();
   return release;
@@ -169,12 +170,25 @@ function updateSettingsRows() {
   row.className = "setting-row";
   row.append(textElement("span", s.updates, "setting-label"), box);
   const result = textElement("p", "", "setting-hint");
+  // The banner is behind this box, so a newer version gets its buttons here as well.
+  const actions = document.createElement("div");
+  actions.className = "setting-actions";
+  const showRelease = (release) => {
+    actions.replaceChildren();
+    if (!release) return;
+    actions.append(buttonElement(release.downloadUrl ? s.downloadNow : s.openPage, openDownload, true));
+    if (release.downloadUrl) {
+      actions.append(buttonElement(s.openPage, () => openUrlOrWarn(release.url)), textElement("p", s.downloadHint, "setting-hint"));
+    }
+  };
   const check = buttonElement(s.checkNow, async () => {
     result.textContent = s.checking;
+    showRelease(null);
     try {
       const release = await runUpdateCheck();
       result.textContent = release ? fill(s.newVersion, { version: release.version }) : s.upToDate;
       if (release) showUpdateNotice(release);
+      showRelease(release);
     } catch (error) {
       logProblem("update check failed", error);
       result.textContent = s.checkFailed;
@@ -184,17 +198,30 @@ function updateSettingsRows() {
     app.settings.updates = box.checked;
     saveSettings();
   });
-  return [row, textElement("p", s.updatesHint, "setting-hint"), check, result];
+  return [row, textElement("p", s.updatesHint, "setting-hint"), check, result, actions];
 }
 
+// Opens an address in the system browser. Resolves to false (and logs) when that is not possible.
+async function tryOpen(url) {
+  try {
+    await openUrl(url);
+    return true;
+  } catch (error) {
+    logProblem("could not open " + url, error);
+    return false;
+  }
+}
+
+async function openUrlOrWarn(url) {
+  if (!(await tryOpen(url))) showBanner(strings.update.openFailed);
+}
+
+// The browser does the downloading. First choice is the file for this system; if there is none, or
+// it cannot be opened, the release page (which lists every file) is the fallback.
 async function openDownload() {
   if (!offered) return;
-  try {
-    await openUrl(offered.url);
-  } catch (error) {
-    logProblem("could not open the download page", error);
-    showBanner(strings.update.openFailed);
-  }
+  if (offered.downloadUrl && (await tryOpen(offered.downloadUrl))) return;
+  await openUrlOrWarn(offered.url);
 }
 
 // After an update the new version's notes are shown once. A fresh install sees nothing.

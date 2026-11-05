@@ -88,7 +88,12 @@
     invoke: async (cmd, args) => {
       if (cmd.startsWith("plugin:event|")) return 1;
       if (cmd === "plugin:dialog|open") return "/picked/folder";
-      if (cmd === "plugin:opener|open_url") { window.__mock.opened.push(args.url); return; }
+      if (cmd === "plugin:opener|open_url") {
+        // A test can make some addresses fail, to check the fallback.
+        if (window.__mock.failOpen && args.url.includes(window.__mock.failOpen)) throw "not allowed";
+        window.__mock.opened.push(args.url);
+        return;
+      }
       const h = handlers[cmd];
       if (!h) throw "unknown";
       return h(args || {});

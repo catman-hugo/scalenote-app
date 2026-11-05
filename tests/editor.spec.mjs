@@ -34,7 +34,7 @@ let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
   if (process.env.ONLY && !name.includes(process.env.ONLY)) return; // run the tests whose name contains this text
-  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light" });
+  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}) });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   await context.addInitScript({ path: path.join(here, "mock-backend.js") });
   const page = await context.newPage();
@@ -871,6 +871,80 @@ await test("a newer release shows a notice with a download button and its notes 
   await page.click("#updateDownload");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
 }, { settings: existingUser(), before: githubReturns(NEWER) });
+
+// The download choices. The user agent decides which release file is offered; the browser opens it.
+const FILES9 = "https://github.com/catman-hugo/scalenote-app/releases/download/v9.9.9";
+const WITH_FILES = [{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: "notes", draft: false, prerelease: false, assets: [
+  { name: "ScaleNote_9.9.9_arm64-debug.apk", state: "uploaded", browser_download_url: `${FILES9}/ScaleNote_9.9.9_arm64-debug.apk` },
+  { name: "ScaleNote_9.9.9_x64-setup.exe", state: "uploaded", browser_download_url: `${FILES9}/ScaleNote_9.9.9_x64-setup.exe` },
+  { name: "ScaleNote_9.9.9_x64_en-US.msi", state: "uploaded", browser_download_url: `${FILES9}/ScaleNote_9.9.9_x64_en-US.msi` },
+  { name: "ScaleNote_9.9.9_amd64.deb", state: "uploaded", browser_download_url: `${FILES9}/ScaleNote_9.9.9_amd64.deb` },
+] }];
+const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36";
+const WINDOWS_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
+await test("on Android the Download button opens the apk file straight away", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  assert.equal((await page.textContent("#updateDownload")).trim(), "Download");
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_arm64-debug.apk`]);
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: ANDROID_UA });
+
+await test("on Windows the Download button opens the msi, not the other files", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_x64_en-US.msi`]);
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: WINDOWS_UA });
+
+await test("where no single file fits (Linux) the button opens the release page and says so", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  assert.equal((await page.textContent("#updateDownload")).trim(), "Open release page");
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15" });
+
+await test("when the file cannot be opened the release page is opened instead", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.evaluate(() => { window.__mock.failOpen = "/download/"; });
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
+  assert.equal(await page.isVisible("#banner:not([hidden])").catch(() => false), false, "no warning when the fallback worked");
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: ANDROID_UA });
+
+await test("when nothing can be opened a calm message points to the releases page", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.evaluate(() => { window.__mock.failOpen = "github.com"; });
+  await page.click("#updateDownload");
+  await page.waitForFunction(() => /releases page on GitHub/.test(document.body.textContent));
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), []);
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: ANDROID_UA });
+
+await test("a file address from another site is not offered; the release page is", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
+}, { settings: existingUser(), before: githubReturns([{ ...WITH_FILES[0], assets: [{ name: "x.apk", state: "uploaded", browser_download_url: "https://example.com/x.apk" }] }]), userAgent: ANDROID_UA });
+
+await test("Check now shows Download and the release page inside Settings, where the banner is hidden", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click('#settings button:has-text("Check now")');
+  await page.waitForSelector('#settings .setting-actions button:has-text("Download")');
+  assert.match(await page.textContent("#settings"), /Version 9\.9\.9 is available/);
+  assert.match(await page.textContent("#settings"), /Your browser downloads the file/);
+  await page.click('#settings .setting-actions button:has-text("Download")');
+  await page.click('#settings .setting-actions button:has-text("Open the release page")');
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_arm64-debug.apk`, RELEASE_URL]);
+}, { settings: existingUser({ updates: false }), before: githubReturns(WITH_FILES), userAgent: ANDROID_UA });
+
+await test("in Settings with no matching file there is one button, for the release page", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click('#settings button:has-text("Check now")');
+  await page.waitForSelector('#settings .setting-actions button');
+  assert.equal(await page.locator("#settings .setting-actions button").count(), 1);
+  assert.equal((await page.textContent("#settings .setting-actions button")).trim(), "Open the release page");
+}, { settings: existingUser({ updates: false }), before: githubReturns(WITH_FILES), userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15" });
 
 await test("Not now hides the notice and remembers that version", async (page) => {
   await page.waitForSelector("#updateNotice:not([hidden])");
@@ -1859,6 +1933,23 @@ if (shots) {
         await page.screenshot({ path: name("6-settings") });
         await context.close();
       }
+    }
+  }
+  // 0.2.7: Settings after "Check now" found a newer version (file offered, and release page only).
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport, userAgent] of [["phone", { width: 412, height: 860 }, ANDROID_UA], ["desktop-linux", { width: 1100, height: 760 }, undefined]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme, ...(userAgent ? { userAgent } : {}) });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await prepare(page, { releases: WITH_FILES });
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.click("#openSettings");
+      await page.click('#settings button:has-text("Check now")');
+      await page.waitForSelector("#settings .setting-actions button");
+      await page.screenshot({ path: `${shots}/v027-${label}-${scheme}-settings-update.png` });
+      await context.close();
     }
   }
   // 0.2.6: a phone window as short as it is with the keyboard open. The keyboard itself is not

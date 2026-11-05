@@ -46,3 +46,8 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 ## Addendum for 0.2.6
 - No new network calls, no new permissions, no new dependencies and no change to the content security policy. The Android change is a build-time patch to two generated files (the manifest keyboard setting and a small activity that pads the content by the keyboard height); it reads nothing from outside and stores nothing.
 - The patch script only edits files under `src-tauri/gen/android` and stops if they do not look as expected. Compiled and run only by GitHub's Android build, and then on the phone.
+
+## Addendum for 0.2.7
+- No new network request: the file addresses come from the release list that was already fetched. Everything in it stays untrusted: a file address is used only if it starts with this project's releases download address, has no spaces, quotes, angle brackets or backslashes, is under 400 characters, belongs to a file whose upload is finished and whose name ends as expected. Anything else falls back to the release page address, which has the same check.
+- Permissions: one new opener address pattern, `https://github.com/catman-hugo/scalenote-app/releases/download/*/*`, the same project only. The app opens the address in the system browser and reads nothing back; it never runs or installs the file itself.
+- No new Rust code and no new dependencies. A downloaded installer is not signed or checked by the app yet (known, already listed as open before 2.0.0).

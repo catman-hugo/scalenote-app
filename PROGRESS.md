@@ -128,6 +128,16 @@ Owner request (2026-11-05): on the Android phone, typing in a page slid the whol
 - NOT tested, needs the Android phone: the Kotlin file is only compiled by GitHub's Android build, and whether the real keyboard now shortens the window (and where the page ends relative to the navigation bar) is unknown until it runs on the phone. The browser tests only prove what the page does once the window is shorter.
 - Release notes: `docs/release-notes/0.2.6.md`.
 
+## 0.2.7: built
+Owner request (2026-11-05): after Check now found a newer version there was no way to get it. Wanted: download it directly; if that is not possible a link to the file; if not, a link to the release on GitHub.
+- Decided with reasons: the app cannot install by itself yet (updates need signed installers, and an Android install needs a new permission), and it cannot download inside the app (the Rust core has no network code, by design). So the Download button hands the file address to the system browser, which downloads it; the person opens the file to install. Fallbacks, in order: the file for this system, then the release page, then a calm message naming the releases page.
+- The file comes from the `assets` list in the one release list the app already reads, so there is no new network request. `pickDownload` chooses by system (from the browser's own description): Android `.apk`, Windows `.msi` then `-setup.exe`, Linux none (a program cannot tell .deb from .rpm, so Linux gets the release page). A file address is accepted only if it is a file under this project's releases (same rule as the release page), and a file still uploading is skipped.
+- Settings now shows Download and Open the release page after Check now (the banner is hidden behind that box). The banner button says "Open release page" when there is no file. The settings label "Look for new versions and install them automatically" was untrue and is now "Look for new versions".
+- Capability: one added opener address pattern for `releases/download/*/*`, the same project only.
+- Tested here: 69 unit tests (12 new on the real functions, including bad addresses), the browser tests (8 new: Android, Windows, Linux, fallback to the page, nothing openable, a file from another site, the Settings buttons), screenshots in light and dark.
+- NOT tested, needs devices: that the Android web view really hands the address to the browser and the apk downloads and installs (Android may ask to allow installing from the browser), that the Windows .msi opens, and that the new opener address pattern is accepted by Tauri's permission check (only GitHub's build and a device show that).
+- Release notes: `docs/release-notes/0.2.7.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -141,6 +151,7 @@ Owner request (2026-11-05): on the Android phone, typing in a page slid the whol
 | 0.2.4 | Right-click menu with Rename on folders and pages (see "0.2.4: built") | built, not tried on a device |
 | 0.2.5 | Move pages and folders by dragging (and Move to), block editing polish (drag copy, several blocks together, plus button, block type row), and an Undo-after-open data-loss fix (see "0.2.5: built") | built, not tried on a device |
 | 0.2.6 | Phone keyboard covers the bottom of the page instead of sliding the whole screen away (see "0.2.6: built") | built, not tried on a device |
+| 0.2.7 | Download button after Check now: the file for the system in the browser, else the release page (see "0.2.7: built") | built, not tried on a device |
 | 0.3 | Search, command palette, wikilinks, backlinks, tags, favorites, covers, export, trash and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
