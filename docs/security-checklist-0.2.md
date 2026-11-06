@@ -76,3 +76,6 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 ## Addendum for 0.3.1
 - The test signing key is a GitHub secret, never in the repository, logs or release files. The build only prints the public SHA-256 fingerprint of the certificate. If the secret is missing the build falls back to a throwaway key and says so. Only code in this repository's own branches can read the secret (pull requests from forks cannot). The key signs test builds only. No new permissions, network calls or app code besides hiding one icon on Android.
 
+## Addendum for 0.3.2
+- Interface only: no new Rust code, commands, permissions, network calls or dependencies. The menu is asked for with a script-made `contextmenu` event on an entry; the code that handles it is unchanged. A finger-made contextmenu is dropped only inside the page list. Entry paths and names still come from the vault listing and are shown as text.
+

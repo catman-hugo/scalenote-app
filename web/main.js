@@ -834,9 +834,20 @@ async function resolveConflict(path, ownText) {
 
 // ---------- creating and renaming ----------
 
+// Where "New page" and "New folder" put the new entry: in the selected folder, but only while
+// that folder can be seen (it and every folder around it are open). With everything folded
+// shut the new entry goes at the top, where it can be found and then dragged where it belongs,
+// instead of landing in a folder that was only left selected earlier.
+function creationFolder() {
+  for (let dir = app.selectedFolder; dir; dir = parentOf(dir)) {
+    if (!app.expanded.has(dir)) return "";
+  }
+  return app.selectedFolder;
+}
+
 async function createNote() {
   try {
-    const path = await backend.createNote(app.selectedFolder, strings.newNoteTitle);
+    const path = await backend.createNote(creationFolder(), strings.newNoteTitle);
     for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
     await refreshTree();
     await openNote(path);
@@ -850,8 +861,8 @@ async function createNote() {
 
 async function createFolder() {
   try {
-    const path = await backend.createFolder(app.selectedFolder, strings.newFolderName);
-    if (app.selectedFolder) app.expanded.add(app.selectedFolder);
+    const parent = creationFolder();
+    const path = await backend.createFolder(parent, strings.newFolderName);
     app.selectedFolder = path;
     await refreshTree();
   } catch (error) {

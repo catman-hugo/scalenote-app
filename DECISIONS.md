@@ -228,3 +228,14 @@ Decision. The Android job installs one fixed test key from the secret `ANDROID_D
 Alternatives. Committing the key to the repository (rejected: the repository is public and keys never go in it). Making the notes folder outside the app's private storage (rejected: Android 11 and newer restrict it, and it does not fix the signature). Uninstalling each time (rejected by the owner).
 Cost. The owner has to add the secret once, and the key must be backed up: if it is lost, one more reinstall is needed. Anyone who got the key could sign an app that installs as an update to a test build.
 
+## 2026-11-05: Touch gestures in the page list are told apart by time and movement
+Context. One finger on an entry can mean scroll, tap, drag or menu. The phone's long press made the menu appear when a drag was wanted, and a finger could not drag at all.
+Decision. Quick tap opens; movement before 350 ms scrolls; holding still 350 ms picks up (then a drag); holding still 800 ms opens the menu; two quick taps open the menu. The system's own long-press menu is dropped inside the list. The owner asked for double tap or a longer hold as the right click.
+Alternatives. A drag handle on each row (rejected: clutter, and the owner wanted to drag the entry itself).
+Cost. The timings are guesses until the owner tries them on the phone and tablet. A double tap cannot work on a page on a phone, where the first tap closes the list.
+
+## 2026-11-05: New entries go into the selected folder only while it can be seen
+Context. A folder stayed "selected" after it was folded shut, so new pages and folders landed in a folder the owner could not see.
+Decision. The target is the selected folder only if it and all folders around it are open; otherwise the top level.
+Cost. Someone who wants a page in a folder has to open the folder first, which matches what is on screen.
+

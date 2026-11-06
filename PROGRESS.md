@@ -190,6 +190,16 @@ Owner report (2026-11-05): on Android the arrow at the top left does nothing, an
 - Not done: an in-app install button (download inside the app and open the installer). It needs native Android code and a permission to install apps, so it is its own slice.
 - Release notes: `docs/release-notes/0.3.1.md`.
 
+## 0.3.2: built
+Owner request (2026-11-05): on Android dragging is laggy, and a drag attempt is seen as a right click. He asked for a quick double tap or a longer hold as the right click, and for new pages and folders to be made at the top level when all folders are closed.
+- Finger gestures in the page list (`treedrag.js`): a quick tap opens; moving at once scrolls; holding still 350 ms picks the entry up (short buzz, highlight, scrolling switched off for that touch) and moving then drags it, with the preview above the finger and edge scrolling; holding still 800 ms opens the menu; two taps within 350 ms on the same entry open the menu (matched by path, because the first tap redraws the list), and a folder is not renamed by them. The phone's own long-press menu is dropped inside the list (a finger-made, trusted contextmenu only; mouse, pen and the menu key still work). The click after a held menu or a drag is swallowed.
+- Lag and robustness for mouse and pen: moves are handled once per screen refresh, the preview is placed with a transform, the whole-page selector rule was narrowed, a `pointercancel` handler was added (before, a drag the system interrupted left the list stuck), and scrolling is switched off while a pen drag is going.
+- New page and folder go into the selected folder only while it and its parents are open (`creationFolder`); otherwise at the top.
+- Tested here: the whole browser suite, with new tests that send real touch input through the browser's own touch protocol (pick up and drop on a folder, long hold menu, two taps, scroll first, quick tap opens), the creation rule, and a mouse drag with an interruption. 84 unit tests.
+- NOT tested, needs the Android phone and tablet: how the thresholds feel (350 ms, 800 ms, 350 ms, 10 px), whether the phone's own long-press menu really no longer appears (the test browser does not make one), the buzz, edge scrolling on a long list, and how smooth dragging is. The numbers are constants at the top of `treedrag.js` and easy to change.
+- Not done: a double tap on a page on a phone cannot work, because the first tap opens the page and closes the list.
+- Release notes: `docs/release-notes/0.3.2.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -209,6 +219,7 @@ Owner report (2026-11-05): on Android the arrow at the top left does nothing, an
 | 0.2.10 | Notion colour palette for text and background, and a copy for Obsidian in Settings (see "0.2.10: built") | built, not tried on a device |
 | 0.3.0 | Search, command palette, delete and trash (see "0.3.0: built") | built, not tried on a device |
 | 0.3.1 | Android builds are signed with a fixed key so they update over each other (see "0.3.1: built") | built, not tried on a device |
+| 0.3.2 | Finger drag and menu gestures in the page list, new entries at the top when nothing is open (see "0.3.2: built") | built, not tried on a device |
 | 0.3.x | Wikilinks, backlinks, tags, favorites, covers, export and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
