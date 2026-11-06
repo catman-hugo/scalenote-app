@@ -200,6 +200,20 @@ Owner request (2026-11-05): on Android dragging is laggy, and a drag attempt is 
 - Not done: a double tap on a page on a phone cannot work, because the first tap opens the page and closes the list.
 - Release notes: `docs/release-notes/0.3.2.md`.
 
+## 0.3.3: built
+Owner request (2026-11-06): "Get started on v0.3.3" (wikilinks and backlinks, first slice of the 0.3 plan after the reorder in `docs/v0.3-plan.md`).
+- `[[Page]]`, `[[Page|text]]`, `[[Page#Heading]]`, `[[Page#^block-id]]` and `[[#Heading]]` are links. In the page they are one clickable piece (`wikilinks.js`, an editor atom that stores and writes back the exact text), so a save cannot change them. Before, any block with `[[` was a grey "kept exactly as written" box.
+- Still raw, on purpose: `![[embeds]]`, links in code, links in table cells and callout or toggle titles, an unclosed `[[`, `\[[`, and a block with more than 5,000 links. `blocks.js` takes well formed links out before its unsafe-syntax check, and `compose.js` keeps a block raw if the links in it would not come back exactly (`wikilinkSignature`).
+- Which page a link means (`wikilinkrules.js` in the interface, `links.rs` in the core, same rules, one shared case file `tests/fixtures/wikilinks.txt`): no case, no `.md`, folders must match the end of the path, ties go to the same folder, then fewest folders, then alphabetical.
+- Typing `[[` opens a page picker (the slash menu's list, reused). Anything typed after `#` or `|` is kept. A last row links to a page that does not exist yet. Typing a whole `[[..]]` turns it into a link. The short name is written when it is unambiguous, else the path.
+- Clicking a link opens the page, makes it if it is missing (top of the vault, or the named folder if it exists), and scrolls to a heading or block id. A double click makes the page once. A missing heading or block shows a short message.
+- "Linked from" list under each page (`backlinks.js`): the pages with a link to this one, the line of the first link with the link marked, and a count when there are several. New Rust command `backlinks` (`Vault::backlinks`): no index, same limits as search, no vault lock held, asked for 300 ms after a page opens.
+- Fixed on the way: the editor had no `white-space: break-spaces`, so a space typed at the end of a line or right after a link was saved as a no-break space (U+00A0) in the file. The CSS now has it (found by a new test).
+- Tested here: 90 interface unit tests (the link rules against the shared cases, blocks and rich blocks), 83 Rust tests in the core (the rules, backlinks over real folders including the trash, same-name pages, hostile input, 2,000 pages in about 20 ms), and the whole browser suite with new tests: links drawn and untouched on save, picker, hand-typed links, delete and undo, following and creating pages, headings and block ids, the backlinks list and its failure message, quick page switching, bold and italic links, a page of 6,000 links, a finger tap.
+- NOT tested, needs a device: the picker and link taps with the Android keyboard and a finger; the Tauri `backlinks` command (compiled only by CI); how slow "Linked from" is on a phone with a big folder.
+- Not done: renaming or moving a page does not rewrite links to it (they turn dashed); links cannot be edited in place; `[[Page#` does not list headings; embeds (`![[..]]`) are still raw. Tags and favorites are 0.3.4.
+- Release notes: `docs/release-notes/0.3.3.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -220,7 +234,8 @@ Owner request (2026-11-05): on Android dragging is laggy, and a drag attempt is 
 | 0.3.0 | Search, command palette, delete and trash (see "0.3.0: built") | built, not tried on a device |
 | 0.3.1 | Android builds are signed with a fixed key so they update over each other (see "0.3.1: built") | built, not tried on a device |
 | 0.3.2 | Finger drag and menu gestures in the page list, new entries at the top when nothing is open (see "0.3.2: built") | built, not tried on a device |
-| 0.3.x | Wikilinks, backlinks, tags, favorites, covers, export and page history | not started |
+| 0.3.3 | Wikilinks and backlinks (see "0.3.3: built") | built, not tried on a device |
+| 0.3.x | Tags and favorites (0.3.4), covers (0.3.5), export and page history (0.3.6) | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |

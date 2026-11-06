@@ -11,6 +11,7 @@
 // This file has no editor code in it, so it can be tested on its own.
 
 import { withoutStyleSyntax } from "./inlinestyles.js";
+import { withoutWikilinks } from "./wikilinkrules.js";
 
 /** Splits off a leading `--- ... ---` frontmatter block. Returns exact text on both sides. */
 export function splitFrontmatter(text) {
@@ -42,7 +43,7 @@ const RAW_LINE_START = /^(<(?!\/?(?:u|sub|sup)>|span (?:style="color:|class="sn-
 // superscript, colour) are taken out first: the editor can keep those, and compose.js checks
 // that it really does for each block.
 const UNSAFE_INLINE = [
-  /\[\[|\]\]/, // wikilinks and embeds
+  /\[\[|\]\]/, // embeds and anything that is not a well formed link (links are taken out first)
   /==[^=\s][^=]*==/, // a highlight-like "==" pair that is not well formed
   /\$[^$\s][^$\n]*\$/, // inline math
   /<[^>\n]+>/, // html and autolinks
@@ -63,7 +64,9 @@ export function stripBlockId(text) {
 }
 
 function hasUnsafeInline(text) {
-  const plain = withoutStyleSyntax(text);
+  // Well formed [[links]] are taken out first: the editor keeps them as they were written, and
+  // compose.js checks that it really does (see wikilinkSignature).
+  const plain = withoutWikilinks(withoutStyleSyntax(text));
   return UNSAFE_INLINE.some((pattern) => pattern.test(plain));
 }
 

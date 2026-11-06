@@ -130,7 +130,7 @@ await test("slash menu offers every block and filters", async (page) => {
 const TRICKY = [
   "---", "title: Week 1", "tags: [a, b]", "---", "", "# Heading", "right below", "",
   "Some *emphasis* and __strong__ text", "with a second line", "", "* star bullet", "* second", "  * nested", "",
-  "| a | b |", "|---|---|", "| 1 | 2 |", "", "See [[Other note]] and ==highlight==", "",
+  "| a | b |", "|---|---|", "| 1 | 2 |", "", "See ![[Other note]] and ==highlight==", "", "A plain [[Other note]] link and ==highlight==", "",
   "> [!note] A callout", "> body", "", "<div class=\"x\">html</div>", "", "$$", "x^2", "$$", "", "```js", "let a = 1;", "", "let b = 2;", "```", "", "1) odd numbering", "", "A final line #tag", "",
 ].join("\n");
 
@@ -2423,6 +2423,211 @@ await test("Undo right after opening a page changes nothing and nothing is writt
   assert.deepEqual(await order(page), before, "Undo takes back the typing and no more");
 });
 
+// ---------- 0.3.3: links between pages ----------
+
+const FILLER = Array.from({ length: 60 }, (_, i) => `Filler paragraph number ${i}.`).join("\n\n");
+async function linksVault(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((filler) => {
+    const f = window.__mock.files;
+    window.__mock.folders.add("School");
+    f.set("Plan.md", `# Plan\n\n${filler}\n\n## Goals\n\nLearn things\n\nThe last point ^last\n\n${filler}\n`);
+    f.set("Home.md", "Start at [[Plan]] or [[Plan|the plan]] or [[Plan#Goals]] or [[Plan#^last]] or [[Missing page]].\n\nMore text\n");
+    f.set("School/Biology.md", "see [[Plan]] and [[plan]]\n");
+    f.set("Blank.md", "start\n");
+  }, FILLER);
+  await page.click("#newFolder"); // draws the list again; also adds "New folder", which these tests ignore
+  await page.waitForSelector('.tree-button[data-path="Home.md"]');
+}
+async function openLinked(page, name) {
+  await page.click(`.tree-button[data-path="${name}"]`);
+  await page.waitForFunction((n) => document.querySelector("#title").value === n.replace(/^.*\//, "").replace(/\.md$/, ""), name);
+  await page.waitForSelector("#editor .note-body");
+}
+const chips = (page) => page.locator(".note-body .wikilink").allTextContents();
+
+await test("links are shown as links, a link to a missing page is marked, and saving changes nothing around them", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Home.md");
+  assert.deepEqual(await chips(page), ["Plan", "the plan", "Plan › Goals", "Plan › ^last", "Missing page"]);
+  assert.equal(await page.locator(".raw-block").count(), 0, "a page with links is edited as normal text");
+  assert.deepEqual(await page.locator(".note-body .wikilink.unresolved").allTextContents(), ["Missing page"]);
+  await page.locator(".note-body p").last().click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" extra");
+  await waitSaved(page);
+  const text = (await files(page))["Home.md"];
+  assert.ok(text.includes("Start at [[Plan]] or [[Plan|the plan]] or [[Plan#Goals]] or [[Plan#^last]] or [[Missing page]].\n\nMore text extra"), text);
+}, ctxOpts);
+
+await test("a page with links, opened and closed without a change, is not written again", async (page) => {
+  await linksVault(page);
+  const before = (await files(page))["Home.md"];
+  await openLinked(page, "Home.md");
+  await openLinked(page, "Blank.md");
+  assert.equal((await files(page))["Home.md"], before);
+}, ctxOpts);
+
+await test("typing [[ lists the pages, narrows as you type, and choosing one writes the link", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Blank.md");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" see [[Pl");
+  await page.waitForSelector(".slash-menu");
+  assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["Plan", "Link to “Pl”"]);
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".slash-menu").count(), 0);
+  assert.deepEqual(await chips(page), ["Plan"]);
+  await waitSaved(page);
+  assert.ok((await files(page))["Blank.md"].includes("start see [[Plan]]"), (await files(page))["Blank.md"]);
+}, ctxOpts);
+
+await test("the picker keeps a heading or alias typed after the name, and offers to link to a page that does not exist", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Blank.md");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" [[Plan#Goals");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type(" and [[Brand new");
+  await page.waitForSelector('.slash-item:has-text("Link to")');
+  assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["Link to “Brand new”"]);
+  await page.keyboard.press("Enter");
+  await waitSaved(page);
+  assert.ok((await files(page))["Blank.md"].includes("start [[Plan#Goals]] and [[Brand new]]"), JSON.stringify((await files(page))["Blank.md"]));
+  assert.ok(!(await files(page))["Blank.md"].includes("\u00a0"), "a space after a link stays a normal space");
+  assert.deepEqual(await page.locator(".note-body .wikilink.unresolved").allTextContents(), ["Brand new"]);
+}, ctxOpts);
+
+await test("writing a whole link by hand turns it into a link, and Escape leaves the text alone", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Blank.md");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" [[Plan|my plan]]");
+  assert.deepEqual(await chips(page), ["my plan"]);
+  assert.equal(await page.locator(".slash-menu").count(), 0);
+  await page.keyboard.type(" [[open");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".slash-menu").count(), 0);
+  await waitSaved(page);
+  assert.ok((await files(page))["Blank.md"].includes("start [[Plan|my plan]] \\[\\[open"), (await files(page))["Blank.md"]); // loose brackets are written escaped, as the editor always does
+}, ctxOpts);
+
+await test("a link can be deleted with Backspace as one piece and undone", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Blank.md");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" [[Plan]] x");
+  await page.waitForTimeout(700); // so the undo below is a separate step from the typing
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Backspace");
+  assert.deepEqual(await chips(page), []);
+  await page.keyboard.press("Control+z");
+  assert.deepEqual(await chips(page), ["Plan"]);
+}, ctxOpts);
+
+await test("clicking a link opens that page; a link to a missing page makes it, once even on a double click", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Home.md");
+  await page.locator(".note-body .wikilink", { hasText: "the plan" }).click();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plan");
+  await openLinked(page, "Home.md");
+  await page.locator(".note-body .wikilink.unresolved").dblclick();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Missing page");
+  const names = Object.keys(await files(page)).filter((n) => n.startsWith("Missing page"));
+  assert.deepEqual(names, ["Missing page.md"]);
+  await openLinked(page, "Home.md");
+  assert.equal(await page.locator(".note-body .wikilink.unresolved").count(), 0, "the link is no longer marked once the page exists");
+}, ctxOpts);
+
+await test("a link with a heading or a block id scrolls to it, and a missing one says so", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Home.md");
+  const offset = () => page.evaluate(() => Math.round(document.querySelector(".note-body h2").getBoundingClientRect().top - document.querySelector("#editor").getBoundingClientRect().top));
+  await page.locator(".note-body .wikilink", { hasText: "Goals" }).click();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plan");
+  await page.waitForFunction(() => document.querySelector("#editor").scrollTop > 100);
+  assert.ok(Math.abs(await offset()) < 80, `the heading is at the top: ${await offset()}`);
+  assert.equal(await page.isVisible("#toast"), false);
+  await openLinked(page, "Home.md");
+  await page.locator(".note-body .wikilink", { hasText: "^last" }).click();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plan");
+  await page.waitForFunction(() => { const p = [...document.querySelectorAll(".note-body p")].find((n) => n.textContent === "The last point"); return p && Math.abs(p.getBoundingClientRect().top - document.querySelector("#editor").getBoundingClientRect().top) < 80; });
+  await seed(page, "Broken.md", "[[Plan#Nope]] and [[Plan#^nothing]]\n");
+  await page.click("#newFolder");
+  await openLinked(page, "Broken.md");
+  await page.locator(".note-body .wikilink").first().click();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plan");
+  await page.waitForSelector("#toast:not([hidden])");
+  assert.match(await page.textContent("#toast"), /no heading “Nope”/);
+}, ctxOpts);
+
+await test("a page lists the pages that link to it, and clicking one opens it", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Plan.md");
+  await page.waitForSelector(".backlinks .backlink");
+  assert.deepEqual(await page.locator(".backlink-title").allTextContents(), ["Biology", "Home"]);
+  assert.equal(await page.textContent(".backlinks-title .backlinks-count"), "2");
+  assert.equal(await page.locator(".backlink-snippet mark").first().textContent(), "[[Plan]]");
+  assert.deepEqual(await page.locator(".backlink-count").allTextContents(), ["2", "4"]);
+  await page.locator(".backlink", { hasText: "Home" }).click();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Home");
+  await page.waitForSelector(".backlinks .backlinks-note");
+  assert.equal(await page.textContent(".backlinks-note"), "No other page links here.");
+}, ctxOpts);
+
+await test("when looking for links fails, the page says so calmly", async (page) => {
+  await linksVault(page);
+  await page.evaluate(() => { window.__failBacklinks = "io"; });
+  await openLinked(page, "Plan.md");
+  await page.waitForSelector(".backlinks .backlinks-note");
+  assert.match(await page.textContent(".backlinks-note"), /Could not look for links/);
+}, { ...ctxOpts, allow: [/./] });
+
+await test("clicking quickly through pages asks for links only for the page that stays open", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Home.md");
+  await page.evaluate(() => { window.__backlinkCalls = 0; });
+  for (const name of ["Blank.md", "Plan.md", "Home.md", "Blank.md"]) await page.click(`.tree-button[data-path="${name}"]`);
+  await page.waitForFunction(() => document.querySelector("#title").value === "Blank");
+  await page.waitForTimeout(700);
+  assert.equal(await page.evaluate(() => window.__backlinkCalls), 1);
+}, ctxOpts);
+
+await test("links inside bold or italic text, or a page of thousands of links, never lose text", async (page) => {
+  await linksVault(page);
+  const many = "[[a]] ".repeat(6000);
+  await seed(page, "Styled.md", "**[[Plan]]** and *[[Plan]]* here\n\nother\n");
+  await seed(page, "Many.md", `${many}\n\nend\n`);
+  await page.click("#newFolder");
+  await openLinked(page, "Styled.md");
+  await page.locator(".note-body p").first().click({ position: { x: 600, y: 5 } }); // empty space after the text: the caret goes to the end, no link is hit
+  await page.keyboard.press("End");
+  await page.keyboard.type(" x");
+  await waitSaved(page);
+  const styled = (await files(page))["Styled.md"];
+  assert.equal(styled.split("[[Plan]]").length - 1, 2, styled);
+  assert.ok(styled.includes(" here x") && styled.includes("other"), JSON.stringify([styled, await page.locator(".note-body").innerHTML()]));
+  const started = Date.now();
+  await openLinked(page, "Many.md");
+  assert.ok(Date.now() - started < 5000, "a huge page opens in reasonable time");
+  assert.equal((await files(page))["Many.md"], `${many}\n\nend\n`, "and is not changed by opening it");
+}, ctxOpts);
+
+await test("a finger tap on a link follows it", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Home.md");
+  await page.locator(".note-body .wikilink", { hasText: "the plan" }).tap();
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plan");
+}, { ...ctxOpts, userAgent: ANDROID_UA, viewport: { width: 390, height: 780 }, hasTouch: true });
+
+
 if (shots) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
@@ -2870,6 +3075,48 @@ if (shots) {
     await page.waitForSelector(".float-bar:not([hidden])");
     await page.screenshot({ path: `${shots}/theme-${theme}.png` });
     await context.close();
+  }
+}
+
+// Screenshots of the screens added in 0.3.3 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v033-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate(() => {
+        const f = window.__mock.files;
+        window.__mock.folders.add("School");
+        f.set("Plan.md", "# Study plan\n\nThe plan for this term.\n\n## Goals\n\nFinish the biology notes and the maths exercises.\n");
+        f.set("Home.md", "# Home\n\nStart with the [[Plan]], then [[Plan#Goals|the goals]]. Later: [[Reading list]].\n\nA second paragraph with more text to show how a link sits in a line.\n");
+        f.set("School/Biology.md", "Notes for week 2. Check the [[Plan]] before the test.\n");
+        f.set("School/Maths.md", "Exercises are listed in [[Plan#Goals]] and [[Plan|the plan]] too.\n");
+      });
+      await page.click("#newFolder");
+      await page.click('.tree-button[data-path="Home.md"]');
+      await page.waitForSelector(".note-body .wikilink");
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: name("1-links") });
+      await page.locator(".note-body p").last().click();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type(" See [[B");
+      await page.waitForSelector(".slash-menu");
+      await page.screenshot({ path: name("2-picker") });
+      await page.keyboard.press("Escape");
+      await page.evaluate(() => document.body.classList.contains("sidebar-open") || 0);
+      if (label === "phone") await page.click("#toggle");
+      await page.click('.tree-button[data-path="Plan.md"]');
+      await page.waitForSelector(".backlinks .backlink");
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: name("3-linked-from") });
+      await context.close();
+    }
   }
 }
 

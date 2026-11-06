@@ -13,6 +13,7 @@ import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
 import { choosePicture, checkPicture, storePicture } from "./images.js";
 import { Highlight, Subscript, Superscript, Colour } from "./inlinemarks.js";
+import { Wikilink } from "./wikilinks.js";
 
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
 // vault first, and only then an image block is placed in the note.
@@ -214,7 +215,7 @@ function filterItems(query, editor) {
 
 // The floating list. Plain DOM, positioned under the cursor, closed by Escape or by
 // moving away from the "/" text.
-function renderSlashMenu() {
+function renderSlashMenu(emptyText = strings.slash.noResults) {
   let menu = null;
   let items = [];
   let selected = 0;
@@ -226,7 +227,7 @@ function renderSlashMenu() {
     if (items.length === 0) {
       const none = document.createElement("div");
       none.className = "slash-empty";
-      none.textContent = strings.slash.noResults;
+      none.textContent = emptyText;
       menu.append(none);
       return;
     }
@@ -339,6 +340,10 @@ export function createEditor(element, onChange, options = {}) {
       Subscript,
       Superscript,
       Colour,
+      Wikilink.configure({
+        follow: options.followLink || (() => {}),
+        renderPicker: () => renderSlashMenu(strings.wikilinks.noPages),
+      }),
       SourceKeeper,
       RawBlock,
       Callout,

@@ -152,6 +152,22 @@ export const strings = {
     noResults: "No matching block",
   },
 
+  wikilinks: {
+    noPages: "No matching page",
+    linkTo: "Link to “{name}”",
+    unresolved: "This page does not exist yet. Click to create it.",
+    missingHeading: "This page has no heading “{anchor}”.",
+    missingBlock: "This page has no block with that link.",
+    createFailed: "The page could not be created.",
+  },
+
+  backlinks: {
+    heading: "Linked from",
+    none: "No other page links here.",
+    tooMany: "Only the first {count} pages are shown.",
+    failed: "Could not look for links to this page.",
+  },
+
   format: {
     barLabel: "Text formatting",
     blockType: "Block type",

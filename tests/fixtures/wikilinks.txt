@@ -1,0 +1,36 @@
+# Cases shared by the Rust code (links.rs) and the editor (web/wikilinks.js).
+# "parse <text between the brackets> => page | anchor | alias"
+# "resolve <page holding the link> | <page part of the link> -> <page it means>"
+
+parse Plan => Plan | |
+parse Plan|the plan => Plan | | the plan
+parse Plan#Goals => Plan | Goals |
+parse Plan#^abc-1 => Plan | ^abc-1 |
+parse #Here => | Here |
+parse Plan\|alias => Plan | | alias
+parse Plan # Goals | shown => Plan | Goals | shown
+parse Plan# => Plan | |
+parse a#b#c => a | b#c |
+parse Plan|a|b => Plan | | a|b
+parse # => none
+parse |x => none
+
+pages = Home.md, School/Plan.md, School/Biology/Cells.md, Work/Plan.md, Work/notes/Plan.md, Deep/a/b/Cells.md, Ünï.md, Readme.MD
+
+resolve Home.md | Home -> Home.md
+resolve Home.md | home -> Home.md
+resolve Home.md | Home.md -> Home.md
+resolve Home.md | HOME.MD -> Home.md
+resolve Home.md | School/Plan -> School/Plan.md
+resolve Home.md | Plan -> School/Plan.md
+resolve Work/x.md | Plan -> Work/Plan.md
+resolve Work/notes/y.md | Plan -> Work/notes/Plan.md
+resolve Home.md | notes/Plan -> Work/notes/Plan.md
+resolve Home.md | otes/Plan -> (none)
+resolve Home.md | Missing -> (none)
+resolve Home.md | /Plan -> School/Plan.md
+resolve Home.md | Cells -> School/Biology/Cells.md
+resolve Deep/a/b/q.md | Cells -> Deep/a/b/Cells.md
+resolve Home.md | ünï -> Ünï.md
+resolve Home.md | Readme -> Readme.MD
+resolve School/Plan.md |  -> School/Plan.md

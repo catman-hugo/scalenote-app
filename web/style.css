@@ -479,6 +479,10 @@ body.tree-dragging .tree-button { cursor: grabbing; }
   min-height: 60vh;
   outline: none;
   overflow-wrap: anywhere;
+  /* The editor needs spaces to be kept as typed. Without this the browser turns a space typed
+     at the end of a line, or straight after a link, into a no-break space, and that character
+     would be saved into the file. (The editor's own stylesheet is not used, see editor.js.) */
+  white-space: break-spaces;
 }
 
 /* One rule sets the space between blocks, so no block type has its own margins. */
@@ -1276,3 +1280,106 @@ body.block-dragging .float-bar { visibility: hidden; }
 .trash-error { margin: var(--space-3) 0 0; color: var(--bad); }
 button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
 button.danger:hover { background: var(--bg-hover); }
+
+/* ---------- links between pages ---------- */
+
+.wikilink {
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.wikilink:hover {
+  background: var(--accent-soft);
+}
+
+/* A link to a page that does not exist yet: dashed, not a different colour alone. */
+.wikilink.unresolved {
+  color: var(--text-soft);
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+
+.wikilink.ProseMirror-selectednode {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+
+.backlinks {
+  max-width: var(--editor-width, 46rem);
+  margin: var(--space-6) auto 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.backlinks[hidden] {
+  display: none;
+}
+
+.backlinks-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-m);
+  font-weight: 600;
+}
+
+.backlinks-count,
+.backlinks-note {
+  color: var(--text-soft);
+  font-weight: 400;
+}
+
+.backlinks-note {
+  margin: 0;
+}
+
+.backlinks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.backlink {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: var(--space-2) var(--space-2);
+  min-height: 44px;
+}
+
+.backlink:hover {
+  background: var(--bg-hover);
+}
+
+.backlink-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.backlink-title {
+  color: var(--accent);
+}
+
+.backlink-count {
+  color: var(--text-soft);
+  font-size: var(--text-s);
+}
+
+.backlink-snippet {
+  display: block;
+  color: var(--text-soft);
+  font-size: var(--text-s);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlink-snippet mark {
+  background: var(--accent-soft);
+  color: var(--text);
+}

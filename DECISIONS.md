@@ -239,3 +239,28 @@ Context. A folder stayed "selected" after it was folded shut, so new pages and f
 Decision. The target is the selected folder only if it and all folders around it are open; otherwise the top level.
 Cost. Someone who wants a page in a folder has to open the folder first, which matches what is on screen.
 
+
+## 2026-11-06: A [[link]] is an editor atom that remembers its exact text
+Context. Any block with `[[` was kept raw (shown as a grey box, edited as plain text) because the editor cannot round-trip syntax it does not know. That made pages with links awkward, and links could not be followed.
+Decision. A well formed link becomes one inline atom (`wikilinks.js`) that stores the exact source (`[[Plan|the plan]]`) and writes that string back, so it cannot change on a save. `blocks.js` takes well formed links out before the unsafe-syntax check; `compose.js` compares the list of links in a block before and after the editor rewrote it (`wikilinkSignature`) and keeps the block raw if they differ, as it already does for text styles. Embeds (`![[..]]`), links in code, links in table cells and in callout or toggle titles, an unclosed `[[`, and a block with more than 5,000 links stay raw.
+Alternatives. Keeping the text as plain text with a decoration over it (rejected: following and picking would still need the same parsing, and a decoration cannot be deleted as one piece). Rewriting links into one canonical spelling (rejected: it changes the file).
+Cost. A link cannot be edited in place; it is deleted and written again.
+
+## 2026-11-06: The link rules exist twice, in Rust and in JavaScript, and share one test file
+Context. The editor must colour a link without a call to the backend; backlinks are found by reading the files, which the backend does.
+Decision. `links.rs` and `wikilinkrules.js` implement the same reading and resolving rules. `tests/fixtures/wikilinks.txt` holds the shared cases and both test suites read it.
+Cost. Two copies to keep in step; the shared file is what keeps them honest. The longest link (300) is counted in bytes in Rust and in letters in JavaScript, which only differs for names near that length.
+
+## 2026-11-06: Which page a link means follows Obsidian
+Decision. Names match without regard to case and without `.md`; a name with folders must match the end of the path; when several pages fit, the one in the same folder as the page holding the link wins, then the one with the fewest folders, then alphabetical order. A link to a page that does not exist creates it at the top of the vault (or in the named folder when that folder exists) on click.
+Cost. Two pages with the same name in different folders make `[[Name]]` depend on where it is written. The picker writes the full path when the short name would mean another page.
+
+## 2026-11-06: Backlinks have no index and wait 300 ms after a page opens
+Context. Same trade as search (2026-11-05): other programs change the files at any time.
+Decision. `Vault::backlinks` reads the pages on each call with the same limits as search, runs away from the main thread without holding the vault lock, and is asked for only after a page has stayed open 300 ms.
+Cost. In a very large folder the list appears late, and every page open reads the folder. A rebuildable cache is the next step if that proves too slow.
+
+## 2026-11-06: Renaming a page does not rewrite links to it yet
+Context. Obsidian rewrites the links in other pages when a page is renamed or moved. Doing that here means writing to many pages from one action.
+Decision. Not in 0.3.3. The links turn dashed. A safe version (preview the pages that will change, atomic writes, one undo) is its own slice.
+Cost. Renaming a linked page breaks its links until they are fixed by hand.
