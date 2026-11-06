@@ -12,7 +12,7 @@
 //   "Pen button" setting says: erase (the default), select with a loop, or nothing.
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
 import {
-  DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES,
+  DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
   itemsInLoop, itemsTouched, moveItem, noteHeight, widthAt, wrapText,
 } from "./canvasrules.js";
@@ -210,21 +210,24 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     return button;
   }));
 
-  const widthButtons = {};
   const widthButton = menuButton(t.width, () => {
     const line = make("span", "canvas-line");
-    line.dataset.size = String(PEN_WIDTHS.indexOf(state.width));
+    line.dataset.size = String(nearestWidthStop(state.width));
     return line;
   });
   widthButton.addEventListener("click", () => toggleMenu("width"));
-  makeMenu("width", t.width, widthButton, PEN_WIDTHS.map((value, index) => {
-    const button = toggleButton(t.widths[index], () => setWidth(value));
-    const line = make("span", "canvas-line");
-    line.dataset.size = String(index);
-    button.append(line);
-    widthButtons[value] = button;
-    return button;
-  }));
+  // Five stops on a slider. The slider stays open while it is dragged, so the width can be
+  // tried against the line shown under it.
+  const widthSlider = make("input", "canvas-slider");
+  widthSlider.type = "range";
+  widthSlider.min = "0";
+  widthSlider.max = String(PEN_WIDTHS.length - 1);
+  widthSlider.step = "1";
+  widthSlider.setAttribute("aria-label", t.width);
+  const widthPreview = make("span", "canvas-line");
+  widthSlider.addEventListener("input", () => setWidth(PEN_WIDTHS[Number(widthSlider.value)], true));
+  makeMenu("width", t.width, widthButton, [widthPreview, widthSlider]);
+  menus.width.panel.classList.add("canvas-menu-slider");
   toolbar.append(colourButton, widthButton, make("span", "canvas-gap"));
 
   const undoButton = plainButton(t.undo, "undo", undo);
@@ -258,14 +261,16 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     for (const [name, button] of Object.entries(colourButtons)) {
       button.setAttribute("aria-pressed", String(state.colour === name));
     }
-    for (const [value, button] of Object.entries(widthButtons)) {
-      button.setAttribute("aria-pressed", String(state.width === Number(value)));
-    }
+    const stop = nearestWidthStop(state.width);
+    widthSlider.value = String(stop);
+    widthSlider.setAttribute("aria-valuetext", t.widths[stop]);
+    widthPreview.dataset.size = String(stop);
     shapeButton.setAttribute("aria-pressed", String(SHAPES.includes(state.tool)));
     for (const button of [shapeButton, colourButton, widthButton]) {
       button.show();
       button.disabled = state.readOnly;
     }
+    widthSlider.disabled = state.readOnly;
     fingerButton.setAttribute("aria-pressed", String(state.fingerDraws));
     fingerButton.disabled = state.readOnly;
     undoButton.disabled = state.readOnly || !state.history.canUndo;
@@ -274,8 +279,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     if (state.readOnly) closeMenu();
   }
 
-  function setTool(name) {
-    closeMenu();
+  function setTool(name, keepMenu = false) {
+    if (!keepMenu) closeMenu();
     commitNote();
     state.tool = name;
     if (SHAPES.includes(name)) state.shape = name;
@@ -291,11 +296,11 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       drawToolbar();
     }
   }
-  function setWidth(value) {
+  function setWidth(value, keepMenu = false) {
     state.width = value;
-    if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen");
+    if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen", keepMenu);
     else {
-      closeMenu();
+      if (!keepMenu) closeMenu();
       drawToolbar();
     }
   }
