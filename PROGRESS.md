@@ -284,6 +284,16 @@ Owner request (2026-11-06), after trying 0.4.1 on the tablet: "solve the screen 
 - NOT tested, needs a device: how the menus feel with a real pen and finger on the tablet (size of the touch targets, opening and closing), and whether the drawing area is now tall enough on the real tablet. The sidebar width on the tablet is the owner's setting; with the list open the sheet is narrower, and hiding the list (the menu button) gives it the full width.
 - Release notes: `docs/release-notes/0.4.2.md`.
 
+## 0.4.3: built
+Owner request (2026-11-06): "make the pen thickness a 5-stop slider ... just like onenote has", and "when i click a wikilink, i see the id of the page ... i also see the page id in the plain markdown ... as long as you are using the app, you never see the page id". The tidy-up takes the number 0.4.3, so the later slices move up by one again (see `docs/v0.4-plan.md`).
+- Line width (`canvasrules.js`, `canvasview.js`): `PEN_WIDTHS` is now 2, 4, 6, 8, 12 (the old thin, medium and thick stay as stops 0, 1 and 3). The width menu holds a range slider with five stops and a line that shows the width; it stays open while the slider moves. A width in a file that is not a stop is kept and shown at the nearest stop (`nearestWidthStop`). The file format did not change.
+- Page id hidden (`blocks.js`, `compose.js`, `main.js`, `historydialog.js`, `search.rs`): `hideNoteId` / `restoreNoteId` take the `id:` line out of the plain markdown view and put it back on save (untouched text gives the same bytes; a frontmatter that held only the id is removed whole and restored whole). The same function hides it in the history "Text" view. The search skips the id line (`without_page_id`, same length so snippet positions stay right).
+- Cause found for the link click: I could not reproduce it for a normal page (the rendered page never showed the id). It did show for a file that starts with a byte-order mark: the properties block was not recognised and was shown as a kept-as-written block. `splitFrontmatter` now accepts the mark (kept in the properties, saved back unchanged). Also the safety net that shows a whole page as one kept-as-written block now keeps the properties out of that block.
+- Tested here: new unit tests (byte-order mark, hide/restore byte for byte for LF, CRLF, mark, extra properties, an id-only page, an edit while hidden, the fallback), a new Rust test for the search, and browser tests for following a link to a normal, a marked and an odd page, the plain markdown view (hidden, other properties shown, typed text saved with the id back in place), a page holding only an id, the slider (five widths drawn, menu stays open, keyboard, eraser goes back to pen, older width shown at the nearest stop). Existing width tests changed only to use the slider.
+- NOT tested, needs a device: the slider with a real pen and finger; the owner's real page where the id showed after a link click. If it still shows there, send a screenshot and the first lines of that file in a text editor, because the cause may be a shape I did not find.
+- Not changed: the page id still exists in the file (history folders are named by it). Editing the raw file outside the app shows it.
+- Release notes: `docs/release-notes/0.4.3.md`.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -316,9 +326,10 @@ Owner request (2026-11-06), after trying 0.4.1 on the tablet: "solve the screen 
 | 0.4.0 | Canvas page with a pressure pen and an eraser (see "0.4.0: built" and `docs/v0.4-plan.md`) | built, not tried on a device |
 | 0.4.1 | Highlighter, shapes, sticky notes, lasso, pen button setting (see "0.4.1: built") | built, not tried on a device |
 | 0.4.2 | Compact drawing toolbar with menus; Settings, Tags and Trash as buttons like New page (see "0.4.2: built") | built, not tried on a device |
-| 0.4.3 | Draw over text: ink anchored to blocks | not started |
-| 0.4.4 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.5+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
+| 0.4.3 | Pen width as a five-stop slider; the page id is never shown in the app (see "0.4.3: built") | built, not tried on a device |
+| 0.4.4 | Draw over text: ink anchored to blocks | not started |
+| 0.4.5 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.6+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

@@ -3758,7 +3758,12 @@ async function chooseColour(page, name) {
   if (!(await panel.isVisible())) await page.click('.canvas-toolbar [data-menu="colour"]');
   await panel.locator(`.canvas-colour[data-colour="${name}"]`).click();
 }
-const chooseWidth = (page, label) => menuPick(page, "width", label);
+// The width menu is a slider with five stops (0 = thinnest, 4 = thickest).
+async function chooseWidth(page, stop) {
+  const panel = page.locator('.canvas-menu[data-menu="width"]');
+  if (!(await panel.isVisible())) await page.click('.canvas-toolbar [data-menu="width"]');
+  await panel.locator("input[type=range]").fill(String(stop));
+}
 const chooseMore = (page, label) => menuPick(page, "more", label);
 async function drawLine(page, from, to, steps = 8) {
   const box = await sheetBox(page);
@@ -3817,7 +3822,7 @@ await test("colour and line width are chosen from the toolbar and kept with the 
   await canvasVault(page);
   await openCanvas(page);
   await chooseColour(page, "red");
-  await chooseWidth(page, "Thick line");
+  await chooseWidth(page, 3);
   await drawLine(page, [60, 80], [200, 80]);
   await waitSaved(page);
   const stroke = (await savedDrawing(page)).strokes[0];
@@ -4315,6 +4320,46 @@ await test("the shape menu opens under its button, shows the shape used last, an
   assert.equal(await panel.isHidden(), true, "the button again");
 }, ctxOpts);
 
+await test("the line width is a slider with five stops that stays open while it is moved", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const slider = page.locator('.canvas-menu[data-menu="width"] input[type=range]');
+  await page.click('.canvas-toolbar [data-menu="width"]');
+  assert.deepEqual(await slider.evaluate((el) => [el.min, el.max, el.step, el.value]), ["0", "4", "1", "1"], "five stops, the medium line to start with");
+  assert.equal(await slider.getAttribute("aria-label"), "Line width");
+  const widths = [];
+  for (let stop = 0; stop < 5; stop++) {
+    await slider.fill(String(stop));
+    assert.equal(await page.locator('.canvas-menu[data-menu="width"]').isVisible(), true, "the menu stays open while the slider moves");
+    assert.equal(await page.locator('.canvas-menu[data-menu="width"] .canvas-line').getAttribute("data-size"), String(stop), "the line under the slider follows it");
+    assert.equal(await page.locator('.canvas-toolbar [data-menu="width"] .canvas-line').getAttribute("data-size"), String(stop), "so does the toolbar button");
+    await page.keyboard.press("Escape");
+    await page.click('.canvas-toolbar [data-menu="width"]');
+    await drawLine(page, [60, 40 + stop * 30], [260, 40 + stop * 30]);
+    await waitSaved(page);
+    widths.push((await items(page)).at(-1).width);
+  }
+  assert.deepEqual(widths, [2, 4, 6, 8, 12]);
+  // The keyboard works too: an arrow key moves one stop.
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await slider.inputValue(), "3");
+  // Moving the slider with the eraser chosen goes back to the pen, as choosing a colour does.
+  await page.click('.canvas-toolbar button[aria-label="Eraser"]');
+  await page.click('.canvas-toolbar [data-menu="width"]');
+  await slider.fill("2");
+  assert.equal(await page.getAttribute('.canvas-toolbar button[aria-label="Pen"]', "aria-pressed"), "true");
+  assert.equal(await page.locator('.canvas-menu[data-menu="width"]').isVisible(), true);
+}, ctxOpts);
+
+await test("a drawing made with an older width shows the nearest stop", async (page) => {
+  await canvasVault(page, '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":5,"points":[[1,1,0.5],[40,40,0.5]]}]}');
+  await openCanvas(page);
+  await page.click('.canvas-toolbar [data-menu="width"]');
+  assert.equal(await page.locator('.canvas-menu[data-menu="width"] input[type=range]').inputValue(), "1", "the chosen stop starts at the medium line, and the old stroke is left alone");
+  assert.equal((await items(page))[0].width, 5);
+}, ctxOpts);
+
 await test("the colour and line width menus show what is chosen and change it", async (page) => {
   await canvasVault(page);
   await openCanvas(page);
@@ -4324,7 +4369,7 @@ await test("the colour and line width menus show what is chosen and change it", 
   await chooseColour(page, "purple");
   assert.equal(await page.locator(`${colour} .canvas-swatch`).getAttribute("class"), "canvas-swatch pen-purple");
   assert.equal(await page.locator(`${width} .canvas-line`).getAttribute("data-size"), "1");
-  await chooseWidth(page, "Thin line");
+  await chooseWidth(page, 0);
   assert.equal(await page.locator(`${width} .canvas-line`).getAttribute("data-size"), "0");
   await drawLine(page, [60, 80], [260, 80]);
   await waitSaved(page);
@@ -4407,6 +4452,66 @@ await test("Settings, Tags and Trash are buttons like New page and New folder: i
   }
 });
 
+// ---------- 0.4.3: the page id is never shown while using the app ----------
+
+const ID = "0b9c7e52-3f1a-4d6e-9a58-2c7d41e6b0aa";
+async function idVault(page, files) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((list) => {
+    for (const [name, text] of Object.entries(list)) window.__mock.files.set(name, text);
+  }, files);
+  await page.click("#newFolder");
+  await page.waitForSelector(`.tree-button[data-path="Home.md"]`);
+}
+
+const idPages = (extra = "") => ({
+  "Home.md": "Go to [[Plan]]\n",
+  "Plan.md": `---\nid: ${ID}\n${extra}---\n\n# Plan\n\nSome [[Home]] text\n`,
+});
+const idOptions = { settings: existingUser({ updates: false }) };
+
+await test("following a link never shows the page id, even for a file that starts with a byte-order mark", async (page) => {
+  await idVault(page, { ...idPages(), "Marked.md": `\uFEFF---\nid: ${ID}\n---\n\n# Marked\n\nSee [[Home]]\n`, "Odd.md": `---\nid: ${ID}\n---\n\n# Odd\n\n::: weird\n\nSee [[Home]]\n` });
+  for (const name of ["Plan", "Marked", "Odd"]) {
+    await openLinked(page, "Home.md");
+    await page.evaluate((n) => window.__mock.files.set("Home.md", `Go to [[${n}]]\n`), name);
+    await openLinked(page, "Plan.md");
+    await openLinked(page, "Home.md");
+    await page.click(`.note-body .wikilink:text-is("${name}")`);
+    await page.waitForFunction((n) => document.querySelector("#title").value === n, name);
+    const shown = await page.locator("#editor").innerText();
+    assert.ok(!shown.includes(ID) && !/\bid:/.test(shown), `${name}: the id is not on the page: ${shown}`);
+  }
+}, idOptions);
+
+await test("the plain markdown view hides the id, keeps it when saving, and changes nothing else", async (page) => {
+  await idVault(page, idPages("tags: [a]\n"));
+  await openLinked(page, "Plan.md");
+  await page.click("#sourceToggle");
+  const box = page.locator("#source");
+  const shown = await box.inputValue();
+  assert.ok(!shown.includes(ID) && !/^id:/m.test(shown), "no id in the box: " + shown);
+  assert.match(shown, /tags: \[a\]/, "other properties are still there");
+  await box.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("more");
+  await waitSaved(page);
+  const saved = await page.evaluate(() => window.__mock.files.get("Plan.md"));
+  assert.equal(saved, `---\nid: ${ID}\ntags: [a]\n---\n\n# Plan\n\nSome [[Home]] text\nmore`, "the id is still in the file, in its place");
+  await page.click("#sourceToggle");
+  assert.ok(!(await page.locator("#editor").innerText()).includes(ID));
+}, idOptions);
+
+await test("a note that holds only an id shows an empty plain markdown view and still saves the id", async (page) => {
+  await idVault(page, { ...idPages(), "Only.md": `---\nid: ${ID}\n---\n\nHello\n` });
+  await openLinked(page, "Only.md");
+  await page.click("#sourceToggle");
+  assert.equal(await page.locator("#source").inputValue(), "Hello\n");
+  await page.click("#sourceToggle");
+  await page.click("#sourceToggle");
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Only.md")), `---\nid: ${ID}\n---\n\nHello\n`, "just looking changes nothing");
+}, idOptions);
+
 // Screenshots of the screens added in 0.4.0 (only when SHOTS_DIR is set), in light and dark.
 if (shots) {
   for (const scheme of ["light", "dark"]) {
@@ -4428,7 +4533,7 @@ if (shots) {
       await chooseColour(page, "red");
       await penStroke(page, curve(280, 150, 70, 3.4, 9));
       await chooseColour(page, "blue");
-      await chooseWidth(page, "Thick line");
+      await chooseWidth(page, 3);
       await penStroke(page, [[40, 280, 0.6], [140, 300, 0.6], [240, 270, 0.6], [330, 300, 0.6]]);
       await page.waitForTimeout(300);
       await page.screenshot({ path: name("3-canvas-with-strokes") });
@@ -4524,6 +4629,47 @@ if (shots) {
       await page.screenshot({ path: name("5-more-menu") });
       await context.close();
     }
+  }
+}
+
+// Screenshots of the screens changed in 0.4.3 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v043-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await canvasVault(page);
+      await openCanvas(page);
+      await chooseWidth(page, 3);
+      await drawLine(page, [40, 60], [220, 60]);
+      await chooseWidth(page, 0);
+      await drawLine(page, [40, 100], [220, 100]);
+      await page.click('.canvas-toolbar [data-menu="width"]');
+      await page.screenshot({ path: name("1-width-slider") });
+      await context.close();
+    }
+  }
+  // A page reached through a link, and its plain markdown view: no id in either.
+  for (const scheme of ["light", "dark"]) {
+    const context = await browser.newContext({ viewport: { width: 1100, height: 760 }, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await idVault(page, idPages("tags: [a]\n"));
+    await openLinked(page, "Home.md");
+    await page.click('.note-body .wikilink:text-is("Plan")');
+    await page.waitForFunction(() => document.querySelector("#title").value === "Plan");
+    await page.screenshot({ path: `${shots}/v043-desktop-${scheme}-2-page-after-link.png` });
+    await page.click("#sourceToggle");
+    await page.screenshot({ path: `${shots}/v043-desktop-${scheme}-3-plain-markdown.png` });
+    await context.close();
   }
 }
 
