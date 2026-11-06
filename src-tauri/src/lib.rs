@@ -159,7 +159,12 @@ fn write_note(
         None => None,
     };
     with_vault(&state, "save note", |vault| {
-        vault.write_note(&path, &text, expected).map(version_to_text)
+        let version = vault.write_note(&path, &text, expected).map(version_to_text);
+        // Keeping an older version is best effort and never fails the save, but a failure is logged.
+        if let Some(problem) = vault.take_history_problem() {
+            state.logger.log(Level::Warn, &format!("could not keep an older version: {problem}"));
+        }
+        version
     })
 }
 

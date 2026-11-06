@@ -44,9 +44,24 @@ function unchangedNote(count) {
   return make("p", "history-fold", count === 1 ? h.unchangedOne : fill(h.unchanged, { count }));
 }
 
+// The page properties (the `---` block at the very top) are folded into one note, so they are
+// not mistaken for text.
+function propertyLines(lines) {
+  if (!/^---[ \t]*\r?\n$/.test(lines[0] || "")) return 0;
+  const end = lines.findIndex((line, i) => i > 0 && /^---[ \t]*\r?\n?$/.test(line));
+  return end === -1 ? 0 : end + 1;
+}
+
 // Shows a few unchanged lines next to a change and folds the rest.
-function sameLines(lines, before, after) {
+function sameLines(lines, before, after, first) {
   const wrap = make("div", "history-same");
+  const props = first ? propertyLines(lines) : 0;
+  if (props) {
+    wrap.append(make("p", "history-fold", fill(strings.history.properties, { count: props })));
+    const rest = lines.slice(props);
+    if (rest.length) wrap.append(sameLines(rest, false, after, false));
+    return wrap;
+  }
   const need = (before ? CONTEXT : 0) + (after ? CONTEXT : 0);
   if (lines.length <= need + 1) {
     wrap.append(make("pre", "history-lines", lines.join("")));
@@ -95,6 +110,8 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
   foot.append(restoreChosen, restoreAll, close);
 
   function setBusy(busy) {
+    restoreAll.hidden = !chosenId;
+    restoreChosen.hidden = !chosenId;
     restoreAll.disabled = busy || !chosenId;
     restoreChosen.disabled = busy || !chosenId || ticked.size === 0;
   }
@@ -167,7 +184,7 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
       if (part.same) {
         const before = index > 0;
         const after = index < parts.length - 1;
-        out.push(sameLines(part.same, before, after));
+        out.push(sameLines(part.same, before, after, index === 0));
       } else if (shown < MAX_CHANGES) {
         shown++;
         out.push(changeBox(part, index));
@@ -235,4 +252,6 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
   drawList();
   setBusy(false);
   if (!dialog.open) dialog.showModal();
+  // With only one older version there is nothing to choose between, so it is opened at once.
+  if (versions.length === 1) await choose(versions[0].id);
 }

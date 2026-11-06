@@ -129,6 +129,7 @@ export const strings = {
     partNow: "Now",
     partThen: "This version",
     partNothing: "(nothing)",
+    properties: "Page properties ({count} lines)",
     unchanged: "{count} unchanged lines",
     unchangedOne: "1 unchanged line",
     putPartBack: "Put this part back",
