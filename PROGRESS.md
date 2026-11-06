@@ -237,6 +237,18 @@ Owner request (2026-11-06): "Make 0.3.4 now but label it 0.3.6 ... The existing 
 - Not done: tag suggestions while typing `#`, renaming or merging tags, editing the `tags:` property from the interface (use the markdown text view), a favourite toggle for a page that is not open, a refresh of the Favorites list when another program changes a page (it follows the next page-list refresh), the folder-level or tag colours.
 - Release notes: `docs/release-notes/0.3.6.md`.
 
+## 0.3.7: built
+Owner request (2026-11-06): "Build 0.3.7" (export and page history; the repo plan had no details, so this follows the v1 spec: export to markdown and PDF, older versions at sensible moments, look at one, compare with the current page, restore all or parts, thinned over time).
+- Page history (Rust: `history.rs`, hooked into `Vault::write_note`): the replaced text is copied to `.history/<key>/<ms>.md` before the atomic write. Best effort: a failed copy never fails a save. Rules and caps are in `docs/v0.3-plan.md`. Commands `history_list`, `history_read`, `history_keep_now`, `history_clear`. Hidden from the page list, search, links, tags and the Obsidian copy.
+- History box (`historydialog.js`, `historyrules.js`): versions with time and size; "Changes" (line comparison, unchanged lines folded, a tick per changed part) and "Whole text" views; put back chosen parts or the whole version. The page is saved first, the page on disk is the comparison base, and at restore it is read again and nothing is written if it differs. `history_keep_now` keeps the current text first so a restore can be undone; the restored text keeps the page's current `id:`. Opened by the clock button, or "Show the history of this page" in the search box. Settings: "Delete all history" (two clicks).
+- Export (`export.rs`, command `export_page`): the page (converted like the Obsidian copy) and the pictures it names go to a new folder in `<notes folder> (exports)` beside the notes folder. The interface sends only the page path. Plain picture names only, real files only (no links), picture content checked, 10 MB each, 200 pictures; a half-made folder is removed; nothing is replaced; refused on Android. In the search box: "Export this page as markdown".
+- Print / PDF: "Print this page or save it as PDF" calls the system print window; a print style sheet shows only title and text. Not offered on Android.
+- DEVIATION from the spec: history is in `.history` inside the notes folder, not "next to the vault" (see DECISIONS.md).
+- Tested here: Rust core tests (history: thinning, caps, gap, rename, hostile ids and file names, hidden from listings; export: pictures, links, hostile paths, never replaced, exports folder that is a link), 121 interface unit tests (line comparison, choosing parts, id handling), and the whole browser suite with new tests for the history box (list, changes, restore a part, restore all, empty, page changed, delete all), export (done, failure) and print (print media hides the page list and buttons, a PDF is produced). Design screenshots, light and dark, desktop and phone.
+- NOT tested, needs a device: the four history commands and `export_page` as Tauri commands (compiled only by CI); the History box with a finger on an Android phone; the print window and a saved PDF on real Windows and Linux; speed of the line comparison on a very long page; history size on a big folder.
+- Not done: whole-folder export, word-level comparison, a history size setting, history for pages changed by other programs.
+- Release notes: `docs/release-notes/0.3.7.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -261,7 +273,7 @@ Owner request (2026-11-06): "Make 0.3.4 now but label it 0.3.6 ... The existing 
 | 0.3.4 | (number not used; tags and favorites were moved to 0.3.6) | no build |
 | 0.3.5 | Covers, optional and off by default (see "0.3.5: built") | built, not tried on a device |
 | 0.3.6 | Tags and favorites (see "0.3.6: built") | built, not tried on a device |
-| 0.3.7 | Export and page history | not started |
+| 0.3.7 | Export and page history (see "0.3.7: built") | built, not tried on a device |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |

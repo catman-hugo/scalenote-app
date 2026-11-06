@@ -41,6 +41,7 @@ export const backend = {
   // Makes a copy of the vault next to it with the colours turned into plain highlights, for
   // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
   exportObsidianCopy: () => call("export_obsidian_copy"),
+  exportPage: (path) => call("export_page", { path }),
   // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
   trash: (path) => call("trash_entry", { path }),
   // Items in the trash, newest first: { id, name, from, is_folder, deleted_at }.
@@ -55,6 +56,12 @@ export const backend = {
   backlinks: (path) => call("backlinks", { path }),
   // The pages that have tags or are favourites: { pages: [{ path, tags: [name, ...], favorite }], truncated }.
   pageIndex: () => call("page_index"),
+  // Older versions of a page, newest first: [{ id, time (seconds), size }]. The id is passed to historyRead.
+  historyList: (path) => call("history_list", { path }),
+  historyRead: (path, id) => call("history_read", { path, id }),
+  // Copies the page as it is now into its history, before an older version is put back.
+  historyKeepNow: (path) => call("history_keep_now", { path }),
+  historyClear: () => call("history_clear"),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),

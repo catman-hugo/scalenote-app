@@ -236,6 +236,32 @@ fn export_obsidian_copy(state: State<AppState>) -> Result<ExportReply, String> {
 }
 
 #[derive(Serialize)]
+struct PageExportReply {
+    /// The new folder, for the message that tells the person.
+    path: String,
+    pictures: usize,
+    missing: usize,
+}
+
+/// Writes one page and its pictures into a new folder beside the notes folder (see
+/// `scalenote_core::export`). The interface sends only the page; where the folder goes is fixed.
+/// Not offered on Android, for the same reason as the Obsidian copy.
+#[tauri::command(async)]
+fn export_page(state: State<AppState>, path: String) -> Result<PageExportReply, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "export page", |vault| {
+        let report = vault.export_page(&path)?;
+        Ok(PageExportReply {
+            path: scalenote_core::obsidian::friendly_path(&report.path),
+            pictures: report.pictures,
+            missing: report.missing,
+        })
+    })
+}
+
+#[derive(Serialize)]
 struct TrashEntry {
     id: String,
     name: String,
@@ -352,6 +378,38 @@ fn backlinks(path: String, state: State<AppState>) -> Result<BacklinksReply, Str
 }
 
 #[derive(Serialize)]
+struct HistoryReply {
+    id: String,
+    time: u64,
+    size: u64,
+}
+
+/// The older versions of a page, newest first (see history.rs in the core).
+#[tauri::command]
+fn history_list(path: String, state: State<AppState>) -> Result<Vec<HistoryReply>, String> {
+    with_vault(&state, "history list", |vault| {
+        Ok(vault.history_list(&path)?.into_iter().map(|e| HistoryReply { id: e.id, time: e.time, size: e.size }).collect())
+    })
+}
+
+#[tauri::command]
+fn history_read(path: String, id: String, state: State<AppState>) -> Result<String, String> {
+    with_vault(&state, "history read", |vault| vault.history_read(&path, &id))
+}
+
+/// Copies the page as it is now into its history; called before an older version is put back.
+#[tauri::command]
+fn history_keep_now(path: String, state: State<AppState>) -> Result<(), String> {
+    with_vault(&state, "history keep", |vault| vault.history_keep_now(&path))
+}
+
+/// Deletes the history of every page. Pages are not touched.
+#[tauri::command]
+fn history_clear(state: State<AppState>) -> Result<(), String> {
+    with_vault(&state, "history clear", |vault| vault.history_clear())
+}
+
+#[derive(Serialize)]
 struct PageInfoReply {
     path: String,
     tags: Vec<String>,
@@ -449,6 +507,7 @@ pub fn run() {
             save_attachment,
             read_attachment,
             export_obsidian_copy,
+            export_page,
             trash_entry,
             trash_list,
             trash_restore,
@@ -457,6 +516,10 @@ pub fn run() {
             search_vault,
             backlinks,
             page_index,
+            history_list,
+            history_read,
+            history_keep_now,
+            history_clear,
             log_line,
             get_settings,
             set_settings

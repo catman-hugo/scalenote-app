@@ -23,6 +23,8 @@ import { openContextMenu } from "./contextmenu.js";
 import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
 import { openTags } from "./tagsdialog.js";
+import { openHistory } from "./historydialog.js";
+import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
@@ -326,6 +328,31 @@ function obsidianRows() {
     }
   });
   return [textElement("h3", s.obsidianHeading, "setting-heading"), textElement("p", s.obsidianHint, "setting-hint"), make, result];
+}
+
+// History keeps old text, including text deleted since, so there is a way to wipe it. Two clicks,
+// because it cannot be undone.
+function historySettingsRows() {
+  const s = strings.settings;
+  const result = textElement("p", "", "setting-hint");
+  let armed = false;
+  const button = buttonElement(s.historyButton, async () => {
+    if (!armed) {
+      armed = true;
+      button.textContent = s.historyConfirm;
+      return;
+    }
+    armed = false;
+    button.textContent = s.historyButton;
+    try {
+      await backend.historyClear();
+      result.textContent = s.historyDone;
+    } catch (error) {
+      logProblem("clearing history failed", error);
+      result.textContent = errorText(error);
+    }
+  });
+  return [textElement("h3", s.historyHeading, "setting-heading"), textElement("p", s.historyHint, "setting-hint"), button, result];
 }
 
 // Opens an address in the system browser. Resolves to false (and logs) when that is not possible.
@@ -642,6 +669,74 @@ async function openTagsDialog(select) {
   });
 }
 
+// ---------- page history ----------
+
+// The History box for the open page. The page is saved first, so the newest older version is
+// the text from before the last save.
+async function openHistoryDialog() {
+  if (!app.current) return;
+  if (app.autosave) await app.autosave.flush();
+  const path = app.current.path;
+  return openHistory(el("historyBox"), {
+    list: () => backend.historyList(path),
+    read: (id) => backend.historyRead(path, id),
+    current: async () => (await backend.readNote(path)).text,
+    restore: (text, base) => putBackVersion(path, text, base),
+    onError: (error) => {
+      logProblem("history failed", error);
+      if (error instanceof Error && error.message === "page changed") return strings.history.changed;
+      return strings.history.restoreFailed;
+    },
+  });
+}
+
+// Puts text into the page. The page is read again first: if it is no longer what the box was
+// comparing with, nothing is written, because the chosen parts were picked against old text.
+// The text as it is now goes into the history first, so a restore can itself be undone.
+async function putBackVersion(path, text, base) {
+  const now = await backend.readNote(path);
+  if (now.text !== base) throw new Error("page changed");
+  await backend.historyKeepNow(path);
+  await backend.writeNote(path, keepPageId(text, now.text), now.version);
+  if (app.autosave) app.autosave.cancel();
+  app.current = null;
+  app.lastSavedText = null;
+  await openNote(path);
+  showToast(strings.history.restored);
+}
+
+// Export: one page and its pictures go to a folder Rust picks (beside the notes folder). The
+// page is saved first so the export is what is on screen.
+async function exportCurrentPage() {
+  if (!app.current) return;
+  try {
+    if (app.autosave) await app.autosave.flush();
+    const report = await backend.exportPage(app.current.path);
+    const e = strings.exportPage;
+    showToast(fill(e.done, report) + (report.missing ? fill(e.missing, report) : ""));
+  } catch (error) {
+    logProblem("export page failed", error);
+    showBanner(strings.exportPage.failed);
+  }
+}
+
+// Printing uses the system's print window, which can also save a PDF. The print style sheet
+// (style.css, @media print) leaves out everything but the page itself.
+async function printCurrentPage() {
+  if (!app.current) return;
+  if (app.mode === "source") toggleSource();
+  if (app.autosave) await app.autosave.flush();
+  window.print();
+}
+
+function drawHistoryButton() {
+  const button = el("historyButton");
+  button.hidden = !app.current;
+  button.replaceChildren(icon("clock"));
+  button.setAttribute("aria-label", strings.history.button);
+  button.title = strings.history.button;
+}
+
 // ---------- links between pages ----------
 
 const notePaths = () => app.entries.filter((entry) => entry.kind === "note").map((entry) => entry.path);
@@ -928,7 +1023,8 @@ function openSearch() {
     { label: c.tags, run: () => openTagsDialog() },
     { label: c.sidebar, run: toggleSidebar },
   ];
-  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.source, run: toggleSource });
+  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: c.source, run: toggleSource });
+  if (app.current && !isAndroid) commands.push({ label: c.exportPage, run: exportCurrentPage }, { label: c.printPage, run: printCurrentPage });
   openPalette(el("palette"), {
     recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
     commands,
@@ -960,6 +1056,7 @@ async function showNoNote() {
   el("sourceToggle").hidden = true;
   el("title").hidden = true;
   drawFavorite();
+  drawHistoryButton();
   setStatus("");
 }
 
@@ -1013,6 +1110,7 @@ function showNote(path, note) {
   for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
   drawTree();
   drawCover();
+  drawHistoryButton();
   loadBacklinks(path);
 }
 
@@ -1255,7 +1353,7 @@ function fillStaticText() {
         applyAppearance(document.documentElement, app.settings);
         saveSettings();
       },
-      [...coverSettingsRows(), ...backlinkSettingsRows(), ...updateSettingsRows(), ...obsidianRows()],
+      [...coverSettingsRows(), ...backlinkSettingsRows(), ...updateSettingsRows(), ...historySettingsRows(), ...obsidianRows()],
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;
@@ -1314,6 +1412,7 @@ function wireEvents() {
   el("openTrash").addEventListener("click", openTrashDialog);
   el("openTags").addEventListener("click", () => openTagsDialog());
   el("favorite").addEventListener("click", toggleFavorite);
+  el("historyButton").addEventListener("click", openHistoryDialog);
   document.addEventListener("keydown", searchShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);

@@ -8,6 +8,7 @@
   const logs = [];
   const attachments = new Map(); // path -> base64 text
   const trashed = []; // oldest first
+  const history = new Map(); // path -> [{ id, time (seconds), text }]
   let trashSeq = 0;
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
   const fail = (code) => { throw code; };
@@ -35,6 +36,24 @@
       else if (expected) fail("conflict");
       files.set(path, text); return hash(text);
     },
+    // A stand-in for the page history: the copies a test puts in window.__mock.history are listed
+    // as they are. The real rules (when copies are made, thinning, limits) are tested in Rust.
+    history_list: ({ path }) => {
+      if (!files.has(path)) fail("not_found");
+      return [...(history.get(path) || [])].sort((a, b) => b.time - a.time).map(({ id, time, text }) => ({ id, time, size: text.length }));
+    },
+    history_read: ({ path, id }) => {
+      const copy = (history.get(path) || []).find((c) => c.id === id);
+      if (!copy) fail("not_found");
+      return copy.text;
+    },
+    history_keep_now: ({ path }) => {
+      if (!files.has(path)) fail("not_found");
+      const list = history.get(path) || [];
+      list.push({ id: String(Date.now() + list.length), time: Math.floor(Date.now() / 1000), text: files.get(path) });
+      history.set(path, list);
+    },
+    history_clear: () => { history.clear(); },
     // A stand-in for the Rust picture commands: same limits and the same error codes.
     save_attachment: ({ name, data }) => {
       if (data.length > 14000000) fail("too_large");
@@ -58,6 +77,13 @@
       window.__exports = (window.__exports || 0) + 1;
       if (window.__failExport) fail(window.__failExport);
       return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
+    },
+    // The page export is made by Rust (tested there with real files); here it is only recorded.
+    export_page: ({ path }) => {
+      if (!files.has(path)) fail("not_found");
+      window.__pageExports = [...(window.__pageExports || []), path];
+      if (window.__failExport) fail(window.__failExport);
+      return { path: "/home/alice/ScaleNote (exports)/Page", pictures: 1, missing: window.__missingPictures || 0 };
     },
     // Stand-ins for the trash and search commands. The real rules are tested in Rust with real
     // folders; these follow the same shapes and error codes so the screens can be driven.
@@ -213,5 +239,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, logs, hash, getSettings: () => settings };
+  window.__mock = { opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

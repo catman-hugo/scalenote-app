@@ -319,7 +319,7 @@ pub fn export_obsidian_copy(vault: &Vault) -> Result<ExportReport> {
 
 /// `create_dir` fails if the name exists, which makes taking the name and checking it free
 /// one single step.
-fn reserve_folder(parent: &Path, name: &str) -> Result<PathBuf> {
+pub(crate) fn reserve_folder(parent: &Path, name: &str) -> Result<PathBuf> {
     for attempt in 1..=MAX_NAME_TRIES {
         let candidate =
             if attempt == 1 { parent.join(name) } else { parent.join(format!("{name} {attempt}")) };
