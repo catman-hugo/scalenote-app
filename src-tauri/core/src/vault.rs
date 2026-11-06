@@ -388,8 +388,31 @@ impl Vault {
         if target.exists() {
             return Err(VaultError::AlreadyExists);
         }
-        fs::rename(&path, &target)?;
+        self.rename_with_sidecar(&path, &target, is_note)?;
         self.relative_for_new(&target)
+    }
+
+    /// Renames a page together with its drawing (see canvas.rs). Nothing is replaced: if the
+    /// new drawing name is taken, nothing moves. If the drawing cannot follow, the page goes back.
+    pub(crate) fn rename_with_sidecar(&self, from: &Path, to: &Path, is_note: bool) -> Result<()> {
+        let sidecars = if is_note {
+            crate::canvas::sidecar_of(from).zip(crate::canvas::sidecar_of(to)).filter(|(old, _)| old.exists())
+        } else {
+            None
+        };
+        if let Some((_, new)) = &sidecars {
+            if new.exists() {
+                return Err(VaultError::AlreadyExists);
+            }
+        }
+        fs::rename(from, to)?;
+        if let Some((old, new)) = sidecars {
+            if let Err(error) = fs::rename(&old, &new) {
+                let _ = fs::rename(to, from);
+                return Err(error.into());
+            }
+        }
+        Ok(())
     }
 
     /// Moves a note or a folder (with everything in it) into another folder, keeping its
@@ -423,7 +446,7 @@ impl Vault {
         if target.exists() {
             return Err(VaultError::AlreadyExists);
         }
-        fs::rename(&path, &target)?;
+        self.rename_with_sidecar(&path, &target, is_note)?;
         self.relative_for_new(&target)
     }
 

@@ -253,6 +253,16 @@ Owner request (2026-11-06): "Build 0.3.7" (export and page history; the repo pla
 ## 0.3.8: built
 Owner request (2026-11-06): the History box tidy-up was merged after the 0.3.7 release had been built, so it ships as 0.3.8 (a version bump only; the changes are in "0.3.7: built", last bullet). Release notes: `docs/release-notes/0.3.8.md`. Not tried on a device yet; the changes were already seen working in the tidy-up's browser tests.
 
+## 0.4.0: built
+Owner request (2026-11-06): "start development of v0.4.0". The repo had no plan for 0.4, so it was cut into slices from the v1 spec (`docs/v0.4-plan.md`), and the owner chose "Canvas page: pen + eraser" as 0.4.0.
+- Storage (Rust, `canvas.rs`): the drawing of `Name.md` is `Name.canvas.json`; commands `read_canvas` and `write_canvas` (atomic, 32 MiB limit, exact-version conflict check, a link is never followed, only for an existing page). The drawing follows its page through rename, move, trash and restore (`rename_with_sidecar`, the trash item's `canvas` file; a stale drawing is never replaced), and a folder carries the drawings inside it.
+- Rules (`canvasrules.js`, tested alone): format 1 read strictly (any bad stroke makes the whole drawing read-only and never saved over; a newer format is told apart), one stroke per line when written, limits (20,000 strokes, 5,000 points per stroke, 1,000,000 points), eraser geometry, pressure to width, undo/redo history.
+- View (`canvasview.js`): pointer events (pen and mouse draw, finger pans and pinch-zooms, "Finger draws" switch, barrel button or eraser end erases, wheel, Ctrl+wheel, space), a toolbar (pen, eraser, move, six colours from the theme's text colours, three widths, undo, redo, Finger draws, Show all), redraw once per screen refresh. The page's Canvas button, the search-box command and the leave-on-page-change rule are in `main.js`; the drawing has its own autosave.
+- Tested here: Rust core tests (117, with 8 new for the drawing storage: round trip and version checks, hostile paths, too large, not text, a link, rename and move carry it, a stale drawing stops a rename, trash and restore carry it, a folder), the interface unit tests (new `canvas.test.mjs`), and the whole browser suite with new tests (switch and save beside the page, pen pressure kept, colour and width, eraser with undo and redo by button and key, finger pans and Finger draws, barrel button, unreadable and newer drawings read-only and never written, change elsewhere stops saving, leaving for another page saves first, the command, a long scribble and rapid clicks, phone width). Design screenshots, light and dark, desktop and phone.
+- NOT tested, needs a device: everything with a real pen (pressure, tilt, the barrel button and eraser end, palm rejection with the pen near the screen), two-finger zoom with real fingers, how the sheet feels on the Android tablet (lag, redraw speed with thousands of strokes), the Tauri commands `read_canvas` and `write_canvas` (compiled only by CI), speed of the full redraw on a big drawing.
+- Not done: highlighter, shapes, sticky notes, lasso, drawing over text, split mode, PDF import, erasing part of a stroke, the drawing in the page history, export or print of a drawing, a rebuild of the sheet when another program changes the file.
+- Release notes: `docs/release-notes/0.4.0.md`.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -282,7 +292,8 @@ Owner request (2026-11-06): the History box tidy-up was merged after the 0.3.7 r
 | 0.3.6 | Tags and favorites (see "0.3.6: built") | built, not tried on a device |
 | 0.3.7 | Export and page history (see "0.3.7: built") | built; history list, changes and restore tried by the owner on an Android tablet (2026-11-06); export and print not tried on a device |
 | 0.3.8 | History box tidy-up and logging of failed history copies (see "0.3.8: built") | built, not tried on a device |
-| 0.4 | Canvas and pressure-sensitive ink | not started |
+| 0.4.0 | Canvas page with a pressure pen and an eraser (see "0.4.0: built" and `docs/v0.4-plan.md`) | built, not tried on a device |
+| 0.4.1+ | Rest of canvas and ink: highlighter, shapes, sticky notes, lasso, draw over text, split mode, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

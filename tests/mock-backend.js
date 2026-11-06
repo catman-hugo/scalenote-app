@@ -8,6 +8,7 @@
   const logs = [];
   const attachments = new Map(); // path -> base64 text
   const trashed = []; // oldest first
+  const canvases = new Map(); // path of the page -> text of its drawing
   const history = new Map(); // path -> [{ id, time (seconds), text }]
   let trashSeq = 0;
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
@@ -35,6 +36,17 @@
       if (files.has(path)) { if (expected !== hash(files.get(path))) fail("conflict"); }
       else if (expected) fail("conflict");
       files.set(path, text); return hash(text);
+    },
+    // The drawing of a page is a second text per page; Rust keeps it in Name.canvas.json.
+    read_canvas: ({ path }) => {
+      if (!files.has(path)) fail("not_found");
+      return canvases.has(path) ? { text: canvases.get(path), version: hash(canvases.get(path)) } : null;
+    },
+    write_canvas: ({ path, text, expected }) => {
+      if (!files.has(path)) fail("not_found");
+      if (canvases.has(path)) { if (expected !== hash(canvases.get(path))) fail("conflict"); }
+      else if (expected) fail("conflict");
+      canvases.set(path, text); return hash(text);
     },
     // A stand-in for the page history: the copies a test puts in window.__mock.history are listed
     // as they are. The real rules (when copies are made, thinning, limits) are tested in Rust.
@@ -239,5 +251,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { canvases, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

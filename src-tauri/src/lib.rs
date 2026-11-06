@@ -168,6 +168,29 @@ fn write_note(
     })
 }
 
+/// The drawing of a page (see `scalenote_core::canvas`), or nothing when the page has none yet.
+#[tauri::command]
+fn read_canvas(path: String, state: State<AppState>) -> Result<Option<NoteReply>, String> {
+    with_vault(&state, "read canvas", |vault| {
+        Ok(vault.read_canvas(&path)?.map(|c| NoteReply { text: c.text, version: version_to_text(c.version) }))
+    })
+}
+
+/// `expected` is the version text from the last read or write, or `None` when there was no drawing.
+#[tauri::command]
+fn write_canvas(
+    path: String,
+    text: String,
+    expected: Option<String>,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let expected = match expected {
+        Some(text) => Some(version_from_text(&text)?),
+        None => None,
+    };
+    with_vault(&state, "save canvas", |vault| vault.write_canvas(&path, &text, expected).map(version_to_text))
+}
+
 #[tauri::command]
 fn create_note(parent: String, title: String, state: State<AppState>) -> Result<String, String> {
     with_vault(&state, "create note", |vault| vault.create_note(&parent, &title))
@@ -505,6 +528,8 @@ pub fn run() {
             vault_tree,
             read_note,
             write_note,
+            read_canvas,
+            write_canvas,
             create_note,
             create_folder,
             rename_entry,

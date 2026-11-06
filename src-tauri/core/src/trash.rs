@@ -9,6 +9,7 @@
 //! .trash/<id>/name      its original file name
 //! .trash/<id>/from      the folder it was in ("" for the top of the vault)
 //! .trash/<id>/deleted   seconds since 1970, as text
+//! .trash/<id>/canvas    the page's drawing (`Name.canvas.json`), when it had one
 //! ```
 //!
 //! `<id>` is made of digits and "-" only, and every id that comes in from outside is checked
@@ -24,6 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const TRASH_DIR: &str = ".trash";
 const ITEM: &str = "item";
+const CANVAS: &str = "canvas";
 /// How many items one listing returns. More than this and the oldest are left out of the
 /// list (they stay on disk).
 const MAX_LISTED: usize = 10_000;
@@ -100,6 +102,13 @@ impl Vault {
             write_atomic(&dir.join("from"), from.as_bytes())?;
             write_atomic(&dir.join("deleted"), deleted_at.to_string().as_bytes())?;
             fs::rename(&path, dir.join(ITEM))?;
+            // The drawing of a page goes with it. If it cannot move, the page is put back.
+            if let Some(sidecar) = crate::canvas::sidecar_of(&path).filter(|s| !is_folder && s.is_file()) {
+                if let Err(error) = fs::rename(&sidecar, dir.join(CANVAS)) {
+                    let _ = fs::rename(dir.join(ITEM), &path);
+                    return Err(error.into());
+                }
+            }
             Ok(())
         })();
         if let Err(error) = result {
@@ -178,8 +187,27 @@ impl Vault {
         };
         let target = free_name(&parent, &name, item_meta.is_dir());
         fs::rename(&item, &target)?;
+        // The drawing comes back under the name the page has now (never over another drawing).
+        let drawing = dir.join(CANVAS);
+        let mut drawing_left = false;
+        if drawing.is_file() {
+            let free = crate::canvas::sidecar_of(&target).filter(|s| !s.exists());
+            match free {
+                Some(sidecar) => drawing_left = fs::rename(&drawing, sidecar).is_err(),
+                // A stale drawing with that name is already there: the trashed one is kept in the
+                // trash folder for good measure, and the item folder is not removed.
+                None => drawing_left = true,
+            }
+        }
+        if drawing_left {
+            return self.restored_path(&target, parent_relative);
+        }
         // Only the notes about the item are left now.
         let _ = fs::remove_dir_all(&dir);
+        self.restored_path(&target, parent_relative)
+    }
+
+    fn restored_path(&self, target: &Path, parent_relative: String) -> Result<String> {
         let file_name = target.file_name().and_then(|n| n.to_str()).ok_or(VaultError::InvalidPath)?;
         Ok(if parent_relative.is_empty() { file_name.to_string() } else { format!("{parent_relative}/{file_name}") })
     }
