@@ -86,9 +86,20 @@ export function loadNote(text, { parse, serialize }) {
   // Safety net: opening a note and saving it untouched must give the same bytes. If that
   // ever fails, show the whole note as one raw block rather than risk changing it.
   if (again !== text) {
-    return { parts: { front: "", lead: "", count: 1 }, doc: { type: "doc", content: [rawNode(text, "", 0)] } };
+    return wholeBodyRaw(text, { parse, serialize });
   }
   return { parts, doc };
+}
+
+// The fallback view. Only the part after the frontmatter is shown, so the page id (and any
+// other properties) are never on screen; the frontmatter stays in `parts` and is written back
+// as it was. If even that does not give the same bytes, the whole text is shown as one block.
+function wholeBodyRaw(text, io) {
+  const { front, body } = splitFrontmatter(text);
+  const parts = { front, lead: "", count: 1 };
+  const doc = { type: "doc", content: [rawNode(body, "", 0)] };
+  if (front !== "" && composeNote(parts, doc, { serialize: io.serialize, assignId: false }) === text) return { parts, doc };
+  return { parts: { front: "", lead: "", count: 1 }, doc: { type: "doc", content: [rawNode(text, "", 0)] } };
 }
 
 function isEmptyParagraph(node) {

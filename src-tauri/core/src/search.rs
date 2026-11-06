@@ -180,7 +180,36 @@ impl Vault {
     }
 }
 
+/// The page's text with its `id:` line blanked out. The id is bookkeeping for the app and must
+/// not turn up in a search result. Letters are replaced one for one (line breaks stay), so
+/// positions in the result are the same as in the original text.
+pub(crate) fn without_page_id(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_front = false;
+    for (number, line) in text.split_inclusive('\n').enumerate() {
+        let bare = line.trim_end_matches(['\r', '\n']);
+        let mut hide = false;
+        if number == 0 {
+            in_front = bare.trim_start_matches('\u{feff}').trim_end() == "---";
+        } else if in_front {
+            if bare.trim_end() == "---" {
+                in_front = false;
+            } else {
+                hide = bare.starts_with("id:");
+            }
+        }
+        if hide {
+            out.extend(line.chars().map(|c| if c == '\r' || c == '\n' { c } else { ' ' }));
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
 fn match_page(relative: &str, text: &str, words: &[Vec<char>], whole_query: &[char]) -> Option<Candidate> {
+    let hidden = without_page_id(text);
+    let text = hidden.as_str();
     let file_name = relative.rsplit('/').next().unwrap_or(relative);
     let title = file_name[..file_name.len().saturating_sub(3)].to_string();
     let folded_title = fold_text(&title);
@@ -300,6 +329,19 @@ mod tests {
         assert_eq!(paths(&vault.search("quadratic", 10).expect("search")), vec!["School/Maths.md"]);
         assert!(vault.search("zebra", 10).expect("search").hits.is_empty());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_page_id_is_not_searched_and_not_shown() {
+        let id = "0b9c7e52-3f1a-4d6e-9a58-2c7d41e6b0aa";
+        let page = format!("---\nid: {id}\ntags: [x]\n---\n\nSome id text here\n");
+        let (_dir, vault) = vault("hidden-id", &[("Plan.md", page.as_str())]);
+        assert!(vault.search("0b9c7e52", 10).unwrap().hits.is_empty());
+        let found = vault.search("id", 10).unwrap();
+        assert_eq!(found.hits.len(), 1);
+        assert_eq!(joined(&found.hits[0]), "Some id text here");
+        assert_eq!(without_page_id(&page).len(), page.len());
+        assert_eq!(without_page_id("no front\nid: kept\n"), "no front\nid: kept\n");
     }
 
     #[test]
