@@ -3241,7 +3241,7 @@ await test("the markdown text view hides the cover and shows the property line a
   await page.click("#sourceToggle");
   await page.waitForSelector("#source:not([hidden])");
   assert.equal(await page.locator(".cover").count() === 0 || await page.isVisible(".cover") === false, true);
-  assert.match(await page.inputValue("#source"), /^---\nid: abc\ncover: attachments\/leaf\.png\ntags: \[a\]\n---/);
+  assert.match(await page.inputValue("#source"), /^---\ncover: attachments\/leaf\.png\ntags: \[a\]\n---/);
   await page.click("#sourceToggle");
   await page.waitForSelector(".cover-image img[src]");
 }, coversOn);
@@ -3418,7 +3418,7 @@ await test("in the markdown text view the star is switched off and the property 
   await page.click("#sourceToggle");
   await page.waitForSelector("#source:not([hidden])");
   assert.equal(await page.isDisabled("#favorite"), true);
-  assert.match(await page.inputValue("#source"), /^---\nid: aaa\ntags: \[plan, School\/Maths\]\nfavorite: true\n---/);
+  assert.match(await page.inputValue("#source"), /^---\ntags: \[plan, School\/Maths\]\nfavorite: true\n---/);
   await page.click("#sourceToggle");
   assert.equal(await page.isDisabled("#favorite"), false);
 }, ctxOpts);
@@ -4329,18 +4329,18 @@ await test("the line width is a slider with five stops that stays open while it 
   assert.equal(await slider.getAttribute("aria-label"), "Line width");
   const widths = [];
   for (let stop = 0; stop < 5; stop++) {
+    if (!(await slider.isVisible())) await page.click('.canvas-toolbar [data-menu="width"]'); // drawing closes the menu
     await slider.fill(String(stop));
     assert.equal(await page.locator('.canvas-menu[data-menu="width"]').isVisible(), true, "the menu stays open while the slider moves");
     assert.equal(await page.locator('.canvas-menu[data-menu="width"] .canvas-line').getAttribute("data-size"), String(stop), "the line under the slider follows it");
     assert.equal(await page.locator('.canvas-toolbar [data-menu="width"] .canvas-line').getAttribute("data-size"), String(stop), "so does the toolbar button");
-    await page.keyboard.press("Escape");
-    await page.click('.canvas-toolbar [data-menu="width"]');
     await drawLine(page, [60, 40 + stop * 30], [260, 40 + stop * 30]);
     await waitSaved(page);
     widths.push((await items(page)).at(-1).width);
   }
   assert.deepEqual(widths, [2, 4, 6, 8, 12]);
   // The keyboard works too: an arrow key moves one stop.
+  await page.click('.canvas-toolbar [data-menu="width"]');
   await slider.focus();
   await page.keyboard.press("ArrowLeft");
   assert.equal(await slider.inputValue(), "3");
