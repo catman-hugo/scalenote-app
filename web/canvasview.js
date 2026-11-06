@@ -1,15 +1,21 @@
-// The canvas of a page: a sheet you draw on with a pen, erase from, and move around.
+// The canvas of a page: a sheet you draw on with a pen, highlighter, shapes and sticky notes,
+// erase from, select with a loop, and move around.
 //
-// This file draws and listens; what a stroke is and how it is stored is in canvasrules.js, and
+// This file draws and listens; what an item is and how it is stored is in canvasrules.js, and
 // saving is done by main.js (this view only says "something changed").
 //
 // Input rules, and why:
 // - A pen or a mouse draws. A finger moves the sheet (one finger) or zooms it (two), so a hand
 //   resting on the screen never leaves a mark. "Finger draws" in the toolbar turns that around
 //   for a device that has no pen.
-// - A pen's barrel button, or its eraser end, erases for as long as it is held.
+// - A pen's eraser end erases for as long as it is held. The barrel button does what the
+//   "Pen button" setting says: erase (the default), select with a loop, or nothing.
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
-import { DrawingHistory, PEN_COLOURS, PEN_WIDTHS, canAddStroke, emptyCanvas, strokesTouched, widthAt } from "./canvasrules.js";
+import {
+  DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES,
+  arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
+  itemsInLoop, itemsTouched, moveItem, noteHeight, widthAt, wrapText,
+} from "./canvasrules.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -19,6 +25,20 @@ const MAX_SCALE = 8;
 const ERASER_PIXELS = 10;
 // A new point closer than this many screen pixels to the last one adds nothing visible.
 const MIN_STEP_PIXELS = 0.8;
+// A shape dragged less than this many screen pixels is a stray tap, not a shape.
+const MIN_SHAPE_PIXELS = 4;
+// How far outside the selection box a press still counts as being on it.
+const GRAB_PIXELS = 8;
+const HIGHLIGHT_ALPHA = 0.35;
+const NOTE_FILL_ALPHA = 0.22;
+// Tools that choose how the next thing is drawn, so picking a colour or width switches to the pen
+// only when the current tool has no colour of its own.
+const COLOURLESS_TOOLS = ["eraser", "hand", "select"];
+
+const TOOL_ICONS = {
+  select: "lasso", pen: "pen", highlighter: "highlighter", eraser: "eraser", hand: "hand",
+  line: "line", arrow: "arrow", rect: "rectangle", ellipse: "ellipse", note: "sticky",
+};
 
 function make(tag, className, text) {
   const node = document.createElement(tag);
@@ -37,11 +57,22 @@ function toggleButton(label, onClick) {
   return button;
 }
 
+function plainButton(label, iconName, onClick) {
+  const button = make("button", "canvas-tool");
+  button.type = "button";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.append(icon(iconName));
+  button.addEventListener("click", onClick);
+  return button;
+}
+
 /**
- * Builds the canvas inside `host`. `onChange()` is called after every finished gesture, and
- * `onNotice(text)` for a short message (for example, the drawing is full).
+ * Builds the canvas inside `host`. `onChange()` is called after every finished gesture,
+ * `onNotice(text)` for a short message (for example, the drawing is full), and `penButton()`
+ * says what the barrel button of a pen does: "erase", "select" or "none".
  */
-export function createCanvasView(host, { onChange, onNotice }) {
+export function createCanvasView(host, { onChange, onNotice, penButton = () => "erase" }) {
   const t = strings.canvas;
   const state = {
     canvas: emptyCanvas(),
@@ -53,11 +84,14 @@ export function createCanvasView(host, { onChange, onNotice }) {
     fingerDraws: false,
     view: { x: 0, y: 0, scale: 1 },
     gesture: null,
+    selection: [],
+    editing: null,
     touches: new Map(),
     pinch: null,
     spaceDown: false,
     frame: 0,
     colours: {},
+    wrapped: new WeakMap(),
   };
 
   const toolbar = make("div", "canvas-toolbar");
@@ -66,19 +100,27 @@ export function createCanvasView(host, { onChange, onNotice }) {
   const notice = make("p", "canvas-problem");
   notice.setAttribute("role", "status");
   notice.hidden = true;
+  const stage = make("div", "canvas-stage");
   const surface = make("canvas", "canvas-surface");
   surface.tabIndex = 0;
   surface.setAttribute("aria-label", t.surface);
+  stage.append(surface);
   const context = surface.getContext("2d");
 
   // ---- toolbar ----
   const toolButtons = {};
-  for (const [name, iconName] of [["pen", "pen"], ["eraser", "eraser"], ["hand", "hand"]]) {
-    const button = toggleButton(t.tools[name], () => setTool(name));
-    button.append(icon(iconName));
-    toolButtons[name] = button;
-    toolbar.append(button);
+  function addTools(names) {
+    for (const name of names) {
+      const button = toggleButton(t.tools[name], () => setTool(name));
+      button.dataset.tool = name;
+      button.append(icon(TOOL_ICONS[name]));
+      toolButtons[name] = button;
+      toolbar.append(button);
+    }
   }
+  addTools(["select", "pen", "highlighter", "eraser", "hand"]);
+  toolbar.append(make("span", "canvas-gap"));
+  addTools([...SHAPES, "note"]);
   toolbar.append(make("span", "canvas-gap"));
   const colourButtons = {};
   for (const name of PEN_COLOURS) {
@@ -100,18 +142,10 @@ export function createCanvasView(host, { onChange, onNotice }) {
     toolbar.append(button);
   });
   toolbar.append(make("span", "canvas-gap"));
-  const undoButton = make("button", "canvas-tool");
-  undoButton.type = "button";
-  undoButton.title = t.undo;
-  undoButton.setAttribute("aria-label", t.undo);
-  undoButton.append(icon("undo"));
-  undoButton.addEventListener("click", undo);
-  const redoButton = make("button", "canvas-tool");
-  redoButton.type = "button";
-  redoButton.title = t.redo;
-  redoButton.setAttribute("aria-label", t.redo);
-  redoButton.append(icon("redo"));
-  redoButton.addEventListener("click", redo);
+  const undoButton = plainButton(t.undo, "undo", undo);
+  const redoButton = plainButton(t.redo, "redo", redo);
+  const deleteButton = plainButton(t.deleteSelection, "trash", deleteSelection);
+  deleteButton.dataset.action = "delete-selection";
   const fingerButton = toggleButton(t.finger, () => {
     state.fingerDraws = !state.fingerDraws;
     drawToolbar();
@@ -124,8 +158,8 @@ export function createCanvasView(host, { onChange, onNotice }) {
     fitView();
     scheduleDraw();
   });
-  toolbar.append(undoButton, redoButton, make("span", "canvas-gap"), fingerButton, resetButton);
-  host.replaceChildren(toolbar, notice, surface);
+  toolbar.append(undoButton, redoButton, deleteButton, make("span", "canvas-gap"), fingerButton, resetButton);
+  host.replaceChildren(toolbar, notice, stage);
 
   function drawToolbar() {
     for (const [name, button] of Object.entries(toolButtons)) {
@@ -144,36 +178,67 @@ export function createCanvasView(host, { onChange, onNotice }) {
     fingerButton.disabled = state.readOnly;
     undoButton.disabled = state.readOnly || !state.history.canUndo;
     redoButton.disabled = state.readOnly || !state.history.canRedo;
+    deleteButton.disabled = state.readOnly || state.selection.length === 0;
   }
 
   function setTool(name) {
+    commitNote();
     state.tool = name;
+    if (name !== "select") state.selection = [];
     drawToolbar();
+    scheduleDraw();
   }
   function setColour(name) {
     state.colour = name;
-    if (state.tool !== "pen") state.tool = "pen";
-    drawToolbar();
+    if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen");
+    else drawToolbar();
   }
   function setWidth(value) {
     state.width = value;
-    if (state.tool !== "pen") state.tool = "pen";
-    drawToolbar();
+    if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen");
+    else drawToolbar();
   }
 
   // ---- history ----
   function undo() {
     if (state.readOnly || state.gesture) return;
+    commitNote();
     if (state.history.undo(state.canvas)) changed();
   }
   function redo() {
     if (state.readOnly || state.gesture) return;
+    commitNote();
     if (state.history.redo(state.canvas)) changed();
   }
   function changed() {
+    // An undo or an erase may have removed selected items; the selection only keeps what is left.
+    const present = new Set(state.canvas.items);
+    state.selection = state.selection.filter((item) => present.has(item));
     drawToolbar();
     scheduleDraw();
     onChange();
+  }
+
+  function clearSelection() {
+    if (!state.selection.length) return;
+    state.selection = [];
+    drawToolbar();
+    scheduleDraw();
+  }
+
+  function deleteSelection() {
+    if (state.readOnly || state.gesture || !state.selection.length) return;
+    const chosen = new Set(state.selection);
+    const remove = [];
+    state.canvas.items.forEach((item, index) => {
+      if (chosen.has(item)) remove.push({ index, item });
+    });
+    state.canvas.items = state.canvas.items.filter((item) => !chosen.has(item));
+    state.selection = [];
+    if (remove.length) {
+      state.history.record({ remove });
+      changed();
+    }
   }
 
   // ---- coordinates ----
@@ -191,21 +256,15 @@ export function createCanvasView(host, { onChange, onNotice }) {
 
   // Puts the whole drawing in view (never bigger than life size), or the sheet's corner when empty.
   function fitView() {
-    const strokes = state.canvas.strokes;
     const box = surface.getBoundingClientRect();
-    if (!strokes.length || !box.width || !box.height) {
+    const around = boundsOf(state.canvas.items);
+    if (!around || !box.width || !box.height) {
       state.view = { x: 24, y: 24, scale: 1 };
       return;
     }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const stroke of strokes) {
-      for (const [x, y] of stroke.points) {
-        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
-      }
-    }
     const margin = 32;
-    const scale = Math.min(1, Math.max(MIN_SCALE, Math.min((box.width - 2 * margin) / Math.max(1, maxX - minX), (box.height - 2 * margin) / Math.max(1, maxY - minY))));
-    state.view = { scale, x: margin - minX * scale, y: margin - minY * scale };
+    const scale = Math.min(1, Math.max(MIN_SCALE, Math.min((box.width - 2 * margin) / Math.max(1, around.maxX - around.minX), (box.height - 2 * margin) / Math.max(1, around.maxY - around.minY))));
+    state.view = { scale, x: margin - around.minX * scale, y: margin - around.minY * scale };
   }
 
   // ---- drawing on the screen ----
@@ -215,14 +274,31 @@ export function createCanvasView(host, { onChange, onNotice }) {
       state.colours[name] = style.getPropertyValue(name === "ink" ? "--text" : `--sn-text-${name}`).trim() || "#000";
     }
     state.background = style.getPropertyValue("--bg").trim() || "#fff";
+    state.accent = style.getPropertyValue("--accent").trim() || "#06c";
+    state.font = getComputedStyle(document.body).fontFamily || "sans-serif";
   }
 
-  function paintStroke(stroke, points) {
+  function paintStroke(stroke) {
     const colour = state.colours[stroke.color] || "#000";
+    const points = stroke.points;
     context.strokeStyle = colour;
     context.fillStyle = colour;
     context.lineCap = "round";
     context.lineJoin = "round";
+    if (stroke.tool === "highlighter") {
+      // One path with one width: drawn in pieces, the see-through ends of each piece would
+      // overlap and show as dark dots along the line.
+      context.save();
+      context.globalAlpha = HIGHLIGHT_ALPHA;
+      context.lineWidth = drawnWidth(stroke);
+      context.beginPath();
+      context.moveTo(points[0][0], points[0][1]);
+      if (points.length === 1) context.lineTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) context.lineTo(points[i][0], points[i][1]);
+      context.stroke();
+      context.restore();
+      return;
+    }
     if (points.length === 1) {
       context.beginPath();
       context.arc(points[0][0], points[0][1], widthAt(stroke.width, points[0][2]) / 2, 0, Math.PI * 2);
@@ -237,6 +313,89 @@ export function createCanvasView(host, { onChange, onNotice }) {
       context.lineTo(points[i][0], points[i][1]);
       context.stroke();
     }
+  }
+
+  function paintShape(shape) {
+    context.strokeStyle = state.colours[shape.color] || "#000";
+    context.lineWidth = shape.width;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    const [ax, ay] = shape.a;
+    const [bx, by] = shape.b;
+    context.beginPath();
+    if (shape.kind === "rect") {
+      const box = boxOf(shape.a, shape.b);
+      context.rect(box.x, box.y, box.w, box.h);
+    } else if (shape.kind === "ellipse") {
+      const outline = ellipseOutline(shape.a, shape.b, 64);
+      outline.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+      context.closePath();
+    } else {
+      context.moveTo(ax, ay);
+      context.lineTo(bx, by);
+      if (shape.kind === "arrow") {
+        const head = arrowHead(shape.a, shape.b, Math.max(10, shape.width * 4));
+        context.moveTo(head[0][0], head[0][1]);
+        context.lineTo(bx, by);
+        context.lineTo(head[1][0], head[1][1]);
+      }
+    }
+    context.stroke();
+  }
+
+  // The lines of a note, cut to fit its width. Cached, because redrawing happens on every frame.
+  function linesOf(note) {
+    const cached = state.wrapped.get(note);
+    if (cached && cached.text === note.text && cached.w === note.w) return cached.lines;
+    context.font = `${NOTE.fontSize}px ${state.font}`;
+    const lines = wrapText(note.text, note.w - 2 * NOTE.padding, (text) => context.measureText(text).width);
+    state.wrapped.set(note, { text: note.text, w: note.w, lines });
+    return lines;
+  }
+
+  function paintNote(note, box, withText) {
+    const colour = state.colours[note.color] || "#000";
+    context.fillStyle = state.background;
+    context.fillRect(box.x, box.y, box.w, box.h);
+    context.save();
+    context.globalAlpha = NOTE_FILL_ALPHA;
+    context.fillStyle = colour;
+    context.fillRect(box.x, box.y, box.w, box.h);
+    context.restore();
+    context.strokeStyle = colour;
+    context.lineWidth = 1.5;
+    context.strokeRect(box.x, box.y, box.w, box.h);
+    if (!withText) return;
+    context.save();
+    context.beginPath();
+    context.rect(box.x, box.y, box.w, box.h);
+    context.clip();
+    context.fillStyle = state.colours.ink;
+    context.font = `${NOTE.fontSize}px ${state.font}`;
+    context.textBaseline = "top";
+    linesOf(note).forEach((line, i) => context.fillText(line, box.x + NOTE.padding, box.y + NOTE.padding + i * NOTE.lineHeight));
+    context.restore();
+  }
+
+  function paintItem(item) {
+    if (item.tool === "shape") paintShape(item);
+    else if (item.tool === "note") {
+      const editing = state.editing && state.editing.item === item;
+      paintNote(item, { x: item.x, y: item.y, w: item.w, h: editing ? state.editing.height : item.h }, !editing);
+    } else paintStroke(item);
+  }
+
+  function paintSelection() {
+    const around = boundsOf(state.selection);
+    if (!around) return;
+    const scale = state.view.scale;
+    context.save();
+    context.strokeStyle = state.accent;
+    context.lineWidth = 1.5 / scale;
+    context.setLineDash([6 / scale, 4 / scale]);
+    const pad = 4 / scale;
+    context.strokeRect(around.minX - pad, around.minY - pad, around.maxX - around.minX + 2 * pad, around.maxY - around.minY + 2 * pad);
+    context.restore();
   }
 
   function draw() {
@@ -255,9 +414,23 @@ export function createCanvasView(host, { onChange, onNotice }) {
     context.fillRect(0, 0, surface.width, surface.height);
     const { x, y, scale } = state.view;
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
-    for (const stroke of state.canvas.strokes) paintStroke(stroke, stroke.points);
+    for (const item of state.canvas.items) paintItem(item);
     const g = state.gesture;
-    if (g && g.kind === "pen") paintStroke(g.stroke, g.stroke.points);
+    if (g && g.kind === "pen") paintStroke(g.stroke);
+    if (g && g.kind === "shape") paintShape(g.shape);
+    if (state.editing && !state.editing.item) paintNote(state.editing.pending, { ...state.editing.pending, h: state.editing.height }, false);
+    paintSelection();
+    if (g && g.kind === "lasso") {
+      context.save();
+      context.strokeStyle = state.accent;
+      context.lineWidth = 1.5 / scale;
+      context.setLineDash([6 / scale, 4 / scale]);
+      context.beginPath();
+      g.loop.forEach(([lx, ly], i) => (i ? context.lineTo(lx, ly) : context.moveTo(lx, ly)));
+      context.closePath();
+      context.stroke();
+      context.restore();
+    }
     if (g && g.kind === "erase") {
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.strokeStyle = state.colours.ink;
@@ -266,21 +439,138 @@ export function createCanvasView(host, { onChange, onNotice }) {
       context.arc(g.screen.x, g.screen.y, ERASER_PIXELS, 0, Math.PI * 2);
       context.stroke();
     }
+    placeEditor();
   }
 
   function scheduleDraw() {
     if (!state.frame) state.frame = requestAnimationFrame(draw);
   }
 
+  // ---- sticky notes ----
+  // A note is typed into a real text box laid over the sheet, because that gives the keyboard,
+  // selection, and the phone's own text handling for free. A new note is only added to the
+  // drawing when it has text, so a stray tap leaves nothing behind.
+  function noteAt(world) {
+    for (let i = state.canvas.items.length - 1; i >= 0; i--) {
+      const item = state.canvas.items[i];
+      if (item.tool === "note" && world.x >= item.x && world.x <= item.x + item.w && world.y >= item.y && world.y <= item.y + item.h) return item;
+    }
+    return null;
+  }
+
+  function openNote(existing, world) {
+    commitNote();
+    const pending = existing ? null : { tool: "note", color: state.colour, x: world.x, y: world.y, w: NOTE.width, h: NOTE.minHeight, text: "" };
+    const subject = existing || pending;
+    const area = make("textarea", "canvas-note-input");
+    area.value = subject.text;
+    area.maxLength = LIMITS.noteText;
+    area.setAttribute("aria-label", t.noteLabel);
+    area.placeholder = t.notePlaceholder;
+    state.editing = { item: existing, pending, area, height: subject.h };
+    area.addEventListener("input", () => {
+      state.editing.height = noteHeight(wrapNoteText(area.value, subject.w).length);
+      scheduleDraw();
+    });
+    area.addEventListener("blur", commitNote);
+    area.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" || (event.key === "Enter" && (event.ctrlKey || event.metaKey))) {
+        event.preventDefault();
+        commitNote();
+        surface.focus({ preventScroll: true });
+      }
+      event.stopPropagation();
+    });
+    stage.append(area);
+    placeEditor();
+    area.focus();
+  }
+
+  function wrapNoteText(text, width) {
+    context.font = `${NOTE.fontSize}px ${state.font || "sans-serif"}`;
+    return wrapText(text, width - 2 * NOTE.padding, (piece) => context.measureText(piece).width);
+  }
+
+  function placeEditor() {
+    const e = state.editing;
+    if (!e) return;
+    const subject = e.item || e.pending;
+    const { x, y, scale } = state.view;
+    const area = e.area;
+    area.style.left = `${x + subject.x * scale}px`;
+    area.style.top = `${y + subject.y * scale}px`;
+    area.style.width = `${subject.w * scale}px`;
+    area.style.height = `${e.height * scale}px`;
+    area.style.fontSize = `${NOTE.fontSize * scale}px`;
+    area.style.lineHeight = `${NOTE.lineHeight * scale}px`;
+    area.style.padding = `${NOTE.padding * scale}px`;
+  }
+
+  // Ends the typing: a changed note becomes one undo step, a new note with text is added.
+  function commitNote() {
+    const e = state.editing;
+    if (!e) return;
+    state.editing = null;
+    const text = e.area.value.slice(0, LIMITS.noteText);
+    e.area.remove();
+    const height = noteHeight(wrapNoteText(text, (e.item || e.pending).w).length);
+    if (e.item) {
+      if (text !== e.item.text) {
+        const entry = { item: e.item, before: { text: e.item.text, h: e.item.h }, after: { text, h: height } };
+        Object.assign(e.item, entry.after);
+        state.history.record({ edit: entry });
+        changed();
+      } else scheduleDraw();
+      return;
+    }
+    if (!text.trim()) return scheduleDraw();
+    if (!canAddItem(state.canvas)) {
+      onNotice(t.full);
+      return scheduleDraw();
+    }
+    const note = { ...e.pending, text, h: height };
+    state.canvas.items.push(note);
+    state.history.record({ add: note });
+    changed();
+  }
+
   // ---- gestures ----
-  function startGesture(event, kind) {
-    const world = toWorld(localPoint(event).x, localPoint(event).y);
-    if (kind === "erase") {
-      state.gesture = { kind, id: event.pointerId, before: state.canvas.strokes.slice(), screen: localPoint(event) };
-      eraseAt(world, event);
+  function startGesture(event, tool) {
+    const screen = localPoint(event);
+    const world = toWorld(screen.x, screen.y);
+    const id = event.pointerId;
+    if (tool === "eraser") {
+      clearSelection();
+      state.gesture = { kind: "erase", id, before: state.canvas.items.slice(), screen };
+      eraseAt(world);
+    } else if (tool === "select") {
+      startSelect(id, screen, world);
+    } else if (tool === "note") {
+      clearSelection();
+      const existing = noteAt(world);
+      if (!existing && !canAddItem(state.canvas)) return onNotice(t.full);
+      // The pointer is released a moment later; the text box must not lose focus to that.
+      setTimeout(() => openNote(existing, world), 0);
+    } else if (SHAPES.includes(tool)) {
+      clearSelection();
+      const shape = { tool: "shape", kind: tool, color: state.colour, width: state.width, a: [world.x, world.y], b: [world.x, world.y] };
+      state.gesture = { kind: "shape", id, shape, start: screen };
     } else {
-      state.gesture = { kind, id: event.pointerId, last: localPoint(event), stroke: { tool: "pen", color: state.colour, width: state.width, points: [] } };
+      clearSelection();
+      const mark = { tool, color: state.colour, width: state.width, points: [] };
+      state.gesture = { kind: "pen", id, last: screen, stroke: mark };
       addPoint(event);
+    }
+  }
+
+  // A press on the selection moves it; a press anywhere else starts a new loop.
+  function startSelect(id, screen, world) {
+    const around = boundsOf(state.selection);
+    const slack = GRAB_PIXELS / state.view.scale;
+    if (around && world.x >= around.minX - slack && world.x <= around.maxX + slack && world.y >= around.minY - slack && world.y <= around.maxY + slack) {
+      state.gesture = { kind: "move", id, items: state.selection.slice(), last: world, dx: 0, dy: 0 };
+    } else {
+      state.gesture = { kind: "lasso", id, loop: [[world.x, world.y]], last: screen, length: 0 };
     }
   }
 
@@ -293,18 +583,29 @@ export function createCanvasView(host, { onChange, onNotice }) {
       const dy = screen.y - g.last.y;
       if (Math.hypot(dx, dy) < MIN_STEP_PIXELS) return;
     }
-    if (points.length >= 5000) return;
+    if (points.length >= LIMITS.pointsPerStroke) return;
     const world = toWorld(screen.x, screen.y);
-    // A mouse reports a fixed 0.5, so it draws the plain width.
-    const pressure = event.pressure > 0 ? Math.min(1, event.pressure) : 0.5;
+    // A mouse reports a fixed 0.5, so it draws the plain width. A highlighter ignores pressure.
+    const pressure = g.stroke.tool === "highlighter" ? 0.5 : event.pressure > 0 ? Math.min(1, event.pressure) : 0.5;
     points.push([world.x, world.y, pressure]);
     g.last = screen;
   }
 
   function eraseAt(world) {
     const radius = ERASER_PIXELS / state.view.scale;
-    const hit = strokesTouched(state.canvas, world.x, world.y, radius);
-    for (const index of hit.reverse()) state.canvas.strokes.splice(index, 1);
+    const hit = itemsTouched(state.canvas, world.x, world.y, radius);
+    for (const index of hit.reverse()) state.canvas.items.splice(index, 1);
+  }
+
+  function moveGesture(g, world) {
+    const dx = world.x - g.last.x;
+    const dy = world.y - g.last.y;
+    // Items may not be pushed past the edge of the sheet the file can hold.
+    if (!canMove(g.items, dx, dy)) return;
+    for (const item of g.items) moveItem(item, dx, dy);
+    g.dx += dx;
+    g.dy += dy;
+    g.last = world;
   }
 
   function finishGesture(cancelled) {
@@ -314,22 +615,50 @@ export function createCanvasView(host, { onChange, onNotice }) {
     if (g.kind === "pen") {
       const points = g.stroke.points;
       if (cancelled || !points.length) return scheduleDraw();
-      if (!canAddStroke(state.canvas, points.length)) {
+      if (!canAddItem(state.canvas, points.length)) {
         onNotice(t.full);
         return scheduleDraw();
       }
-      state.canvas.strokes.push(g.stroke);
+      state.canvas.items.push(g.stroke);
       state.history.record({ add: g.stroke });
       return changed();
     }
+    if (g.kind === "shape") {
+      const size = Math.hypot(g.shape.b[0] - g.shape.a[0], g.shape.b[1] - g.shape.a[1]) * state.view.scale;
+      if (cancelled || size < MIN_SHAPE_PIXELS) return scheduleDraw();
+      if (!canAddItem(state.canvas)) {
+        onNotice(t.full);
+        return scheduleDraw();
+      }
+      state.canvas.items.push(g.shape);
+      state.history.record({ add: g.shape });
+      return changed();
+    }
+    if (g.kind === "lasso") {
+      if (cancelled || g.length < MIN_SHAPE_PIXELS) {
+        clearSelection();
+        return scheduleDraw();
+      }
+      state.selection = itemsInLoop(state.canvas, g.loop).map((index) => state.canvas.items[index]);
+      drawToolbar();
+      return scheduleDraw();
+    }
+    if (g.kind === "move") {
+      if (cancelled) for (const item of g.items) moveItem(item, -g.dx, -g.dy);
+      else if (g.dx !== 0 || g.dy !== 0) {
+        state.history.record({ move: { items: g.items, dx: g.dx, dy: g.dy } });
+        return changed();
+      }
+      return scheduleDraw();
+    }
     // Erasing: what is gone now compared with how it was when the gesture began.
-    const now = new Set(state.canvas.strokes);
+    const now = new Set(state.canvas.items);
     const remove = [];
-    g.before.forEach((stroke, index) => {
-      if (!now.has(stroke)) remove.push({ index, stroke });
+    g.before.forEach((item, index) => {
+      if (!now.has(item)) remove.push({ index, item });
     });
     if (cancelled) {
-      state.canvas.strokes = g.before;
+      state.canvas.items = g.before;
       return scheduleDraw();
     }
     if (remove.length) {
@@ -346,9 +675,16 @@ export function createCanvasView(host, { onChange, onNotice }) {
   }
 
   function toolFor(event) {
-    // The barrel button (2) or the eraser end (32) of a pen erases while held.
-    if (event.pointerType === "pen" && (event.buttons & 2 || event.buttons & 32)) return "eraser";
-    return state.tool === "eraser" ? "eraser" : "pen";
+    if (event.pointerType === "pen") {
+      // The eraser end (32) always erases. The barrel button (2) does what the setting says.
+      if (event.buttons & 32) return "eraser";
+      if (event.buttons & 2) {
+        const choice = penButton();
+        if (choice === "erase") return "eraser";
+        if (choice === "select") return "select";
+      }
+    }
+    return state.tool;
   }
 
   function onDown(event) {
@@ -373,7 +709,7 @@ export function createCanvasView(host, { onChange, onNotice }) {
       }
       return;
     }
-    startGesture(event, toolFor(event) === "eraser" ? "erase" : "pen");
+    startGesture(event, toolFor(event));
     scheduleDraw();
   }
 
@@ -405,8 +741,8 @@ export function createCanvasView(host, { onChange, onNotice }) {
     }
     const g = state.gesture;
     if (!g || g.id !== event.pointerId) return;
+    const now = localPoint(event);
     if (g.kind === "pan") {
-      const now = localPoint(event);
       state.view.x += now.x - g.last.x;
       state.view.y += now.y - g.last.y;
       g.last = now;
@@ -414,10 +750,19 @@ export function createCanvasView(host, { onChange, onNotice }) {
       // A fast pen reports several points between two events; each one is kept.
       const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
       for (const part of events.length ? events : [event]) addPoint(part);
+    } else if (g.kind === "shape") {
+      const world = toWorld(now.x, now.y);
+      g.shape.b = [world.x, world.y];
+    } else if (g.kind === "lasso") {
+      const world = toWorld(now.x, now.y);
+      g.length += Math.hypot(now.x - g.last.x, now.y - g.last.y);
+      g.last = now;
+      if (g.loop.length < LIMITS.pointsPerStroke) g.loop.push([world.x, world.y]);
+    } else if (g.kind === "move") {
+      moveGesture(g, toWorld(now.x, now.y));
     } else {
-      g.screen = localPoint(event);
-      const world = toWorld(g.screen.x, g.screen.y);
-      eraseAt(world);
+      g.screen = now;
+      eraseAt(toWorld(now.x, now.y));
     }
     scheduleDraw();
   }
@@ -465,6 +810,11 @@ export function createCanvasView(host, { onChange, onNotice }) {
     } else if (mod && event.key.toLowerCase() === "y") {
       event.preventDefault();
       redo();
+    } else if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      deleteSelection();
+    } else if (event.key === "Escape") {
+      clearSelection();
     } else if (event.key === " ") {
       event.preventDefault();
       state.spaceDown = true;
@@ -478,10 +828,12 @@ export function createCanvasView(host, { onChange, onNotice }) {
   return {
     /** Shows a drawing. `problem` (a code) makes it read-only with a message. */
     show(canvas, problem) {
+      commitNote();
       state.canvas = canvas || emptyCanvas();
       state.history = new DrawingHistory();
       state.readOnly = Boolean(problem);
       state.gesture = null;
+      state.selection = [];
       state.touches.clear();
       notice.hidden = !problem;
       notice.textContent = problem ? t.problems[problem] || t.problems.broken : "";
@@ -491,11 +843,14 @@ export function createCanvasView(host, { onChange, onNotice }) {
     },
     /** Makes the drawing read-only after the file was changed by something else. */
     lock(text) {
+      commitNote();
       state.readOnly = true;
       notice.hidden = false;
       notice.textContent = text;
       drawToolbar();
     },
+    /** Ends any note being typed, so its text is in the drawing before the drawing is saved. */
+    finish: commitNote,
     get canvas() {
       return state.canvas;
     },

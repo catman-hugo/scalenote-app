@@ -328,3 +328,19 @@ Cost. Renaming or moving a page by another program leaves its drawing behind und
 ## 2026-11-06: A finger moves the sheet, a pen draws, and the eraser removes whole strokes
 Decision. A pen or mouse draws; a finger pans (one) or zooms (two), so a resting hand never leaves a mark, with "Finger draws" for a device without a pen. The pen's barrel button or eraser end erases while held. The eraser removes whole strokes (not parts), which keeps undo exact and the stored strokes unchanged.
 Cost. Erasing part of a stroke is not possible yet.
+
+## 2026-11-06: Canvas file format 2 holds every kind of item; a pen-only drawing stays format 1
+Context. 0.4.1 adds highlighter strokes, shapes and sticky notes to a drawing, which the 0.4.0 file format cannot hold, and 0.4.0 reads any unknown kind as a broken file (read-only).
+Decision. Format 2 is `{"format":2,"items":[...]}`, one item per line. An item is a stroke (`tool` pen or highlighter, colour, width, points), a shape (`tool` "shape", `kind` line, arrow, rect or ellipse, colour, width, corners `a` and `b`), or a note (`tool` "note", colour, `x`, `y`, `w`, `h`, `text`). A drawing with only pen strokes is still written as format 1, so a 0.4.0 app (for example the Android one, if the other device is not updated yet) keeps opening it; one with anything else is format 2, which 0.4.0 shows read-only as "from a newer version" and never changes. The reader accepts both, is strict as before, rejects new kinds inside a format 1 file, and builds clean copies with the known fields only.
+Alternatives. Always format 2 (rejected: breaks 0.4.0 for drawings that need nothing new). Keeping `strokes` and adding `shapes` and `notes` lists (rejected: the order of items on the sheet matters, one list keeps it, and undo needs places in one list).
+Cost. The file format changes when the last non-pen item is deleted; this is intended. Moving a stroke rewrites its points.
+
+## 2026-11-06: Selecting is a loop, and half of an item's points must be inside it
+Decision. The select tool is a hand-drawn loop (the lasso). An item is chosen when at least half of its sample points are inside the loop (a long stroke is sampled at about 100 points; a note or rectangle by its corners and centre). A press on the selection moves it, a press elsewhere starts a new loop. Items cannot be moved past the coordinate limit of the file.
+Alternatives. All points inside (rejected: a loop drawn by hand rarely encloses the last point of a line, and selecting would feel broken). A rectangle drag (rejected: the spec says lasso, and a pen draws loops easily).
+Cost. A long stroke half inside the loop is selected whole; there is no way to select part of a stroke.
+
+## 2026-11-06: The side button of a pen is a setting; the eraser end always erases
+Decision. Settings has "Pen button": erases (default, as in 0.4.0), selects with a loop, or does nothing. The eraser end of a pen always erases.
+Cost. A pen whose button is reported differently by the system may not work; this can only be known on the device.
+
