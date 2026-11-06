@@ -307,7 +307,9 @@ Owner request (2026-11-06): "Continue onto v0.4.1". Slice from `docs/v0.4-plan.m
 | 0.3.8 | History box tidy-up and logging of failed history copies (see "0.3.8: built") | built, not tried on a device |
 | 0.4.0 | Canvas page with a pressure pen and an eraser (see "0.4.0: built" and `docs/v0.4-plan.md`) | built, not tried on a device |
 | 0.4.1 | Highlighter, shapes, sticky notes, lasso, pen button setting (see "0.4.1: built") | built, not tried on a device |
-| 0.4.2+ | Rest of canvas and ink: draw over text, split mode, PDF import | not started |
+| 0.4.2 | Draw over text: ink anchored to blocks | not started |
+| 0.4.3 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.4+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
