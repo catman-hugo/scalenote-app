@@ -1597,10 +1597,10 @@ button.danger:hover { background: var(--bg-hover); }
   a { color: inherit; text-decoration: underline; }
 }
 
-/* A narrow top bar: the title keeps room to read and the save status is cut short with an ellipsis. */
+/* A narrow top bar: when the buttons do not fit next to the title, they go on a second line, so
+   the title always keeps room to read and nothing is cut off or pushes the page sideways. */
 @media (max-width: 700px) {
-  .topbar { gap: var(--space-2); padding-left: var(--space-3); padding-right: var(--space-3); }
+  .topbar { flex-wrap: wrap; gap: var(--space-1) var(--space-2); padding-left: var(--space-3); padding-right: var(--space-3); }
   .topbar > button { flex: none; }
-  .title { min-width: 5.5rem; }
-  .status { flex: 0 1 auto; max-width: 4.5rem; overflow: hidden; text-overflow: ellipsis; }
+  .title { flex: 1 1 8rem; }
 }
