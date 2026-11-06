@@ -239,3 +239,8 @@ Context. A folder stayed "selected" after it was folded shut, so new pages and f
 Decision. The target is the selected folder only if it and all folders around it are open; otherwise the top level.
 Cost. Someone who wants a page in a folder has to open the folder first, which matches what is on screen.
 
+## 2026-11-06: Covers are optional, per page and as a whole
+Context. The owner asked for covers to be optional.
+Decision. The owner confirmed both: a "Show covers" toggle, and per page his own custom image or none. No page has a cover by default; adding and removing one is the page's own choice. A setting turns covers off completely, and then nothing about them is shown. The file format is decided when covers are built.
+Cost. One more setting to build and test.
+
