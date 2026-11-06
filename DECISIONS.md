@@ -344,3 +344,9 @@ Cost. A long stroke half inside the loop is selected whole; there is no way to s
 Decision. Settings has "Pen button": erases (default, as in 0.4.0), selects with a loop, or does nothing. The eraser end of a pen always erases.
 Cost. A pen whose button is reported differently by the system may not work; this can only be known on the device.
 
+## 2026-11-06: The `/canvas` block is planned as 0.4.3, after drawing over text
+Context. The owner asked whether v1's `/canvas` was planned. The spec's slash menu lists "Canvas (embeds a region of the page's canvas)", but the 0.4 plan had no slice for it.
+Decision. It becomes 0.4.3, so split mode moves to 0.4.4 and PDF import to 0.4.5. It comes after drawing over text (0.4.2) because both need blocks that know about the drawing, and after the 0.4.1 tools it will use. A block is a window onto a region of the page's one canvas, not a separate drawing. How it is stored in the markdown is decided with the owner at the start of 0.4.3.
+Alternatives. Before 0.4.2 (rejected: the text-to-drawing link is built there first). A separate drawing per block (rejected for now: a second file per page, and nothing in the spec asks for it).
+Cost. Until 0.4.3 there is no way to put a drawing inside the text; the Canvas mode is a whole page.
+
