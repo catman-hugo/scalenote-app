@@ -264,6 +264,17 @@ Owner request (2026-11-06): "start development of v0.4.0". The repo had no plan 
 - Also fixed: on a phone the page title was squeezed to a few letters by the top bar (star, history, Canvas/Text, status); the title now keeps at least 5.5rem and the status is cut short with an ellipsis (a test checks the title width).
 - Release notes: `docs/release-notes/0.4.0.md`.
 
+## 0.4.1: built
+Owner request (2026-11-06): "Continue onto v0.4.1". Slice from `docs/v0.4-plan.md`: highlighter, shapes, sticky notes, lasso (select, move, delete), pen button mapping as a setting.
+- File format (`canvasrules.js`): a drawing now holds items of several kinds (pen and highlighter strokes, line, arrow, rectangle and ellipse shapes, sticky notes). A drawing with only pen strokes is still written as format 1 (key `strokes`), so a 0.4.0 app on another device can open it; any other drawing is format 2 (key `items`). Both are read strictly as before; format 3 and up is "newer". Note text is a string of at most 2,000 characters, a note is 20 to 2,000 units wide and high, and the 20,000 limit now counts every item. No Rust change: `canvas.rs` never looked inside the file.
+- View (`canvasview.js`): toolbar gains select (lasso), highlighter, line, arrow, rectangle, ellipse, sticky note and a delete-selection button. A loop selects items with at least half of their points inside it; a press on the selection moves it, anywhere else starts a new loop; Delete, Escape, the toolbar button. The highlighter is one wide see-through path (4 times the pen width). Shapes are dragged out; a tap smaller than 4 pixels draws nothing. The eraser removes a shape when it touches its outline (not its empty middle) and a note when it touches the note. Undo and redo also cover moves and note text.
+- Sticky notes: the note tool puts a text box over the sheet; the note is added when it has text (a stray tap leaves nothing), and ends with Escape, Ctrl+Enter, a click elsewhere, leaving the page, or hiding the window. Tapping a note with the note tool edits it. Text is only ever put in a text box and drawn with `fillText`, never as html.
+- Pen button setting (Settings, "Drawing"): the side button of a pen erases (default), selects with a loop, or does nothing. The eraser end always erases.
+- Tested here: unit tests for the new rules (`canvas.test.mjs`, 19), and new browser tests for the highlighter, both file formats (a 0.4.0 file opens and grows; a pen-only drawing keeps format 1), each shape, a stray tap, erasing a shape, a sticky note (markup in the text is not read as markup, edit, undo, leaving mid-typing), selecting, moving, deleting, clearing the selection, a pen drawing the loop, the pen button setting in all three states, using every tool in any order, a huge note, and opening a file with every kind of item without changing it. Design screenshots, light and dark, desktop and phone.
+- NOT tested, needs a device: a real pen on the tablet with the new tools (the side button with each setting, drawing a loop with a pen), typing a note with the Android on-screen keyboard (does the box stay in view, does the page jump), highlighter and shapes feel and speed with many items.
+- Not done: resizing a note or a shape, changing the colour of what is selected, copy and paste of a selection, text on a canvas outside a note, snapping, flowchart connectors, drawing over text, split mode, PDF import.
+- Release notes: `docs/release-notes/0.4.1.md`.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -294,7 +305,8 @@ Owner request (2026-11-06): "start development of v0.4.0". The repo had no plan 
 | 0.3.7 | Export and page history (see "0.3.7: built") | built; history list, changes and restore tried by the owner on an Android tablet (2026-11-06); export and print not tried on a device |
 | 0.3.8 | History box tidy-up and logging of failed history copies (see "0.3.8: built") | built, not tried on a device |
 | 0.4.0 | Canvas page with a pressure pen and an eraser (see "0.4.0: built" and `docs/v0.4-plan.md`) | built, not tried on a device |
-| 0.4.1+ | Rest of canvas and ink: highlighter, shapes, sticky notes, lasso, draw over text, split mode, PDF import | not started |
+| 0.4.1 | Highlighter, shapes, sticky notes, lasso, pen button setting (see "0.4.1: built") | built, not tried on a device |
+| 0.4.2+ | Rest of canvas and ink: draw over text, split mode, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
