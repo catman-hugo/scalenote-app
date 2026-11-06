@@ -79,6 +79,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     history: new DrawingHistory(),
     readOnly: false,
     tool: "pen",
+    shape: "rect",
     colour: "ink",
     width: PEN_WIDTHS[1],
     fingerDraws: false,
@@ -108,58 +109,146 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   const context = surface.getContext("2d");
 
   // ---- toolbar ----
+  // Shapes, colours, line widths and the less used switches live in small menus that open under
+  // their button, so the whole toolbar fits on one or two lines and the sheet keeps its room.
   const toolButtons = {};
-  function addTools(names) {
-    for (const name of names) {
-      const button = toggleButton(t.tools[name], () => setTool(name));
-      button.dataset.tool = name;
-      button.append(icon(TOOL_ICONS[name]));
-      toolButtons[name] = button;
-      toolbar.append(button);
-    }
+  function toolButton(name) {
+    const button = toggleButton(t.tools[name], () => setTool(name));
+    button.dataset.tool = name;
+    button.append(icon(TOOL_ICONS[name]));
+    toolButtons[name] = button;
+    return button;
   }
-  addTools(["select", "pen", "highlighter", "eraser", "hand"]);
+
+  const menus = {};
+  let openMenu = null;
+  function makeMenu(name, label, button, items) {
+    const panel = make("div", "canvas-menu");
+    panel.setAttribute("role", "group");
+    panel.setAttribute("aria-label", label);
+    panel.hidden = true;
+    panel.dataset.menu = name;
+    panel.append(...items);
+    button.dataset.menu = name;
+    button.setAttribute("aria-haspopup", "true");
+    button.setAttribute("aria-expanded", "false");
+    menus[name] = { name, button, panel };
+    host.append(panel);
+  }
+  function closeMenu() {
+    if (!openMenu) return;
+    openMenu.panel.hidden = true;
+    openMenu.button.setAttribute("aria-expanded", "false");
+    openMenu = null;
+  }
+  function toggleMenu(name) {
+    const wasOpen = openMenu && openMenu.name === name;
+    closeMenu();
+    if (wasOpen) return;
+    const menu = menus[name];
+    menu.panel.hidden = false;
+    menu.button.setAttribute("aria-expanded", "true");
+    // Under the button, kept inside the canvas area whatever the width.
+    const hostBox = host.getBoundingClientRect();
+    const buttonBox = menu.button.getBoundingClientRect();
+    const left = Math.max(4, Math.min(buttonBox.left - hostBox.left, hostBox.width - menu.panel.offsetWidth - 4));
+    menu.panel.style.left = `${left}px`;
+    menu.panel.style.top = `${buttonBox.bottom - hostBox.top + 4}px`;
+    openMenu = menu;
+  }
+  // A press anywhere outside the open menu closes it.
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (openMenu && !openMenu.panel.contains(event.target) && !openMenu.button.contains(event.target)) closeMenu();
+    },
+    true,
+  );
+  host.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && openMenu) {
+      const button = openMenu.button;
+      closeMenu();
+      button.focus();
+    }
+  });
+
+  // A button that opens a menu shows what is chosen now, and a small arrow.
+  function menuButton(label, show) {
+    const button = make("button", "canvas-tool canvas-menu-button");
+    button.type = "button";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.show = () => {
+      const arrow = icon("chevronDown");
+      arrow.classList.add("canvas-arrow");
+      button.replaceChildren(show(), arrow);
+    };
+    return button;
+  }
+
+  toolbar.append(...["select", "pen", "highlighter", "eraser", "hand"].map(toolButton));
   toolbar.append(make("span", "canvas-gap"));
-  addTools([...SHAPES, "note"]);
-  toolbar.append(make("span", "canvas-gap"));
+
+  // Shapes: the button picks the shape used last and opens the others.
+  const shapeButton = menuButton(t.shapes, () => icon(TOOL_ICONS[state.shape]));
+  shapeButton.addEventListener("click", () => {
+    if (!SHAPES.includes(state.tool)) setTool(state.shape);
+    toggleMenu("shape");
+  });
+  makeMenu("shape", t.shapes, shapeButton, SHAPES.map(toolButton));
+  toolbar.append(shapeButton, toolButton("note"), make("span", "canvas-gap"));
+
   const colourButtons = {};
-  for (const name of PEN_COLOURS) {
+  const colourButton = menuButton(t.colour, () => make("span", `canvas-swatch pen-${state.colour}`));
+  colourButton.addEventListener("click", () => toggleMenu("colour"));
+  makeMenu("colour", t.colour, colourButton, PEN_COLOURS.map((name) => {
     const button = toggleButton(t.colours[name], () => setColour(name));
     button.classList.add("canvas-colour");
     button.dataset.colour = name;
     button.append(make("span", `canvas-swatch pen-${name}`));
     colourButtons[name] = button;
-    toolbar.append(button);
-  }
-  toolbar.append(make("span", "canvas-gap"));
+    return button;
+  }));
+
   const widthButtons = {};
-  PEN_WIDTHS.forEach((value, index) => {
+  const widthButton = menuButton(t.width, () => {
+    const line = make("span", "canvas-line");
+    line.dataset.size = String(PEN_WIDTHS.indexOf(state.width));
+    return line;
+  });
+  widthButton.addEventListener("click", () => toggleMenu("width"));
+  makeMenu("width", t.width, widthButton, PEN_WIDTHS.map((value, index) => {
     const button = toggleButton(t.widths[index], () => setWidth(value));
     const line = make("span", "canvas-line");
     line.dataset.size = String(index);
     button.append(line);
     widthButtons[value] = button;
-    toolbar.append(button);
-  });
-  toolbar.append(make("span", "canvas-gap"));
+    return button;
+  }));
+  toolbar.append(colourButton, widthButton, make("span", "canvas-gap"));
+
   const undoButton = plainButton(t.undo, "undo", undo);
   const redoButton = plainButton(t.redo, "redo", redo);
   const deleteButton = plainButton(t.deleteSelection, "trash", deleteSelection);
   deleteButton.dataset.action = "delete-selection";
+
   const fingerButton = toggleButton(t.finger, () => {
     state.fingerDraws = !state.fingerDraws;
     drawToolbar();
   });
-  fingerButton.classList.add("canvas-text-tool");
+  fingerButton.classList.add("canvas-menu-row");
   fingerButton.textContent = t.finger;
-  const resetButton = make("button", "canvas-text-tool", t.resetView);
+  const resetButton = make("button", "canvas-menu-row", t.resetView);
   resetButton.type = "button";
   resetButton.addEventListener("click", () => {
+    closeMenu();
     fitView();
     scheduleDraw();
   });
-  toolbar.append(undoButton, redoButton, deleteButton, make("span", "canvas-gap"), fingerButton, resetButton);
-  host.replaceChildren(toolbar, notice, stage);
+  const moreButton = plainButton(t.more, "more", () => toggleMenu("more"));
+  makeMenu("more", t.more, moreButton, [fingerButton, resetButton]);
+  toolbar.append(undoButton, redoButton, deleteButton, moreButton);
+  host.prepend(toolbar, notice, stage);
 
   function drawToolbar() {
     for (const [name, button] of Object.entries(toolButtons)) {
@@ -168,10 +257,13 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
     for (const [name, button] of Object.entries(colourButtons)) {
       button.setAttribute("aria-pressed", String(state.colour === name));
-      button.disabled = state.readOnly;
     }
     for (const [value, button] of Object.entries(widthButtons)) {
       button.setAttribute("aria-pressed", String(state.width === Number(value)));
+    }
+    shapeButton.setAttribute("aria-pressed", String(SHAPES.includes(state.tool)));
+    for (const button of [shapeButton, colourButton, widthButton]) {
+      button.show();
       button.disabled = state.readOnly;
     }
     fingerButton.setAttribute("aria-pressed", String(state.fingerDraws));
@@ -179,11 +271,14 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     undoButton.disabled = state.readOnly || !state.history.canUndo;
     redoButton.disabled = state.readOnly || !state.history.canRedo;
     deleteButton.disabled = state.readOnly || state.selection.length === 0;
+    if (state.readOnly) closeMenu();
   }
 
   function setTool(name) {
+    closeMenu();
     commitNote();
     state.tool = name;
+    if (SHAPES.includes(name)) state.shape = name;
     if (name !== "select") state.selection = [];
     drawToolbar();
     scheduleDraw();
@@ -191,12 +286,18 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   function setColour(name) {
     state.colour = name;
     if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen");
-    else drawToolbar();
+    else {
+      closeMenu();
+      drawToolbar();
+    }
   }
   function setWidth(value) {
     state.width = value;
     if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen");
-    else drawToolbar();
+    else {
+      closeMenu();
+      drawToolbar();
+    }
   }
 
   // ---- history ----
