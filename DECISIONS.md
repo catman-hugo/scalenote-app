@@ -311,3 +311,20 @@ Decision. The comparison is made against the page as read from disk. At restore 
 ## 2026-11-06: Export is one page, to a fixed folder beside the notes folder
 Decision. "Export this page as markdown" writes the page and the pictures it names to a new folder inside `<notes folder> (exports)`, like the Obsidian copy: the interface sends only the page, nothing is replaced, a half-made folder is removed, Android is refused. The text is converted like the Obsidian copy (colour spans to `==highlight==`). PDF goes through the system print window and a print style sheet, because it needs no new library and works on Windows and Linux; it is hidden on Android.
 Cost. No whole-folder export yet; the PDF layout is whatever the system print window gives.
+
+## 2026-11-06: 0.4 is built in slices; 0.4.0 is the canvas page with a pen and an eraser
+Context. The spec's 0.4 (canvas and ink) holds modes, a pressure pen, highlighter, eraser, shapes, sticky notes, lasso, drawing over text and PDF import. The owner chose the drawing sheet itself as the first slice.
+Decision. 0.4.0 is a Canvas mode for a page with a pressure pen, an eraser, colours, widths, undo and redo, pan and zoom. The slices after it are in `docs/v0.4-plan.md`.
+Cost. Nothing is drawn over text yet, so the sheet and the text are two separate views of a page.
+
+## 2026-11-06: A drawing is `Name.canvas.json` next to the page and follows it
+Context. The spec says ink and drawings go in sidecar files next to the note, ignored by Obsidian, so the markdown stays clean.
+Decision. The drawing of `Plan.md` is `Plan.canvas.json` in the same folder. The page list shows only `.md`, so it never appears as a page. Renaming, moving, deleting to the trash and restoring a page carry its drawing along (restoring gives it the name the page has after restore, and a stale drawing with that name is never replaced). A folder carries the drawings inside it. Reading and writing are atomic, size limited (32 MiB) and version checked like a page; a link in the place of the file is never followed.
+Format 1: `{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[x,y,pressure],...]}, ...]}`, one stroke per line. Coordinates are canvas units on an unbounded sheet (not pixels), rounded to 0.1, pressure to 0.01. Colours are names, not codes, so the theme chooses the shade.
+The interface reads the file strictly: if any stroke is not understood the whole drawing is read-only and never saved over (dropping the bad strokes and saving would destroy them). A file with a newer `format` is told apart from a broken one.
+Alternatives. Drawings inside the markdown (rejected: breaks the clean-markdown rule). A hidden folder keyed by page id like the history (rejected: the spec asks for next to the page; renames are handled by carrying the file).
+Cost. Renaming or moving a page by another program leaves its drawing behind under the old name. The drawing is not yet part of the page history, the Obsidian-format export of one page, or search.
+
+## 2026-11-06: A finger moves the sheet, a pen draws, and the eraser removes whole strokes
+Decision. A pen or mouse draws; a finger pans (one) or zooms (two), so a resting hand never leaves a mark, with "Finger draws" for a device without a pen. The pen's barrel button or eraser end erases while held. The eraser removes whole strokes (not parts), which keeps undo exact and the stored strokes unchanged.
+Cost. Erasing part of a stroke is not possible yet.

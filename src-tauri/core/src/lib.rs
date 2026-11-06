@@ -7,6 +7,7 @@
 
 pub mod atomic;
 pub mod attachments;
+pub mod canvas;
 pub mod base64;
 pub mod logger;
 pub mod names;

@@ -24,6 +24,8 @@ import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
 import { openTags } from "./tagsdialog.js";
 import { openHistory } from "./historydialog.js";
+import { createCanvasView } from "./canvasview.js";
+import { parseCanvas, serializeCanvas } from "./canvasrules.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
@@ -49,7 +51,12 @@ const app = {
   autosave: null,
   // "editor" shows blocks, "source" shows the whole note as markdown text. The choice stays
   // when another note is opened.
+  // "canvas" shows the page's drawing (see the canvas section below); it is left again when another
+  // page is opened, because a drawing belongs to one page.
   mode: "editor",
+  canvasView: null,
+  canvasSave: null,
+  canvasVersion: null,
   // The line ending of the note in source view; a text box always uses "\n" inside.
   lineEnding: "\n",
   // Pages opened in this session, newest first, for the search box before anything is typed.
@@ -725,6 +732,7 @@ async function exportCurrentPage() {
 async function printCurrentPage() {
   if (!app.current) return;
   if (app.mode === "source") toggleSource();
+  if (app.mode === "canvas") await leaveCanvas();
   if (app.autosave) await app.autosave.flush();
   window.print();
 }
@@ -1023,7 +1031,7 @@ function openSearch() {
     { label: c.tags, run: () => openTagsDialog() },
     { label: c.sidebar, run: toggleSidebar },
   ];
-  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: c.source, run: toggleSource });
+  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: c.canvas, run: toggleCanvas }, { label: c.source, run: toggleSource });
   if (app.current && !isAndroid) commands.push({ label: c.exportPage, run: exportCurrentPage }, { label: c.printPage, run: printCurrentPage });
   openPalette(el("palette"), {
     recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
@@ -1054,6 +1062,8 @@ async function showNoNote() {
   el("editor").hidden = true;
   el("source").hidden = true;
   el("sourceToggle").hidden = true;
+  el("canvasToggle").hidden = true;
+  el("canvasHost").hidden = true;
   el("title").hidden = true;
   drawFavorite();
   drawHistoryButton();
@@ -1061,6 +1071,7 @@ async function showNoNote() {
 }
 
 async function closeCurrentNote() {
+  await leaveCanvas();
   if (app.autosave) await app.autosave.flush();
   if (app.autosave) app.autosave.cancel();
   app.current = null;
@@ -1114,6 +1125,79 @@ function showNote(path, note) {
   loadBacklinks(path);
 }
 
+// ---------- canvas (drawing) ----------
+
+// The drawing of the open page lives in its own file next to the page (see canvas.rs), saved
+// by its own autosave so drawing never waits for the text, and the text never waits for drawing.
+function ensureCanvasView() {
+  if (app.canvasView) return app.canvasView;
+  app.canvasView = createCanvasView(el("canvasHost"), {
+    onChange: () => app.canvasSave.touch(),
+    onNotice: (text) => showToast(text),
+  });
+  app.canvasSave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCanvas, onStatus: setStatus });
+  return app.canvasView;
+}
+
+async function saveCanvas() {
+  if (!app.current || !app.canvasView || app.canvasView.readOnly) return;
+  const path = app.current.path;
+  try {
+    app.canvasVersion = await backend.writeCanvas(path, serializeCanvas(app.canvasView.canvas), app.canvasVersion);
+  } catch (error) {
+    if (error instanceof BackendError && error.code === "conflict") {
+      // The file on disk wins, as for pages. Saving is switched off so it is never overwritten.
+      app.canvasView.lock(strings.canvas.conflict);
+      app.canvasSave.cancel();
+      return;
+    }
+    logProblem("saving the drawing failed", error);
+    throw error;
+  }
+}
+
+async function enterCanvas() {
+  if (!app.current || app.mode === "canvas") return;
+  if (app.mode === "source") await toggleSource();
+  await app.autosave.flush();
+  const view = ensureCanvasView();
+  const path = app.current.path;
+  let canvas = null;
+  let problem = "";
+  try {
+    const file = await backend.readCanvas(path);
+    app.canvasVersion = file ? file.version : null;
+    if (file) {
+      const read = parseCanvas(file.text);
+      canvas = read.canvas || null;
+      problem = read.problem || "";
+    }
+  } catch (error) {
+    logProblem("opening the drawing failed", error);
+    showBanner(strings.canvas.loadFailed);
+    return;
+  }
+  if (!app.current || app.current.path !== path) return;
+  app.mode = "canvas";
+  applyMode();
+  view.show(canvas, problem);
+  view.focus();
+}
+
+// Saves what was drawn and goes back to the text. Safe to call when the canvas is not open.
+async function leaveCanvas() {
+  if (app.mode !== "canvas") return;
+  if (app.canvasSave) await app.canvasSave.flush();
+  if (app.canvasSave) app.canvasSave.cancel();
+  app.mode = "editor";
+  applyMode();
+}
+
+async function toggleCanvas() {
+  if (app.mode === "canvas") await leaveCanvas();
+  else await enterCanvas();
+}
+
 // ---------- markdown source view ----------
 
 // A text box turns every line ending into "\n" inside. A note with Windows line endings
@@ -1146,8 +1230,16 @@ function plainCurrentText() {
 
 function applyMode() {
   const source = app.mode === "source" && app.current;
-  el("editor").hidden = !app.current || source;
+  const canvas = app.mode === "canvas" && app.current;
+  el("editor").hidden = !app.current || source || canvas;
   el("source").hidden = !source;
+  el("canvasHost").hidden = !canvas;
+  const toggleCanvas = el("canvasToggle");
+  toggleCanvas.hidden = !app.current;
+  toggleCanvas.textContent = canvas ? strings.canvas.toggleBack : strings.canvas.toggle;
+  toggleCanvas.setAttribute("aria-label", canvas ? strings.canvas.toggleBackLabel : strings.canvas.toggleLabel);
+  toggleCanvas.setAttribute("aria-pressed", String(Boolean(canvas)));
+  el("sourceToggle").hidden = !app.current || canvas;
   const toggle = el("sourceToggle");
   toggle.textContent = source ? strings.source.hide : strings.source.show;
   toggle.setAttribute("aria-label", source ? strings.source.hideLabel : strings.source.showLabel);
@@ -1158,6 +1250,7 @@ function applyMode() {
 
 async function toggleSource() {
   if (!app.current) return;
+  if (app.mode === "canvas") await leaveCanvas();
   if (app.mode === "editor") {
     // The note on screen is the truth: show exactly what saving it would write.
     fillSource(plainCurrentText());
@@ -1432,6 +1525,7 @@ function wireEvents() {
   }
   el("toggle").addEventListener("click", toggleSidebar);
   el("sourceToggle").addEventListener("click", toggleSource);
+  el("canvasToggle").addEventListener("click", toggleCanvas);
   el("source").addEventListener("input", () => app.autosave.touch());
   el("scrim").addEventListener("click", toggleSidebar);
   el("bannerClose").addEventListener("click", hideBanner);
