@@ -350,3 +350,9 @@ Decision. It becomes 0.4.3, so split mode moves to 0.4.4 and PDF import to 0.4.5
 Alternatives. Before 0.4.2 (rejected: the text-to-drawing link is built there first). A separate drawing per block (rejected for now: a second file per page, and nothing in the spec asks for it).
 Cost. Until 0.4.3 there is no way to put a drawing inside the text; the Canvas mode is a whole page.
 
+## 2026-11-06: Drawing options go in menus under their buttons; 0.4.2 is a tidy-up, later slices move up by one
+Context. On the tablet the drawing toolbar took three lines and left a thin sheet. The owner asked for drop-downs or toggles, and for Settings, Tags and Trash to look like New page and New folder.
+Decision. Shapes, colour, line width and the less used switches are menus that open under their button, and the button shows the current choice (a menu button also selects the shape used last, so one press starts drawing and offers the others). Only the main tools stay in view. Settings, Tags and Trash use the same outlined icon-and-label button as New page and New folder, with the label hidden below 17 rem. The tidy-up ships as 0.4.2, so drawing over text becomes 0.4.3, the `/canvas` block 0.4.4, split mode 0.4.5 and PDF import 0.4.6.
+Alternatives. A collapsible toolbar (rejected: hides tools behind one more press, with no gain over menus for the rarely changed things). Smaller buttons (rejected: touch targets on a tablet and phone need the size).
+Cost. Choosing a colour or width takes two presses instead of one. A menu is one more thing on screen that must be closed.
+

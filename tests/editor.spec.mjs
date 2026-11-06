@@ -3746,6 +3746,20 @@ const openCanvas = async (page) => {
   await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
 };
 const sheetBox = (page) => page.locator(".canvas-surface").boundingBox();
+// The shapes, colours, widths and the less used switches are in small menus under their buttons.
+// A menu that is already open is not opened again (pressing its button would close it).
+async function menuPick(page, menu, label) {
+  const panel = page.locator(`.canvas-menu[data-menu="${menu}"]`);
+  if (!(await panel.isVisible())) await page.click(`.canvas-toolbar [data-menu="${menu}"]`);
+  await panel.locator(`button[aria-label="${label}"], button:text-is("${label}")`).click();
+}
+async function chooseColour(page, name) {
+  const panel = page.locator('.canvas-menu[data-menu="colour"]');
+  if (!(await panel.isVisible())) await page.click('.canvas-toolbar [data-menu="colour"]');
+  await panel.locator(`.canvas-colour[data-colour="${name}"]`).click();
+}
+const chooseWidth = (page, label) => menuPick(page, "width", label);
+const chooseMore = (page, label) => menuPick(page, "more", label);
 async function drawLine(page, from, to, steps = 8) {
   const box = await sheetBox(page);
   await page.mouse.move(box.x + from[0], box.y + from[1]);
@@ -3802,8 +3816,8 @@ await test("a pen's pressure is kept, a light touch is thin and a firm one thick
 await test("colour and line width are chosen from the toolbar and kept with the stroke", async (page) => {
   await canvasVault(page);
   await openCanvas(page);
-  await page.click('.canvas-colour[data-colour="red"]');
-  await page.click('.canvas-toolbar button[aria-label="Thick line"]');
+  await chooseColour(page, "red");
+  await chooseWidth(page, "Thick line");
   await drawLine(page, [60, 80], [200, 80]);
   await waitSaved(page);
   const stroke = (await savedDrawing(page)).strokes[0];
@@ -3849,7 +3863,7 @@ await test("a finger moves the sheet and never draws, unless Finger draws is on"
   await touchEvents(page, 21, "pointerup", 140, 130);
   await page.waitForTimeout(1200);
   assert.equal(await savedDrawing(page), null, "nothing was drawn or saved");
-  await page.click('.canvas-toolbar button[aria-label="Finger draws"]');
+  await chooseMore(page, "Finger draws");
   await touchEvents(page, 21, "pointerdown", 100, 100);
   await touchEvents(page, 21, "pointermove", 140, 130);
   await touchEvents(page, 21, "pointerup", 140, 130);
@@ -3942,7 +3956,7 @@ await test("a long fast scribble, rapid clicks and tools pressed in any order ra
   await page.mouse.down();
   await page.mouse.move(box.x + 200, box.y + 160, { steps: 5 });
   await page.mouse.up();
-  await page.click(".canvas-text-tool >> text=Show all");
+  await chooseMore(page, "Show all");
   await page.mouse.wheel(0, 120);
   await waitSaved(page);
   const drawing = await savedDrawing(page);
@@ -3966,7 +3980,8 @@ await test("on a phone the canvas toolbar fits the window and the sheet fills th
 
 // ---------- 0.4.1: highlighter, shapes, sticky notes, lasso, pen button ----------
 
-const tool = (page, label) => page.click(`.canvas-toolbar button[aria-label="${label}"]`);
+const SHAPE_LABELS = ["Line", "Arrow", "Rectangle", "Ellipse"];
+const tool = (page, label) => (SHAPE_LABELS.includes(label) ? menuPick(page, "shape", label) : page.click(`.canvas-toolbar button[aria-label="${label}"]`));
 // A pen-only drawing is still written in the 0.4.0 format, with its strokes under another key.
 const items = async (page) => {
   const drawing = await savedDrawing(page);
@@ -4025,7 +4040,7 @@ await test("a drawing with only pen strokes keeps the older file format, and one
 await test("each shape is drawn by dragging, a stray tap draws nothing, and a shape can be erased and brought back", async (page) => {
   await canvasVault(page);
   await openCanvas(page);
-  await page.click('.canvas-colour[data-colour="green"]');
+  await chooseColour(page, "green");
   for (const [label, from, to] of [["Line", [40, 40], [140, 60]], ["Arrow", [40, 100], [200, 100]], ["Rectangle", [40, 140], [140, 220]], ["Ellipse", [180, 140], [300, 220]]]) {
     await tool(page, label);
     await dragPath(page, [from, to]);
@@ -4063,7 +4078,7 @@ await test("a sticky note is typed into a box on the sheet, saved with its text,
   await page.waitForSelector(".canvas-note-input", { state: "detached" });
   await page.waitForTimeout(1200);
   assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), undefined, "an empty note adds nothing, so nothing is written");
-  await page.click('.canvas-colour[data-colour="orange"]');
+  await chooseColour(page, "orange");
   await page.mouse.click(box.x + 100, box.y + 100);
   await page.waitForSelector(".canvas-note-input");
   await page.keyboard.type("Buy <b>milk</b> & \"eggs\"\nand a very long word that has to be wrapped inside the note");
@@ -4226,7 +4241,7 @@ await test("the drawing tools can be used in any order, quickly, with huge notes
   await waitSaved(page);
   const noteItem = (await items(page)).find((i) => i.tool === "note");
   assert.ok(noteItem.text.length <= 2000, "a note is cut at its limit");
-  await page.click('.canvas-text-tool >> text=Show all');
+  await chooseMore(page, "Show all");
   await page.click('[data-action="delete-selection"]', { force: true }).catch(() => {});
 }, ctxOpts);
 
@@ -4248,6 +4263,150 @@ function serializeForTest(list) {
   return `{"format":2,"items":[\n${list.map((i) => JSON.stringify(i)).join(",\n")}\n]}\n`;
 }
 
+// ---------- 0.4.2: a compact drawing toolbar with menus, and buttons at the foot of the sidebar ----------
+
+await test("the drawing toolbar is one line on a wide window and at most two on a phone, so the sheet keeps its room", async (page) => {
+  await canvasVault(page);
+  await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+  await openCanvas(page);
+  const height = (await page.locator(".canvas-toolbar").boundingBox()).height;
+  assert.ok(height < 60, `one line: ${height}px`);
+  assert.ok((await sheetBox(page)).height > 600);
+}, { viewport: { width: 900, height: 1000 }, settings: existingUser({ updates: false }) });
+
+await test("on a phone the drawing toolbar takes at most two lines", async (page) => {
+  await canvasVault(page);
+  await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+  await openCanvas(page);
+  const height = (await page.locator(".canvas-toolbar").boundingBox()).height;
+  assert.ok(height < 110, `two lines at most: ${height}px`);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("the shape menu opens under its button, shows the shape used last, and closes by choosing, Escape or a press elsewhere", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const panel = page.locator('.canvas-menu[data-menu="shape"]');
+  assert.equal(await panel.isHidden(), true, "closed to begin with");
+  await page.click('.canvas-toolbar [data-menu="shape"]');
+  assert.equal(await panel.isVisible(), true);
+  assert.equal(await page.getAttribute('.canvas-toolbar [data-menu="shape"]', "aria-expanded"), "true");
+  const buttonBox = await page.locator('.canvas-toolbar [data-menu="shape"]').boundingBox();
+  const panelBox = await panel.boundingBox();
+  assert.ok(panelBox.y >= buttonBox.y + buttonBox.height - 1, "under the button");
+  assert.deepEqual(await panel.locator("button").evaluateAll((n) => n.map((b) => b.getAttribute("aria-label"))), ["Line", "Arrow", "Rectangle", "Ellipse"]);
+  await panel.locator('button[aria-label="Ellipse"]').click();
+  assert.equal(await panel.isHidden(), true, "choosing closes it");
+  assert.equal(await page.getAttribute('.canvas-toolbar [data-menu="shape"]', "aria-pressed"), "true", "the shape tool is on");
+  await drawLine(page, [60, 80], [200, 160]);
+  await waitSaved(page);
+  assert.equal((await items(page))[0].kind, "ellipse");
+  await page.click('.canvas-toolbar button[aria-label="Pen"]');
+  assert.equal(await page.getAttribute('.canvas-toolbar [data-menu="shape"]', "aria-pressed"), "false");
+  await page.click('.canvas-toolbar [data-menu="shape"]');
+  assert.equal(await page.getAttribute('.canvas-menu button[data-tool="ellipse"]', "aria-pressed"), "true", "opening it switches to the shape used last");
+  await page.keyboard.press("Escape");
+  assert.equal(await panel.isHidden(), true, "Escape");
+  await page.click('.canvas-toolbar [data-menu="shape"]');
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 300, box.y + 300);
+  assert.equal(await panel.isHidden(), true, "a press on the sheet");
+  await page.click('.canvas-toolbar [data-menu="shape"]');
+  await page.click('.canvas-toolbar [data-menu="shape"]');
+  assert.equal(await panel.isHidden(), true, "the button again");
+}, ctxOpts);
+
+await test("the colour and line width menus show what is chosen and change it", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const colour = '.canvas-toolbar [data-menu="colour"]';
+  const width = '.canvas-toolbar [data-menu="width"]';
+  assert.equal(await page.locator(`${colour} .canvas-swatch`).getAttribute("class"), "canvas-swatch pen-ink");
+  await chooseColour(page, "purple");
+  assert.equal(await page.locator(`${colour} .canvas-swatch`).getAttribute("class"), "canvas-swatch pen-purple");
+  assert.equal(await page.locator(`${width} .canvas-line`).getAttribute("data-size"), "1");
+  await chooseWidth(page, "Thin line");
+  assert.equal(await page.locator(`${width} .canvas-line`).getAttribute("data-size"), "0");
+  await drawLine(page, [60, 80], [260, 80]);
+  await waitSaved(page);
+  const stroke = (await items(page))[0];
+  assert.equal(stroke.color, "purple");
+  assert.equal(stroke.width, 2);
+  // Opening a colour menu does not change the tool; choosing a colour with the eraser goes back to the pen.
+  await page.click('.canvas-toolbar button[aria-label="Eraser"]');
+  await page.click(colour);
+  assert.equal(await page.getAttribute('.canvas-toolbar button[aria-label="Eraser"]', "aria-pressed"), "true");
+  await page.locator('.canvas-menu[data-menu="colour"] .canvas-colour[data-colour="red"]').click();
+  assert.equal(await page.getAttribute('.canvas-toolbar button[aria-label="Pen"]', "aria-pressed"), "true");
+}, ctxOpts);
+
+await test("the more menu holds Finger draws, which stays open to show its state, and Show all, which closes it", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await page.click('.canvas-toolbar [data-menu="more"]');
+  const finger = page.locator('.canvas-menu[data-menu="more"] button', { hasText: "Finger draws" });
+  assert.equal(await finger.getAttribute("aria-pressed"), "false");
+  await finger.click();
+  assert.equal(await finger.getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator('.canvas-menu[data-menu="more"]').isVisible(), true, "stays open");
+  await page.locator('.canvas-menu[data-menu="more"] button', { hasText: "Show all" }).click();
+  assert.equal(await page.locator('.canvas-menu[data-menu="more"]').isHidden(), true);
+  assert.equal(await page.locator('.canvas-toolbar [data-menu="more"]').getAttribute("aria-expanded"), "false");
+}, ctxOpts);
+
+await test("every drawing menu stays inside the window on a phone, and a drawing that cannot be read still opens the more menu", async (page) => {
+  await canvasVault(page, '{"format":1,"strokes":[{"tool":"nope"}]}');
+  await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+  await openCanvas(page);
+  const window_ = page.viewportSize();
+  for (const name of ["more"]) {
+    await page.click(`.canvas-toolbar [data-menu="${name}"]`);
+    const box = await page.locator(`.canvas-menu[data-menu="${name}"]`).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= window_.width, `${name} fits sideways`);
+    await page.keyboard.press("Escape");
+  }
+  for (const name of ["shape", "colour", "width"]) assert.equal(await page.locator(`.canvas-toolbar [data-menu="${name}"]`).isDisabled(), true, `${name} is off for a drawing that is read-only`);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("on a phone the shape, colour and width menus are inside the window", async (page) => {
+  await canvasVault(page);
+  await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+  await openCanvas(page);
+  const window_ = page.viewportSize();
+  for (const name of ["shape", "colour", "width", "more"]) {
+    await page.click(`.canvas-toolbar [data-menu="${name}"]`);
+    const box = await page.locator(`.canvas-menu[data-menu="${name}"]`).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= window_.width && box.y + box.height <= window_.height, `${name} fits`);
+    await page.keyboard.press("Escape");
+  }
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("Settings, Tags and Trash are buttons like New page and New folder: icon and label on one line, label hidden when the list is narrow", async (page) => {
+  await page.waitForSelector("#openSettings");
+  const names = ["openSettings", "openTags", "openTrash"];
+  const boxes = [];
+  for (const id of names) {
+    const button = page.locator(`#${id}`);
+    assert.equal(await button.locator("svg.icon").count(), 1, `${id} has an icon`);
+    assert.equal(await button.locator(".btn-label").isVisible(), true, `${id} shows its label in a wide list`);
+    assert.notEqual(await button.evaluate((n) => getComputedStyle(n).borderTopStyle), "none", `${id} has the same outline as New page`);
+    boxes.push(await button.boundingBox());
+  }
+  const sidebarBox = await page.locator("#sidebar").boundingBox();
+  assert.ok(boxes.every((b) => b.x >= sidebarBox.x && b.x + b.width <= sidebarBox.x + sidebarBox.width), "all three fit in the list");
+  assert.ok(boxes.every((b) => Math.abs(b.y - boxes[0].y) < 2), "on one line");
+  const newPage = await page.locator("#newNote").boundingBox();
+  assert.ok(Math.abs(newPage.height - boxes[0].height) < 2, "the same height as New page");
+  // Narrow the list: the label goes, the icon and the accessible name stay.
+  const narrow = await page.evaluate(() => { const s = document.querySelector("#sidebar"); s.style.width = "15rem"; return s.getBoundingClientRect().width; });
+  assert.ok(narrow < 260);
+  for (const id of names) {
+    // The label is clipped to a single pixel (so it stays a screen reader's name), not removed.
+    assert.ok((await page.locator(`#${id} .btn-label`).boundingBox()).width <= 1, `${id} label is hidden`);
+    assert.ok((await page.getAttribute(`#${id}`, "aria-label")).length > 2, `${id} keeps its name`);
+    assert.equal(await page.locator(`#${id} svg.icon`).isVisible(), true);
+  }
+});
+
 // Screenshots of the screens added in 0.4.0 (only when SHOTS_DIR is set), in light and dark.
 if (shots) {
   for (const scheme of ["light", "dark"]) {
@@ -4266,10 +4425,10 @@ if (shots) {
       await page.screenshot({ path: name("2-empty-canvas") });
       const curve = (cx, cy, r, from, to) => Array.from({ length: 40 }, (_, i) => { const a = from + ((to - from) * i) / 39; return [cx + r * Math.cos(a), cy + r * Math.sin(a), 0.2 + 0.8 * Math.sin((i / 39) * Math.PI)]; });
       await penStroke(page, curve(120, 150, 70, 0, 6.2));
-      await page.click('.canvas-colour[data-colour="red"]');
+      await chooseColour(page, "red");
       await penStroke(page, curve(280, 150, 70, 3.4, 9));
-      await page.click('.canvas-colour[data-colour="blue"]');
-      await page.click('.canvas-toolbar button[aria-label="Thick line"]');
+      await chooseColour(page, "blue");
+      await chooseWidth(page, "Thick line");
       await penStroke(page, [[40, 280, 0.6], [140, 300, 0.6], [240, 270, 0.6], [330, 300, 0.6]]);
       await page.waitForTimeout(300);
       await page.screenshot({ path: name("3-canvas-with-strokes") });
@@ -4297,18 +4456,18 @@ if (shots) {
       await page.screenshot({ path: name("1-toolbar") });
       await penStroke(page, [[40, 60, 0.4], [120, 40, 0.8], [200, 70, 0.5], [300, 50, 0.6]]);
       await tool(page, "Highlighter");
-      await page.click('.canvas-colour[data-colour="orange"]');
+      await chooseColour(page, "orange");
       await dragPath(page, [[30, 120], [330, 125]]);
       await tool(page, "Rectangle");
-      await page.click('.canvas-colour[data-colour="blue"]');
+      await chooseColour(page, "blue");
       await dragPath(page, [[40, 170], [160, 250]]);
       await tool(page, "Ellipse");
       await dragPath(page, [[190, 170], [330, 250]]);
       await tool(page, "Arrow");
-      await page.click('.canvas-colour[data-colour="red"]');
+      await chooseColour(page, "red");
       await dragPath(page, [[100, 330], [250, 280]]);
       await tool(page, "Sticky note");
-      await page.click('.canvas-colour[data-colour="green"]');
+      await chooseColour(page, "green");
       const box = await sheetBox(page);
       await page.mouse.click(box.x + 40, box.y + 360);
       await page.waitForSelector(".canvas-note-input");
@@ -4326,6 +4485,43 @@ if (shots) {
       await page.click("#openSettings");
       await page.waitForSelector('select[aria-label="Pen button"]');
       await page.screenshot({ path: name("5-settings-pen-button") });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens changed in 0.4.2 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["tablet", { width: 810, height: 1180 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v042-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await canvasVault(page);
+      if (label === "phone") {
+        await page.screenshot({ path: name("0-page-with-list-closed") });
+        await page.evaluate(() => document.body.classList.add("sidebar-open"));
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: name("1-sidebar-foot") });
+        await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      } else {
+        await page.screenshot({ path: name("1-sidebar-foot") });
+      }
+      await openCanvas(page);
+      await drawLine(page, [40, 60], [220, 100]);
+      await page.screenshot({ path: name("2-toolbar") });
+      await page.click('.canvas-toolbar [data-menu="shape"]');
+      await page.screenshot({ path: name("3-shape-menu") });
+      await page.keyboard.press("Escape");
+      await page.click('.canvas-toolbar [data-menu="colour"]');
+      await page.screenshot({ path: name("4-colour-menu") });
+      await page.keyboard.press("Escape");
+      await page.click('.canvas-toolbar [data-menu="more"]');
+      await page.screenshot({ path: name("5-more-menu") });
       await context.close();
     }
   }

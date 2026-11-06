@@ -276,6 +276,14 @@ Owner request (2026-11-06): "Continue onto v0.4.1". Slice from `docs/v0.4-plan.m
 - Also: the occasionally failing search-box browser test ("typing finds pages by title and text", failed on both a Linux and a Windows runner) was a race in the test, not in the app: it pressed Escape and opened the box again before the first box had closed, so the next typing went into a box that was about to go. The test now waits for the box to be closed. If it fails again, the cause is something else.
 - Release notes: `docs/release-notes/0.4.1.md`.
 
+## 0.4.2: built
+Owner request (2026-11-06), after trying 0.4.1 on the tablet: "solve the screen being too thin", "some drop downs or toggles would be nice in the drawing tools bar", and "apply the same text/icon logic from the new folder and new page, to the trash and settings and tags". The tidy-up takes the number 0.4.2, so the later slices move up by one (see `docs/v0.4-plan.md`).
+- Drawing toolbar (`canvasview.js`): menus for shapes, colour, line width and "more" (Finger draws, Show all), each under its button, showing the current choice; one line on a wide window, two on a phone (was three). The menus close on choosing, Escape, a press elsewhere or the button again. Nothing drawn or saved changes.
+- Sidebar foot (`index.html`, `style.css`): Settings, Tags and Trash are outlined buttons with an icon and a label on one line, like New page and New folder; the label is hidden, leaving the icon and the accessible name, below 17 rem (the same rule as New page and New folder).
+- Tested here: the existing canvas browser tests, changed only to open the menus first, and new ones for the toolbar height, the shape menu (open, choose, Escape, outside press, button again, shape used last), the colour and width menus, the more menu, menus inside the window on a phone and off for a drawing that cannot be read, and the sidebar foot buttons (icon, label, outline, same height as New page, one line, label hidden when narrow). Design screenshots, light and dark, desktop, tablet-sized and phone.
+- NOT tested, needs a device: how the menus feel with a real pen and finger on the tablet (size of the touch targets, opening and closing), and whether the drawing area is now tall enough on the real tablet. The sidebar width on the tablet is the owner's setting; with the list open the sheet is narrower, and hiding the list (the menu button) gives it the full width.
+- Release notes: `docs/release-notes/0.4.2.md`.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -307,9 +315,10 @@ Owner request (2026-11-06): "Continue onto v0.4.1". Slice from `docs/v0.4-plan.m
 | 0.3.8 | History box tidy-up and logging of failed history copies (see "0.3.8: built") | built, not tried on a device |
 | 0.4.0 | Canvas page with a pressure pen and an eraser (see "0.4.0: built" and `docs/v0.4-plan.md`) | built, not tried on a device |
 | 0.4.1 | Highlighter, shapes, sticky notes, lasso, pen button setting (see "0.4.1: built") | built, not tried on a device |
-| 0.4.2 | Draw over text: ink anchored to blocks | not started |
-| 0.4.3 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.4+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
+| 0.4.2 | Compact drawing toolbar with menus; Settings, Tags and Trash as buttons like New page (see "0.4.2: built") | built, not tried on a device |
+| 0.4.3 | Draw over text: ink anchored to blocks | not started |
+| 0.4.4 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.5+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

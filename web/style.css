@@ -262,31 +262,36 @@ body:not(.sidebar-open) .sidebar {
   padding-bottom: var(--space-3);
 }
 
+/* Settings, Tags and Trash are buttons like New page and New folder: an icon and a label side by
+   side, equal widths, and the label goes away (leaving the icon) when the list is narrow. */
 .side-foot {
   display: flex;
-  /* Settings, Tags and Trash do not all fit on one line in a narrow list, and a label cut short
-     is worse than a second line. */
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--line);
   font-size: var(--text-s);
 }
 
-.side-foot .link-button {
-  flex: 0 1 auto;
-  color: var(--text);
+.side-foot button {
+  /* Not equal widths: "Settings" is longer than "Tags", and three equal buttons would cut it short. */
+  flex: 1 1 auto;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+  gap: var(--space-1);
 }
 
 .side-foot a {
-  margin-left: auto;
+  flex: 1 0 100%;
+  text-align: right;
   color: var(--text-soft);
   white-space: nowrap;
 }
 
 @container side (max-width: 17rem) {
-  .side-actions .btn-label {
+  .side-actions .btn-label,
+  .side-foot .btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -774,7 +779,7 @@ body.block-dragging .float-bar { visibility: hidden; }
 
 /* ---------- canvas (drawing) mode ---------- */
 
-.canvas-host { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.canvas-host { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .canvas-host[hidden] { display: none; }
 .canvas-toolbar {
   display: flex;
@@ -786,9 +791,26 @@ body.block-dragging .float-bar { visibility: hidden; }
 }
 .canvas-gap { width: var(--space-3); }
 .canvas-tool { display: inline-flex; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; padding: var(--space-1) var(--space-2); }
-.canvas-tool[aria-pressed="true"], .canvas-text-tool[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
-.canvas-tool:disabled, .canvas-text-tool:disabled { opacity: 0.4; }
-.canvas-text-tool { font-size: var(--text-s); }
+.canvas-tool[aria-pressed="true"], .canvas-menu-row[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.canvas-tool:disabled, .canvas-menu-row:disabled { opacity: 0.4; }
+.canvas-menu-button { gap: var(--space-1); }
+.canvas-arrow { width: 0.6rem; height: 0.6rem; }
+/* A small menu under its toolbar button: the one floating thing on the sheet, so it gets the one soft shadow. */
+.canvas-menu {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-width: calc(100% - 8px);
+  padding: var(--space-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.canvas-menu[hidden] { display: none; }
+.canvas-menu-row { font-size: var(--text-s); padding: var(--space-2) var(--space-3); min-height: 2rem; }
 .canvas-swatch { display: block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); }
 .pen-ink { background: var(--text); }
 .pen-red { background: var(--sn-text-red); }
