@@ -275,4 +275,26 @@ Cost. One more setting to build and test.
 Context. The owner wants covers optional: a switch for the whole feature, and per page his own picture or none. Notes must stay plain markdown that Obsidian opens, and writing to a page must never lose content.
 Decision. The cover is `cover: attachments/name.png` in the page's frontmatter; the picture is saved as an ordinary attachment with the existing checked picture command. Only that line is read, changed or removed, the rest of the block is kept byte for byte, and a `cover` entry that is not a plain one-line value is never edited. The switch `showCovers` is off by default, and when it is off the cover area is not created at all. Removing a cover removes the line only, not the picture file.
 Alternatives. A custom hidden file or a sidecar (rejected: not plain markdown, breaks on move). A markdown image at the top of the body (rejected: it would show as an ordinary block and cannot be told from a picture the person put there). Frontmatter key `banner` or `image` (rejected for now: `cover` is the name most Obsidian setups use).
-Cost. Obsidian shows the line as a property but does not draw the picture unless a plugin is installed. Removed covers leave their files behind. Covers are skipped in 0.3.4's slot: tags and favorites are still to build.
+Cost. Obsidian shows the line as a property but does not draw the picture unless a plugin is installed. Removed covers leave their files behind. Covers were built before tags and favorites, which is why the numbers were later rearranged (next entry).
+
+## 2026-11-06: Version numbers follow the order the slices come out; tags and favorites are 0.3.6
+Context. Covers (planned 0.3.5) came out before tags and favorites (planned 0.3.4), so 0.3.4 would have been released after 0.3.5.
+Decision. The owner asked for tags and favorites to be labelled 0.3.6 and for export and page history to move from 0.3.6 to 0.3.7. There is no 0.3.4. The plan, PROGRESS.md and the release notes use the new numbers.
+Cost. Anything that mentions the old numbers (older chat summaries, the earlier 0.3.5 notes in PROGRESS.md) is explained in a sentence rather than rewritten.
+
+## 2026-11-06: A tag stays plain text; the editor only marks it
+Context. Wikilinks became editor pieces (atoms) that store their exact text. A tag could do the same.
+Decision. A tag is not a piece of its own: it is ordinary text that gets a coloured mark, found by the same rules the Rust code uses. So typing, copying, undo and saving behave as for any word, and the file contains exactly what was typed (tested, including at the start of a line where an editor often adds a backslash). A block is still kept raw if its tags would not come back exactly.
+Alternatives. An atom per tag with an input rule (rejected: more code, the caret and Backspace behave oddly, and the text can no longer be edited letter by letter).
+Cost. A tag cannot be clicked and selected as one unit, and there is no tag picker while typing `#` yet.
+
+## 2026-11-06: Obsidian's tag rules, matched without regard to case, nested tags count for their parents
+Context. The notes folder must open in Obsidian with the same tags.
+Decision. A tag is `#` at the start of a line or after a space, then letters, digits, `_`, `-` and `/`, with at least one character that is not a digit, at most 100 letters. Code, link headings (`[[Page#Heading]]`) and escaped `#` are not tags. `#Plan` and `#plan` are one tag; the spelling used most often is shown. `#school/maths` is also listed under `#school`. Tags in the properties (`tags:`) count the same. The Rust and interface versions are tested against one file of cases.
+Cost. A `#word` that is not a tag by these rules (a number, an emoji) is not marked, and its block stays raw as before.
+
+## 2026-11-06: A favourite page is `favorite: true` in its properties; the list is read, not stored
+Context. Favorites should survive moving the folder to another program or computer, and must not need a hidden file.
+Decision. The star writes `favorite: true` into the page's properties (removing it removes the line); Obsidian shows it as a checkbox property and otherwise ignores it. The Favorites list and the Tags box are read from the pages (`page_index`), like search, with the same limits, and nothing is stored. The same one-line property code now serves covers and favorites. A `favorite` entry that is not a plain one-line value is never edited.
+Alternatives. A list of favourite paths in the settings file (rejected: breaks when a page is renamed or the folder is opened on another device). A `tags: [favorite]` entry (rejected: mixes two ideas and would need list editing).
+Cost. Reading the whole folder after every page-list refresh; a list kept by another program shows after the next refresh.

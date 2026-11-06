@@ -143,6 +143,27 @@
       items.sort((a, b) => a.title.localeCompare(b.title));
       return { items, truncated: false };
     },
+    // A simple stand-in for the page index: the same shape of answer, with a looser reading of
+    // tags. The real rules are tested in Rust and in tests/tags.test.mjs against the same cases.
+    page_index: () => {
+      window.__indexCalls = (window.__indexCalls || 0) + 1;
+      if (window.__failIndex) fail(window.__failIndex);
+      const pages = [];
+      for (const [path, text] of [...files].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+        const front = /^---\r?\n([\s\S]*?\r?\n)?---[ \t]*(\r?\n|$)/.exec(text);
+        const frontText = front ? front[0] : "";
+        const body = text.slice(frontText.length).replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+        const names = [];
+        const list = /^tags:[ \t]*\[?([^\]\n]*)\]?[ \t]*$/m.exec(frontText);
+        if (list) names.push(...list[1].split(/[,\s]+/).map((n) => n.replace(/^#/, "")).filter(Boolean));
+        for (const m of body.matchAll(/(^|\s)#([\p{L}\p{N}_\-/]+)/gu)) if (/\P{N}/u.test(m[2])) names.push(m[2]);
+        const seen = new Set();
+        const tags = names.filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+        const favorite = /^favorite:[ \t]*true[ \t]*$/im.test(frontText);
+        if (tags.length || favorite) pages.push({ path, tags, favorite });
+      }
+      return { pages, truncated: false };
+    },
     read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return "data:image/png;base64," + attachments.get(path); },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },

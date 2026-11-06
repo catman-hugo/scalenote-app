@@ -53,6 +53,8 @@ export const backend = {
   search: (query, limit) => call("search_vault", { query, limit }),
   // The pages that link to `path`: { items: [{ path, title, count, snippet: [[text, marked], ...] }], truncated }.
   backlinks: (path) => call("backlinks", { path }),
+  // The pages that have tags or are favourites: { pages: [{ path, tags: [name, ...], favorite }], truncated }.
+  pageIndex: () => call("page_index"),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),

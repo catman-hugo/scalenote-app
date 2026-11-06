@@ -264,9 +264,11 @@ body:not(.sidebar-open) .sidebar {
 
 .side-foot {
   display: flex;
-  flex-wrap: nowrap;
+  /* Settings, Tags and Trash do not all fit on one line in a narrow list, and a label cut short
+     is worse than a second line. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1) var(--space-3);
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--line);
   font-size: var(--text-s);
@@ -1446,3 +1448,68 @@ button.danger:hover { background: var(--bg-hover); }
     height: 140px;
   }
 }
+
+/* ---------- favorites ---------- */
+
+.favorites {
+  max-height: 30%;
+  overflow-y: auto;
+  padding: 0 var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-2);
+}
+.favorites[hidden] { display: none; }
+.side-heading {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+.favorite-button[hidden] { display: none; }
+.favorite-button:disabled { opacity: 0.5; cursor: default; }
+.favorite-button.is-on { color: var(--accent); }
+/* A marked page has a filled star; the shape alone also tells the two states apart. */
+.favorite-button.is-on .icon path { fill: currentColor; }
+
+/* ---------- tags ---------- */
+
+.tag {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.tags-dialog .tags-filter {
+  display: block;
+  width: 100%;
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.tags-list-box { max-height: 50dvh; overflow-y: auto; }
+.tags-dialog .tags-list, .tags-dialog .tag-pages { list-style: none; margin: 0; padding: 0; }
+.tags-dialog .tags-list li, .tags-dialog .tag-pages li { margin: 0; }
+.tag-row, .tag-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  border-color: transparent;
+  text-align: left;
+}
+.tag-row:hover, .tag-page:hover { background: var(--bg-hover); }
+.tag-row[aria-expanded="true"] { background: var(--accent-soft); }
+.tag-row[data-depth="1"] { padding-left: var(--space-5); }
+.tag-row[data-depth="2"] { padding-left: calc(var(--space-5) * 2); }
+.tag-row[data-depth="3"] { padding-left: calc(var(--space-5) * 3); }
+.tag-row[data-depth="4"] { padding-left: calc(var(--space-5) * 4); }
+.tag-name { overflow-wrap: anywhere; font-weight: 500; }
+.tag-count, .tag-page-folder, .tags-note { font-size: var(--text-s); color: var(--text-soft); }
+.tags-dialog .tag-pages { margin: 0 0 var(--space-2) var(--space-5); border-left: 1px solid var(--line); }
+.tag-page { padding-left: var(--space-3); overflow-wrap: anywhere; }
+.tags-empty { margin: var(--space-4) 0; color: var(--text-soft); }
+.tags-error { margin: var(--space-3) 0 0; color: var(--bad); }

@@ -1,0 +1,56 @@
+# Cases shared by the Rust code (tags.rs) and the editor (web/tagrules.js).
+# "name <text> => yes|no" says whether the text is a tag name (without the #).
+# "find <text> => tag, tag" lists the tags in a page text, in order. In <text>, \n is a line
+# break, \t a tab and \\ a backslash.
+
+name plan => yes
+name Plan_2 => yes
+name project/alpha => yes
+name to-do => yes
+name 1984 => no
+name 1984a => yes
+name y1984 => yes
+name 2024-11 => yes
+name 12/34 => yes
+name é => yes
+name Ünï/ça => yes
+name 日本語 => yes
+name a.b => no
+name a b => no
+name  => no
+name a#b => no
+name - => yes
+name _ => yes
+
+find Hello #plan today => plan
+find #plan at the start => plan
+find line one\n#second line => second
+find two #a #b #c => a, b, c
+find tab\t#a => a
+find end of #tag. next => tag
+find end of #tag, next => tag
+find a#b => (none)
+find word#tag #real => real
+find # heading => (none)
+find ## heading => (none)
+find ##tag => (none)
+find #1984 and #2024 => (none)
+find #y1984 => y1984
+find #a/b/c nested => a/b/c
+find #é and #日本語 => é, 日本語
+find `#code` and #real => real
+find ``#code`` #real => real
+find unclosed ` #still a tag => still
+find ```\n#fenced\n```\n#after => after
+find ~~~\n#fenced\n~~~\n#after => after
+find http://example.local/#frag => (none)
+find (#a) and "#b" => (none)
+find \\#escaped #real => real
+find [[Page#Heading]] #real => real
+find [[Page #Heading]] #real => real
+find ![[Pic]] #real => real
+find [[ #a => a
+find [text](#anchor) #real => real
+find #Plan and #plan => Plan, plan
+find #a#b => a
+find #a-#b => a-

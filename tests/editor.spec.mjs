@@ -131,7 +131,7 @@ const TRICKY = [
   "---", "title: Week 1", "tags: [a, b]", "---", "", "# Heading", "right below", "",
   "Some *emphasis* and __strong__ text", "with a second line", "", "* star bullet", "* second", "  * nested", "",
   "| a | b |", "|---|---|", "| 1 | 2 |", "", "See ![[Other note]] and ==highlight==", "", "A plain [[Other note]] link and ==highlight==", "",
-  "> [!note] A callout", "> body", "", "<div class=\"x\">html</div>", "", "$$", "x^2", "$$", "", "```js", "let a = 1;", "", "let b = 2;", "```", "", "1) odd numbering", "", "A final line #tag", "",
+  "> [!note] A callout", "> body", "", "<div class=\"x\">html</div>", "", "$$", "x^2", "$$", "", "```js", "let a = 1;", "", "let b = 2;", "```", "", "1) odd numbering", "", "A final line #tag", "", "Issue #1984 stays as written", "",
 ].join("\n");
 
 await test("opening and leaving a tricky note changes nothing on disk", async (page) => {
@@ -1950,7 +1950,7 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
   const texts = await rowTexts(page);
   assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
-  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Show or hide the page list", "Show or hide the markdown text of this page"]);
+  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show or hide the markdown text of this page"]);
   assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
   assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
   assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
@@ -3255,6 +3255,198 @@ await test("on a phone the cover fits the screen and the buttons can be reached"
   for (const b of await page.locator(".cover-actions button").all()) assert.ok((await b.boundingBox()).height >= 32);
 }, { ...coversOn, viewport: { width: 390, height: 780 } });
 
+// ---------- 0.3.6: tags and favorites ----------
+
+async function tagsVault(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    const f = window.__mock.files;
+    window.__mock.folders.add("School");
+    f.set("Tagged.md", "Plan for #school/maths and #Plan.\n\nNumbers like #1984 stay text, `#code` too.\n\nA last #tag line\n");
+    f.set("A.md", "---\nid: aaa\ntags: [plan, School/Maths]\nfavorite: true\n---\n\nOne #plan page\n");
+    f.set("School/B.md", "Another page about #plan and #other\n");
+    f.set("C.md", "Just #other here\n");
+    f.set("Plain.md", "Hello\n");
+    f.set("Odd.md", "---\nfavorite:\n  - yes\n---\n\nodd\n");
+    f.set("Fenced.md", "```\n#hidden\n```\n");
+  });
+  await page.click("#newFolder"); // draws the list again; also adds "New folder", which these tests ignore
+  await page.waitForSelector('.tree-button[data-path="Plain.md"]');
+}
+const openTagged = async (page, name) => {
+  await page.click(`.tree-button[data-path="${name}"]`);
+  await page.waitForFunction((n) => document.querySelector("#title").value === n.replace(/^.*\//, "").replace(/\.md$/, ""), name);
+  await page.waitForSelector("#editor .note-body");
+};
+const tagMarks = (page) => page.locator(".note-body .tag").allTextContents();
+
+await test("tags are marked, a page with tags is edited as normal text, and typing changes nothing around them", async (page) => {
+  await tagsVault(page);
+  const before = (await files(page))["Tagged.md"];
+  await openTagged(page, "Tagged.md");
+  assert.deepEqual(await tagMarks(page), ["#school/maths", "#Plan", "#tag"]);
+  assert.equal(await page.locator(".raw-block").count(), 1, "only the paragraph with a number and a code span stays raw");
+  await openTagged(page, "Plain.md");
+  assert.equal((await files(page))["Tagged.md"], before, "opening and leaving a page does not write it");
+  await openTagged(page, "Tagged.md");
+  await page.locator(".note-body p").last().click({ position: { x: 600, y: 5 } });
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await waitSaved(page);
+  // Saving after an edit adds the page's id at the top, as for every page; nothing else changes.
+  assert.match((await files(page))["Tagged.md"], /^---\nid: [0-9a-f-]+\n---\n\n/);
+  assert.equal((await files(page))["Tagged.md"].replace(/^---\nid: [0-9a-f-]+\n---\n\n/, ""), before.replace("A last #tag line\n", "A last #tag line more\n"));
+}, ctxOpts);
+
+await test("a tag typed into a page is marked at once and saved exactly as typed, also at the start of a line", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "Plain.md");
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("#first thing and a #second/part tag# no#tag");
+  assert.deepEqual(await tagMarks(page), ["#first", "#second/part"]);
+  await waitSaved(page);
+  const text = (await files(page))["Plain.md"];
+  assert.match(text, /\n#first thing and a #second\/part tag# no#tag\n$/, text);
+}, ctxOpts);
+
+await test("tags inside a heading, a list and a quote are marked, and tags in code are not", async (page) => {
+  await tagsVault(page);
+  await seed(page, "Mixed.md", "# Title #head\n\n- item #list\n\n> quote #quote\n\nuse `#code` here\n");
+  await page.click("#newFolder");
+  await openTagged(page, "Mixed.md");
+  assert.deepEqual(await tagMarks(page), ["#head", "#list", "#quote"]);
+  assert.equal(await page.locator(".raw-block").count(), 0);
+  await page.locator(".note-body p").last().click({ position: { x: 600, y: 5 } });
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await waitSaved(page);
+  assert.equal((await files(page))["Mixed.md"].replace(/^---\nid: [0-9a-f-]+\n---\n\n/, ""), "# Title #head\n\n- item #list\n\n> quote #quote\n\nuse `#code` here!\n");
+}, ctxOpts);
+
+await test("clicking a tag opens the Tags box on that tag with its pages, and a page in it opens", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "A.md");
+  await page.locator(".note-body .tag").first().click();
+  await page.waitForSelector("#tags[open]");
+  assert.equal(await page.locator("#tags .tag-row[aria-expanded=true] .tag-name").textContent(), "#plan");
+  assert.deepEqual(await page.locator("#tags .tag-pages .tag-page").evaluateAll((n) => n.map((x) => x.innerText.replace(/\s+/g, " ").trim())), ["A", "B School", "Tagged"]);
+  await page.locator("#tags .tag-page", { hasText: "B" }).click();
+  await page.waitForFunction(() => document.querySelector("#title").value === "B");
+  assert.equal(await page.locator("#tags[open]").count(), 0);
+}, ctxOpts);
+
+await test("the Tags box lists tags with page counts, nested tags count for their parents, and the filter narrows the list", async (page) => {
+  await tagsVault(page);
+  await page.click("#openTags");
+  await page.waitForSelector("#tags[open]");
+  const rows = async () => page.locator("#tags .tag-row").evaluateAll((nodes) => nodes.map((n) => n.innerText.replace(/\s+/g, " ").trim()));
+  assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#School/Maths 2 pages", "#tag 1 page"]);
+  await page.fill("#tags .tags-filter", "#SCH");
+  assert.deepEqual(await rows(), ["#school 2 pages", "#School/Maths 2 pages"]);
+  await page.fill("#tags .tags-filter", "zzz");
+  assert.match(await page.textContent("#tags"), /No tag matches/);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#tags[open]").count(), 0);
+}, ctxOpts);
+
+await test("with no tags the Tags box says so, and a failing read says so calmly", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openTags");
+  await page.waitForSelector("#tags[open]");
+  assert.match(await page.textContent("#tags"), /No tags yet/);
+  await page.evaluate(() => { window.__failIndex = "io"; });
+  await page.keyboard.press("Escape");
+  await page.click("#openTags");
+  await page.waitForSelector("#tags .tags-error");
+  assert.match(await page.textContent("#tags .tags-error"), /could not be read/);
+}, ctxOpts);
+
+await test("when the page index cannot be read the page list still works and nothing is shown for favorites", async (page) => {
+  await tagsVault(page);
+  assert.equal(await page.locator("#favorites").isVisible(), false);
+  await openTagged(page, "Plain.md");
+  assert.equal(await page.locator("#favorite").isVisible(), true);
+}, { ...ctxOpts, before: (page) => page.addInitScript(() => { window.__failIndex = "io"; }), allow: [/./] });
+
+await test("the star marks the open page, shows it in the Favorites list, and unmarks it again", async (page) => {
+  await tagsVault(page);
+  await page.waitForSelector('#favorites .tree-button[data-path="A.md"]');
+  assert.deepEqual(await page.locator("#favorites .tree-label").allTextContents(), ["A"]);
+  await openTagged(page, "Plain.md");
+  assert.equal(await page.getAttribute("#favorite", "aria-pressed"), "false");
+  assert.equal(await page.getAttribute("#favorite", "aria-label"), "Add to favorites");
+  await page.click("#favorite");
+  await waitSaved(page);
+  assert.match((await files(page))["Plain.md"], /^---\nfavorite: true\nid: [0-9a-f-]+\n---\n\nHello\n$/);
+  assert.equal(await page.getAttribute("#favorite", "aria-pressed"), "true");
+  assert.equal(await page.getAttribute("#favorite", "aria-label"), "Remove from favorites");
+  assert.deepEqual(await page.locator("#favorites .tree-label").allTextContents(), ["A", "Plain"]);
+  await page.click("#favorite");
+  await page.waitForFunction(() => !window.__mock.files.get("Plain.md").includes("favorite"));
+  assert.match((await files(page))["Plain.md"], /^---\nid: [0-9a-f-]+\n---\n\nHello\n$/);
+  assert.deepEqual(await page.locator("#favorites .tree-label").allTextContents(), ["A"]);
+  await page.click('#favorites .tree-button[data-path="A.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "A");
+  assert.equal(await page.getAttribute("#favorite", "aria-pressed"), "true");
+  assert.equal(await page.locator('#favorites .tree-row.current').count(), 1);
+}, ctxOpts);
+
+await test("marking a page keeps its other properties and text, and a favorite entry that is a list is left alone", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "A.md");
+  await page.click("#favorite");
+  await page.waitForFunction(() => !window.__mock.files.get("A.md").includes("favorite"));
+  assert.equal((await files(page))["A.md"], "---\nid: aaa\ntags: [plan, School/Maths]\n---\n\nOne #plan page\n");
+  assert.equal(await page.locator("#favorites").isVisible(), false);
+  const odd = (await files(page))["Odd.md"];
+  await openTagged(page, "Odd.md");
+  await page.click("#favorite");
+  await page.waitForSelector("#toast:not([hidden])");
+  assert.match(await page.textContent("#toast"), /could not be changed safely/);
+  await openTagged(page, "Plain.md");
+  assert.equal((await files(page))["Odd.md"], odd);
+}, ctxOpts);
+
+await test("in the markdown text view the star is switched off and the property is shown as written", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "A.md");
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#source:not([hidden])");
+  assert.equal(await page.isDisabled("#favorite"), true);
+  assert.match(await page.inputValue("#source"), /^---\nid: aaa\ntags: \[plan, School\/Maths\]\nfavorite: true\n---/);
+  await page.click("#sourceToggle");
+  assert.equal(await page.isDisabled("#favorite"), false);
+}, ctxOpts);
+
+await test("Open tags and the favorites command work from the search box", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "Plain.md");
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector("#palette[open]");
+  await page.fill(".palette-input", "favorites");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.__mock.files.get("Plain.md").includes("favorite: true"));
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector("#palette[open]");
+  await page.fill(".palette-input", "open tags");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#tags[open]");
+}, ctxOpts);
+
+await test("on a phone the Tags box, the star and the Favorites list fit the screen", async (page) => {
+  await tagsVault(page);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390), "no sideways scrolling");
+  for (const b of await page.locator(".side-foot button").all()) assert.ok((await b.boundingBox()).x + (await b.boundingBox()).width <= 390);
+  await page.click("#openTags");
+  await page.waitForSelector("#tags[open]");
+  const box = await page.locator("#tags").boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390), "no sideways scrolling");
+  for (const b of await page.locator("#tags .tag-row, #tags button.primary").all()) assert.ok((await b.boundingBox()).height >= 32);
+}, { ...ctxOpts, viewport: { width: 390, height: 780 } });
+
 // Screenshots of the screens added in 0.3.3 (only when SHOTS_DIR is set), in light and dark.
 if (shots) {
   for (const scheme of ["light", "dark"]) {
@@ -3328,6 +3520,45 @@ if (shots) {
       await page.click("#openSettings");
       await page.waitForSelector("#settings[open]");
       await page.screenshot({ path: name("3-settings") });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.3.6 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v036-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate(() => {
+        const f = window.__mock.files;
+        window.__mock.folders.add("School");
+        f.set("Study plan.md", "---\nid: abc\nfavorite: true\n---\n\n# Study plan\n\nThis term: #school/maths, #school/biology and the #exams. Read the [[Reading list]] first.\n");
+        f.set("Reading list.md", "---\nid: def\nfavorite: true\ntags: [school]\n---\n\nBooks for #school and a #todo item.\n");
+        f.set("School/Maths.md", "Exercises for the #exams, see #school/maths.\n");
+        f.set("School/Biology.md", "Cells, week 2. #school/biology #todo\n");
+        f.set("Ideas.md", "Plain page with no tags.\n");
+      });
+      await page.click("#newFolder");
+      await page.waitForSelector('#favorites .tree-button[data-path="Study plan.md"]');
+      await page.click('#favorites .tree-button[data-path="Study plan.md"]');
+      await page.waitForSelector(".note-body .tag");
+      if (label === "phone") await page.click("#toggle");
+      await page.screenshot({ path: name("1-sidebar-favorites") });
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: name("2-tags-in-page") });
+      await page.locator(".note-body .tag").first().click();
+      await page.waitForSelector("#tags[open]");
+      await page.screenshot({ path: name("3-tags-box") });
+      await page.fill("#tags .tags-filter", "sch");
+      await page.screenshot({ path: name("4-tags-filter") });
       await context.close();
     }
   }

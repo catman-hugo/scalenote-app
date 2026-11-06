@@ -351,6 +351,32 @@ fn backlinks(path: String, state: State<AppState>) -> Result<BacklinksReply, Str
     })
 }
 
+#[derive(Serialize)]
+struct PageInfoReply {
+    path: String,
+    tags: Vec<String>,
+    favorite: bool,
+}
+
+#[derive(Serialize)]
+struct PageIndexReply {
+    pages: Vec<PageInfoReply>,
+    truncated: bool,
+}
+
+/// The tags and favourite mark of every page that has either. Like search it runs away from the
+/// main thread and does not keep the vault locked while it reads the pages.
+#[tauri::command(async)]
+fn page_index(state: State<AppState>) -> Result<PageIndexReply, String> {
+    let root = with_vault(&state, "page_index", |vault| Ok(vault.root().to_path_buf()))?;
+    let vault = Vault::open(&root).map_err(|e| code(e, &state, "page_index"))?;
+    let index = vault.page_index().map_err(|e| code(e, &state, "page_index"))?;
+    Ok(PageIndexReply {
+        truncated: index.truncated,
+        pages: index.pages.into_iter().map(|p| PageInfoReply { path: p.path, tags: p.tags, favorite: p.favorite }).collect(),
+    })
+}
+
 /// The interface logs short fixed messages through here. The length limit is applied again
 /// by the logger.
 #[tauri::command]
@@ -430,6 +456,7 @@ pub fn run() {
             trash_empty,
             search_vault,
             backlinks,
+            page_index,
             log_line,
             get_settings,
             set_settings

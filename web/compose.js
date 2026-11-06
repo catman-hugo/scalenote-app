@@ -5,7 +5,8 @@
 
 import { BLOCK_ID, newNoteId, splitBlocks, splitFrontmatter, withNoteId } from "./blocks.js";
 import { readRichBlock, writeBlock } from "./richblocks.js";
-import { hasStyleSyntax, sameStyles } from "./inlinestyles.js";
+import { hasStyleSyntax, sameStyles, withoutStyleSyntax } from "./inlinestyles.js";
+import { hasTags, sameTags } from "./tagrules.js";
 import { hasWikilinks, sameWikilinks } from "./wikilinkrules.js";
 
 // Block types the editor can show and edit. Anything else is kept as a raw block.
@@ -73,6 +74,9 @@ export function loadNote(text, { parse, serialize }) {
     // Links are kept the same way: if the editor would not write every link back exactly as it
     // was written (a link inside a heading's bold text, say), the block stays raw.
     if (hasWikilinks(src) && !sameWikilinks(src, base)) return rawNode(src, gap, idx);
+    // And the same for #tags: a tag the editor wrote differently (escaped, say) would stop being a tag.
+    // (A colour's "#f72525" is part of a style, not a tag, so styles are taken out first.)
+    if (!isRich && hasTags(withoutStyleSyntax(src)) && !sameTags(withoutStyleSyntax(src), withoutStyleSyntax(base))) return rawNode(src, gap, idx);
     return { ...node, attrs: { ...(node.attrs || {}), src, base, gap, idx } };
   });
   const doc = { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
