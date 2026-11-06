@@ -77,6 +77,8 @@ export const strings = {
     editorWidth: "Page width",
     editorWidths: { narrow: "Narrow", medium: "Medium", wide: "Wide", full: "Full width" },
     sidebarWidth: "Page list width",
+    showCovers: "Show covers on pages",
+    showCoversHint: "A cover is a picture you choose, shown above a page. Off by default. When this is off, no cover is shown and there is no Add cover button; covers you already added stay in your pages.",
     showBacklinks: "Show the “Linked from” list under pages",
     showBacklinksHint: "Pages are only searched for links when this is on.",
     updates: "Look for new versions",
@@ -161,6 +163,17 @@ export const strings = {
     missingHeading: "This page has no heading “{anchor}”.",
     missingBlock: "This page has no block with that link.",
     createFailed: "The page could not be created.",
+  },
+
+  cover: {
+    label: "Page cover",
+    alt: "Cover picture of this page",
+    add: "Add cover",
+    change: "Change cover",
+    remove: "Remove cover",
+    missing: "The cover picture could not be found in your notes folder.",
+    cannotChange: "The properties at the top of this page have a cover entry that ScaleNote cannot change safely. Change it in the markdown text instead.",
+    failed: "The cover could not be added.",
   },
 
   backlinks: {

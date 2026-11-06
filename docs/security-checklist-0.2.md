@@ -85,3 +85,9 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 - A link to a missing page creates a page on click. The name goes through the same checks as New page (no slashes, no reserved names, length), a failure shows a calm message, and a double click makes only one page.
 - The page policy (no inline styles) is unchanged; the browser tests report no policy violations. No new network calls, permissions or dependencies.
 
+## Addendum for 0.3.5
+- No new Rust code, commands, permissions, network calls or dependencies. The picture goes through the existing picture command, which checks the real file content, the type (no SVG) and the size (10 MB) again in Rust.
+- The cover path is read from a note's properties, which are untrusted. It is only used if it is a picture path inside `attachments/` (no `..`, no spaces, no `//`, no scheme, no brackets or quotes, a picture extension), and then only to read that file through the existing attachment reader, which applies the vault's own path checks. The picture is shown as a `data:` picture in an image element with fixed text, never as html. A hostile properties block (50,000 lines, 200,000 characters on one line, repeated keys, an unclosed block) is read in well under a second (test).
+- Writing: only the one `cover:` line is added, replaced or removed; the rest of the block is kept byte for byte, an unclosed block or a multi-line `cover` entry is refused, and the page is saved through the normal atomic save.
+- The page policy (no inline styles) is unchanged and no policy errors were reported by the browser tests.
+

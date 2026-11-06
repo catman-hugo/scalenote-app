@@ -13,6 +13,8 @@ import { newNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { createBacklinks } from "./backlinks.js";
+import { createCover } from "./cover.js";
+import { readCover, withCover, withoutCover } from "./coverrules.js";
 import { updateWikilinks } from "./wikilinks.js";
 import { createResolver } from "./wikilinkrules.js";
 import { icon } from "./icons.js";
@@ -21,7 +23,7 @@ import { openContextMenu } from "./contextmenu.js";
 import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
-import { pathForVault } from "./images.js";
+import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
@@ -31,7 +33,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -50,6 +52,7 @@ const app = {
   // The "Linked from" list under the open page, and a counter that lets a slow answer for a
   // page that is no longer open be dropped.
   backlinks: null,
+  cover: null,
   backlinkRun: 0,
   backlinkTimer: 0,
   following: false,
@@ -120,6 +123,8 @@ async function loadSettings() {
       updates: parsed.updates !== false,
       // The "Linked from" list under pages. On unless turned off.
       showBacklinks: parsed.showBacklinks !== false,
+      // Covers are off until turned on.
+      showCovers: parsed.showCovers === true,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
@@ -175,6 +180,65 @@ async function checkQuietly() {
     // Offline or GitHub unreachable is normal; it is logged and nothing is shown.
     logProblem("update check failed", error);
   }
+}
+
+// ---------- covers ----------
+
+// Draws the cover area for the open page, or nothing at all when covers are off.
+function drawCover() {
+  if (!app.cover) return;
+  if (!app.settings.showCovers || !app.current) return app.cover.hide();
+  app.cover.show(readCover(app.current.parts.front));
+}
+
+// Writes a new properties block into the open page and saves it like any other change.
+function applyCoverFront(front) {
+  if (front === null) {
+    showToast(strings.cover.cannotChange);
+    return false;
+  }
+  app.current.parts.front = front;
+  app.autosave.touch();
+  drawCover();
+  return true;
+}
+
+async function chooseCover() {
+  const open = app.current;
+  if (!open) return;
+  try {
+    const file = await choosePicture();
+    if (!file) return;
+    const path = await storePicture(file);
+    if (app.current !== open) return; // another page was opened while the picture was being chosen
+    applyCoverFront(withCover(open.parts.front, path));
+  } catch (error) {
+    logProblem("cover failed", error);
+    const code = error && error.code === "too_large" ? "too_large_picture" : error && error.code;
+    showBanner(strings.errors[code] || strings.cover.failed);
+  }
+}
+
+function removeCover() {
+  if (app.current) applyCoverFront(withoutCover(app.current.parts.front));
+}
+
+function setShowCovers(on) {
+  app.settings.showCovers = on;
+  saveSettings();
+  drawCover();
+}
+
+function coverSettingsRows() {
+  const s = strings.settings;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = app.settings.showCovers;
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.showCovers, "setting-label"), box);
+  box.addEventListener("change", () => setShowCovers(box.checked));
+  return [row, textElement("p", s.showCoversHint, "setting-hint")];
 }
 
 function setShowBacklinks(on) {
@@ -843,6 +907,7 @@ function showNote(path, note) {
   app.selectedFolder = parentOf(path);
   for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
   drawTree();
+  drawCover();
   loadBacklinks(path);
 }
 
@@ -908,6 +973,7 @@ async function toggleSource() {
   putInEditor(doc);
   app.mode = "editor";
   applyMode();
+  drawCover();
 }
 
 function currentText() {
@@ -1082,7 +1148,7 @@ function fillStaticText() {
         applyAppearance(document.documentElement, app.settings);
         saveSettings();
       },
-      [...backlinkSettingsRows(), ...updateSettingsRows(), ...obsidianRows()],
+      [...coverSettingsRows(), ...backlinkSettingsRows(), ...updateSettingsRows(), ...obsidianRows()],
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;
@@ -1186,6 +1252,12 @@ async function start() {
     notify: showToast,
     followLink,
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
+  });
+  app.cover = createCover(el("editor"), {
+    loadImage: (path) => backend.readAttachment(pathForVault(path)),
+    onAdd: chooseCover,
+    onChange: chooseCover,
+    onRemove: removeCover,
   });
   app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => setShowBacklinks(false) });
   keepCaretVisible();

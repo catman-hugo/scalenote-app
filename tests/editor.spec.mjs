@@ -3109,6 +3109,152 @@ if (shots) {
   }
 }
 
+// ---------- 0.3.5: covers ----------
+
+const coversOn = { settings: existingUser({ updates: false, showCovers: true }) };
+async function coversVault(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((png) => {
+    const f = window.__mock.files;
+    window.__mock.attachments.set("attachments/leaf.png", png);
+    f.set("Has cover.md", "---\nid: abc\ncover: attachments/leaf.png\ntags: [a]\n---\n\nHello\n");
+    f.set("Plain.md", "Hello\n");
+    f.set("Odd.md", "---\ncover:\n  - attachments/leaf.png\n---\n\nodd\n");
+    f.set("Missing.md", "---\ncover: attachments/gone.png\n---\n\nm\n");
+  }, PNG_B64);
+  await page.click("#newFolder"); // draws the list again; also adds "New folder", which these tests ignore
+  await page.waitForSelector('.tree-button[data-path="Plain.md"]');
+}
+const openCover = async (page, name) => {
+  await page.click(`.tree-button[data-path="${name}"]`);
+  await page.waitForFunction((n) => document.querySelector("#title").value === n.replace(/\.md$/, ""), name);
+  await page.waitForSelector("#editor .note-body");
+};
+const pickCover = async (page, buttonText, file) => {
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".cover-actions button", { hasText: buttonText }).click();
+  await (await chooser).setFiles(file);
+};
+
+await test("covers are off by default: no picture, no Add cover button, and a switch in Settings turns them on and off", async (page) => {
+  await coversVault(page);
+  const before = (await files(page))["Has cover.md"];
+  await openCover(page, "Has cover.md");
+  assert.equal(await page.locator(".cover, .cover-image, .cover-actions").count(), 0, "no cover element exists at all");
+  assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Add cover|Change cover|Remove cover/);
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  const box = page.locator('#settings .setting-row:has-text("covers") input');
+  assert.equal(await box.isChecked(), false);
+  await box.check();
+  await page.waitForSelector(".cover-image img[src]");
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showCovers, true);
+  await box.uncheck();
+  assert.equal(await page.locator(".cover, .cover-image, .cover-actions").count(), 0);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showCovers, false);
+  await page.click("#settings button.primary");
+  await openCover(page, "Plain.md");
+  assert.equal((await files(page))["Has cover.md"], before, "a page with a cover, opened with covers off, is not changed");
+}, ctxOpts);
+
+await test("a page with a cover shows it, and opening and closing it changes nothing", async (page) => {
+  await coversVault(page);
+  const before = (await files(page))["Has cover.md"];
+  await openCover(page, "Has cover.md");
+  await page.waitForSelector(".cover-image img[src]");
+  assert.equal(await page.evaluate(() => document.querySelector(".cover-image img").naturalWidth), 1);
+  assert.deepEqual(await page.locator(".cover-actions button").allTextContents(), ["Change cover", "Remove cover"]);
+  await openCover(page, "Plain.md");
+  assert.deepEqual(await page.locator(".cover-actions button").allTextContents(), ["Add cover"]);
+  assert.equal(await page.locator(".cover-image").count(), 0);
+  await page.waitForTimeout(900);
+  assert.equal((await files(page))["Has cover.md"], before);
+}, coversOn);
+
+await test("a cover can be added, changed and removed, and only its line in the properties changes", async (page) => {
+  await coversVault(page);
+  await openCover(page, "Plain.md");
+  await pickCover(page, "Add cover", { name: "My photo.png", mimeType: "image/png", buffer: PNG });
+  await page.waitForSelector(".cover-image img[src]");
+  await waitSaved(page);
+  assert.match((await files(page))["Plain.md"], /^---\ncover: attachments\/My-photo\.png\nid: [0-9a-f-]+\n---\n\nHello\n$/);
+  assert.ok(await page.evaluate(() => window.__mock.attachments.has("attachments/My-photo.png")));
+  await pickCover(page, "Change cover", { name: "Second.png", mimeType: "image/png", buffer: PNG });
+  await page.waitForFunction(() => window.__mock.files.get("Plain.md").includes("cover: attachments/Second.png"));
+  await page.locator(".cover-actions button", { hasText: "Remove cover" }).click();
+  await page.waitForFunction(() => !window.__mock.files.get("Plain.md").includes("cover:"));
+  assert.match((await files(page))["Plain.md"], /^---\nid: [0-9a-f-]+\n---\n\nHello\n$/);
+  assert.equal(await page.locator(".cover-image").count(), 0);
+  assert.deepEqual(await page.locator(".cover-actions button").allTextContents(), ["Add cover"]);
+  assert.ok(await page.evaluate(() => window.__mock.attachments.has("attachments/Second.png")), "the picture file stays in the vault");
+}, coversOn);
+
+await test("other properties, their order and the text are kept when a cover changes or the page is edited", async (page) => {
+  await coversVault(page);
+  await openCover(page, "Has cover.md");
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" more");
+  await waitSaved(page);
+  assert.equal((await files(page))["Has cover.md"], "---\nid: abc\ncover: attachments/leaf.png\ntags: [a]\n---\n\nHello more\n");
+  await page.locator(".cover-actions button", { hasText: "Remove cover" }).click();
+  await page.waitForFunction(() => !window.__mock.files.get("Has cover.md").includes("cover:"));
+  assert.equal((await files(page))["Has cover.md"], "---\nid: abc\ntags: [a]\n---\n\nHello more\n");
+}, coversOn);
+
+await test("a file that is not a picture is refused with a message and the page is not changed", async (page) => {
+  await coversVault(page);
+  await openCover(page, "Plain.md");
+  await pickCover(page, "Add cover", { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.equal(await page.locator(".cover-image").count(), 0);
+  await page.waitForTimeout(900);
+  assert.equal((await files(page))["Plain.md"], "Hello\n");
+}, coversOn);
+
+await test("a cover entry that is a list is left alone, with a message", async (page) => {
+  await coversVault(page);
+  await openCover(page, "Odd.md");
+  await pickCover(page, "Add cover", { name: "a.png", mimeType: "image/png", buffer: PNG });
+  await page.waitForSelector("#toast:not([hidden])");
+  assert.match(await page.textContent("#toast"), /cannot change it safely|cannot change/);
+  await page.waitForTimeout(900);
+  assert.equal((await files(page))["Odd.md"], "---\ncover:\n  - attachments/leaf.png\n---\n\nodd\n");
+}, coversOn);
+
+await test("a cover whose picture is gone says so, and can be removed", async (page) => {
+  await coversVault(page);
+  await openCover(page, "Missing.md");
+  await page.waitForSelector(".cover-note:not(:empty)");
+  assert.match(await page.textContent(".cover-note"), /could not be found/);
+  await page.locator(".cover-actions button", { hasText: "Remove cover" }).click();
+  await page.waitForFunction(() => !window.__mock.files.get("Missing.md").includes("cover:"));
+}, coversOn);
+
+await test("the markdown text view hides the cover and shows the property line as written", async (page) => {
+  await coversVault(page);
+  await openCover(page, "Has cover.md");
+  await page.waitForSelector(".cover-image img[src]");
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#source:not([hidden])");
+  assert.equal(await page.locator(".cover").count() === 0 || await page.isVisible(".cover") === false, true);
+  assert.match(await page.inputValue("#source"), /^---\nid: abc\ncover: attachments\/leaf\.png\ntags: \[a\]\n---/);
+  await page.click("#sourceToggle");
+  await page.waitForSelector(".cover-image img[src]");
+}, coversOn);
+
+await test("on a phone the cover fits the screen and the buttons can be reached", async (page) => {
+  await coversVault(page);
+  await page.click("#toggle").catch(() => {});
+  await openCover(page, "Has cover.md");
+  await page.waitForSelector(".cover-image img[src]");
+  const box = await page.locator(".cover-image").boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, JSON.stringify(box));
+  assert.ok(box.height <= 150, JSON.stringify(box));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390), "no sideways scrolling");
+  for (const b of await page.locator(".cover-actions button").all()) assert.ok((await b.boundingBox()).height >= 32);
+}, { ...coversOn, viewport: { width: 390, height: 780 } });
+
 // Screenshots of the screens added in 0.3.3 (only when SHOTS_DIR is set), in light and dark.
 if (shots) {
   for (const scheme of ["light", "dark"]) {
@@ -3146,6 +3292,42 @@ if (shots) {
       await page.waitForSelector(".backlinks .backlink");
       if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
       await page.screenshot({ path: name("3-linked-from") });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.3.5 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, showCovers: true }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v035-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.evaluate((png) => {
+        window.__mock.attachments.set("attachments/leaf.png", png);
+        window.__mock.files.set("Study plan.md", "---\nid: abc\ncover: attachments/leaf.png\n---\n\n# Study plan\n\nThe plan for this term, with a cover picture above it.\n");
+        window.__mock.files.set("Plain page.md", "# Plain page\n\nThis page has no cover yet.\n");
+      }, PNG_B64);
+      await page.click("#newFolder");
+      await page.click('.tree-button[data-path="Study plan.md"]');
+      await page.waitForSelector(".cover-image img[src]");
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: name("1-cover") });
+      if (label === "phone") await page.click("#toggle");
+      await page.click('.tree-button[data-path="Plain page.md"]');
+      await page.waitForSelector(".cover-actions");
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: name("2-add-cover") });
+      if (label === "phone") await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.waitForSelector("#settings[open]");
+      await page.screenshot({ path: name("3-settings") });
       await context.close();
     }
   }

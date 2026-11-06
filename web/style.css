@@ -1391,3 +1391,58 @@ button.danger:hover { background: var(--bg-hover); }
   background: var(--accent-soft);
   color: var(--text);
 }
+
+/* ---------- page cover ---------- */
+
+.cover {
+  max-width: var(--editor-width, 46rem);
+  margin: 0 auto var(--space-4);
+}
+
+.cover-image {
+  height: 200px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.cover-image[hidden] {
+  display: none;
+}
+
+.cover-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-note {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.cover-note:empty {
+  display: none;
+}
+
+.cover-actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.cover-actions .link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-soft);
+  min-height: 32px;
+}
+
+@media (max-width: 700px) {
+  .cover-image {
+    height: 140px;
+  }
+}

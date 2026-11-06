@@ -215,6 +215,16 @@ Owner request (2026-11-06): "Get started on v0.3.3" (wikilinks and backlinks, fi
 - Not done: renaming or moving a page does not rewrite links to it (they turn dashed); links cannot be edited in place; `[[Page#` does not list headings; embeds (`![[..]]`) are still raw. Tags and favorites are 0.3.4.
 - Release notes: `docs/release-notes/0.3.3.md`.
 
+## 0.3.5: built
+Owner request (2026-11-06): "Get on with v0.3.5" (covers, as planned and as confirmed earlier: optional, a Settings switch, and per page his own image or none). The plan lists tags and favorites as 0.3.4; they are not started, so there is no 0.3.4 build.
+- Setting `showCovers`, **off by default**. When off, no cover element, picture or "Add cover" button exists in the page (the area is created only while shown). The page's own cover line stays untouched in the file.
+- A cover is one property line in the page's frontmatter, `cover: attachments/name.png`, and the picture is a normal attachment saved with the existing picture command (same type and size checks, 10 MB). `coverrules.js` reads, sets and removes that line and leaves every other byte of the block alone; it refuses (and the page says so) when the `cover` entry is a list, block or otherwise spread over lines, when the block is not closed, or when the path is not a picture inside attachments.
+- Cover area (`cover.js`) above the text: picture (200 px high, 140 px on a phone, cropped to fill, solid frame, no overlay), then "Change cover" and "Remove cover", or just "Add cover" when there is none. A missing picture file shows a message and the Remove button. The markdown text view hides it and shows the line as written. Saving goes through the normal autosave (a change of the properties block is a change of the page).
+- Tested here: 97 interface unit tests (the line rules including CRLF, odd and huge input), and browser tests for off by default and the switch, showing, adding, changing and removing with the real file chooser, other properties kept in order, a refused file, a list-valued entry, a missing picture, the text view, and a phone width. Design screenshots, light and dark, desktop and phone.
+- NOT tested, needs a device: choosing a picture with the Android file chooser, how large pictures from a phone camera behave (10 MB limit), and how the strip looks on the real screens.
+- Not done: moving or resizing the picture, stock images, deleting the picture file when a cover is removed, a cover for folders, an "Add cover" entry in the search box.
+- Release notes: `docs/release-notes/0.3.5.md`.
+
 ## Versions
 
 | Version | What it adds | Status |
@@ -236,7 +246,9 @@ Owner request (2026-11-06): "Get started on v0.3.3" (wikilinks and backlinks, fi
 | 0.3.1 | Android builds are signed with a fixed key so they update over each other (see "0.3.1: built") | built, not tried on a device |
 | 0.3.2 | Finger drag and menu gestures in the page list, new entries at the top when nothing is open (see "0.3.2: built") | built, not tried on a device |
 | 0.3.3 | Wikilinks and backlinks (see "0.3.3: built") | built, not tried on a device |
-| 0.3.x | Tags and favorites (0.3.4), covers (0.3.5), export and page history (0.3.6) | not started |
+| 0.3.4 | Tags and favorites | not started (skipped for now, covers were built first) |
+| 0.3.5 | Covers, optional and off by default (see "0.3.5: built") | built, not tried on a device |
+| 0.3.6 | Export and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |

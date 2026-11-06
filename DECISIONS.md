@@ -270,3 +270,9 @@ Context. The owner asked for covers to be optional.
 Decision. The owner confirmed both: a "Show covers" toggle, and per page his own custom image or none. No page has a cover by default; adding and removing one is the page's own choice. A setting turns covers off completely, and then nothing about them is shown. The file format is decided when covers are built.
 Cost. One more setting to build and test.
 
+
+## 2026-11-06: A cover is one property line plus a normal attachment, and covers are off by default
+Context. The owner wants covers optional: a switch for the whole feature, and per page his own picture or none. Notes must stay plain markdown that Obsidian opens, and writing to a page must never lose content.
+Decision. The cover is `cover: attachments/name.png` in the page's frontmatter; the picture is saved as an ordinary attachment with the existing checked picture command. Only that line is read, changed or removed, the rest of the block is kept byte for byte, and a `cover` entry that is not a plain one-line value is never edited. The switch `showCovers` is off by default, and when it is off the cover area is not created at all. Removing a cover removes the line only, not the picture file.
+Alternatives. A custom hidden file or a sidecar (rejected: not plain markdown, breaks on move). A markdown image at the top of the body (rejected: it would show as an ordinary block and cannot be told from a picture the person put there). Frontmatter key `banner` or `image` (rejected for now: `cover` is the name most Obsidian setups use).
+Cost. Obsidian shows the line as a property but does not draw the picture unless a plugin is installed. Removed covers leave their files behind. Covers are skipped in 0.3.4's slot: tags and favorites are still to build.
