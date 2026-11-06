@@ -31,7 +31,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -118,6 +118,8 @@ async function loadSettings() {
       ...normalizeAppearance(parsed),
       // One switch for both looking for updates and installing them. On unless turned off.
       updates: parsed.updates !== false,
+      // The "Linked from" list under pages. On unless turned off.
+      showBacklinks: parsed.showBacklinks !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
@@ -173,6 +175,24 @@ async function checkQuietly() {
     // Offline or GitHub unreachable is normal; it is logged and nothing is shown.
     logProblem("update check failed", error);
   }
+}
+
+function setShowBacklinks(on) {
+  app.settings.showBacklinks = on;
+  saveSettings();
+  if (app.current) loadBacklinks(app.current.path);
+}
+
+function backlinkSettingsRows() {
+  const s = strings.settings;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = app.settings.showBacklinks;
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.showBacklinks, "setting-label"), box);
+  box.addEventListener("change", () => setShowBacklinks(box.checked));
+  return [row, textElement("p", s.showBacklinksHint, "setting-hint")];
 }
 
 function updateSettingsRows() {
@@ -541,6 +561,8 @@ function loadBacklinks(path) {
   clearTimeout(app.backlinkTimer);
   const run = ++app.backlinkRun;
   app.backlinks.clear();
+  // Turned off: the pages are not searched at all.
+  if (!app.settings.showBacklinks) return;
   app.backlinkTimer = setTimeout(async () => {
     try {
       const result = await backend.backlinks(path);
@@ -1060,7 +1082,7 @@ function fillStaticText() {
         applyAppearance(document.documentElement, app.settings);
         saveSettings();
       },
-      [...updateSettingsRows(), ...obsidianRows()],
+      [...backlinkSettingsRows(), ...updateSettingsRows(), ...obsidianRows()],
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;
@@ -1165,7 +1187,7 @@ async function start() {
     followLink,
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
-  app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path) });
+  app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => setShowBacklinks(false) });
   keepCaretVisible();
   startFlushTriggers();
 

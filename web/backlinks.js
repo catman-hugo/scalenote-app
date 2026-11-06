@@ -11,14 +11,27 @@ function make(tag, className, text) {
 }
 
 /**
- * Creates the list inside `host` (after the page text). `open(path)` opens a page.
+ * Creates the list inside `host` (after the page text). `open(path)` opens a page, `hide()` is called when the person hides the list.
  * Returns { clear, show(result), fail }.
  */
-export function createBacklinks(host, { open }) {
+export function createBacklinks(host, { open, hide }) {
   const section = make("section", "backlinks");
   section.setAttribute("aria-label", strings.backlinks.heading);
   section.hidden = true;
   host.append(section);
+
+  // The title row, with the Hide button at its end.
+  const header = (extra) => {
+    const row = make("div", "backlinks-head");
+    const title = make("h2", "backlinks-title", strings.backlinks.heading);
+    if (extra) title.append(extra);
+    const button = make("button", "link-button", strings.backlinks.hide);
+    button.type = "button";
+    button.title = strings.backlinks.hideLabel;
+    button.addEventListener("click", hide);
+    row.append(title, button);
+    return row;
+  };
 
   const draw = (children) => {
     section.replaceChildren(...children);
@@ -32,12 +45,11 @@ export function createBacklinks(host, { open }) {
     },
 
     fail() {
-      draw([make("h2", "backlinks-title", strings.backlinks.heading), make("p", "backlinks-note", strings.backlinks.failed)]);
+      draw([header(), make("p", "backlinks-note", strings.backlinks.failed)]);
     },
 
     show({ items, truncated }) {
-      const title = make("h2", "backlinks-title", strings.backlinks.heading);
-      if (items.length) title.append(make("span", "backlinks-count", String(items.length)));
+      const title = header(items.length ? make("span", "backlinks-count", String(items.length)) : null);
       if (!items.length) return draw([title, make("p", "backlinks-note", strings.backlinks.none)]);
       const list = make("ul", "backlinks-list");
       for (const item of items) {

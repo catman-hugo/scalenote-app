@@ -985,7 +985,7 @@ await test("with the update setting off, nothing is requested and no notice appe
 await test("the update setting is one switch in Settings and is saved", async (page) => {
   await page.waitForSelector("#newNote");
   await page.click("#openSettings");
-  const box = page.locator('#settings input[type="checkbox"]');
+  const box = page.locator('#settings .setting-row:has-text("new versions") input');
   assert.equal(await box.isChecked(), true);
   await box.uncheck();
   assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).updates, false);
@@ -2619,6 +2619,37 @@ await test("links inside bold or italic text, or a page of thousands of links, n
   assert.ok(Date.now() - started < 5000, "a huge page opens in reasonable time");
   assert.equal((await files(page))["Many.md"], `${many}\n\nend\n`, "and is not changed by opening it");
 }, ctxOpts);
+
+await test("the Linked from list can be hidden, stays hidden without searching, and comes back from Settings", async (page) => {
+  await linksVault(page);
+  await openLinked(page, "Plan.md");
+  await page.waitForSelector(".backlinks .backlink");
+  await page.click(".backlinks-head button");
+  assert.equal(await page.isVisible(".backlinks"), false);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showBacklinks, false);
+  await page.evaluate(() => { window.__backlinkCalls = 0; });
+  await openLinked(page, "Home.md");
+  await openLinked(page, "Plan.md");
+  await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => window.__backlinkCalls), 0, "no search while it is off");
+  assert.equal(await page.isVisible(".backlinks"), false);
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  const box = page.locator('#settings .setting-row:has-text("Linked from") input');
+  assert.equal(await box.isChecked(), false);
+  await box.check();
+  await page.waitForSelector(".backlinks .backlink");
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showBacklinks, true);
+}, ctxOpts);
+
+await test("with the Linked from list switched off in the settings, it is not shown or searched for", async (page) => {
+  await linksVault(page);
+  await page.evaluate(() => { window.__backlinkCalls = 0; });
+  await openLinked(page, "Plan.md");
+  await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => window.__backlinkCalls), 0);
+  assert.equal(await page.isVisible(".backlinks"), false);
+}, { settings: existingUser({ updates: false, showBacklinks: false }) });
 
 await test("a finger tap on a link follows it", async (page) => {
   await linksVault(page);
