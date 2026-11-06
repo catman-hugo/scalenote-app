@@ -125,6 +125,9 @@ pub struct NoteContent {
 pub struct Vault {
     /// Canonical (symlinks resolved) path of the vault folder.
     root: PathBuf,
+    /// The last time keeping an older version failed (saves still succeed). The app reads it
+    /// after a save and writes it to the log, so a history that quietly does not work is found.
+    pub(crate) history_problem: std::sync::Mutex<Option<String>>,
 }
 
 impl Vault {
@@ -134,7 +137,7 @@ impl Vault {
         if !canonical.is_dir() {
             return Err(VaultError::NotADirectory);
         }
-        Ok(Vault { root: canonical })
+        Ok(Vault { root: canonical, history_problem: std::sync::Mutex::new(None) })
     }
 
     /// Opens the folder, creating it first when it does not exist.

@@ -3647,6 +3647,21 @@ await test("deleting all history asks twice", async (page) => {
   await page.waitForFunction(() => window.__mock.history.size === 0);
 }, ctxOpts);
 
+await test("a lone version opens at once, the page properties are one note, and with no versions there are no put-back buttons", async (page) => {
+  await historyVault(page);
+  await page.click("#historyButton");
+  await page.waitForSelector(".history-change");
+  assert.match(await page.locator(".history-detail").innerText(), /Page properties \(3 lines\)/);
+  assert.equal(await page.locator("#historyBox button", { hasText: "Put back this whole version" }).isVisible(), true);
+  await page.keyboard.press("Escape");
+  await tagsVault(page);
+  await openTagged(page, "Plain.md");
+  await page.click("#historyButton");
+  await page.waitForSelector("#historyBox[open]");
+  assert.equal(await page.locator("#historyBox button", { hasText: "Put back this whole version" }).isVisible(), false);
+  assert.equal(await page.locator("#historyBox button", { hasText: "Put back the chosen parts" }).isVisible(), false);
+}, ctxOpts);
+
 // ---------- 0.3.7: export and print ----------
 
 await test("the page can be exported from the command list, and a failure is shown calmly", async (page) => {

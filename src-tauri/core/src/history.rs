@@ -159,7 +159,16 @@ impl Vault {
             return;
         }
         let key = page_key(relative, if front_id(new).is_some() { new } else { old_text });
-        let _ = self.history_copy(&key, old, now_ms(), false);
+        if let Err(error) = self.history_copy(&key, old, now_ms(), false) {
+            if let Ok(mut slot) = self.history_problem.lock() {
+                *slot = Some(format!("{error:?}"));
+            }
+        }
+    }
+
+    /// The last failure to keep an older version, once. `None` when there was none.
+    pub fn take_history_problem(&self) -> Option<String> {
+        self.history_problem.lock().ok().and_then(|mut slot| slot.take())
     }
 
     /// Copies `old` into the history under `key` at time `now`. Unless `force` is set it does
@@ -460,6 +469,19 @@ mod tests {
         fs::create_dir_all(folder.join("99.md")).expect("folder named like a copy");
         let list = vault.history_list("A.md").expect("list");
         assert_eq!(list.len(), 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_failed_copy_does_not_fail_the_save_but_is_reported_once() {
+        let (dir, vault) = vault("problem");
+        save(&vault, "A.md", "one\n");
+        // A file where the history folder should be: no copy can be made.
+        fs::write(vault.root().join(HISTORY_DIR), "in the way").expect("blocker");
+        save(&vault, "A.md", "two\n");
+        assert_eq!(vault.read_note("A.md").expect("read").text, "two\n");
+        assert!(vault.take_history_problem().is_some());
+        assert!(vault.take_history_problem().is_none(), "reported only once");
         let _ = fs::remove_dir_all(dir);
     }
 }
