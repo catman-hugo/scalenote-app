@@ -2662,7 +2662,7 @@ await test("a finger tap on a link follows it", async (page) => {
 }, { ...ctxOpts, userAgent: ANDROID_UA, viewport: { width: 390, height: 780 }, hasTouch: true });
 
 
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -2700,7 +2700,7 @@ if (shots) {
 }
 
 // Screenshots of the screens added in 0.2 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   const PICTURE = "iVBORw0KGgoAAAANSUhEUgAAAPAAAACMCAIAAADN17N/AAACbklEQVR4nO3dQQ3AMAwEQeMMpgILjYDovzAibUcygbH2f7PPe+XWs68cb9s7fwPztr2C5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15Bc2b8gqaN+UVNG/KK2jelFfQvCmvoHlTXkHzpryC5k15x6N5S15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeW2s8Ka8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/LaWOFNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjflFTRvyito3pRX0Lwpr6B5U15B86a8guZNeQXNm/IKmjfl/QC99AwHVDSuFQAAAABJRU5ErkJggg==";
   const NOTE = ["# Photosynthesis", "", "Plants turn **light** into *sugar*. See [the guide](https://example.local/guide).", "", "> [!tip] Remember", "> Chlorophyll absorbs red and blue light.", "", "> [!warning]- Common mistake", "> Plants do not eat soil.", "", "<details>", "<summary>Why are leaves green?</summary>", "", "Green light is reflected, not absorbed.", "", "</details>", "", "| stage | where |", "| :--- | ---: |", "| light reactions | thylakoid |", "| Calvin cycle | stroma |", "", "![A diagram of a leaf](attachments/leaf.png)", "", "Last line ^last1", ""].join("\n");
   const prepare = async (page, settings) => {
@@ -3451,7 +3451,7 @@ await test("on a phone the Tags box, the star and the Favorites list fit the scr
 }, { ...ctxOpts, viewport: { width: 390, height: 780 } });
 
 // Screenshots of the screens added in 0.3.3 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -3493,7 +3493,7 @@ if (shots) {
 }
 
 // Screenshots of the screens added in 0.3.5 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -3529,7 +3529,7 @@ if (shots) {
 }
 
 // Screenshots of the screens added in 0.3.6 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -3697,7 +3697,7 @@ await test("printing leaves out the page list and the buttons but keeps the titl
 }, ctxOpts);
 
 // Screenshots of the screens added in 0.3.7 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -4513,7 +4513,7 @@ await test("a note that holds only an id shows an empty plain markdown view and 
 }, idOptions);
 
 // Screenshots of the screens added in 0.4.0 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -4545,7 +4545,7 @@ if (shots) {
 }
 
 // Screenshots of the screens added in 0.4.1 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -4596,7 +4596,7 @@ if (shots) {
 }
 
 // Screenshots of the screens changed in 0.4.2 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["tablet", { width: 810, height: 1180 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
@@ -4633,7 +4633,7 @@ if (shots) {
 }
 
 // Screenshots of the screens changed in 0.4.3 (only when SHOTS_DIR is set), in light and dark.
-if (shots) {
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
