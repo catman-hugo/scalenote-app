@@ -3957,6 +3957,8 @@ await test("on a phone the canvas toolbar fits the window and the sheet fills th
   assert.ok(buttons.every(Boolean), "every tool can be reached");
   const sheet = await sheetBox(page);
   assert.ok(sheet.width >= window_.width - 2 && sheet.height > 300);
+  // The top bar has the star, the history clock, Text and the save status; the title keeps room.
+  assert.ok((await page.locator("#title").boundingBox()).width >= 90, "the page title is still readable");
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
 
 // Screenshots of the screens added in 0.4.0 (only when SHOTS_DIR is set), in light and dark.
