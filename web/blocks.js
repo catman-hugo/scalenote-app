@@ -11,6 +11,7 @@
 // This file has no editor code in it, so it can be tested on its own.
 
 import { withoutStyleSyntax } from "./inlinestyles.js";
+import { withoutTags } from "./tagrules.js";
 import { withoutWikilinks } from "./wikilinkrules.js";
 
 /** Splits off a leading `--- ... ---` frontmatter block. Returns exact text on both sides. */
@@ -50,7 +51,7 @@ const UNSAFE_INLINE = [
   /!\[/, // images
   /\[\^/, // footnote references
   /%%/, // comments
-  /(^|\s)#[^\s#]/, // tags
+  /(^|\s)#[^\s#]/, // a "#word" that is not a well formed tag (a number, say; tags are taken out first)
   /(^|\s)\^[\w-]+\s*$/, // block ids
   /~~~/,
 ];
@@ -64,9 +65,9 @@ export function stripBlockId(text) {
 }
 
 function hasUnsafeInline(text) {
-  // Well formed [[links]] are taken out first: the editor keeps them as they were written, and
-  // compose.js checks that it really does (see wikilinkSignature).
-  const plain = withoutWikilinks(withoutStyleSyntax(text));
+  // Well formed [[links]] and #tags are taken out first: the editor keeps them as they were
+  // written, and compose.js checks that it really does (see wikilinkSignature, tagSignature).
+  const plain = withoutWikilinks(withoutTags(withoutStyleSyntax(text)));
   return UNSAFE_INLINE.some((pattern) => pattern.test(plain));
 }
 

@@ -212,11 +212,11 @@ Owner request (2026-11-06): "Get started on v0.3.3" (wikilinks and backlinks, fi
 - Fixed on the way: the editor had no `white-space: break-spaces`, so a space typed at the end of a line or right after a link was saved as a no-break space (U+00A0) in the file. The CSS now has it (found by a new test).
 - Tested here: 90 interface unit tests (the link rules against the shared cases, blocks and rich blocks), 83 Rust tests in the core (the rules, backlinks over real folders including the trash, same-name pages, hostile input, 2,000 pages in about 20 ms), and the whole browser suite with new tests: links drawn and untouched on save, picker, hand-typed links, delete and undo, following and creating pages, headings and block ids, the backlinks list and its failure message, quick page switching, bold and italic links, a page of 6,000 links, a finger tap.
 - NOT tested, needs a device: the picker and link taps with the Android keyboard and a finger; the Tauri `backlinks` command (compiled only by CI); how slow "Linked from" is on a phone with a big folder.
-- Not done: renaming or moving a page does not rewrite links to it (they turn dashed); links cannot be edited in place; `[[Page#` does not list headings; embeds (`![[..]]`) are still raw. Tags and favorites are 0.3.4.
+- Not done: renaming or moving a page does not rewrite links to it (they turn dashed); links cannot be edited in place; `[[Page#` does not list headings; embeds (`![[..]]`) are still raw. Tags and favorites came later, as 0.3.6.
 - Release notes: `docs/release-notes/0.3.3.md`.
 
 ## 0.3.5: built
-Owner request (2026-11-06): "Get on with v0.3.5" (covers, as planned and as confirmed earlier: optional, a Settings switch, and per page his own image or none). The plan lists tags and favorites as 0.3.4; they are not started, so there is no 0.3.4 build.
+Owner request (2026-11-06): "Get on with v0.3.5" (covers, as planned and as confirmed earlier: optional, a Settings switch, and per page his own image or none). The plan then listed tags and favorites as 0.3.4; they were not started, and the owner later moved them to 0.3.6 (see "0.3.6: built"). There is no 0.3.4 build.
 - Setting `showCovers`, **off by default**. When off, no cover element, picture or "Add cover" button exists in the page (the area is created only while shown). The page's own cover line stays untouched in the file.
 - A cover is one property line in the page's frontmatter, `cover: attachments/name.png`, and the picture is a normal attachment saved with the existing picture command (same type and size checks, 10 MB). `coverrules.js` reads, sets and removes that line and leaves every other byte of the block alone; it refuses (and the page says so) when the `cover` entry is a list, block or otherwise spread over lines, when the block is not closed, or when the path is not a picture inside attachments.
 - Cover area (`cover.js`) above the text: picture (200 px high, 140 px on a phone, cropped to fill, solid frame, no overlay), then "Change cover" and "Remove cover", or just "Add cover" when there is none. A missing picture file shows a message and the Remove button. The markdown text view hides it and shows the line as written. Saving goes through the normal autosave (a change of the properties block is a change of the page).
@@ -224,6 +224,18 @@ Owner request (2026-11-06): "Get on with v0.3.5" (covers, as planned and as conf
 - NOT tested, needs a device: choosing a picture with the Android file chooser, how large pictures from a phone camera behave (10 MB limit), and how the strip looks on the real screens.
 - Not done: moving or resizing the picture, stock images, deleting the picture file when a cover is removed, a cover for folders, an "Add cover" entry in the search box.
 - Release notes: `docs/release-notes/0.3.5.md`.
+
+## 0.3.6: built
+Owner request (2026-11-06): "Make 0.3.4 now but label it 0.3.6 ... The existing 0.3.6 moves to 0.3.7". So this is the tags-and-favorites slice, numbered 0.3.6; export and page history are now 0.3.7; there is no 0.3.4. `docs/v0.3-plan.md` and the table below are changed to match.
+- Tags: `#name` in a page (Obsidian's rules, `tagrules.js` in the interface and `tags.rs` in the core, one shared case file `tests/fixtures/tags.txt`) and `tags:` in the properties (`tags: a, b`, `[a, b]` or a list; Rust only). A tag stays plain text; `tags.js` only marks it and a click opens the Tags box. Before, any block with `#word` was a grey "kept exactly as written" box. Now a well formed tag is edited like text; `blocks.js` takes tags out before its unsafe-syntax check, and `compose.js` keeps a block raw if its tags would not come back exactly (`tagSignature`). A `#word` that is not a tag (`#1984`, `#tag<b>`) still keeps its block raw. Tags in table cells, callout titles and toggle titles stay raw as before.
+- Tags box (`tagsdialog.js`, `tagindex.js`): all tags with page counts, nested tags counted under their parents, no regard to case, a filter, the pages of the chosen tag (a click opens the page). Opened from the page list ("Tags"), the search box ("Open tags") or a click on a tag in a page (the page is saved first so a tag just typed is in the list). At most 300 tags and 300 pages are drawn, with a note.
+- New Rust command `page_index` (`Vault::page_index`): tags and favourite mark of every page, no stored index, same limits as search, no vault lock held. It is read after every page-list refresh (for the Favorites list) and when the Tags box opens.
+- Favorites: `favorite: true` in the properties, set and removed by the star next to the title (`propertyrules.js`, which now also does the cover line: `coverrules.js` was moved onto it, its tests are unchanged and pass). A Favorites list above the page list shows them, and is not drawn while empty. The star is switched off in the markdown text view. A `favorite` entry written as a list or over several lines is never edited; the page says so. "Add or remove this page from favorites" is in the search box.
+- Fixed on the way: the sidebar footer (Settings, Tags, Trash) now wraps to a second line instead of cutting a label short.
+- Tested here: 115 interface unit tests (tag rules against the shared cases, hostile input, tag lists, blocks) and the Rust core tests (tag rules against the same cases, properties in all forms, the index over real folders including the trash, a binary and a huge page, 100,000 tags), and the whole browser suite (175 tests) with new tests: tags marked and saved exactly as typed (also at the start of a line, in headings, lists and quotes, none in code), the Tags box (counts, nested, filter, empty, failure, click on a tag, open a page), the star (set, remove, other properties and text kept, list-valued entry refused, text view), the Favorites list, the search-box commands, a phone width, and an index that fails. Design screenshots, light and dark, desktop and phone.
+- NOT tested, needs a device: the Tags box and the star with a finger and the Android keyboard (typing `#`); the Tauri `page_index` command (compiled only by CI); how slow reading the whole folder after every list refresh is on a phone with a big folder.
+- Not done: tag suggestions while typing `#`, renaming or merging tags, editing the `tags:` property from the interface (use the markdown text view), a favourite toggle for a page that is not open, a refresh of the Favorites list when another program changes a page (it follows the next page-list refresh), the folder-level or tag colours.
+- Release notes: `docs/release-notes/0.3.6.md`.
 
 ## Versions
 
@@ -246,9 +258,10 @@ Owner request (2026-11-06): "Get on with v0.3.5" (covers, as planned and as conf
 | 0.3.1 | Android builds are signed with a fixed key so they update over each other (see "0.3.1: built") | built, not tried on a device |
 | 0.3.2 | Finger drag and menu gestures in the page list, new entries at the top when nothing is open (see "0.3.2: built") | built, not tried on a device |
 | 0.3.3 | Wikilinks and backlinks (see "0.3.3: built") | built, not tried on a device |
-| 0.3.4 | Tags and favorites | not started (skipped for now, covers were built first) |
+| 0.3.4 | (number not used; tags and favorites were moved to 0.3.6) | no build |
 | 0.3.5 | Covers, optional and off by default (see "0.3.5: built") | built, not tried on a device |
-| 0.3.6 | Export and page history | not started |
+| 0.3.6 | Tags and favorites (see "0.3.6: built") | built, not tried on a device |
+| 0.3.7 | Export and page history | not started |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |

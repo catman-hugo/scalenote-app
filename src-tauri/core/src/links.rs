@@ -111,7 +111,7 @@ fn scan_line(line: &str, offset: usize, links: &mut Vec<WikiLink>) {
 }
 
 // A run of backticks closed by a run of the same length is a code span; an unclosed run is text.
-fn skip_code_span(bytes: &[u8], from: usize) -> usize {
+pub(crate) fn skip_code_span(bytes: &[u8], from: usize) -> usize {
     let mut run = 0;
     while bytes.get(from + run) == Some(&b'`') {
         run += 1;
@@ -135,7 +135,7 @@ fn skip_code_span(bytes: &[u8], from: usize) -> usize {
 }
 
 // `at` is the first "[". Returns the position of the closing "]]" and the link.
-fn read_link(line: &str, at: usize) -> Option<(usize, WikiLink)> {
+pub(crate) fn read_link(line: &str, at: usize) -> Option<(usize, WikiLink)> {
     let rest = &line.as_bytes()[at + 2..];
     let close = rest.iter().position(|&b| b == b']' || b == b'[' || b == b'\n' || b == b'\r')?;
     if rest[close] != b']' || rest.get(close + 1) != Some(&b']') || close == 0 || close > MAX_INNER_BYTES {

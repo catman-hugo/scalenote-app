@@ -13,6 +13,7 @@ import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
 import { choosePicture, checkPicture, storePicture } from "./images.js";
 import { Highlight, Subscript, Superscript, Colour } from "./inlinemarks.js";
+import { Tags } from "./tags.js";
 import { Wikilink } from "./wikilinks.js";
 
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
@@ -344,6 +345,7 @@ export function createEditor(element, onChange, options = {}) {
         follow: options.followLink || (() => {}),
         renderPicker: () => renderSlashMenu(strings.wikilinks.noPages),
       }),
+      Tags.configure({ open: options.openTag || (() => {}) }),
       SourceKeeper,
       RawBlock,
       Callout,

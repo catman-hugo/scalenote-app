@@ -62,7 +62,13 @@ test("syntax the editor does not know is kept as raw blocks", () => {
   assert.deepEqual(kinds("![[image.png]]"), ["raw"]);
   assert.deepEqual(kinds("Title\n====="), ["raw"]);
   assert.deepEqual(kinds("    indented code"), ["raw"]);
-  assert.deepEqual(kinds("A line with a #tag in it"), ["raw"]);
+  assert.deepEqual(kinds("A line with a #tag in it"), ["paragraph"], "a well formed tag is editable (compose.js checks that it is kept)");
+  assert.deepEqual(kinds("# Heading with #tag"), ["heading"]);
+  assert.deepEqual(kinds("#tag at the start\n#second"), ["paragraph"]);
+  for (const odd of ["Issue #1984 is open", "#tag<b>", "x #é <u>ok</u> ==bad == y", "Text #tag and $math$"]) {
+    assert.deepEqual(kinds(odd), ["raw"], odd);
+  }
+  assert.deepEqual(kinds("A line with a #1984 in it"), ["raw"], "a number is not a tag, and the editor is not asked to keep it");
   assert.deepEqual(kinds("```\nnever closed"), ["raw"]);
 });
 

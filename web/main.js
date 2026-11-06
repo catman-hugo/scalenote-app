@@ -22,6 +22,9 @@ import { renderTree } from "./sidebar.js";
 import { openContextMenu } from "./contextmenu.js";
 import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
+import { openTags } from "./tagsdialog.js";
+import { favoritePaths, pageTitle } from "./tagindex.js";
+import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { strings } from "./strings.js";
@@ -53,6 +56,10 @@ const app = {
   // page that is no longer open be dropped.
   backlinks: null,
   cover: null,
+  // The pages marked as favourites (paths), read from the page index and kept up to date when
+  // the open page is marked or unmarked. A counter drops the answer of a slow, older request.
+  favorites: new Set(),
+  indexRun: 0,
   backlinkRun: 0,
   backlinkTimer: 0,
   following: false,
@@ -537,6 +544,102 @@ async function refreshTree() {
   }
   drawTree();
   syncLinks();
+  refreshIndex();
+}
+
+// ---------- tags and favorites ----------
+
+// Reads which pages are favourites. It runs in the background after the page list is read; if it
+// fails the list simply keeps what it had, and the Tags box reads the files again when opened.
+async function refreshIndex() {
+  const run = ++app.indexRun;
+  try {
+    const index = await backend.pageIndex();
+    if (run !== app.indexRun) return;
+    app.favorites = new Set(favoritePaths(index.pages));
+  } catch (error) {
+    logProblem("page index failed", error);
+    return;
+  }
+  drawFavorites();
+}
+
+// The Favorites list above the page list. Nothing is drawn while there are no favourites.
+function drawFavorites() {
+  const box = el("favorites");
+  const existing = new Set(notePaths());
+  const paths = favoritePaths([...app.favorites].filter((path) => existing.has(path)).map((path) => ({ path, favorite: true })));
+  box.hidden = paths.length === 0;
+  if (!paths.length) return box.replaceChildren();
+  const list = document.createElement("ul");
+  list.className = "tree-list";
+  list.setAttribute("aria-label", strings.favorites.listLabel);
+  for (const path of paths) {
+    const item = document.createElement("li");
+    const row = document.createElement("div");
+    row.className = "tree-row";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tree-button";
+    button.dataset.path = path;
+    button.dataset.kind = "favorite";
+    button.title = path.replace(/\.md$/i, "");
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = pageTitle(path);
+    button.append(icon("star"), label);
+    if (app.current && app.current.path === path) {
+      row.classList.add("current");
+      button.setAttribute("aria-current", "page");
+    }
+    button.addEventListener("click", () => openNote(path));
+    row.append(button);
+    item.append(row);
+    list.append(item);
+  }
+  box.replaceChildren(textElement("p", strings.favorites.title, "side-heading"), list);
+}
+
+// The star next to the page title. Switched off in the markdown view, where the properties are
+// part of the text being edited.
+function drawFavorite() {
+  const button = el("favorite");
+  button.hidden = !app.current;
+  if (!app.current) return;
+  const on = readFavorite(app.current.parts.front);
+  if (on) app.favorites.add(app.current.path);
+  else app.favorites.delete(app.current.path);
+  const text = app.mode === "source" ? strings.favorites.sourceView : on ? strings.favorites.remove : strings.favorites.add;
+  button.replaceChildren(icon("star"));
+  button.classList.toggle("is-on", on);
+  button.setAttribute("aria-pressed", String(on));
+  button.setAttribute("aria-label", text);
+  button.title = text;
+  button.disabled = app.mode === "source";
+  drawFavorites();
+}
+
+function toggleFavorite() {
+  if (!app.current || app.mode === "source") return;
+  const front = withFavorite(app.current.parts.front, !readFavorite(app.current.parts.front));
+  if (front === null) return showToast(strings.favorites.cannotChange);
+  app.current.parts.front = front;
+  app.autosave.touch();
+  drawFavorite();
+}
+
+// The Tags box. The open page is saved first, so a tag that was just typed is in the list.
+async function openTagsDialog(select) {
+  if (app.autosave) await app.autosave.flush();
+  return openTags(el("tags"), {
+    load: () => backend.pageIndex(),
+    open: (path) => openNote(path),
+    onError: (error) => {
+      logProblem("tags failed", error);
+      return strings.tags.loadFailed;
+    },
+    select,
+  });
 }
 
 // ---------- links between pages ----------
@@ -822,9 +925,10 @@ function openSearch() {
     { label: c.newFolder, run: createFolder },
     { label: c.settings, run: () => el("openSettings").click() },
     { label: c.trash, run: openTrashDialog },
+    { label: c.tags, run: () => openTagsDialog() },
     { label: c.sidebar, run: toggleSidebar },
   ];
-  if (app.current) commands.push({ label: c.source, run: toggleSource });
+  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.source, run: toggleSource });
   openPalette(el("palette"), {
     recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
     commands,
@@ -855,6 +959,7 @@ async function showNoNote() {
   el("source").hidden = true;
   el("sourceToggle").hidden = true;
   el("title").hidden = true;
+  drawFavorite();
   setStatus("");
 }
 
@@ -950,6 +1055,7 @@ function applyMode() {
   toggle.setAttribute("aria-label", source ? strings.source.hideLabel : strings.source.showLabel);
   toggle.setAttribute("aria-pressed", String(Boolean(source)));
   if (source && el("source").readOnly) showBanner(strings.source.mixedLineEndings);
+  drawFavorite();
 }
 
 async function toggleSource() {
@@ -1115,6 +1221,7 @@ function fillStaticText() {
   withIcon("newNote", "plus", strings.sidebar.newNote);
   withIcon("newFolder", "folder", strings.sidebar.newFolder);
   withIcon("openSettings", "settings", strings.settings.open);
+  withIcon("openTags", "tag", strings.sidebar.tags);
   withIcon("openTrash", "trash", strings.sidebar.trash);
   // The search button shows its shortcut where there is a keyboard to use it.
   const search = el("openSearch");
@@ -1205,13 +1312,15 @@ function wireEvents() {
   enableTreeDrag(el("tree"), moveEntry);
   el("openSearch").addEventListener("click", openSearch);
   el("openTrash").addEventListener("click", openTrashDialog);
+  el("openTags").addEventListener("click", () => openTagsDialog());
+  el("favorite").addEventListener("click", toggleFavorite);
   document.addEventListener("keydown", searchShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("vaultButton").addEventListener("click", showFolderMenu);
   // Settings and What's new can be closed by clicking outside the box (or Escape, or Close).
   // The first-run screens cannot: they need an answer.
-  for (const id of ["settings", "whatsnew", "trash", "palette"]) {
+  for (const id of ["settings", "whatsnew", "trash", "tags", "palette"]) {
     const dialog = el(id);
     dialog.addEventListener("click", (event) => {
       // Pressing Enter on a button also sends a click, with its position at 0,0, which would
@@ -1251,6 +1360,7 @@ async function start() {
     noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
     notify: showToast,
     followLink,
+    openTag: (name) => openTagsDialog(name),
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
   app.cover = createCover(el("editor"), {

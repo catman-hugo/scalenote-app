@@ -91,3 +91,8 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 - Writing: only the one `cover:` line is added, replaced or removed; the rest of the block is kept byte for byte, an unclosed block or a multi-line `cover` entry is refused, and the page is saved through the normal atomic save.
 - The page policy (no inline styles) is unchanged and no policy errors were reported by the browser tests.
 
+## Addendum for 0.3.6
+- One new Rust command, `page_index`. It takes no argument. Like search it runs without holding the vault lock, skips hidden folders (so the trash), the attachments folder, links to folders and invalid text, and reads within the page list's own limits, at most 8 MiB per page and 512 MiB in total. Nothing is written.
+- Tags and the properties block are untrusted text. They are read by fixed scanning code (no patterns built from the text, no evaluation); a tag is at most 100 letters and at most 5,000 are read from a page; code and link headings are skipped. Tested with 100,000 tags, 100,000 backticks and hashes, a million-letter tag, escapes and multi-byte text: each finishes in well under a second in both the Rust and the interface versions. Tag names are shown with text nodes and stored in a data attribute only as text; they are never used as paths or html.
+- Writing: only the one `favorite:` line is added, replaced or removed (same code as covers); an unclosed block or a multi-line `favorite` entry is refused, and the page is saved through the normal atomic save.
+- The page policy (no inline styles) is unchanged and no policy errors were reported by the browser tests. No new network calls, permissions or dependencies.
