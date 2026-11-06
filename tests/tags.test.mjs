@@ -11,7 +11,8 @@ const names = (text) => findTags(text).map((tag) => tag.name);
 test("the shared cases give the same answers as the Rust code", () => {
   let checkedNames = 0;
   let checkedFinds = 0;
-  for (const line of readFileSync(new URL("./fixtures/tags.txt", import.meta.url), "utf8").split("\n")) {
+  // The file may be checked out with Windows line ends, so lines are split on both kinds.
+  for (const line of readFileSync(new URL("./fixtures/tags.txt", import.meta.url), "utf8").split(/\r?\n/)) {
     if (!line.trim() || line.startsWith("#")) continue;
     if (line.startsWith("name ")) {
       const [input, expected] = line.slice(5).split(" => ");
