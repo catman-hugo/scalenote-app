@@ -1513,3 +1513,53 @@ button.danger:hover { background: var(--bg-hover); }
 .tag-page { padding-left: var(--space-3); overflow-wrap: anywhere; }
 .tags-empty { margin: var(--space-4) 0; color: var(--text-soft); }
 .tags-error { margin: var(--space-3) 0 0; color: var(--bad); }
+
+/* Page history box */
+.history-dialog .history-list-box { max-height: 22dvh; overflow-y: auto; margin: var(--space-3) 0; }
+.history-dialog .history-list { list-style: none; margin: 0; padding: 0; }
+.history-dialog .history-list li { margin: 0; }
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  border-color: transparent;
+  text-align: left;
+}
+.history-row:hover { background: var(--bg-hover); }
+.history-row[aria-pressed="true"] { background: var(--accent-soft); }
+.history-size, .history-note, .history-fold, .history-side-label { font-size: var(--text-s); color: var(--text-soft); }
+.history-detail { max-height: 36dvh; overflow-y: auto; }
+.history-views { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); }
+.history-view[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.history-lines {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-s);
+  font-family: inherit;
+}
+.history-change { border: 1px solid var(--line); border-radius: var(--radius); margin: var(--space-2) 0; padding: var(--space-2); }
+.history-pick { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.history-side { margin: var(--space-1) 0; border-left: 3px solid var(--line); padding-left: var(--space-2); }
+.history-then { border-left-color: var(--accent); }
+.history-side p { margin: 0; }
+.history-fold { margin: var(--space-1) 0; }
+.history-empty { margin: var(--space-4) 0; color: var(--text-soft); }
+.history-error, .history-status { margin: var(--space-2) 0 0; color: var(--bad); }
+.history-status:empty { display: none; }
+.history-dialog .dialog-actions { flex-wrap: wrap; }
+
+/* Printing and "save as PDF": the page title and the page itself, on white, with no controls. */
+@media print {
+  :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
+  .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source { display: none !important; }
+  .app, .main, .editor { display: block; height: auto; overflow: visible; }
+  .title { border: 0; padding-left: 0; }
+  .note-body { max-width: none; padding: 0; }
+  .note-body pre, .note-body blockquote, .note-body table, .note-body img { break-inside: avoid; }
+  .note-body h1, .note-body h2, .note-body h3 { break-after: avoid; }
+  a { color: inherit; text-decoration: underline; }
+}

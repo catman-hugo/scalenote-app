@@ -1950,7 +1950,7 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
   const texts = await rowTexts(page);
   assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
-  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show or hide the markdown text of this page"]);
+  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Show or hide the markdown text of this page"]);
   assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
   assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
   assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
@@ -3559,6 +3559,152 @@ if (shots) {
       await page.screenshot({ path: name("3-tags-box") });
       await page.fill("#tags .tags-filter", "sch");
       await page.screenshot({ path: name("4-tags-filter") });
+      await context.close();
+    }
+  }
+}
+
+// ---------- 0.3.7: page history ----------
+
+const OLD_TEXT = "---\nid: hid\n---\n\nAlpha\n\nBeta old\n\nGamma\n\nDelta old\n";
+const NOW_TEXT = "---\nid: hid\n---\n\nAlpha\n\nBeta new\n\nGamma\n\nDelta new\n";
+
+async function historyVault(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([oldText, nowText]) => {
+    window.__mock.files.set("Hist.md", nowText);
+    window.__mock.history.set("Hist.md", [{ id: "1700000000000", time: 1700000000, text: oldText }]);
+  }, [OLD_TEXT, NOW_TEXT]);
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Hist.md"]');
+  await openTagged(page, "Hist.md");
+}
+
+await test("the history box lists older versions and shows what changed", async (page) => {
+  await historyVault(page);
+  await page.click("#historyButton");
+  await page.waitForSelector("#historyBox[open] .history-row");
+  assert.equal(await page.locator(".history-row").count(), 1);
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  assert.equal(await page.locator(".history-change").count(), 2);
+  const text = await page.locator(".history-detail").innerText();
+  assert.match(text, /Beta new/);
+  assert.match(text, /Beta old/);
+  assert.equal(await page.locator("#historyBox button", { hasText: "Put back the chosen parts" }).isDisabled(), true);
+}, ctxOpts);
+
+await test("putting back one chosen part changes only that part and keeps the id", async (page) => {
+  await historyVault(page);
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  await page.locator(".history-change input").first().check();
+  await page.click("#historyBox >> text=Put back the chosen parts");
+  await page.waitForFunction(() => !document.querySelector("#historyBox").open);
+  assert.equal((await files(page))["Hist.md"], NOW_TEXT.replace("Beta new", "Beta old"));
+  const kept = await page.evaluate(() => window.__mock.history.get("Hist.md").length);
+  assert.equal(kept, 2, "the text from before the restore is kept in the history");
+}, ctxOpts);
+
+await test("putting back a whole version restores it exactly", async (page) => {
+  await historyVault(page);
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  await page.click("#historyBox >> text=Put back this whole version");
+  await page.waitForFunction(() => !document.querySelector("#historyBox").open);
+  assert.equal((await files(page))["Hist.md"], OLD_TEXT);
+}, ctxOpts);
+
+await test("a page with no older versions says so", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "Plain.md");
+  await page.click("#historyButton");
+  await page.waitForSelector("#historyBox[open]");
+  assert.match(await page.locator("#historyBox").innerText(), /no older versions yet/);
+}, ctxOpts);
+
+await test("if the page changes while the box is open nothing is put back", async (page) => {
+  await historyVault(page);
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  await page.evaluate(() => window.__mock.files.set("Hist.md", "changed elsewhere\n"));
+  await page.click("#historyBox >> text=Put back this whole version");
+  await page.waitForSelector(".history-status:not(:empty)");
+  assert.match(await page.locator(".history-status").innerText(), /changed while the history was open/);
+  assert.equal((await files(page))["Hist.md"], "changed elsewhere\n");
+}, { ...ctxOpts, allow: [/./] });
+
+await test("deleting all history asks twice", async (page) => {
+  await historyVault(page);
+  await page.click("#openSettings");
+  const button = page.locator("button", { hasText: "Delete all history" });
+  await button.click();
+  assert.equal(await page.evaluate(() => window.__mock.history.size), 1, "one click only asks");
+  await page.locator("button", { hasText: "Click again to delete all history" }).click();
+  await page.waitForFunction(() => window.__mock.history.size === 0);
+}, ctxOpts);
+
+// ---------- 0.3.7: export and print ----------
+
+await test("the page can be exported from the command list, and a failure is shown calmly", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "Plain.md");
+  await openPaletteBox(page);
+  await page.fill(".palette-input", "Export this page");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => (window.__pageExports || []).length === 1);
+  assert.deepEqual(await page.evaluate(() => window.__pageExports), ["Plain.md"]);
+  assert.match(await page.locator(".toast").innerText(), /Exported to .*exports.*1 pictures/);
+  await page.evaluate(() => { window.__failExport = "io"; });
+  await openPaletteBox(page);
+  await page.fill(".palette-input", "Export this page");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".banner:not([hidden])");
+  assert.match(await page.locator("#banner").innerText(), /could not be exported/);
+}, { ...ctxOpts, allow: [/./] });
+
+await test("printing leaves out the page list and the buttons but keeps the title and the text", async (page) => {
+  await tagsVault(page);
+  await openTagged(page, "Tagged.md");
+  await page.emulateMedia({ media: "print" });
+  assert.equal(await page.locator("#sidebar").isVisible(), false);
+  assert.equal(await page.locator("#favorite").isVisible(), false);
+  assert.equal(await page.locator("#title").isVisible(), true);
+  assert.equal(await page.locator(".note-body").isVisible(), true);
+  const pdf = await page.pdf();
+  assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
+}, ctxOpts);
+
+// Screenshots of the screens added in 0.3.7 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v037-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await historyVault(page);
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: name("1-page-with-history-button") });
+      await page.click("#historyButton");
+      await page.waitForSelector("#historyBox[open] .history-row");
+      await page.screenshot({ path: name("2-history-list") });
+      await page.click(".history-row");
+      await page.waitForSelector(".history-change");
+      await page.locator(".history-change input").first().check();
+      await page.screenshot({ path: name("3-history-changes") });
+      await page.click(".history-view >> text=Whole text");
+      await page.screenshot({ path: name("4-history-whole-text") });
+      await page.keyboard.press("Escape");
+      await page.click("#openSettings");
+      await page.locator("h3", { hasText: "Page history" }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: name("5-settings-history") });
       await context.close();
     }
   }

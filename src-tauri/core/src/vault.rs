@@ -306,11 +306,13 @@ impl Vault {
         if text.len() as u64 > MAX_NOTE_BYTES {
             return Err(VaultError::TooLarge);
         }
+        let mut replaced: Option<Vec<u8>> = None;
         match (fs::read(&path), expected) {
             (Ok(current), Some(expected)) => {
                 if NoteVersion::of(&current) != expected {
                     return Err(VaultError::Conflict);
                 }
+                replaced = Some(current);
             }
             (Ok(_), None) => return Err(VaultError::Conflict),
             (Err(error), Some(_)) if error.kind() == io::ErrorKind::NotFound => {
@@ -318,6 +320,11 @@ impl Vault {
             }
             (Err(error), None) if error.kind() == io::ErrorKind::NotFound => {}
             (Err(error), _) => return Err(error.into()),
+        }
+        // The text that is about to be replaced goes into the page's history first (see
+        // history.rs). That is best effort and never stops the save.
+        if let Some(old) = &replaced {
+            self.history_before_save(relative, old, text);
         }
         write_atomic(&path, text.as_bytes())?;
         Ok(NoteVersion::of(text.as_bytes()))
@@ -417,7 +424,7 @@ impl Vault {
         self.relative_for_new(&target)
     }
 
-    fn note_path(&self, relative: &str) -> Result<PathBuf> {
+    pub(crate) fn note_path(&self, relative: &str) -> Result<PathBuf> {
         if relative.is_empty() || !has_md_extension(relative) {
             return Err(VaultError::NotANote);
         }

@@ -115,7 +115,7 @@ fn tag_end(line: &str, at: usize) -> Option<usize> {
 
 /// The properties block at the top of a page (`---` ... `---`) as its inner lines, or None when
 /// the page has none. Same shape as `splitFrontmatter` in `web/blocks.js`.
-fn front_lines(text: &str) -> Option<Vec<&str>> {
+pub(crate) fn front_lines(text: &str) -> Option<Vec<&str>> {
     let is_fence = |line: &str| line.trim_end_matches(['\r', '\n']).trim_end_matches([' ', '\t']) == "---";
     let mut lines = text.split_inclusive('\n');
     let first = lines.next()?;
