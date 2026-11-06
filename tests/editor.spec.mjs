@@ -3884,7 +3884,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":2,"strokes":[]}');
+  await canvasVault(page, '{"format":3,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -3961,6 +3961,290 @@ await test("on a phone the canvas toolbar fits the window and the sheet fills th
   assert.ok((await page.locator("#title").boundingBox()).width >= 90, "the page title is still readable");
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
 
+// ---------- 0.4.1: highlighter, shapes, sticky notes, lasso, pen button ----------
+
+const tool = (page, label) => page.click(`.canvas-toolbar button[aria-label="${label}"]`);
+// A pen-only drawing is still written in the 0.4.0 format, with its strokes under another key.
+const items = async (page) => {
+  const drawing = await savedDrawing(page);
+  return drawing.items || drawing.strokes;
+};
+// A drag with the mouse across the sheet, through several corners.
+async function dragPath(page, corners, steps = 6) {
+  const box = await sheetBox(page);
+  await page.mouse.move(box.x + corners[0][0], box.y + corners[0][1]);
+  await page.mouse.down();
+  for (const [x, y] of corners.slice(1)) await page.mouse.move(box.x + x, box.y + y, { steps });
+  await page.mouse.up();
+}
+const barrelEvents = (page, points, buttons) => page.evaluate(([pts, b]) => {
+  const surface = document.querySelector(".canvas-surface");
+  const box = surface.getBoundingClientRect();
+  const fire = (type, [x, y], held) => surface.dispatchEvent(new PointerEvent(type, { pointerId: 11, pointerType: "pen", isPrimary: true, clientX: box.x + x, clientY: box.y + y, pressure: 0.5, button: 0, buttons: held, bubbles: true, cancelable: true }));
+  fire("pointerdown", pts[0], b);
+  for (const p of pts.slice(1)) fire("pointermove", p, b);
+  fire("pointerup", pts[pts.length - 1], 0);
+}, [points, buttons]);
+
+await test("the highlighter draws a wide see-through stroke that is saved in the new file format", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Highlighter");
+  await drawLine(page, [60, 80], [260, 80]);
+  await waitSaved(page);
+  const drawing = await savedDrawing(page);
+  assert.equal(drawing.format, 2);
+  assert.equal(drawing.items[0].tool, "highlighter");
+  assert.equal(drawing.items[0].width, 4);
+  assert.ok(drawing.items[0].points.every((p) => p[2] === 0.5), "a highlighter ignores pressure");
+}, ctxOpts);
+
+await test("a drawing with only pen strokes keeps the older file format, and one from 0.4.0 opens and grows", async (page) => {
+  await canvasVault(page, '{"format":1,"strokes":[{"tool":"pen","color":"red","width":2,"points":[[1,1,0.5],[9,9,0.5]]}]}');
+  await openCanvas(page);
+  await drawLine(page, [60, 80], [260, 80]);
+  await waitSaved(page);
+  let drawing = await savedDrawing(page);
+  assert.equal(drawing.format, 1);
+  assert.equal(drawing.strokes.length, 2);
+  await tool(page, "Rectangle");
+  await dragPath(page, [[60, 120], [200, 200]]);
+  await waitSaved(page);
+  drawing = await savedDrawing(page);
+  assert.equal(drawing.format, 2, "a shape needs the new format");
+  assert.equal(drawing.items.length, 3);
+  assert.equal(drawing.items[0].color, "red", "the old stroke is kept as it was");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).format, 1, "without the shape it is the older format again");
+}, ctxOpts);
+
+await test("each shape is drawn by dragging, a stray tap draws nothing, and a shape can be erased and brought back", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await page.click('.canvas-colour[data-colour="green"]');
+  for (const [label, from, to] of [["Line", [40, 40], [140, 60]], ["Arrow", [40, 100], [200, 100]], ["Rectangle", [40, 140], [140, 220]], ["Ellipse", [180, 140], [300, 220]]]) {
+    await tool(page, label);
+    await dragPath(page, [from, to]);
+  }
+  await tool(page, "Rectangle");
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 300, box.y + 40);
+  await waitSaved(page);
+  const saved = await items(page);
+  assert.deepEqual(saved.map((i) => i.kind), ["line", "arrow", "rect", "ellipse"]);
+  assert.ok(saved.every((i) => i.tool === "shape" && i.color === "green" && i.width === 4));
+  assert.deepEqual(saved[2].a.map(Math.round), [16, 116]);
+  assert.deepEqual(saved[2].b.map(Math.round), [116, 196]);
+  // Erase the rectangle by touching its edge, not its empty middle.
+  await tool(page, "Eraser");
+  await page.mouse.click(box.x + 90, box.y + 180);
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 4, "the middle of a shape is not touched");
+  await dragPath(page, [[90, 138], [92, 142]], 2);
+  await waitSaved(page);
+  assert.deepEqual((await items(page)).map((i) => i.kind), ["line", "arrow", "ellipse"]);
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 4);
+}, ctxOpts);
+
+await test("a sticky note is typed into a box on the sheet, saved with its text, and a stray tap leaves nothing", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Sticky note");
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 300, box.y + 40);
+  await page.waitForSelector(".canvas-note-input");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".canvas-note-input", { state: "detached" });
+  await page.waitForTimeout(1200);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), undefined, "an empty note adds nothing, so nothing is written");
+  await page.click('.canvas-colour[data-colour="orange"]');
+  await page.mouse.click(box.x + 100, box.y + 100);
+  await page.waitForSelector(".canvas-note-input");
+  await page.keyboard.type("Buy <b>milk</b> & \"eggs\"\nand a very long word that has to be wrapped inside the note");
+  await page.keyboard.press("Control+Enter");
+  await waitSaved(page);
+  const note = (await items(page))[0];
+  assert.equal(note.tool, "note");
+  assert.equal(note.color, "orange");
+  assert.equal(note.text, 'Buy <b>milk</b> & "eggs"\nand a very long word that has to be wrapped inside the note');
+  assert.ok(note.h > 60, "a longer text makes a taller note");
+  assert.equal(note.w, 180);
+  assert.equal(await page.locator("#canvasHost b").count(), 0, "the text is never read as markup");
+  // Tapping the note edits it; Undo goes back to the earlier text.
+  await page.mouse.click(box.x + 124, box.y + 120);
+  await page.waitForSelector(".canvas-note-input");
+  await page.fill(".canvas-note-input", "Changed");
+  await page.mouse.click(box.x + 400, box.y + 300);
+  await waitSaved(page);
+  assert.equal((await items(page))[0].text, "Changed");
+  assert.equal((await items(page))[0].h, 60);
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.match((await items(page))[0].text, /^Buy/);
+}, ctxOpts);
+
+await test("a note still being typed is saved when the page is left or the window is hidden", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Sticky note");
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 100, box.y + 100);
+  await page.waitForSelector(".canvas-note-input");
+  await page.keyboard.type("Half written");
+  await page.click("#canvasToggle");
+  await waitSaved(page);
+  assert.equal((await items(page))[0].text, "Half written");
+}, ctxOpts);
+
+await test("a loop selects what it surrounds, the selection can be moved, deleted, and brought back", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await drawLine(page, [60, 80], [260, 80]);
+  await drawLine(page, [60, 240], [260, 240]);
+  await tool(page, "Select with a loop");
+  assert.equal(await page.locator('[data-action="delete-selection"]').isDisabled(), true);
+  await dragPath(page, [[30, 50], [290, 50], [290, 120], [30, 120], [30, 52]], 3);
+  assert.equal(await page.locator('[data-action="delete-selection"]').isDisabled(), false, "one stroke is selected");
+  // Drag from inside the selection: only the selected stroke moves.
+  await dragPath(page, [[150, 80], [170, 110]], 4);
+  await waitSaved(page);
+  let saved = await items(page);
+  const moved = saved[0].points[0];
+  assert.ok(Math.abs(moved[0] - (36 + 20)) < 2 && Math.abs(moved[1] - (56 + 30)) < 2, `moved by the drag: ${moved}`);
+  assert.ok(Math.abs(saved[1].points[0][1] - 216) < 2, "the other stroke stayed");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.ok(Math.abs((await items(page))[0].points[0][1] - 56) < 2, "Undo puts it back");
+  await tool(page, "Redo");
+  // Delete with the button, then with the key after selecting again.
+  await page.click('[data-action="delete-selection"]');
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 1);
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 2);
+  await page.locator(".canvas-surface").focus();
+  await dragPath(page, [[30, 200], [290, 200], [290, 280], [30, 280], [30, 202]], 3);
+  await page.keyboard.press("Delete");
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 1);
+  assert.ok(Math.abs((await items(page))[0].points[0][1] - 86) < 2, "the lower one is gone, the moved one is left");
+}, ctxOpts);
+
+await test("a tap away from the selection, Escape or another tool clears it, and a loop around nothing selects nothing", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await drawLine(page, [60, 80], [260, 80]);
+  await tool(page, "Select with a loop");
+  const loop = [[30, 50], [290, 50], [290, 120], [30, 120], [30, 52]];
+  const deleteDisabled = () => page.locator('[data-action="delete-selection"]').isDisabled();
+  await dragPath(page, loop, 3);
+  assert.equal(await deleteDisabled(), false);
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 400, box.y + 300);
+  assert.equal(await deleteDisabled(), true, "a tap elsewhere");
+  await dragPath(page, loop, 3);
+  await page.keyboard.press("Escape");
+  assert.equal(await deleteDisabled(), true, "Escape");
+  await dragPath(page, loop, 3);
+  await tool(page, "Pen");
+  assert.equal(await deleteDisabled(), true, "another tool");
+  await tool(page, "Select with a loop");
+  await dragPath(page, [[300, 200], [380, 200], [380, 260], [300, 260]], 3);
+  assert.equal(await deleteDisabled(), true, "a loop around nothing");
+}, ctxOpts);
+
+await test("selecting and moving works with a pen, with a finger-free phone layout, and moves are limited to the sheet", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  await dragPath(page, [[60, 80], [160, 160]]);
+  await tool(page, "Select with a loop");
+  await barrelEvents(page, [[30, 50], [200, 50], [200, 200], [30, 200], [30, 52]], 1);
+  assert.equal(await page.locator('[data-action="delete-selection"]').isDisabled(), false, "a pen can draw the loop");
+  await barrelEvents(page, [[100, 100], [140, 140], [400, 140]], 1);
+  await waitSaved(page);
+  const rect = (await items(page))[0];
+  assert.ok(rect.a[0] > 100 && Math.abs(rect.a[1] - (56 + 40)) < 2);
+}, ctxOpts);
+
+await test("the pen button erases by default, can select with a loop, or can be set to do nothing", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await drawLine(page, [60, 80], [260, 80]);
+  await waitSaved(page);
+  const setting = async (value) => {
+    await page.click("#openSettings");
+    await page.selectOption('select[aria-label="Pen button"]', value);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#settings", { state: "hidden" });
+  };
+  await barrelEvents(page, [[100, 80], [110, 80]], 2);
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 0, "erases by default");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  await setting("none");
+  await barrelEvents(page, [[100, 200], [160, 220], [220, 200]], 2);
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 2, "does nothing special: the pen draws");
+  await setting("select");
+  await barrelEvents(page, [[30, 50], [290, 50], [290, 120], [30, 120], [30, 52]], 2);
+  assert.equal(await page.locator('[data-action="delete-selection"]').isDisabled(), false, "selects with a loop");
+  assert.equal((await items(page)).length, 2, "and nothing is drawn or erased");
+  // The eraser end always erases, whatever the setting.
+  await barrelEvents(page, [[200, 80], [210, 80]], 32);
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 1);
+  await page.click("#openSettings");
+  assert.equal(await page.locator('select[aria-label="Pen button"]').inputValue(), "select", "the choice is kept");
+}, ctxOpts);
+
+await test("the drawing tools can be used in any order, quickly, with huge notes, without errors", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const box = await sheetBox(page);
+  for (let round = 0; round < 3; round++) {
+    for (const label of ["Select with a loop", "Pen", "Highlighter", "Eraser", "Line", "Arrow", "Rectangle", "Ellipse", "Sticky note", "Move the sheet"]) {
+      await tool(page, label);
+      await page.mouse.click(box.x + 80 + round * 40, box.y + 80);
+      await dragPath(page, [[50, 50], [200, 120], [100, 180]], 2);
+      await page.keyboard.press("Escape");
+    }
+  }
+  await tool(page, "Sticky note");
+  await page.mouse.click(box.x + 300, box.y + 250);
+  await page.waitForSelector(".canvas-note-input");
+  await page.fill(".canvas-note-input", "word ".repeat(1000));
+  await page.keyboard.press("Control+Enter");
+  await waitSaved(page);
+  const noteItem = (await items(page)).find((i) => i.tool === "note");
+  assert.ok(noteItem.text.length <= 2000, "a note is cut at its limit");
+  await page.click('.canvas-text-tool >> text=Show all');
+  await page.click('[data-action="delete-selection"]', { force: true }).catch(() => {});
+}, ctxOpts);
+
+await test("a drawing with every kind of item, and notes with odd text, opens without errors and is not changed by opening", async (page) => {
+  const file = serializeForTest([
+    { tool: "highlighter", color: "blue", width: 8, points: [[0, 0, 0.5], [90, 10, 0.5]] },
+    { tool: "shape", kind: "ellipse", color: "red", width: 2, a: [10, 40], b: [90, 90] },
+    { tool: "note", color: "green", x: 120, y: 20, w: 180, h: 60, text: "</textarea><script>window.__broken = true</script>\u0000 \u{1F600}" },
+  ]);
+  await canvasVault(page, file);
+  await openCanvas(page);
+  assert.equal(await page.locator(".canvas-problem").isHidden(), true);
+  await page.waitForTimeout(1200);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), file, "just looking changes nothing");
+  assert.equal(await page.evaluate(() => window.__broken), undefined);
+}, ctxOpts);
+
+function serializeForTest(list) {
+  return `{"format":2,"items":[\n${list.map((i) => JSON.stringify(i)).join(",\n")}\n]}\n`;
+}
+
 // Screenshots of the screens added in 0.4.0 (only when SHOTS_DIR is set), in light and dark.
 if (shots) {
   for (const scheme of ["light", "dark"]) {
@@ -3988,6 +4272,55 @@ if (shots) {
       await page.screenshot({ path: name("3-canvas-with-strokes") });
       await page.click('.canvas-toolbar button[aria-label="Eraser"]');
       await page.screenshot({ path: name("4-eraser-selected") });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.4.1 (only when SHOTS_DIR is set), in light and dark.
+if (shots) {
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      const name = (n) => `${shots}/v041-${label}-${scheme}-${n}.png`;
+      await page.goto(url);
+      await canvasVault(page);
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await openCanvas(page);
+      await page.screenshot({ path: name("1-toolbar") });
+      await penStroke(page, [[40, 60, 0.4], [120, 40, 0.8], [200, 70, 0.5], [300, 50, 0.6]]);
+      await tool(page, "Highlighter");
+      await page.click('.canvas-colour[data-colour="orange"]');
+      await dragPath(page, [[30, 120], [330, 125]]);
+      await tool(page, "Rectangle");
+      await page.click('.canvas-colour[data-colour="blue"]');
+      await dragPath(page, [[40, 170], [160, 250]]);
+      await tool(page, "Ellipse");
+      await dragPath(page, [[190, 170], [330, 250]]);
+      await tool(page, "Arrow");
+      await page.click('.canvas-colour[data-colour="red"]');
+      await dragPath(page, [[100, 330], [250, 280]]);
+      await tool(page, "Sticky note");
+      await page.click('.canvas-colour[data-colour="green"]');
+      const box = await sheetBox(page);
+      await page.mouse.click(box.x + 40, box.y + 360);
+      await page.waitForSelector(".canvas-note-input");
+      await page.keyboard.type("Ask about the exam: which chapters, and is the codon table given?");
+      await page.screenshot({ path: name("2-typing-a-note") });
+      await page.keyboard.press("Control+Enter");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: name("3-all-kinds") });
+      await tool(page, "Select with a loop");
+      await dragPath(page, [[20, 150], [345, 150], [345, 265], [20, 265], [20, 152]], 3);
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: name("4-selection") });
+      await page.click("#openSettings");
+      await page.waitForSelector('select[aria-label="Pen button"]');
+      await page.screenshot({ path: name("5-settings-pen-button") });
       await context.close();
     }
   }

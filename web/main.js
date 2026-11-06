@@ -40,7 +40,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -141,6 +141,8 @@ async function loadSettings() {
       showBacklinks: parsed.showBacklinks !== false,
       // Covers are off until turned on.
       showCovers: parsed.showCovers === true,
+      // What the side button of a pen does on the canvas.
+      penButton: PEN_BUTTONS.includes(parsed.penButton) ? parsed.penButton : "erase",
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
@@ -255,6 +257,29 @@ function coverSettingsRows() {
   row.append(textElement("span", s.showCovers, "setting-label"), box);
   box.addEventListener("change", () => setShowCovers(box.checked));
   return [row, textElement("p", s.showCoversHint, "setting-hint")];
+}
+
+const PEN_BUTTONS = ["erase", "select", "none"];
+
+function canvasSettingsRows() {
+  const s = strings.settings;
+  const choice = document.createElement("select");
+  for (const value of PEN_BUTTONS) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = s.penButtonOptions[value];
+    choice.append(option);
+  }
+  choice.value = app.settings.penButton;
+  choice.setAttribute("aria-label", s.penButton);
+  choice.addEventListener("change", () => {
+    app.settings.penButton = PEN_BUTTONS.includes(choice.value) ? choice.value : "erase";
+    saveSettings();
+  });
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.penButton, "setting-label"), choice);
+  return [textElement("h3", s.canvasHeading, "setting-heading"), row, textElement("p", s.penButtonHint, "setting-hint")];
 }
 
 function setShowBacklinks(on) {
@@ -1134,8 +1159,14 @@ function ensureCanvasView() {
   app.canvasView = createCanvasView(el("canvasHost"), {
     onChange: () => app.canvasSave.touch(),
     onNotice: (text) => showToast(text),
+    penButton: () => app.settings.penButton,
   });
   app.canvasSave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCanvas, onStatus: setStatus });
+  // Leaving the window (or the app being put away on a phone) ends a note being typed, so its
+  // text reaches the autosave instead of waiting for a click that may never come.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) app.canvasView.finish();
+  });
   return app.canvasView;
 }
 
@@ -1187,6 +1218,8 @@ async function enterCanvas() {
 // Saves what was drawn and goes back to the text. Safe to call when the canvas is not open.
 async function leaveCanvas() {
   if (app.mode !== "canvas") return;
+  // A sticky note still being typed is put into the drawing first, so it is part of the save.
+  if (app.canvasView) app.canvasView.finish();
   if (app.canvasSave) await app.canvasSave.flush();
   if (app.canvasSave) app.canvasSave.cancel();
   app.mode = "editor";
@@ -1446,7 +1479,7 @@ function fillStaticText() {
         applyAppearance(document.documentElement, app.settings);
         saveSettings();
       },
-      [...coverSettingsRows(), ...backlinkSettingsRows(), ...updateSettingsRows(), ...historySettingsRows(), ...obsidianRows()],
+      [...coverSettingsRows(), ...backlinkSettingsRows(), ...canvasSettingsRows(), ...updateSettingsRows(), ...historySettingsRows(), ...obsidianRows()],
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;
