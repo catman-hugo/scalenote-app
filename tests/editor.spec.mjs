@@ -3702,7 +3702,7 @@ if (shots) {
       await page.click(".history-view >> text=Whole text");
       await page.screenshot({ path: name("4-history-whole-text") });
       await page.keyboard.press("Escape");
-      await page.click("#openSettings");
+      await page.evaluate(() => document.getElementById("openSettings").click()); // hidden with the page list on a phone
       await page.locator("h3", { hasText: "Page history" }).scrollIntoViewIfNeeded();
       await page.screenshot({ path: name("5-settings-history") });
       await context.close();
