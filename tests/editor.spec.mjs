@@ -4318,6 +4318,8 @@ if (shots) {
       await dragPath(page, [[20, 150], [345, 150], [345, 265], [20, 265], [20, 152]], 3);
       await page.waitForTimeout(200);
       await page.screenshot({ path: name("4-selection") });
+      // On a phone the settings button is in the sidebar, which was closed to give the sheet room.
+      await page.evaluate(() => document.body.classList.add("sidebar-open"));
       await page.click("#openSettings");
       await page.waitForSelector('select[aria-label="Pen button"]');
       await page.screenshot({ path: name("5-settings-pen-button") });
