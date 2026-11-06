@@ -77,6 +77,8 @@ export const strings = {
     editorWidth: "Page width",
     editorWidths: { narrow: "Narrow", medium: "Medium", wide: "Wide", full: "Full width" },
     sidebarWidth: "Page list width",
+    showBacklinks: "Show the “Linked from” list under pages",
+    showBacklinksHint: "Pages are only searched for links when this is on.",
     updates: "Look for new versions",
     updatesHint: "ScaleNote only reads the public list of releases on GitHub. Nothing from your pages is sent. When a new version is found, Download opens the file for your system in your browser and you install it from there, because the installers are not signed yet.",
     checkNow: "Check now",
@@ -150,6 +152,24 @@ export const strings = {
     table: "Table",
     image: "Image",
     noResults: "No matching block",
+  },
+
+  wikilinks: {
+    noPages: "No matching page",
+    linkTo: "Link to “{name}”",
+    unresolved: "This page does not exist yet. Click to create it.",
+    missingHeading: "This page has no heading “{anchor}”.",
+    missingBlock: "This page has no block with that link.",
+    createFailed: "The page could not be created.",
+  },
+
+  backlinks: {
+    heading: "Linked from",
+    hide: "Hide",
+    hideLabel: "Hide the list of pages that link here (it can be turned on again in Settings)",
+    none: "No other page links here.",
+    tooMany: "Only the first {count} pages are shown.",
+    failed: "Could not look for links to this page.",
   },
 
   format: {

@@ -12,6 +12,9 @@ import { composeNote, loadNote } from "./compose.js";
 import { newNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
+import { createBacklinks } from "./backlinks.js";
+import { updateWikilinks } from "./wikilinks.js";
+import { createResolver } from "./wikilinkrules.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
 import { openContextMenu } from "./contextmenu.js";
@@ -22,12 +25,13 @@ import { pathForVault } from "./images.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
+const BACKLINK_DELAY_MS = 300;
 const isAndroid = /Android/i.test(navigator.userAgent);
 
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -43,6 +47,12 @@ const app = {
   lineEnding: "\n",
   // Pages opened in this session, newest first, for the search box before anything is typed.
   recent: [],
+  // The "Linked from" list under the open page, and a counter that lets a slow answer for a
+  // page that is no longer open be dropped.
+  backlinks: null,
+  backlinkRun: 0,
+  backlinkTimer: 0,
+  following: false,
 };
 
 // ---------- small helpers ----------
@@ -108,6 +118,8 @@ async function loadSettings() {
       ...normalizeAppearance(parsed),
       // One switch for both looking for updates and installing them. On unless turned off.
       updates: parsed.updates !== false,
+      // The "Linked from" list under pages. On unless turned off.
+      showBacklinks: parsed.showBacklinks !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
@@ -163,6 +175,24 @@ async function checkQuietly() {
     // Offline or GitHub unreachable is normal; it is logged and nothing is shown.
     logProblem("update check failed", error);
   }
+}
+
+function setShowBacklinks(on) {
+  app.settings.showBacklinks = on;
+  saveSettings();
+  if (app.current) loadBacklinks(app.current.path);
+}
+
+function backlinkSettingsRows() {
+  const s = strings.settings;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = app.settings.showBacklinks;
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.showBacklinks, "setting-label"), box);
+  box.addEventListener("change", () => setShowBacklinks(box.checked));
+  return [row, textElement("p", s.showBacklinksHint, "setting-hint")];
 }
 
 function updateSettingsRows() {
@@ -442,6 +472,106 @@ async function refreshTree() {
     app.entries = [];
   }
   drawTree();
+  syncLinks();
+}
+
+// ---------- links between pages ----------
+
+const notePaths = () => app.entries.filter((entry) => entry.kind === "note").map((entry) => entry.path);
+
+// Tells the editor which pages exist, so it can mark links to pages that do not.
+function syncLinks() {
+  if (app.editor) updateWikilinks(app.editor, { pages: notePaths(), from: app.current ? app.current.path : "" });
+}
+
+// A link to a page that does not exist creates it, at the top of the vault (or in the folder the
+// link names, when that folder exists), the way Obsidian does.
+async function createLinkedPage(page) {
+  const clean = page.trim().replace(/^\/+/, "").replace(/\.md$/i, "");
+  const slash = clean.lastIndexOf("/");
+  const folder = slash === -1 ? "" : clean.slice(0, slash).toLowerCase();
+  const parent = folder ? (app.entries.find((entry) => entry.kind === "folder" && entry.path.toLowerCase() === folder) || { path: "" }).path : "";
+  try {
+    const path = await backend.createNote(parent, clean.slice(slash + 1));
+    await refreshTree();
+    return path;
+  } catch (error) {
+    logProblem("create linked page failed", error);
+    showToast(strings.wikilinks.createFailed);
+    return null;
+  }
+}
+
+// Does this piece of the page hold the heading or the block id a link points at? Blocks the
+// editor keeps as raw text are checked by their text.
+function holdsAnchor(node, blockId, heading) {
+  if (node.type.name === "rawBlock") {
+    const lines = node.attrs.src.split("\n");
+    if (blockId) return lines.some((line) => line.trimEnd().endsWith(` ^${blockId}`));
+    return lines.some((line) => /^#{1,6}[ \t]+/.test(line) && line.replace(/^#{1,6}[ \t]+/, "").trim().toLowerCase() === heading);
+  }
+  if (blockId) return Boolean(node.attrs && node.attrs.blockId === blockId);
+  return node.type.name === "heading" && node.textContent.trim().toLowerCase() === heading;
+}
+
+// Scrolls to a heading or to a block ("^id") of the open page.
+function goToAnchor(anchor) {
+  const view = app.editor.view;
+  const blockId = anchor.startsWith("^") ? anchor.slice(1) : null;
+  const heading = blockId ? null : anchor.split("#").pop().trim().toLowerCase();
+  let found = null;
+  view.state.doc.descendants((node, pos) => {
+    if (found !== null) return false;
+    if (holdsAnchor(node, blockId, heading)) found = pos;
+    return found === null && !node.isTextblock;
+  });
+  const dom = found === null ? null : view.nodeDOM(found);
+  if (!(dom instanceof Element)) {
+    showToast((blockId ? strings.wikilinks.missingBlock : strings.wikilinks.missingHeading).replace("{anchor}", anchor));
+    return;
+  }
+  dom.scrollIntoView({ block: "start" });
+}
+
+// Follows a link written in the page: open the page it means (making it if it is missing),
+// then go to the heading or block it names.
+async function followLink({ page, anchor }) {
+  // A double click must not make the page twice.
+  if (app.following) return;
+  app.following = true;
+  try {
+    await followLinkNow(page, anchor);
+  } finally {
+    app.following = false;
+  }
+}
+
+async function followLinkNow(page, anchor) {
+  const from = app.current ? app.current.path : "";
+  let target = createResolver(notePaths()).resolve(page, from);
+  if (!target) target = await createLinkedPage(page);
+  if (!target) return;
+  if (target !== from) await openNote(target);
+  if (anchor && app.current && app.current.path === target) goToAnchor(anchor);
+}
+
+// Looks for the pages that link here. It waits a moment first, so clicking quickly through
+// several pages does not start a search for each of them.
+function loadBacklinks(path) {
+  clearTimeout(app.backlinkTimer);
+  const run = ++app.backlinkRun;
+  app.backlinks.clear();
+  // Turned off: the pages are not searched at all.
+  if (!app.settings.showBacklinks) return;
+  app.backlinkTimer = setTimeout(async () => {
+    try {
+      const result = await backend.backlinks(path);
+      if (run === app.backlinkRun && app.current && app.current.path === path) app.backlinks.show(result);
+    } catch (error) {
+      logProblem("backlinks failed", error);
+      if (run === app.backlinkRun) app.backlinks.fail();
+    }
+  }, BACKLINK_DELAY_MS);
 }
 
 function drawTree() {
@@ -701,6 +831,7 @@ function showNote(path, note) {
   app.current = { path, version: note.version, parts };
   app.recent = [path, ...app.recent.filter((p) => p !== path)].slice(0, 20);
   app.lastSavedText = note.text;
+  syncLinks();
   putInEditor(doc);
   el("empty").hidden = true;
   el("title").hidden = false;
@@ -712,6 +843,7 @@ function showNote(path, note) {
   app.selectedFolder = parentOf(path);
   for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
   drawTree();
+  loadBacklinks(path);
 }
 
 // ---------- markdown source view ----------
@@ -950,7 +1082,7 @@ function fillStaticText() {
         applyAppearance(document.documentElement, app.settings);
         saveSettings();
       },
-      [...updateSettingsRows(), ...obsidianRows()],
+      [...backlinkSettingsRows(), ...updateSettingsRows(), ...obsidianRows()],
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;
@@ -1052,8 +1184,10 @@ async function start() {
     noteKey: () => (app.current ? app.current.path : null),
     noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
     notify: showToast,
+    followLink,
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
+  app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => setShowBacklinks(false) });
   keepCaretVisible();
   startFlushTriggers();
 

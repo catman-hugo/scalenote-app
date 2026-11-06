@@ -36,10 +36,12 @@ test("a callout without a title or body is still a callout", () => {
 });
 
 test("a callout holding something the editor cannot keep stays raw", () => {
-  assert.equal(readCallout("> [!note] T\n> see [[Other]]", io), null);
+  assert.equal(readCallout("> [!note] T\n> see ![[Other]]", io), null);
+  assert.notEqual(readCallout("> [!note] T\n> see [[Other]]", io), null, "a well formed link in the body is fine");
   assert.equal(readCallout("> [!note] T\n> <div>x</div>", io), null);
   assert.equal(readCallout("> [!note] T\nlazy line without marker", io), null);
   assert.equal(readCallout("> [!note] A [[link]] title", io), null);
+  assert.equal(readTable("| a | [[link]] |\n|---|---|\n| 1 | 2 |", io), null, "links in table cells stay raw");
   assert.equal(readCallout("> [!note] T\r\n> body", io), null);
 });
 
@@ -103,7 +105,7 @@ const NOTE = [
   "<details>\n<summary>Why</summary>\n\nBecause.\n\n</details>\n\n",
   "| a | b |\n|---|---|\n| 1 | 2 |\n\n",
   "![](attachments/cell.png)\n\n",
-  "> [!danger] Raw one\n> has [[a link]]\n\nEnd\n",
+  "> [!danger] Raw one\n> has ![[an embed]]\n\nEnd\n",
 ].join("");
 
 test("a note with every rich block, opened and saved untouched, is identical", () => {

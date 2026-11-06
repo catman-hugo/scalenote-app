@@ -51,6 +51,8 @@ export const backend = {
   trashEmpty: () => call("trash_empty"),
   // Returns { hits: [{ path, title, snippet: [[text, matched], ...] }], truncated }.
   search: (query, limit) => call("search_vault", { query, limit }),
+  // The pages that link to `path`: { items: [{ path, title, count, snippet: [[text, marked], ...] }], truncated }.
+  backlinks: (path) => call("backlinks", { path }),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),

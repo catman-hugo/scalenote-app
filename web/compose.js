@@ -6,6 +6,7 @@
 import { BLOCK_ID, newNoteId, splitBlocks, splitFrontmatter, withNoteId } from "./blocks.js";
 import { readRichBlock, writeBlock } from "./richblocks.js";
 import { hasStyleSyntax, sameStyles } from "./inlinestyles.js";
+import { hasWikilinks, sameWikilinks } from "./wikilinkrules.js";
 
 // Block types the editor can show and edit. Anything else is kept as a raw block.
 const EDITABLE_TYPES = new Set([
@@ -69,6 +70,9 @@ export function loadNote(text, { parse, serialize }) {
     // a stray or crossed marker would be lost the first time the block is changed. The block
     // stays raw unless the markers survive a read and write unchanged.
     if (!isRich && hasStyleSyntax(src) && !sameStyles(src, base)) return rawNode(src, gap, idx);
+    // Links are kept the same way: if the editor would not write every link back exactly as it
+    // was written (a link inside a heading's bold text, say), the block stays raw.
+    if (hasWikilinks(src) && !sameWikilinks(src, base)) return rawNode(src, gap, idx);
     return { ...node, attrs: { ...(node.attrs || {}), src, base, gap, idx } };
   });
   const doc = { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };

@@ -79,3 +79,9 @@ No new input, network request, permission, dependency or Rust code. Changes are 
 ## Addendum for 0.3.2
 - Interface only: no new Rust code, commands, permissions, network calls or dependencies. The menu is asked for with a script-made `contextmenu` event on an entry; the code that handles it is unchanged. A finger-made contextmenu is dropped only inside the page list. Entry paths and names still come from the vault listing and are shown as text.
 
+## Addendum for 0.3.3
+- One new Rust command, `backlinks`. Its only argument is a page path, which goes through the same path check as every other command (no `..`, no hidden parts, nothing leaving the folder). Like search it runs without holding the vault lock, skips hidden folders (so the trash), links to folders and invalid text, and reads at most 2,000 pages, 8 MiB per page and 512 MiB in total; at most 200 pages are returned. Nothing is written.
+- Link text comes from notes and is untrusted. It is only ever parsed by fixed scanning code (no patterns built from it, no evaluation), a link is at most 300 long and at most 5,000 links are read from a page; code is skipped. Tested with 100,000 links, 100,000 backticks and brackets, unclosed and escaped brackets and multi-byte text: each finishes in well under a second in both the Rust and the interface versions. A link's text is shown with text nodes, never as html, and is stored in a data attribute only as text; it is never used as a path without going through the vault (opening a page uses the page list the vault gave, creating one uses the normal name checks).
+- A link to a missing page creates a page on click. The name goes through the same checks as New page (no slashes, no reserved names, length), a failure shows a calm message, and a double click makes only one page.
+- The page policy (no inline styles) is unchanged; the browser tests report no policy violations. No new network calls, permissions or dependencies.
+

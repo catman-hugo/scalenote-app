@@ -57,7 +57,7 @@ fn fold(c: char) -> char {
     }
 }
 
-fn fold_text(text: &str) -> Vec<char> {
+pub(crate) fn fold_text(text: &str) -> Vec<char> {
     text.chars().map(fold).collect()
 }
 
@@ -141,7 +141,7 @@ impl Vault {
     /// Every page in the vault as (vault path, real path), within the same limits and with
     /// the same skipped entries as the page list. Links to folders are not followed, so a
     /// loop cannot hang the search.
-    fn page_files(&self, truncated: &mut bool) -> Vec<(String, PathBuf)> {
+    pub(crate) fn page_files(&self, truncated: &mut bool) -> Vec<(String, PathBuf)> {
         let mut files = Vec::new();
         let mut folders: Vec<(PathBuf, usize)> = vec![(self.root().to_path_buf(), 0)];
         while let Some((dir, depth)) = folders.pop() {
@@ -219,7 +219,7 @@ fn match_page(relative: &str, text: &str, words: &[Vec<char>], whole_query: &[ch
 /// The line that holds position `at`, cut to a short piece around it and split into
 /// matching and other pieces. `text` and `body` have the same number of letters, so a
 /// position in one is the same position in the other.
-fn snippet_around(text: &str, body: &[char], at: usize, words: &[Vec<char>]) -> Vec<(String, bool)> {
+pub(crate) fn snippet_around(text: &str, body: &[char], at: usize, words: &[Vec<char>]) -> Vec<(String, bool)> {
     let line_start = body[..at].iter().rposition(|&c| c == '\n').map_or(0, |i| i + 1);
     let line_end = body[at..].iter().position(|&c| c == '\n').map_or(body.len(), |i| at + i);
     let start = line_start.max(at.saturating_sub(SNIPPET_LEAD));

@@ -123,6 +123,26 @@
       hits.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
       return { hits: hits.slice(0, Math.max(1, Math.min(limit, 50))).map(({ rank, ...h }) => h), truncated: false };
     },
+    // A simple stand-in: names are matched without folders. The real rules are tested in Rust
+    // and in tests/wikilinks.test.mjs against the same cases.
+    backlinks: ({ path }) => {
+      window.__backlinkCalls = (window.__backlinkCalls || 0) + 1;
+      if (window.__failBacklinks) fail(window.__failBacklinks);
+      if (!files.has(path)) return { items: [], truncated: false };
+      const name = path.split("/").pop().replace(/\.md$/i, "").toLowerCase();
+      const items = [];
+      for (const [other, text] of files) {
+        if (other === path) continue;
+        const found = [...text.matchAll(/\[\[([^\]\[|#\n]*)[^\]\[\n]*\]\]/g)].filter((m) => m[1].trim().split("/").pop().replace(/\.md$/i, "").toLowerCase() === name);
+        if (!found.length) continue;
+        const line = text.split("\n").find((l) => l.includes(found[0][0]));
+        const at = line.indexOf(found[0][0]);
+        const snippet = [[line.slice(0, at), false], [found[0][0], true], [line.slice(at + found[0][0].length), false]].filter(([t]) => t);
+        items.push({ path: other, title: other.split("/").pop().replace(/\.md$/i, ""), count: found.length, snippet });
+      }
+      items.sort((a, b) => a.title.localeCompare(b.title));
+      return { items, truncated: false };
+    },
     read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return "data:image/png;base64," + attachments.get(path); },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },

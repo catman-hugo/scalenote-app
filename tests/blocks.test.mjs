@@ -47,7 +47,13 @@ test("random documents always come back byte for byte", () => {
 
 test("syntax the editor does not know is kept as raw blocks", () => {
   assert.deepEqual(kinds("| a | b |\n|---|---|\n| 1 | 2 |"), ["table"]); // a candidate: richblocks.js may still refuse it
-  assert.deepEqual(kinds("See [[Other note]] for more"), ["raw"]);
+  assert.deepEqual(kinds("See [[Other note]] for more"), ["paragraph"], "a well formed link is editable (wikilinks.js keeps it)");
+  assert.deepEqual(kinds("See [[Other#Goals|the goals]], [[A]] and [[B]]"), ["paragraph"]);
+  assert.deepEqual(kinds("# Title with [[Link]]"), ["heading"]);
+  assert.deepEqual(kinds("- item with [[Link]]"), ["list"]);
+  for (const odd of ["See ![[Other]] here", "See [[open", "close]] only", "[[]] empty", "A `[[code]]` span", "<[[a]]>", "[[a]]#tag next", "[[a\nb]]", "x [[a]] ==bad == y", "\\[[a]]"]) {
+    assert.deepEqual(kinds(odd), ["raw"], odd);
+  }
   assert.deepEqual(kinds("<div>html</div>"), ["raw"]);
   assert.deepEqual(kinds("> [!note] Title\n> body"), ["callout"]);
   assert.deepEqual(kinds("$$\nx^2\n$$"), ["raw"]);

@@ -320,6 +320,37 @@ fn search_vault(query: String, limit: usize, state: State<AppState>) -> Result<S
     })
 }
 
+#[derive(Serialize)]
+struct BacklinkReply {
+    path: String,
+    title: String,
+    count: usize,
+    snippet: Vec<(String, bool)>,
+}
+
+#[derive(Serialize)]
+struct BacklinksReply {
+    items: Vec<BacklinkReply>,
+    truncated: bool,
+}
+
+/// The pages that link to one page. Like search it runs away from the main thread and does
+/// not keep the vault locked while it reads the pages.
+#[tauri::command(async)]
+fn backlinks(path: String, state: State<AppState>) -> Result<BacklinksReply, String> {
+    let root = with_vault(&state, "backlinks", |vault| Ok(vault.root().to_path_buf()))?;
+    let vault = Vault::open(&root).map_err(|e| code(e, &state, "backlinks"))?;
+    let results = vault.backlinks(&path).map_err(|e| code(e, &state, "backlinks"))?;
+    Ok(BacklinksReply {
+        truncated: results.truncated,
+        items: results
+            .items
+            .into_iter()
+            .map(|b| BacklinkReply { path: b.path, title: b.title, count: b.count, snippet: b.snippet })
+            .collect(),
+    })
+}
+
 /// The interface logs short fixed messages through here. The length limit is applied again
 /// by the logger.
 #[tauri::command]
@@ -398,6 +429,7 @@ pub fn run() {
             trash_delete_forever,
             trash_empty,
             search_vault,
+            backlinks,
             log_line,
             get_settings,
             set_settings
