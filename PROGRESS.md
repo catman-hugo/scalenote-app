@@ -247,11 +247,14 @@ Owner request (2026-11-06): "Build 0.3.7" (export and page history; the repo pla
 - Tested here: Rust core tests (history: thinning, caps, gap, rename, hostile ids and file names, hidden from listings; export: pictures, links, hostile paths, never replaced, exports folder that is a link), 121 interface unit tests (line comparison, choosing parts, id handling), and the whole browser suite with new tests for the history box (list, changes, restore a part, restore all, empty, page changed, delete all), export (done, failure) and print (print media hides the page list and buttons, a PDF is produced). Design screenshots, light and dark, desktop and phone.
 - NOT tested, needs a device: the four history commands and `export_page` as Tauri commands (compiled only by CI); the History box with a finger on an Android phone; the print window and a saved PDF on real Windows and Linux; speed of the line comparison on a very long page; history size on a big folder.
 - Not done: whole-folder export, word-level comparison, a history size setting, history for pages changed by other programs.
-- After the owner's first test on an Android tablet (2026-11-06; history list, changes view and restore all worked) the box was tidied: the put-back buttons are hidden until a version is chosen, a lone version opens at once, the page properties at the top are one folded note, and a failed copy of an older version is now written to the log (`Vault::take_history_problem`, read by `write_note` in the app; the save is still never failed by it; core test added). Not done: telling the person inside the History box that copies are failing.
+- After the owner's first test on an Android tablet (2026-11-06; history list, changes view and restore all worked) the box was tidied (released as 0.3.8, because 0.3.7 was already published; see "0.3.8: built"): the put-back buttons are hidden until a version is chosen, a lone version opens at once, the page properties at the top are one folded note, and a failed copy of an older version is now written to the log (`Vault::take_history_problem`, read by `write_note` in the app; the save is still never failed by it; core test added). Not done: telling the person inside the History box that copies are failing.
 - Release notes: `docs/release-notes/0.3.7.md`.
 
+## 0.3.8: built
+Owner request (2026-11-06): the History box tidy-up was merged after the 0.3.7 release had been built, so it ships as 0.3.8 (a version bump only; the changes are in "0.3.7: built", last bullet). Release notes: `docs/release-notes/0.3.8.md`. Not tried on a device yet; the changes were already seen working in the tidy-up's browser tests.
+
 ## 0.3 wrap-up
-0.3 is complete with 0.3.7 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
+0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
 ## Versions
 
@@ -278,6 +281,7 @@ Owner request (2026-11-06): "Build 0.3.7" (export and page history; the repo pla
 | 0.3.5 | Covers, optional and off by default (see "0.3.5: built") | built, not tried on a device |
 | 0.3.6 | Tags and favorites (see "0.3.6: built") | built, not tried on a device |
 | 0.3.7 | Export and page history (see "0.3.7: built") | built; history list, changes and restore tried by the owner on an Android tablet (2026-11-06); export and print not tried on a device |
+| 0.3.8 | History box tidy-up and logging of failed history copies (see "0.3.8: built") | built, not tried on a device |
 | 0.4 | Canvas and pressure-sensitive ink | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
