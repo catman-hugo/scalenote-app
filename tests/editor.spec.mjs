@@ -1924,6 +1924,9 @@ await test("restoring while the old name is taken keeps both, and an item that i
 // ---------- 0.3.0: search and commands ----------
 
 const openPaletteBox = async (page) => { await page.keyboard.press("Control+k"); await page.waitForSelector("#palette[open] .palette-input"); };
+// Escape closes the box a moment later. Opening it again before that finished would find the old box
+// still open, and what is typed next would go into a box that is about to disappear.
+const closePaletteBox = async (page) => { await page.keyboard.press("Escape"); await page.waitForSelector("#palette", { state: "hidden" }); };
 const rowTexts = (page) => page.$$eval("#palette .palette-row", (r) => r.map((x) => x.textContent));
 
 async function searchVault(page) {
@@ -1966,7 +1969,7 @@ await test("typing finds pages by title and text, ranks titles first, marks the 
   await page.waitForSelector("#palette .palette-row .palette-title");
   const titles = await page.$$eval("#palette .palette-title", (t) => t.map((x) => x.textContent));
   assert.deepEqual(titles, ["Plants", "Notes on plants"], "the exact title first, then titles that contain it");
-  await page.keyboard.press("Escape");
+  await closePaletteBox(page);
   await openPaletteBox(page);
   await page.keyboard.type("quadratic");
   await page.waitForSelector('#palette .palette-title:has-text("Maths")');
@@ -2047,7 +2050,7 @@ await test("commands can be found by typing and run with Enter", async (page) =>
   await page.keyboard.type("trash");
   await page.keyboard.press("Enter");
   await page.waitForSelector("#trash[open]");
-  await page.keyboard.press("Escape");
+  await closePaletteBox(page);
   await openPaletteBox(page);
   await page.keyboard.type("new page");
   await page.waitForSelector('#palette .palette-command:has-text("New page")');
