@@ -4315,6 +4315,38 @@ await test("shapes snap to a grid by default, so shapes drawn at different times
   assert.equal(kept, false, "the choice is saved");
 }, ctxOpts);
 
+// Is there ink at this spot of the sheet? Read from the pixels the canvas really shows.
+const inkAt = (page, x, y) => page.evaluate(([px, py]) => {
+  const canvas = document.querySelector(".canvas-surface");
+  const ratio = canvas.width / canvas.getBoundingClientRect().width;
+  const [r, g, b, a] = canvas.getContext("2d").getImageData(Math.round(px * ratio), Math.round(py * ratio), 1, 1).data;
+  return a > 0 && r + g + b < 600;
+}, [x, y]);
+
+await test("pinching zooms around the middle of the two fingers, in and out, without the drawing drifting", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await chooseWidth(page, 4);
+  // A short thick mark right under where the fingers will be.
+  await drawLine(page, [236, 200], [264, 200]);
+  assert.equal(await inkAt(page, 250, 200), true, "the mark is drawn");
+  const pinch = async (from, to) => {
+    await touchEvents(page, 21, "pointerdown", 250 - from, 200);
+    await touchEvents(page, 22, "pointerdown", 250 + from, 200);
+    for (let step = 1; step <= 12; step++) {
+      const half = from + ((to - from) * step) / 12;
+      await touchEvents(page, 21, "pointermove", 250 - half, 200);
+      await touchEvents(page, 22, "pointermove", 250 + half, 200);
+    }
+    await touchEvents(page, 21, "pointerup", 250 - to, 200);
+    await touchEvents(page, 22, "pointerup", 250 + to, 200);
+  };
+  await pinch(40, 120); // fingers apart: zoom in
+  assert.equal(await inkAt(page, 250, 200), true, "after zooming in, the mark is still under the middle of the fingers");
+  await pinch(120, 30); // fingers together: zoom out
+  assert.equal(await inkAt(page, 250, 200), true, "after zooming out, too");
+}, ctxOpts);
+
 await test("the shape menu opens under its button, shows the shape used last, and closes by choosing, Escape or a press elsewhere", async (page) => {
   await canvasVault(page);
   await openCanvas(page);

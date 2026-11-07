@@ -829,7 +829,11 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   function beginTouchMove() {
     if (state.touches.size === 2) {
       const [a, b] = [...state.touches.values()];
-      state.pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: state.view.scale, centre: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+      // The point of the drawing under the middle of the two fingers is found once, when the
+      // pinch starts. It must not be looked up again while moving: the view changes with every
+      // move, and a point found in the changed view makes the drawing drift.
+      const centre = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      state.pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y) || 1, scale: state.view.scale, world: toWorld(centre.x, centre.y) };
     } else state.pinch = null;
   }
 
@@ -845,8 +849,10 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
         const [a, b] = [...state.touches.values()];
         const centre = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const distance = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-        const world = toWorld(state.pinch.centre.x, state.pinch.centre.y);
+        const { world } = state.pinch;
         const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, state.pinch.scale * (distance / state.pinch.distance)));
+        // The same point of the drawing stays under the middle of the fingers; moving both
+        // fingers together also moves the sheet.
         state.view = { scale, x: centre.x - world.x * scale, y: centre.y - world.y * scale };
       }
       scheduleDraw();
