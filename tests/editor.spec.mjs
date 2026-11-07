@@ -1963,7 +1963,7 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
   const texts = await rowTexts(page);
   assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
-  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Switch between the text and the canvas of this page", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
+  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
   assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
   assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
   assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
@@ -5193,6 +5193,108 @@ await test("a highlight that only goes a little over a figure is cut at its edge
   assert.ok(list.find((i) => i.tool === "highlighter").points.at(-1)[0] > list[0].b[0] - 1, "the first stroke still reaches past the edge in the file");
 }, ctxOpts);
 
+// ---------- 0.4.6: split mode and the view a page opens in ----------
+
+const splitBoxes = (page) => page.evaluate(() => {
+  const rect = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, shown: !document.getElementById(id).hidden }; };
+  return { editor: rect("editor"), canvas: rect("canvasHost"), panes: document.getElementById("panes").classList.contains("split") };
+});
+
+await test("Split shows the text and the drawing side by side, both work, and leaving keeps both saved", async (page) => {
+  await canvasVault(page);
+  assert.equal(await page.getAttribute("#splitToggle", "aria-pressed"), "false");
+  await page.click("#splitToggle");
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  const both = await splitBoxes(page);
+  assert.ok(both.panes && both.editor.shown && both.canvas.shown, "text and drawing are both shown");
+  assert.ok(both.editor.x < both.canvas.x && Math.abs(both.editor.y - both.canvas.y) < 2, "the text is on the left, the drawing on the right");
+  assert.ok(both.editor.w > 200 && both.canvas.w > 200, "both have room: " + both.editor.w + " and " + both.canvas.w);
+  assert.equal(await page.getAttribute("#splitToggle", "aria-pressed"), "true");
+  assert.equal(await page.isVisible("#sourceToggle"), false, "the markdown view is not offered beside the drawing");
+  // Draw on the right, type on the left.
+  await drawLine(page, [60, 80], [200, 120]);
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" and more");
+  await waitSaved(page);
+  await page.waitForFunction(() => /and more/.test(window.__mock.files.get("Sketch.md") || ""), null, { timeout: 5000 }).catch(() => {});
+  assert.equal((await items(page)).length, 1, "the line was saved");
+  assert.match((await files(page))["Sketch.md"], /A page to draw on and more/, "the text was saved: " + JSON.stringify((await files(page))["Sketch.md"]));
+  // Back to the text alone: nothing is lost, the button is not pressed again.
+  await page.click("#splitToggle");
+  await page.waitForSelector("#canvasHost", { state: "hidden" });
+  assert.equal(await page.getAttribute("#splitToggle", "aria-pressed"), "false");
+  assert.equal(await page.isVisible("#editor"), true);
+  assert.equal(await page.isVisible("#sourceToggle"), true);
+}, ctxOpts);
+
+await test("from Split the Canvas button shows the drawing alone, and Canvas then Split goes back, without losing the drawing", async (page) => {
+  await canvasVault(page);
+  await page.click("#splitToggle");
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  await drawLine(page, [60, 80], [200, 120]);
+  await page.click("#canvasToggle");
+  const alone = await splitBoxes(page);
+  assert.ok(alone.canvas.shown && !alone.editor.shown && !alone.panes, "the drawing alone");
+  assert.equal(await page.textContent("#canvasToggle"), "Text");
+  await page.click("#splitToggle");
+  const again = await splitBoxes(page);
+  assert.ok(again.canvas.shown && again.editor.shown && again.panes);
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 1);
+  // The surface follows the new size: a line drawn now lands in the file.
+  await drawLine(page, [40, 200], [120, 220]);
+  await waitSaved(page);
+  assert.equal((await items(page)).length, 2);
+}, ctxOpts);
+
+await test("opening another page from Split shows that page's own drawing, and the markdown view still works afterwards", async (page) => {
+  await canvasVault(page, '{"format":2,"items":[{"tool":"pen","color":"ink","width":4,"points":[[40,40,0.5],[80,60,0.5]]}]}');
+  await page.click("#splitToggle");
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "Other");
+  assert.equal((await splitBoxes(page)).canvas.shown, false, "a page opens as text unless the setting says otherwise");
+  await page.click("#sourceToggle");
+  assert.equal(await page.isVisible("#source"), true);
+}, ctxOpts);
+
+await test("the Open pages in setting makes pages open as a drawing or as Split, and is saved", async (page) => {
+  await canvasVault(page);
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  assert.deepEqual(await page.locator('#settings select[aria-label="Open pages in"] option').allTextContents(), ["Text", "Canvas", "Split"]);
+  await page.selectOption('#settings select[aria-label="Open pages in"]', "split");
+  await page.keyboard.press("Escape");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  const both = await splitBoxes(page);
+  assert.ok(both.panes && both.editor.shown && both.canvas.shown, "Other opened in Split");
+  assert.match(await page.evaluate(() => window.__mock.getSettings()), /"openIn":"split"/);
+  await page.click("#openSettings");
+  await page.selectOption('#settings select[aria-label="Open pages in"]', "canvas");
+  await page.keyboard.press("Escape");
+  await page.click('.tree-button[data-path="Sketch.md"]');
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  assert.equal((await splitBoxes(page)).editor.shown, false, "Sketch opened as the drawing alone");
+}, ctxOpts);
+
+await test("a damaged Open pages in setting means Text", async (page) => {
+  await canvasVault(page);
+  assert.equal((await splitBoxes(page)).canvas.shown, false, "the page opened as text");
+  await page.click("#openSettings");
+  assert.equal(await page.inputValue('#settings select[aria-label="Open pages in"]'), "text");
+}, { settings: existingUser({ updates: false, openIn: "everything" }) });
+
+await test("on a phone Split puts the text above the drawing", async (page) => {
+  await canvasVault(page);
+  await page.click("#splitToggle");
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  const both = await splitBoxes(page);
+  assert.ok(both.editor.y < both.canvas.y && Math.abs(both.editor.x - both.canvas.x) < 2, "stacked");
+  assert.ok(both.editor.h > 150 && both.canvas.h > 150, "both have height: " + both.editor.h + " and " + both.canvas.h);
+}, { ...ctxOpts, userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
 // Screenshots of the screens changed in 0.4.5 (only when SHOTS_DIR is set): the paper and page
 // colour menus and some papers, in light and dark, on a desktop and a phone, and on other themes.
 if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
@@ -5252,7 +5354,7 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
 // Screenshots for 0.4.6 (only when SHOTS_DIR is set): a highlight behind ink, shapes and a note,
 // and cut at the edge of the boxes it covers.
 if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "046")) {
-  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"]]) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"], ["phone", { width: 390, height: 800 }, "dark"]]) {
     const context = await browser.newContext({ viewport, colorScheme: scheme });
     await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
     await context.addInitScript({ path: path.join(here, "mock-backend.js") });
@@ -5280,6 +5382,21 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "046")) {
     await drawLine(page, [310, 230], [450, 230], 20); // over the sticky note
     await waitSaved(page);
     await page.screenshot({ path: `${shots}/v046-${label}-${scheme}-1-highlight.png` });
+    // Split: the text beside the drawing, and the setting.
+    await page.evaluate(() => window.__mock.files.set("Sketch.md", "# Plan\n\nThe text of the page sits beside its drawing.\n\n- one\n- two\n"));
+    // On a phone the page list is a drawer: open it to pick the pages, and again for Settings.
+    for (const target of ["Other.md", "Sketch.md"]) {
+      if (label === "phone") await page.click("#toggle");
+      await page.click(`.tree-button[data-path="${target}"]`);
+    }
+    await page.waitForSelector("#splitToggle:not([hidden])");
+    await page.click("#splitToggle");
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${shots}/v046-${label}-${scheme}-2-split.png` });
+    if (label === "phone") await page.click("#toggle");
+    await page.click("#openSettings");
+    await page.waitForSelector("#settings[open]");
+    await page.screenshot({ path: `${shots}/v046-${label}-${scheme}-3-settings.png` });
     await context.close();
   }
 }

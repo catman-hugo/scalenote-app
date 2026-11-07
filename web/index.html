@@ -41,6 +41,7 @@
           <button id="favorite" type="button" class="icon-button favorite-button" aria-pressed="false" hidden></button>
           <button id="historyButton" type="button" class="icon-button" aria-haspopup="dialog" hidden></button>
           <button id="canvasToggle" type="button" class="source-toggle" aria-pressed="false" hidden></button>
+          <button id="splitToggle" type="button" class="source-toggle" aria-pressed="false" hidden></button>
           <button id="sourceToggle" type="button" class="source-toggle" aria-pressed="false" hidden></button>
           <span id="status" class="status" role="status"></span>
         </header>
@@ -55,9 +56,11 @@
           <button id="updateLater" type="button" class="link-button"></button>
         </div>
         <p id="empty" class="empty"></p>
-        <div id="editor" class="editor" hidden></div>
-        <div id="canvasHost" class="canvas-host" hidden></div>
-        <textarea id="source" class="source" spellcheck="false" autocapitalize="off" autocomplete="off" hidden></textarea>
+        <div id="panes" class="panes">
+          <div id="editor" class="editor" hidden></div>
+          <div id="canvasHost" class="canvas-host" hidden></div>
+          <textarea id="source" class="source" spellcheck="false" autocapitalize="off" autocomplete="off" hidden></textarea>
+        </div>
       </main>
     </div>
 

@@ -417,5 +417,11 @@ Cost. A highlight can no longer be put on top of a pen line on purpose. The text
 
 ## 2026-11-07: The highlight work ships as 0.4.6
 
-Decision. The highlight request is bundled with one more item as 0.4.6. Drawing over text moves to 0.4.7, the `/canvas` block to 0.4.8, split mode to 0.4.9 and PDF import to 0.4.10.
+Decision. The highlight request is bundled with split mode as 0.4.6, because it is too small for a release alone and split mode was the planned item that needs no format decision (draw over text and the `/canvas` block do). Drawing over text becomes 0.4.7, the `/canvas` block 0.4.8 and PDF import 0.4.9.
 Cost. The plan numbers moved again.
+
+## 2026-11-07: Split mode shows the one drawing next to the text, and the view a page opens in is a setting
+
+Decision. Split is a third view of a page next to Text and Canvas. It shows the same drawing the Canvas view shows, beside the text (above it on a phone), with the text keeping the cursor. The view a page opens in is Settings > Drawing > Open pages in (Text by default). The markdown view is not offered beside a drawing.
+Alternatives. A drag handle to change the split (more code, easy to misjudge with a finger, can come later); a second copy of the drawing (two copies to keep in step); keeping the markdown view available in Split (three things on screen).
+Cost. The two halves are fixed at the same size. On a phone the text gets about half the height.
