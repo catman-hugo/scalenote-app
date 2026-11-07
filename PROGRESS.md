@@ -313,6 +313,13 @@ Owner requests after trying 0.4.4 (2026-11-07). Three parts, one branch (`featur
 - Not done: "Zoom to 100%" (owner said no). Handwriting to text was asked about (an in-app version of Gboard "Write in text fields"); it needs its own recogniser and is not scheduled.
 - Release notes: `docs/release-notes/0.4.5.md`.
 
+## 0.4.6: in progress
+Owner request after 0.4.5 on the tablet (2026-11-07), to be bundled with one more item before release.
+- Highlights are drawn behind everything (`paintItems` in `canvasview.js`): layers back to front are sticky note boxes, highlights (also over a note), shapes and pen lines, then the text of notes. The file keeps the order things were drawn in; only the picture changed, so older versions and older drawings are not affected. A highlight in progress is drawn in the same layer.
+- Tidy highlights (`highlightFigure`, `figureOf` in `canvasrules.js`): when a highlighter stroke covers a rectangle, ellipse or sticky note (at least 60 percent of it inside) and its farthest point is not more than half its drawn width plus 12 units outside, it is cut at the figure's edge when drawn. A stroke that goes further out, or lies mostly outside, is left as drawn. The smallest fitting figure wins. The stroke in the file is not changed. Judged from at most 64 sample points so long strokes stay fast.
+- Tested here: 5 new unit tests, 3 new browser tests (pixel checks; both fail when the behaviour is removed, checked by hand), screenshots light and dark.
+- NOT tested, needs a device: the feel with a real pen and tablet; whether 12 units of slack is the right amount. Overlapping sticky notes: the text of a lower note can show through a note above it (text is one layer above all boxes).
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -348,9 +355,10 @@ Owner requests after trying 0.4.4 (2026-11-07). Three parts, one branch (`featur
 | 0.4.3 | Pen width as a five-stop slider; the page id is never shown in the app (see "0.4.3: built") | merged and tagged, not tried on a device |
 | 0.4.4 | Sticky notes drawn as boxes and resizable, shapes snap to a grid, the OneNote pen colours, pinch zoom fix (see "0.4.4: built") | built, not tried on a device |
 | 0.4.5 | Paper and page colour for drawings, loop moves snap to the grid, folder icons (see "0.4.5: built") | built, not tried on a device |
-| 0.4.6 | Draw over text: ink anchored to blocks | not started |
-| 0.4.7 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.8+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
+| 0.4.6 | Highlights drawn behind ink and shapes and tidied against figures (more to be bundled in, see "0.4.6: in progress") | in progress |
+| 0.4.7 | Draw over text: ink anchored to blocks | not started |
+| 0.4.8 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.9+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

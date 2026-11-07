@@ -408,3 +408,14 @@ Cost. A renamed or moved folder is followed only by renames made in ScaleNote; o
 
 Decision. 0.4.5 holds the paper and page colour, lasso snapping and folder icons. Drawing over text becomes 0.4.6, the `/canvas` block 0.4.7, split mode 0.4.8 and PDF import 0.4.9.
 Cost. The plan numbers moved once more.
+
+## 2026-11-07: Highlights sit behind ink and are tidied against figures
+
+Decision. Highlights are always painted behind shapes, pen lines and note text (and over note boxes), whatever order they were drawn in. A highlight that covers a rectangle, ellipse or note and goes only a little over its edge (half its width plus 12 units) is cut at the edge when drawn. The drawing file is unchanged: order and points stay as drawn, so nothing is lost and older versions read it as before.
+Alternatives. Rewrite the stroke when it is drawn (loses what was drawn, harder to undo); reorder items in the file (changes the file for a drawing-only effect).
+Cost. A highlight can no longer be put on top of a pen line on purpose. The text of overlapping notes can show through the note above.
+
+## 2026-11-07: The highlight work ships as 0.4.6
+
+Decision. The highlight request is bundled with one more item as 0.4.6. Drawing over text moves to 0.4.7, the `/canvas` block to 0.4.8, split mode to 0.4.9 and PDF import to 0.4.10.
+Cost. The plan numbers moved again.

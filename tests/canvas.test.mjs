@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
+  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, highlightFigure, HIGHLIGHT_SLACK } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -368,4 +368,56 @@ test("changing the paper or the page colour can be undone and redone", () => {
   assert.ok(history.redo(canvas));
   assert.ok(history.redo(canvas));
   assert.deepEqual([canvas.paper, canvas.page], ["rule-2", "mint"]);
+});
+
+// ---- tidy highlights ----
+
+const hl = (points, width = 4) => stroke(points.map(([x, y]) => [x, y, 0.5]), "yellow", width, "highlighter");
+const box = shape("rect", [100, 100], [300, 200]);
+
+test("only rectangles, ellipses and notes are figures", () => {
+  assert.deepEqual(figureOf(box), { kind: "rect", x: 100, y: 100, w: 200, h: 100 });
+  assert.deepEqual(figureOf(shape("ellipse", [300, 200], [100, 100])), { kind: "ellipse", x: 100, y: 100, w: 200, h: 100 });
+  assert.deepEqual(figureOf(note(10, 20)), { kind: "rect", x: 10, y: 20, w: 180, h: 60 });
+  assert.equal(figureOf(shape("line", [0, 0], [50, 50])), null);
+  assert.equal(figureOf(shape("rect", [5, 5], [5, 90])), null, "a flat rectangle has no inside");
+  assert.equal(figureOf(stroke([[0, 0, 0.5]])), null);
+});
+
+test("a highlight that goes a little over a figure is cut to it", () => {
+  // Width 4 is drawn 16 wide, so up to 8 + the slack beyond the edge is allowed.
+  const over = hl([[110, 150], [290, 150], [300 + HIGHLIGHT_SLACK + 8, 150]]);
+  assert.deepEqual(highlightFigure(over, [box, over]), figureOf(box));
+  const inside = hl([[120, 150], [280, 150]]);
+  assert.deepEqual(highlightFigure(inside, [box, inside]), figureOf(box), "a stroke inside is cut too, so its round ends stay in");
+});
+
+test("a highlight that goes well outside, or mostly lies outside, is left alone", () => {
+  const far = hl([[110, 150], [290, 150], [300 + HIGHLIGHT_SLACK + 9, 150]]);
+  assert.equal(highlightFigure(far, [box, far]), null);
+  const beside = hl([[310, 150], [400, 150], [500, 150]]);
+  assert.equal(highlightFigure(beside, [box, beside]), null);
+  const mostlyOut = hl([[280, 150], [310, 150], [320, 150], [330, 150]]);
+  assert.equal(highlightFigure(mostlyOut, [box, mostlyOut]), null);
+  assert.equal(highlightFigure(hl([]), [box]), null);
+});
+
+test("the smallest figure around the stroke wins, and an ellipse is judged by its curve", () => {
+  const inner = shape("rect", [150, 120], [250, 180]);
+  const s = hl([[160, 150], [240, 150]]);
+  assert.deepEqual(highlightFigure(s, [box, inner, s]), figureOf(inner));
+  const ellipse = shape("ellipse", [0, 0], [200, 100]);
+  // The corner of the bounding box is outside the ellipse by far more than the allowance.
+  const corner = hl([[190, 10], [195, 12], [198, 8]]);
+  assert.equal(highlightFigure(corner, [ellipse, corner]), null);
+  const middle = hl([[40, 50], [160, 50]]);
+  assert.deepEqual(highlightFigure(middle, [ellipse, middle]), figureOf(ellipse));
+});
+
+test("a long stroke is judged from a sample and stays quick", () => {
+  const points = Array.from({ length: 5000 }, (_, i) => [110 + (i % 180), 150]);
+  const long = hl(points);
+  const started = Date.now();
+  for (let i = 0; i < 200; i++) assert.deepEqual(highlightFigure(long, [box, long]), figureOf(box));
+  assert.ok(Date.now() - started < 1000);
 });

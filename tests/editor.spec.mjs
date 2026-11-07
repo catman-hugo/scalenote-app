@@ -5115,6 +5115,84 @@ await test("the icon menu fits a phone screen and the colours have names", async
   for (const b of await page.locator(".icon-menu button").all()) assert.ok((await b.getAttribute("aria-label")) || (await b.textContent()).trim(), "every button has a name");
 }, { ...ctxOpts, userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
 
+// ---------- 0.4.6: highlights stay behind, and are tidied against figures ----------
+
+const dark = ([r, g, b]) => r < 70 && g < 70 && b < 70;
+const tinted = (pixel, page) => Math.abs(pixel[0] - page[0]) + Math.abs(pixel[1] - page[1]) + Math.abs(pixel[2] - page[2]) > 25;
+
+await test("a highlight is drawn behind pen lines even when it was drawn later", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await chooseWidth(page, 2);
+  await tool(page, "Pen");
+  await drawLine(page, [100, 120], [300, 120]);
+  await tool(page, "Highlighter");
+  await chooseColour(page, "yellow");
+  await drawLine(page, [100, 120], [300, 120]);
+  await waitSaved(page);
+  const row = await sheetProfile(page, "row", 120);
+  const middle = row.pixels[200];
+  assert.ok(dark(middle), "the pen line is not tinted by the highlight on top of it: " + middle);
+  const list = await items(page);
+  assert.deepEqual(list.map((i) => i.tool), ["pen", "highlighter"], "the file keeps the order it was drawn in");
+}, ctxOpts);
+
+await test("a highlight is also behind shapes, but over a sticky note", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  await dragPath(page, [[100, 80], [300, 160]]);
+  // The corners snap to the grid, so the top edge is found on the sheet rather than assumed.
+  const top = (await sheetProfile(page, "column", 200)).pixels.map(dark).indexOf(true);
+  assert.ok(top > 20, "found the top edge at " + top);
+  await tool(page, "Highlighter");
+  await chooseColour(page, "yellow");
+  await drawLine(page, [60, top + 1], [340, top + 1]); // along the top edge of the rectangle
+  await waitSaved(page);
+  const row = await sheetProfile(page, "row", top + 1);
+  assert.ok(row.pixels.slice(150, 250).filter(dark).length > 90, "the outline of the rectangle is not covered by the highlight");
+  await tool(page, "Sticky note");
+  await dragPath(page, [[100, 300], [260, 380]]);
+  await page.waitForSelector(".canvas-note-input");
+  await page.keyboard.type("x");
+  await page.keyboard.press("Control+Enter");
+  await page.waitForSelector(".canvas-note-input", { state: "detached" });
+  await tool(page, "Highlighter");
+  await chooseColour(page, "yellow");
+  await drawLine(page, [110, 345], [250, 345]);
+  await waitSaved(page);
+  assert.ok((await items(page)).some((i) => i.tool === "note"), "the note was made");
+  const noteRow = await sheetProfile(page, "row", 345);
+  const below = await sheetProfile(page, "row", 372); // inside the note, under the highlight
+  assert.ok(tinted(noteRow.pixels[180], below.pixels[180]), "the highlight shows on the note: " + noteRow.pixels[180] + " against " + below.pixels[180]);
+}, ctxOpts);
+
+await test("a highlight that only goes a little over a figure is cut at its edge, one that goes far is not", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  await dragPath(page, [[100, 60], [300, 140]]);
+  const outline = await sheetProfile(page, "row", 100);
+  const edge = outline.pixels.map(dark).lastIndexOf(true);
+  assert.ok(edge > 250, "found the right edge of the rectangle at " + edge);
+  await tool(page, "Highlighter");
+  await chooseColour(page, "yellow");
+  await drawLine(page, [edge - 120, 100], [edge + 6, 100]);
+  await waitSaved(page);
+  const after = await sheetProfile(page, "row", 100);
+  assert.ok(tinted(after.pixels[edge - 20], after.page), "inside the rectangle the highlight shows");
+  for (const at of [edge + 5, edge + 8, edge + 12]) assert.ok(!tinted(after.pixels[at], after.page), `outside the edge at +${at - edge} the page colour is untouched: ${after.pixels[at]}`);
+  // Far beyond the edge it is a highlight of its own and stays as drawn.
+  await drawLine(page, [edge - 20, 100], [edge + 90, 100]);
+  await waitSaved(page);
+  const far = await sheetProfile(page, "row", 100);
+  assert.ok(tinted(far.pixels[edge + 60], far.page), "a long highlight beside the figure is not cut");
+  // The file keeps exactly what was drawn.
+  const list = await items(page);
+  assert.equal(list.filter((i) => i.tool === "highlighter").length, 2);
+  assert.ok(list.find((i) => i.tool === "highlighter").points.at(-1)[0] > list[0].b[0] - 1, "the first stroke still reaches past the edge in the file");
+}, ctxOpts);
+
 // Screenshots of the screens changed in 0.4.5 (only when SHOTS_DIR is set): the paper and page
 // colour menus and some papers, in light and dark, on a desktop and a phone, and on other themes.
 if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
@@ -5167,6 +5245,41 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
     await menuPick(page, "paper", "Grid, large squares");
     await menuPick(page, "page", "Peach");
     await page.screenshot({ path: name("4-grid-peach") });
+    await context.close();
+  }
+}
+
+// Screenshots for 0.4.6 (only when SHOTS_DIR is set): a highlight behind ink, shapes and a note,
+// and cut at the edge of the boxes it covers.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "046")) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await canvasVault(page);
+    await openCanvas(page);
+    await tool(page, "Rectangle");
+    await dragPath(page, [[100, 80], [400, 160]]);
+    await dragPath(page, [[100, 160], [260, 260]]);
+    await tool(page, "Pen");
+    await drawLine(page, [120, 120], [380, 120], 20);
+    await tool(page, "Sticky note");
+    await dragPath(page, [[300, 200], [460, 260]]);
+    await page.waitForSelector(".canvas-note-input");
+    await page.keyboard.type("note");
+    await page.keyboard.press("Control+Enter");
+    await page.waitForSelector(".canvas-note-input", { state: "detached" });
+    await tool(page, "Highlighter");
+    await chooseColour(page, "yellow");
+    await chooseWidth(page, 3);
+    await drawLine(page, [92, 120], [412, 120], 20); // a little over both ends of the first box
+    await drawLine(page, [110, 210], [250, 210], 20);
+    await drawLine(page, [310, 230], [450, 230], 20); // over the sticky note
+    await waitSaved(page);
+    await page.screenshot({ path: `${shots}/v046-${label}-${scheme}-1-highlight.png` });
     await context.close();
   }
 }
