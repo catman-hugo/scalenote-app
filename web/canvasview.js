@@ -13,7 +13,7 @@
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
 import {
   DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
-  arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, highlightFigure,
+  arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, tidyStroke,
   itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
 } from "./canvasrules.js";
 import { icon } from "./icons.js";
@@ -365,7 +365,20 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     drawToolbar();
     scheduleDraw();
   }
+  // With something selected by the loop, a colour picked from the menu recolours the selection
+  // (one undo step) instead of becoming the colour of the next line.
+  function recolourSelection(name) {
+    const edits = state.selection.filter((item) => item.color !== name).map((item) => ({ item, before: { color: item.color }, after: { color: name } }));
+    closeMenu();
+    if (edits.length) {
+      for (const edit of edits) Object.assign(edit.item, edit.after);
+      state.history.record({ edit: edits });
+      changed();
+    }
+    drawToolbar();
+  }
   function setColour(name) {
+    if (state.tool === "select" && state.selection.length && !state.readOnly) return recolourSelection(name);
     state.colour = name;
     if (COLOURLESS_TOOLS.includes(state.tool)) setTool("pen");
     else {
@@ -591,9 +604,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.restore();
   }
 
-  // A highlight is cut at the edge of the figure it covers when it only goes a little over it.
-  function paintHighlight(stroke, items) {
-    const figure = highlightFigure(stroke, items);
+  // A stroke with a clip (saved when it was drawn) only shows inside its figure.
+  function paintClipped(stroke) {
+    const figure = stroke.clip;
     if (!figure) return paintStroke(stroke);
     context.save();
     context.beginPath();
@@ -616,11 +629,12 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     const live = g && g.kind === "pen" && g.stroke.tool === "highlighter" ? g.stroke : null;
     const notes = items.filter((item) => item.tool === "note");
     for (const note of notes) paintNote(note, noteBox(note));
-    for (const item of items) if (item.tool === "highlighter") paintHighlight(item, items);
-    if (live) paintHighlight(live, items);
+    for (const item of items) if (item.tool === "highlighter") paintClipped(item);
+    // The stroke being drawn is shown as it will look once the pen is lifted.
+    if (live) for (const part of tidyStroke(live, items)) paintClipped(part);
     for (const item of items) {
       if (item.tool === "shape") paintShape(item);
-      else if (item.tool !== "note" && item.tool !== "highlighter") paintStroke(item);
+      else if (item.tool !== "note" && item.tool !== "highlighter") paintClipped(item);
     }
     for (const note of notes) if (!(state.editing && state.editing.item === note)) paintNoteText(note, noteBox(note));
   }
@@ -943,12 +957,16 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     if (g.kind === "pen") {
       const points = g.stroke.points;
       if (cancelled || !points.length) return scheduleDraw();
-      if (!canAddItem(state.canvas, points.length)) {
+      // A stroke over a figure is cut to it; one that strays far becomes several strokes, which
+      // go in (and come out again with undo) together.
+      const parts = tidyStroke(g.stroke, state.canvas.items);
+      const count = parts.reduce((sum, part) => sum + part.points.length, 0);
+      if (!canAddItem(state.canvas, count) || state.canvas.items.length + parts.length > LIMITS.items) {
         onNotice(t.full);
         return scheduleDraw();
       }
-      state.canvas.items.push(g.stroke);
-      state.history.record({ add: g.stroke });
+      state.canvas.items.push(...parts);
+      state.history.record({ add: parts.length === 1 ? parts[0] : parts });
       return changed();
     }
     if (g.kind === "notebox") {

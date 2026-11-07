@@ -226,12 +226,17 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
     }
   });
 
-  // The box is left as it is: this event arrives a moment after closing, and if the box has
-  // been opened again by then, clearing it here would wipe the new one.
-  dialog.addEventListener("close", () => {
+  // The box is left as it is. The close event arrives a moment after closing, and the same
+  // dialog element is used again, so an event from the earlier closing can arrive after the box
+  // was opened anew. If it were obeyed it would cancel the new box's search and leave it on
+  // "Searching" for good, so an event that arrives while the box is open is ignored.
+  const onClose = () => {
+    if (dialog.open) return;
+    dialog.removeEventListener("close", onClose);
     clearTimeout(timer);
     counter++;
-  }, { once: true });
+  };
+  dialog.addEventListener("close", onClose);
 
   render();
   dialog.showModal();
