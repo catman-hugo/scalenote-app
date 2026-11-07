@@ -4192,7 +4192,7 @@ await test("selecting and moving works with a pen, with a finger-free phone layo
   await waitSaved(page);
   const rect = (await items(page))[0];
   assert.ok(rect.a[0] > 100 && Math.abs(rect.a[1] - (56 + 40)) < 2);
-}, ctxOpts);
+}, { settings: existingUser({ updates: false, snapShapes: false }) });
 
 await test("the pen button erases by default, can select with a loop, or can be set to do nothing", async (page) => {
   await canvasVault(page);
