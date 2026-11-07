@@ -20,7 +20,14 @@
 // format 1, so an older ScaleNote on another device can keep opening it.
 
 export const FORMAT = 2;
-export const PEN_COLOURS = ["ink", "red", "blue", "green", "orange", "purple"];
+// The pen colours, in the order of the picker: three rows of six, six, and four. The first
+// version had only ink, red, blue, green, orange and purple; those names still mean the same
+// colour family, so older drawings open as before (a little brighter than they were).
+export const PEN_COLOURS = [
+  "yellow", "orange", "pink", "red", "indigo", "purple",
+  "raspberry", "navy", "blue", "sky", "green", "lime",
+  "ink", "charcoal", "grey", "silver",
+];
 // Five line widths, picked with a slider. The first three are the thin, medium and thick of
 // 0.4.0 to 0.4.2, so older drawings land on the same stop. Any width up to 100 is still a valid
 // file; a width that is not a stop is shown at the nearest one.

@@ -49,10 +49,10 @@ test("an old reader's file is still read, and new kinds are not allowed in the o
 });
 
 test("anything not understood is refused as a whole, never partly kept", () => {
-  const stroke1 = (extra) => `{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[0,0,0.5]]${extra || ""}},{"tool":"pen","color":"pink","width":4,"points":[[0,0,0.5]]}]}`;
+  const stroke1 = (extra) => `{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[0,0,0.5]]${extra || ""}},{"tool":"pen","color":"teal","width":4,"points":[[0,0,0.5]]}]}`;
   const bad = [
     "", "not json", "[]", "null", '{"format":1}', '{"format":1,"strokes":{}}', '{"format":0,"strokes":[]}', '{"format":1.5,"strokes":[]}', '{"format":"2","items":[]}', '{"format":2}',
-    '{"format":1,"strokes":[{"tool":"pen","color":"pink","width":4,"points":[[0,0,0.5]]}]}',
+    '{"format":1,"strokes":[{"tool":"pen","color":"teal","width":4,"points":[[0,0,0.5]]}]}',
     '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":-1,"points":[[0,0,0.5]]}]}',
     '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[]}]}',
     '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[0,0]]}]}',
@@ -67,7 +67,7 @@ test("anything not understood is refused as a whole, never partly kept", () => {
     '{"format":2,"items":[{"tool":"shape","kind":"line","color":"ink","width":4,"a":[0,0],"b":[1e9,1]}]}',
     '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":10,"h":60,"text":"x"}]}',
     '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":5}]}',
-    '{"format":2,"items":[{"tool":"note","color":"pink","x":0,"y":0,"w":180,"h":60,"text":"x"}]}',
+    '{"format":2,"items":[{"tool":"note","color":"teal","x":0,"y":0,"w":180,"h":60,"text":"x"}]}',
     `{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":"${"a".repeat(LIMITS.noteText + 1)}"}]}`,
     '{"format":2,"items":[{"tool":"highlighter","color":"ink","width":4,"points":[]}]}',
     '{"format":2,"items":[{"tool":"eraser"}]}',

@@ -378,7 +378,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   function readColours() {
     const style = getComputedStyle(document.documentElement);
     for (const name of PEN_COLOURS) {
-      state.colours[name] = style.getPropertyValue(name === "ink" ? "--text" : `--sn-text-${name}`).trim() || "#000";
+      // Ink follows the theme (black on light, white on dark); the others are fixed colours.
+      state.colours[name] = style.getPropertyValue(name === "ink" ? "--text" : `--pen-${name}`).trim() || "#000";
     }
     state.background = style.getPropertyValue("--bg").trim() || "#fff";
     state.accent = style.getPropertyValue("--accent").trim() || "#06c";

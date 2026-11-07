@@ -368,3 +368,9 @@ Cost. In the plain markdown view the first lines differ from the file on disk; t
 Decision. New shape corners snap to a 20 unit grid in drawing space. The setting "Snap shapes to a grid" is on by default and can be turned off in Settings. The grid is not drawn on the sheet.
 Alternatives. Snapping to other shapes' edges (smarter, but much more code and surprising on a pen); snapping only while a key is held (no key on a tablet); drawing a visible grid (not asked for, adds clutter).
 Cost. A shape cannot be placed finer than the grid while the setting is on, and a very short drag may snap to nothing and be ignored as a stray tap. Turning the setting off gives the old free placement.
+
+## 2026-11-07: The pen palette is OneNote's sixteen colours, as fixed colours
+
+Decision. The colour picker offers sixteen colours in the order and grid of OneNote's pen palette. They are fixed colours, the same on light and dark, except ink (black on light, white on dark). The six names from 0.4.0 keep their meaning, so old drawings open; ten new names are added. The file format number does not change.
+Alternatives. Free colour picker with any hex value (needs a new file format and an unlimited set of values to check); keeping the muted text colours of the page (they were chosen for text, not for ink).
+Cost. A drawing that uses a new colour opens read-only in 0.4.2 and older. Dark grey is hard to see on the dark theme, as in OneNote.

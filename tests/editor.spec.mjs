@@ -4690,6 +4690,8 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
       await drawLine(page, [40, 100], [220, 100]);
       await page.click('.canvas-toolbar [data-menu="width"]');
       await page.screenshot({ path: name("1-width-slider") });
+      await page.click('.canvas-toolbar [data-menu="colour"]');
+      await page.screenshot({ path: name("1b-colour-menu") });
       await context.close();
     }
   }

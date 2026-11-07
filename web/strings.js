@@ -139,7 +139,11 @@ export const strings = {
     deleteSelection: "Delete what is selected",
     noteLabel: "Text of the sticky note",
     notePlaceholder: "Type here",
-    colours: { ink: "Black or white (follows the theme)", red: "Red", blue: "Blue", green: "Green", orange: "Orange", purple: "Purple" },
+    colours: {
+      yellow: "Yellow", orange: "Orange", pink: "Pink", red: "Red", indigo: "Dark purple", purple: "Purple",
+      raspberry: "Raspberry", navy: "Dark blue", blue: "Blue", sky: "Light blue", green: "Green", lime: "Light green",
+      ink: "Black or white (follows the theme)", charcoal: "Dark grey", grey: "Grey", silver: "Light grey",
+    },
     widths: ["Thinnest line", "Thin line", "Medium line", "Thick line", "Thickest line"],
     undo: "Undo",
     redo: "Redo",
