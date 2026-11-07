@@ -14,7 +14,7 @@
 import {
   DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
-  itemsInLoop, itemsTouched, moveItem, noteHeight, widthAt, wrapText,
+  itemsInLoop, itemsTouched, moveItem, noteTextHeight, widthAt, wrapText,
 } from "./canvasrules.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
@@ -27,8 +27,12 @@ const ERASER_PIXELS = 10;
 const MIN_STEP_PIXELS = 0.8;
 // A shape dragged less than this many screen pixels is a stray tap, not a shape.
 const MIN_SHAPE_PIXELS = 4;
+// A note drawn smaller than this on the screen is a stray tap, not a box.
+const NOTE_MIN_PIXELS = 24;
 // How far outside the selection box a press still counts as being on it.
 const GRAB_PIXELS = 8;
+// How close to the resize handle counts as holding it. Bigger than it looks, for a finger or a pen.
+const HANDLE_PIXELS = 16;
 const HIGHLIGHT_ALPHA = 0.35;
 const NOTE_FILL_ALPHA = 0.22;
 // Tools that choose how the next thing is drawn, so picking a colour or width switches to the pen
@@ -508,6 +512,13 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.setLineDash([6 / scale, 4 / scale]);
     const pad = 4 / scale;
     context.strokeRect(around.minX - pad, around.minY - pad, around.maxX - around.minX + 2 * pad, around.maxY - around.minY + 2 * pad);
+    const handle = resizeHandle();
+    if (handle) {
+      const size = 10 / scale;
+      context.setLineDash([]);
+      context.fillStyle = state.accent;
+      context.fillRect(handle.x - size / 2, handle.y - size / 2, size, size);
+    }
     context.restore();
   }
 
@@ -531,6 +542,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     const g = state.gesture;
     if (g && g.kind === "pen") paintStroke(g.stroke);
     if (g && g.kind === "shape") paintShape(g.shape);
+    if (g && g.kind === "notebox") {
+      const box = boxOf(g.a, g.b);
+      context.save();
+      context.strokeStyle = state.accent;
+      context.lineWidth = 1.5 / scale;
+      context.setLineDash([6 / scale, 4 / scale]);
+      context.strokeRect(box.x, box.y, box.w, box.h);
+      context.restore();
+    }
     if (state.editing && !state.editing.item) paintNote(state.editing.pending, { ...state.editing.pending, h: state.editing.height }, false);
     paintSelection();
     if (g && g.kind === "lasso") {
@@ -571,9 +591,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     return null;
   }
 
-  function openNote(existing, world) {
+  function openNote(existing, box) {
     commitNote();
-    const pending = existing ? null : { tool: "note", color: state.colour, x: world.x, y: world.y, w: NOTE.width, h: NOTE.minHeight, text: "" };
+    const pending = existing ? null : { tool: "note", color: state.colour, x: box.x, y: box.y, w: box.w, h: box.h, text: "" };
     const subject = existing || pending;
     const area = make("textarea", "canvas-note-input");
     area.value = subject.text;
@@ -582,7 +602,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     area.placeholder = t.notePlaceholder;
     state.editing = { item: existing, pending, area, height: subject.h };
     area.addEventListener("input", () => {
-      state.editing.height = noteHeight(wrapNoteText(area.value, subject.w).length);
+      state.editing.height = Math.max(subject.h, noteTextHeight(wrapNoteText(area.value, subject.w).length));
       scheduleDraw();
     });
     area.addEventListener("blur", commitNote);
@@ -626,7 +646,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     state.editing = null;
     const text = e.area.value.slice(0, LIMITS.noteText);
     e.area.remove();
-    const height = noteHeight(wrapNoteText(text, (e.item || e.pending).w).length);
+    const subject = e.item || e.pending;
+    // The size stays what it was drawn or resized to; it only grows if the text needs more room.
+    const height = Math.max(subject.h, noteTextHeight(wrapNoteText(text, subject.w).length));
     if (e.item) {
       if (text !== e.item.text) {
         const entry = { item: e.item, before: { text: e.item.text, h: e.item.h }, after: { text, h: height } };
@@ -661,9 +683,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     } else if (tool === "note") {
       clearSelection();
       const existing = noteAt(world);
-      if (!existing && !canAddItem(state.canvas)) return onNotice(t.full);
-      // The pointer is released a moment later; the text box must not lose focus to that.
-      setTimeout(() => openNote(existing, world), 0);
+      if (existing) {
+        // The pointer is released a moment later; the text box must not lose focus to that.
+        setTimeout(() => openNote(existing, null), 0);
+        return;
+      }
+      if (!canAddItem(state.canvas)) return onNotice(t.full);
+      // A new note is drawn as a box, the way a shape is: the person chooses its size.
+      const corner = shapePoint(world);
+      state.gesture = { kind: "notebox", id, a: corner, b: corner };
     } else if (SHAPES.includes(tool)) {
       clearSelection();
       const shape = { tool: "shape", kind: tool, color: state.colour, width: state.width, a: shapePoint(world), b: shapePoint(world) };
@@ -677,7 +705,26 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   // A press on the selection moves it; a press anywhere else starts a new loop.
+  // A single selected note has a handle in its bottom right corner to change its size.
+  function resizeHandle() {
+    const [only] = state.selection;
+    return state.selection.length === 1 && only.tool === "note" ? { x: only.x + only.w, y: only.y + only.h, item: only } : null;
+  }
+
+  function resizeNote(g, [px, py]) {
+    const clamp = (value) => Math.min(LIMITS.noteMax, Math.max(LIMITS.noteMin, value));
+    const w = clamp(px - g.item.x);
+    g.item.w = w;
+    // Never shorter than the text needs at this width.
+    g.item.h = Math.max(clamp(py - g.item.y), noteTextHeight(wrapNoteText(g.item.text, w).length));
+  }
+
   function startSelect(id, screen, world) {
+    const handle = resizeHandle();
+    if (handle && Math.hypot(world.x - handle.x, world.y - handle.y) * state.view.scale <= HANDLE_PIXELS) {
+      state.gesture = { kind: "resize", id, item: handle.item, before: { w: handle.item.w, h: handle.item.h } };
+      return;
+    }
     const around = boundsOf(state.selection);
     const slack = GRAB_PIXELS / state.view.scale;
     if (around && world.x >= around.minX - slack && world.x <= around.maxX + slack && world.y >= around.minY - slack && world.y <= around.maxY + slack) {
@@ -736,6 +783,29 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       state.history.record({ add: g.stroke });
       return changed();
     }
+    if (g.kind === "notebox") {
+      const box = boxOf(g.a, g.b);
+      const smallest = Math.max(LIMITS.noteMin, NOTE_MIN_PIXELS / state.view.scale);
+      if (cancelled) return scheduleDraw();
+      if (box.w < smallest || box.h < smallest) {
+        onNotice(t.noteDrag);
+        return scheduleDraw();
+      }
+      box.w = Math.min(box.w, LIMITS.noteMax);
+      box.h = Math.min(box.h, LIMITS.noteMax);
+      // The pointer is released a moment later; the text box must not lose focus to that.
+      setTimeout(() => openNote(null, box), 0);
+      return scheduleDraw();
+    }
+    if (g.kind === "resize") {
+      const after = { w: g.item.w, h: g.item.h };
+      if (cancelled) Object.assign(g.item, g.before);
+      else if (after.w !== g.before.w || after.h !== g.before.h) {
+        state.history.record({ edit: { item: g.item, before: g.before, after } });
+        return changed();
+      }
+      return scheduleDraw();
+    }
     if (g.kind === "shape") {
       const size = Math.hypot(g.shape.b[0] - g.shape.a[0], g.shape.b[1] - g.shape.a[1]) * state.view.scale;
       if (cancelled || size < MIN_SHAPE_PIXELS) return scheduleDraw();
@@ -749,7 +819,12 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
     if (g.kind === "lasso") {
       if (cancelled || g.length < MIN_SHAPE_PIXELS) {
-        clearSelection();
+        // A tap on a note selects it, so its size can be changed.
+        const tapped = cancelled ? null : noteAt({ x: g.loop[0][0], y: g.loop[0][1] });
+        if (tapped) {
+          state.selection = [tapped];
+          drawToolbar();
+        } else clearSelection();
         return scheduleDraw();
       }
       state.selection = itemsInLoop(state.canvas, g.loop).map((index) => state.canvas.items[index]);
@@ -871,6 +946,10 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       for (const part of events.length ? events : [event]) addPoint(part);
     } else if (g.kind === "shape") {
       g.shape.b = shapePoint(toWorld(now.x, now.y));
+    } else if (g.kind === "notebox") {
+      g.b = shapePoint(toWorld(now.x, now.y));
+    } else if (g.kind === "resize") {
+      resizeNote(g, shapePoint(toWorld(now.x, now.y)));
     } else if (g.kind === "lasso") {
       const world = toWorld(now.x, now.y);
       g.length += Math.hypot(now.x - g.last.x, now.y - g.last.y);

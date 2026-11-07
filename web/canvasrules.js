@@ -362,8 +362,10 @@ export function wrapText(text, maxWidth, measure) {
 }
 
 /** The height a note needs for its text: at least the minimum, plus padding around the lines. */
-export function noteHeight(lineCount) {
-  return Math.max(NOTE.minHeight, lineCount * NOTE.lineHeight + 2 * NOTE.padding);
+// The height the text itself needs. A note is never shorter than this, so no text is hidden,
+// but it may be taller: its size is what the person drew or dragged it to.
+export function noteTextHeight(lineCount) {
+  return lineCount * NOTE.lineHeight + 2 * NOTE.padding;
 }
 
 // Takes an item out by identity. A missing item is ignored: splice(-1, 1) would remove the last one.

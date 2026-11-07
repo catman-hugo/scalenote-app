@@ -374,3 +374,9 @@ Cost. A shape cannot be placed finer than the grid while the setting is on, and 
 Decision. The colour picker offers sixteen colours in the order and grid of OneNote's pen palette. They are fixed colours, the same on light and dark, except ink (black on light, white on dark). The six names from 0.4.0 keep their meaning, so old drawings open; ten new names are added. The file format number does not change.
 Alternatives. Free colour picker with any hex value (needs a new file format and an unlimited set of values to check); keeping the muted text colours of the page (they were chosen for text, not for ink).
 Cost. A drawing that uses a new colour opens read-only in 0.4.2 and older. Dark grey is hard to see on the dark theme, as in OneNote.
+
+## 2026-11-07: Sticky notes are drawn as a box and can be resized
+
+Decision. As in ScaleNote v1, a new sticky note is made by dragging a box with the note tool, and the note gets that size. A tap does nothing but show a hint. A note can be resized by selecting it (tap with the loop tool) and dragging the handle in its bottom right corner. A note is never shorter than its text needs, but it does not shrink when text is deleted.
+Alternatives. Keep the tap with a default size next to the drag (the owner asked for the size not to be chosen for them); resize with edge handles or a pinch (more code, more ways to miss on a tablet).
+Cost. Creating a note takes a drag instead of a tap, and a note that grew for a long text stays tall after the text is cut.

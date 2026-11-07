@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  moveItem, noteHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
+  moveItem, noteTextHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -190,8 +190,8 @@ test("note text is cut into lines that fit, keeping new lines and breaking very 
   assert.deepEqual(wrapText("abcdefghijkl", 50, measure), ["abcde", "fghij", "kl"]);
   assert.deepEqual(wrapText("", 80, measure), [""]);
   assert.ok(wrapText("x ".repeat(3000), 30, measure).length > 100, "huge text does not hang or throw");
-  assert.equal(noteHeight(1), NOTE.minHeight, "a short note has the minimum height");
-  assert.equal(noteHeight(10), 10 * NOTE.lineHeight + 2 * NOTE.padding);
+  assert.equal(noteTextHeight(1), NOTE.lineHeight + 2 * NOTE.padding, "one line needs a line plus the padding");
+  assert.equal(noteTextHeight(10), 10 * NOTE.lineHeight + 2 * NOTE.padding);
 });
 
 test("the pen is thin for a light touch, plain for a mouse, thick for a firm one", () => {
