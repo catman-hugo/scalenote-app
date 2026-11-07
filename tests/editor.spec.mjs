@@ -4401,16 +4401,27 @@ await test("moving a selection with the loop tool snaps shapes and notes to the 
 // lines run. `at` is in screen pixels from the corner of the sheet. Returns the pixels, the
 // positions (in screen pixels) of every line that differs from the page colour, and the page colour.
 async function sheetProfile(page, direction, at) {
-  const profile = await page.evaluate(([dir, position]) => {
-    const canvas = document.querySelector(".canvas-surface");
-    const ratio = canvas.width / canvas.getBoundingClientRect().width;
-    const column = dir === "column";
-    const length = column ? canvas.height : canvas.width;
-    const data = canvas.getContext("2d").getImageData(column ? Math.round(position * ratio) : 0, column ? 0 : Math.round(position * ratio), column ? 1 : length, column ? length : 1).data;
-    const pixels = [];
-    for (let i = 0; i < length; i++) pixels.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]);
-    return { ratio, pixels };
-  }, [direction, at]);
+  // The sheet is drawn on the next animation frame, and a slow machine can need longer, so the
+  // pixels are read again until something has been painted (an unpainted canvas reads as clear).
+  let profile;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    profile = await page.evaluate(([dir, position]) => {
+      const canvas = document.querySelector(".canvas-surface");
+      const ratio = canvas.width / canvas.getBoundingClientRect().width;
+      const column = dir === "column";
+      const length = column ? canvas.height : canvas.width;
+      const data = canvas.getContext("2d").getImageData(column ? Math.round(position * ratio) : 0, column ? 0 : Math.round(position * ratio), column ? 1 : length, column ? length : 1).data;
+      const pixels = [];
+      let painted = false;
+      for (let i = 0; i < length; i++) {
+        pixels.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]);
+        if (data[i * 4 + 3] !== 0) painted = true;
+      }
+      return { ratio, pixels, painted };
+    }, [direction, at]);
+    if (profile.painted) break;
+    await page.waitForTimeout(100);
+  }
   const counts = new Map();
   for (const pixel of profile.pixels) counts.set(pixel.join(), (counts.get(pixel.join()) || 0) + 1);
   const page_ = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0].split(",").map(Number);
