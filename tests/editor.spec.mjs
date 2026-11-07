@@ -8,6 +8,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { COLOURS } from "../web/inlinestyles.js";
+import { pageFill } from "../web/canvasrules.js";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
@@ -3915,7 +3916,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":3,"items":[]}');
+  await canvasVault(page, '{"format":4,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -4396,6 +4397,165 @@ await test("moving a selection with the loop tool snaps shapes and notes to the 
   assert.deepEqual(undone.a, rect0.a, "undo puts the rectangle back where it was");
 }, ctxOpts);
 
+// The colours down a column (or along a row) of the sheet as it is shown, to see where the paper
+// lines run. `at` is in screen pixels from the corner of the sheet. Returns the pixels, the
+// positions (in screen pixels) of every line that differs from the page colour, and the page colour.
+async function sheetProfile(page, direction, at) {
+  const profile = await page.evaluate(([dir, position]) => {
+    const canvas = document.querySelector(".canvas-surface");
+    const ratio = canvas.width / canvas.getBoundingClientRect().width;
+    const column = dir === "column";
+    const length = column ? canvas.height : canvas.width;
+    const data = canvas.getContext("2d").getImageData(column ? Math.round(position * ratio) : 0, column ? 0 : Math.round(position * ratio), column ? 1 : length, column ? length : 1).data;
+    const pixels = [];
+    for (let i = 0; i < length; i++) pixels.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]);
+    return { ratio, pixels };
+  }, [direction, at]);
+  const counts = new Map();
+  for (const pixel of profile.pixels) counts.set(pixel.join(), (counts.get(pixel.join()) || 0) + 1);
+  const page_ = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0].split(",").map(Number);
+  const differs = (pixel) => Math.abs(pixel[0] - page_[0]) + Math.abs(pixel[1] - page_[1]) + Math.abs(pixel[2] - page_[2]) > 12;
+  const lines = [];
+  let start = -1;
+  profile.pixels.forEach((pixel, i) => {
+    if (differs(pixel) && start === -1) start = i;
+    if (!differs(pixel) && start !== -1) { lines.push((start + i - 1) / 2 / profile.ratio); start = -1; }
+  });
+  return { ...profile, lines, page: page_ };
+}
+const gaps = (lines) => lines.slice(1).map((v, i) => Math.round(v - lines[i]));
+const themeBackground = (page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
+const closeTo = (a, b, tolerance = 3) => a.every((v, i) => Math.abs(v - b[i]) <= tolerance);
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+await test("the paper menu has none, four rule lines and four grids; a choice is drawn, saved with the drawing, kept on reopening and undone", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await page.click('.canvas-toolbar [data-menu="paper"]');
+  const labels = await page.locator('.canvas-menu[data-menu="paper"] button').evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+  assert.deepEqual(labels, [
+    "No lines", "Rule lines, closest together", "Rule lines, close", "Rule lines, wide", "Rule lines, widest",
+    "Grid, smallest squares", "Grid, small squares", "Grid, large squares", "Grid, largest squares",
+  ]);
+  assert.equal(await page.locator('.canvas-menu[data-menu="paper"] button[aria-pressed="true"]').getAttribute("aria-label"), "No lines");
+  assert.equal((await sheetProfile(page, "column", 300)).lines.length, 0, "a new drawing has plain paper");
+
+  await menuPick(page, "paper", "Rule lines, wide");
+  await waitSaved(page);
+  const saved = await savedDrawing(page);
+  assert.equal(saved.format, 3);
+  assert.equal(saved.paper, "rule-3");
+  assert.equal(await page.locator('.canvas-menu[data-menu="paper"]').isVisible(), false, "the menu closes after a choice");
+  const column = await sheetProfile(page, "column", 300);
+  assert.ok(column.lines.length > 4, "lines are drawn");
+  assert.ok(gaps(column.lines).every((g) => g === 60), "60 units apart: " + gaps(column.lines));
+  const margin = await sheetProfile(page, "row", 200);
+  assert.equal(margin.lines.length, 1, "one margin line across a row");
+  const [r, , b] = margin.pixels[Math.round(margin.lines[0] * margin.ratio)];
+  assert.ok(r > b + 40, "and it is red");
+  assert.equal(Math.round(margin.lines[0]), 84, "60 units from the left edge, with the sheet starting 24 in");
+
+  await menuPick(page, "paper", "Grid, large squares");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "grid-3");
+  const across = await sheetProfile(page, "row", 54);
+  assert.ok(across.lines.length > 4 && gaps(across.lines).every((g) => g === 60), "vertical lines too: " + gaps(across.lines));
+  assert.ok(!across.pixels.some(([red, , blue]) => red > blue + 40), "and no margin line on a grid");
+
+  await page.click("#canvasToggle");
+  await openCanvas(page);
+  assert.equal(await page.locator('.canvas-menu[data-menu="paper"] button[aria-pressed="true"]').getAttribute("aria-label"), "Grid, large squares", "kept on reopening");
+  assert.ok((await sheetProfile(page, "column", 300)).lines.length > 4);
+
+  // Reopening starts a new undo list, so the next steps are made after it.
+  await menuPick(page, "paper", "Rule lines, close");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "rule-2");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "grid-3", "undo brings back the grid");
+  await tool(page, "Redo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "rule-2");
+  await menuPick(page, "paper", "No lines");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, undefined, "no lines: nothing stored");
+  assert.equal((await savedDrawing(page)).format, 1, "and a drawing without lines is the old format again");
+}, ctxOpts);
+
+await test("a page colour is tinted for the theme, saved with the drawing, shown on its button and undone; No colour goes back to the theme", async (page) => {
+  await canvasVault(page, '{"format":2,"items":[{"tool":"pen","color":"red","width":4,"points":[[40,40,0.5],[80,60,0.5]]}]}');
+  await openCanvas(page);
+  const bg = await themeBackground(page);
+  assert.ok(closeTo((await sheetProfile(page, "column", 400)).page, rgbOf(bg), 1), "no page colour: the theme's own");
+  await page.click('.canvas-toolbar [data-menu="page"]');
+  assert.equal(await page.locator('.canvas-menu[data-menu="page"] button.canvas-page').count(), 16);
+  await menuPick(page, "page", "Light blue");
+  await waitSaved(page);
+  const saved = await savedDrawing(page);
+  assert.equal(saved.format, 3);
+  assert.equal(saved.page, "sky");
+  assert.equal(saved.items.length, 1, "an older drawing keeps what it had");
+  assert.ok(closeTo((await sheetProfile(page, "column", 400)).page, rgbOf(pageFill("sky", bg)), 1), "the sheet is that colour on this theme");
+  const shown = await page.locator('.canvas-toolbar [data-menu="page"] .canvas-page-swatch').evaluate((n) => getComputedStyle(n).backgroundColor);
+  assert.equal(shown, `rgb(${rgbOf(pageFill("sky", bg)).join(", ")})`, "the button shows it");
+  assert.equal(await page.locator('.canvas-menu[data-menu="page"] button[aria-pressed="true"]').getAttribute("aria-label"), "Light blue");
+
+  await menuPick(page, "page", "No colour");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).page, undefined);
+  assert.equal((await savedDrawing(page)).format, 1, "a pen-only drawing with no colour is the old format again, as before 0.4.5");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).page, "sky", "undo brings the colour back");
+}, ctxOpts);
+
+for (const [theme, dark] of [["midnight", true], ["sepia", false], ["forest", true], ["lavender", false]]) {
+  await test(`the same page colour looks right on the ${theme} theme`, async (page) => {
+    await canvasVault(page, '{"format":3,"items":[],"page":"mint","paper":"rule-2"}');
+    await openCanvas(page);
+    const bg = await themeBackground(page);
+    const sheet = await sheetProfile(page, "column", 400);
+    assert.ok(closeTo(sheet.page, rgbOf(pageFill("mint", bg)), 1), `${theme}: ${sheet.page} vs ${pageFill("mint", bg)}`);
+    const brightness = (sheet.page[0] + sheet.page[1] + sheet.page[2]) / 3;
+    assert.equal(brightness > 128, !dark, `${theme} stays ${dark ? "dark" : "light"}`);
+    assert.ok(sheet.lines.length > 4, "the lines show on a tinted page");
+  }, { settings: existingUser({ updates: false, theme }) });
+}
+
+await test("on a drawing that cannot be changed the paper and page colour cannot be changed either, and rapid clicking breaks nothing", async (page) => {
+  await canvasVault(page, '{"format":1,"strokes":[{"tool":"laser"}]}');
+  await openCanvas(page);
+  assert.equal(await page.locator('.canvas-toolbar [data-menu="paper"]').isDisabled(), true);
+  assert.equal(await page.locator('.canvas-toolbar [data-menu="page"]').isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), '{"format":1,"strokes":[{"tool":"laser"}]}', "the file is untouched");
+}, ctxOpts);
+
+await test("clicking the paper and page colour choices very fast, zooming far out and in, and an empty drawing all stay calm", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  for (let round = 0; round < 3; round++) {
+    for (const label of ["Rule lines, closest together", "Grid, smallest squares", "Rule lines, widest", "No lines"]) await menuPick(page, "paper", label);
+    for (const label of ["Light blue", "Peach", "No colour", "Mint"]) await menuPick(page, "page", label);
+  }
+  await menuPick(page, "paper", "Grid, smallest squares");
+  const box = await sheetBox(page);
+  await page.mouse.move(box.x + 300, box.y + 200);
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 25; i++) await page.mouse.wheel(0, 400); // zoom far out: the lines would be a smear, so they are left out
+  await page.waitForTimeout(100);
+  assert.equal((await sheetProfile(page, "column", 300)).lines.length, 0, "no lines when they would be closer than a few pixels");
+  for (let i = 0; i < 40; i++) await page.mouse.wheel(0, -400);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(100);
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "grid-1");
+  assert.equal((await savedDrawing(page)).page, "mint");
+  assert.deepEqual(errors, []);
+}, ctxOpts);
+
 // Is there ink at this spot of the sheet? Read from the pixels the canvas really shows.
 const inkAt = (page, x, y) => page.evaluate(([px, py]) => {
   const canvas = document.querySelector(".canvas-surface");
@@ -4820,6 +4980,43 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
     await page.screenshot({ path: `${shots}/v043-desktop-${scheme}-2-page-after-link.png` });
     await page.click("#sourceToggle");
     await page.screenshot({ path: `${shots}/v043-desktop-${scheme}-3-plain-markdown.png` });
+    await context.close();
+  }
+}
+
+// Screenshots of the screens changed in 0.4.5 (only when SHOTS_DIR is set): the paper and page
+// colour menus and some papers, in light and dark, on a desktop and a phone, and on other themes.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
+  const looks = [
+    ["desktop", { width: 1100, height: 760 }, "light", null], ["desktop", { width: 1100, height: 760 }, "dark", null],
+    ["phone", { width: 390, height: 800 }, "light", null], ["phone", { width: 390, height: 800 }, "dark", null],
+    ["sepia", { width: 1100, height: 760 }, "light", "sepia"], ["midnight", { width: 1100, height: 760 }, "dark", "midnight"],
+    ["forest", { width: 1100, height: 760 }, "dark", "forest"], ["sage", { width: 1100, height: 760 }, "light", "sage"],
+  ];
+  for (const [label, viewport, scheme, theme] of looks) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, ...(theme ? { theme } : {}) }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    const name = (n) => `${shots}/v045-${label}-${scheme}-${n}.png`;
+    await page.goto(url);
+    await canvasVault(page);
+    await openCanvas(page);
+    await chooseWidth(page, 2);
+    await drawLine(page, [110, 80], [300, 80]);
+    await tool(page, "Rectangle");
+    await dragPath(page, [[110, 130], [250, 200]]);
+    await page.click('.canvas-toolbar [data-menu="paper"]');
+    await page.screenshot({ path: name("1-paper-menu") });
+    await menuPick(page, "paper", "Rule lines, wide");
+    await menuPick(page, "page", "Light blue");
+    await page.screenshot({ path: name("2-rule-lines-light-blue") });
+    await page.click('.canvas-toolbar [data-menu="page"]');
+    await page.screenshot({ path: name("3-page-colour-menu") });
+    await menuPick(page, "paper", "Grid, large squares");
+    await menuPick(page, "page", "Peach");
+    await page.screenshot({ path: name("4-grid-peach") });
     await context.close();
   }
 }

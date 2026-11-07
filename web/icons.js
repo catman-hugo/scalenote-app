@@ -28,6 +28,7 @@ const paths = {
   rectangle: "M2.5 4h11v8h-11z",
   ellipse: "M8 3.5c3.3 0 5.5 1.9 5.5 4.5S11.3 12.5 8 12.5 2.5 10.1 2.5 8 4.7 3.5 8 3.5z",
   sticky: "M3 2.5h10v7l-4 4H3zM13 9.5H9v4",
+  paper: "M3 2.5h10v11H3zM3 6.5h10M3 9.5h10M6 2.5v11",
   undo: "M5.5 3.5l-3 3 3 3M2.5 6.5h6.5a3.5 3.5 0 0 1 0 7H6",
   redo: "M10.5 3.5l3 3-3 3M13.5 6.5H7a3.5 3.5 0 0 0 0 7h3",
   folderOpen: "M2 13V4.5h4L7.5 6H12v2M2 13l2-5h11l-2 5z",

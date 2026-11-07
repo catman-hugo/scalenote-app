@@ -840,6 +840,20 @@ body.block-dragging .float-bar { visibility: hidden; }
 .canvas-menu-slider { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: var(--space-2); width: 11rem; }
 .canvas-menu-slider .canvas-line { width: 100%; }
 .canvas-slider { width: 100%; margin: 0; accent-color: var(--accent); }
+/* The paper menu: a picture of each paper in rows of five, with a heading above each kind. */
+.canvas-menu[data-menu="paper"]:not([hidden]) { display: grid; grid-template-columns: repeat(5, auto); justify-content: start; }
+.canvas-menu-heading { grid-column: 1 / -1; margin: var(--space-1) 0 0; font-size: var(--text-s); color: var(--text-soft); }
+.canvas-paper { padding: var(--space-1); min-width: 3rem; min-height: 2.2rem; display: inline-flex; align-items: center; justify-content: center; }
+.paper-thumb { display: block; border: 1px solid var(--line); background: var(--bg); }
+.paper-line { stroke: var(--kind-info); stroke-width: 1; }
+.paper-margin { stroke: var(--bad); stroke-width: 1; }
+.canvas-paper-none { display: flex; align-items: center; justify-content: center; width: 40px; height: 28px; border: 1px solid var(--line); background: var(--bg); font-size: var(--text-s); }
+/* The page colour menu: sixteen swatches in four rows, and a button to go back to the theme's own colour. */
+.canvas-menu[data-menu="page"]:not([hidden]) { display: grid; grid-template-columns: repeat(4, 2.4rem); justify-content: start; }
+.canvas-menu[data-menu="page"] .canvas-menu-row { grid-column: 1 / -1; text-align: left; }
+.canvas-page { display: flex; align-items: center; justify-content: center; padding: var(--space-1); min-height: 2.2rem; }
+.canvas-page-swatch { display: block; width: 20px; height: 20px; border: 1px solid var(--line); border-radius: 2px; background: var(--bg); }
+.canvas-menu-button .canvas-page-swatch { width: 14px; height: 14px; }
 .canvas-problem { margin: 0; padding: var(--space-2) var(--space-3); color: var(--bad); border-bottom: 1px solid var(--line); }
 .canvas-problem[hidden] { display: none; }
 .canvas-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }

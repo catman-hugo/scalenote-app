@@ -17,9 +17,12 @@
 //
 // File versions: format 1 (0.4.0) holds pen strokes only, under the key "strokes". Format 2 holds
 // every kind of item under the key "items". A drawing with only pen strokes is still written as
-// format 1, so an older ScaleNote on another device can keep opening it.
+// format 1, so an older ScaleNote on another device can keep opening it. Format 3 (0.4.5) is a
+// format 2 drawing that also has a paper (rule or grid lines) and/or a page colour; it is only
+// written when one of them is set, and an older ScaleNote shows it read-only instead of saving
+// over it and losing the paper.
 
-export const FORMAT = 2;
+export const FORMAT = 3;
 // The pen colours, in the order of the picker: three rows of six, six, and four. The first
 // version had only ink, red, blue, green, orange and purple; those names still mean the same
 // colour family, so older drawings open as before (a little brighter than they were).
@@ -53,7 +56,85 @@ export const LIMITS = {
   noteMax: 2_000,
 };
 
-export const emptyCanvas = () => ({ items: [] });
+// ---- paper and page colour ----
+// The paper is the lines behind the drawing: none, rule lines (with a margin line) or a grid, each
+// in four spacings from tight to wide. The spacings are multiples of the shape grid, so a shape
+// that snapped to the grid sits exactly on a line of it. They are in drawing space, so they zoom
+// and move with the drawing. Like OneNote, the paper belongs to the page, not to the app.
+export const PAPERS = ["none", "rule-1", "rule-2", "rule-3", "rule-4", "grid-1", "grid-2", "grid-3", "grid-4"];
+const PAPER_STEPS = [20, 40, 60, 80];
+// Where the margin line of rule lines runs, in drawing units from the left edge of the sheet.
+export const MARGIN_X = 60;
+
+/** `{ kind: "rule" | "grid", step }` for a paper, or null for none (or a name that is not a paper). */
+export function paperLayout(paper) {
+  const match = /^(rule|grid)-([1-4])$/.exec(paper);
+  return match ? { kind: match[1], step: PAPER_STEPS[Number(match[2]) - 1] } : null;
+}
+
+// The 16 page colours, in the order of the picker (four rows of four, like OneNote's). A page
+// colour is stored by name and turned into a real colour here, for the theme that is showing:
+// on a light page background the tint is multiplied onto it (so a warm theme stays warm), on a
+// dark one it is mixed into it, so the same page looks right in every theme and on every
+// device. The tints were read from OneNote's light and dark page colours.
+export const PAGE_COLOURS = [
+  "none",
+  "sky", "aqua", "mint", "rose",
+  "periwinkle", "frost", "meadow", "blush",
+  "iris", "fog", "pistachio", "sand",
+  "lilac", "orchid", "cream", "peach",
+];
+const LIGHT_TINTS = [
+  "#e8eefa", "#e6f3ee", "#e8f4e8", "#fbe8e8",
+  "#e8eaf8", "#e6f4f6", "#eaf4e4", "#fceef0",
+  "#eceaf8", "#f3f4f6", "#eef3e0", "#f4eae4",
+  "#f4e8f4", "#f8e8f4", "#fbf6da", "#fbf0e2",
+];
+// How much of the dark tint replaces the theme's own dark background.
+const DARK_MIX = 0.75;
+const DARK_TINTS = [
+  "#0b1b30", "#0b1f1e", "#0c2415", "#2b0f10",
+  "#14183a", "#0a1e20", "#162010", "#2a1012",
+  "#1c1838", "#14141c", "#1e1e0e", "#2a1c14",
+  "#2a1030", "#2c0f34", "#221c08", "#2a1a0a",
+];
+
+function toRgb(hex) {
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!match) return null;
+  const full = match[1].length === 3 ? [...match[1]].map((c) => c + c).join("") : match[1];
+  return [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16));
+}
+const toHex = (rgb) => "#" + rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+const isLightColour = (rgb) => (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 > 0.5;
+
+/** Whether a background colour (a "#rrggbb" string) is light. A colour that cannot be read counts as light. */
+export function isLightBackground(background) {
+  const rgb = toRgb(background);
+  return rgb ? isLightColour(rgb) : true;
+}
+
+/** The colour of the page for a page-colour name on a theme background; the background itself for "none". */
+export function pageFill(name, background) {
+  const at = PAGE_COLOURS.indexOf(name);
+  const base = toRgb(background);
+  if (at < 1 || !base) return background;
+  if (isLightColour(base)) {
+    const tint = toRgb(LIGHT_TINTS[at - 1]);
+    return toHex(base.map((v, i) => (v * tint[i]) / 255));
+  }
+  // Mixed in rather than screened: screening a dark tint onto a dark grey page made the colours
+  // too bright and muddy (peach turned brown), where OneNote's dark pages stay nearly black.
+  const tint = toRgb(DARK_TINTS[at - 1]);
+  return toHex(base.map((v, i) => v * (1 - DARK_MIX) + tint[i] * DARK_MIX));
+}
+
+/** The colours of the paper lines and the margin line on a page of this colour. */
+export function paperInks(fill) {
+  return isLightBackground(fill) ? { line: "#c9e0f0", margin: "#e0605a" } : { line: "#1f4a75", margin: "#8a2a2a" };
+}
+
+export const emptyCanvas = () => ({ items: [], paper: "none", page: "none" });
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -111,13 +192,18 @@ export function parseCanvas(text) {
   if (!Array.isArray(list)) return { problem: "broken" };
   if (list.length > LIMITS.items) return { problem: "too-big" };
   const tools = old ? ["pen"] : ["pen", "highlighter", "shape", "note"];
+  // The paper and page colour exist from format 3 on. A value this version does not know makes
+  // the whole drawing read-only, like a bad item, so it is never saved over.
+  const paper = data.format >= 3 && data.paper !== undefined ? data.paper : "none";
+  const page = data.format >= 3 && data.page !== undefined ? data.page : "none";
+  if (!PAPERS.includes(paper) || !PAGE_COLOURS.includes(page)) return { problem: "broken" };
   let total = 0;
   for (const item of list) {
     if (!validItem(item, tools)) return { problem: "broken" };
     if (item.points) total += item.points.length;
   }
   if (total > LIMITS.totalPoints) return { problem: "too-big" };
-  return { canvas: { items: list.map(cleanItem) } };
+  return { canvas: { items: list.map(cleanItem), paper, page } };
 }
 
 const round = (value, places) => Number(value.toFixed(places));
@@ -133,8 +219,14 @@ function itemLine(item) {
 export function serializeCanvas(canvas) {
   const lines = canvas.items.map(itemLine);
   const body = lines.length ? "\n" + lines.join(",\n") + "\n" : "";
+  const paper = canvas.paper && canvas.paper !== "none" ? canvas.paper : null;
+  const page = canvas.page && canvas.page !== "none" ? canvas.page : null;
+  if (paper || page) {
+    const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
+    return `{"format":${FORMAT},"items":[${body}]${extra}}\n`;
+  }
   const penOnly = canvas.items.every((item) => item.tool === "pen");
-  return penOnly ? `{"format":1,"strokes":[${body}]}\n` : `{"format":${FORMAT},"items":[${body}]}\n`;
+  return penOnly ? `{"format":1,"strokes":[${body}]}\n` : `{"format":2,"items":[${body}]}\n`;
 }
 
 /** The number of stroke points in the whole drawing, to stop a drawing from growing without limit. */
@@ -403,6 +495,7 @@ export class DrawingHistory {
     for (const { index, item } of [...(entry.remove || [])].sort((a, b) => a.index - b.index)) canvas.items.splice(index, 0, item);
     if (entry.move) for (const item of entry.move.items) moveItem(item, -entry.move.dx, -entry.move.dy);
     if (entry.edit) Object.assign(entry.edit.item, entry.edit.before);
+    if (entry.setting) canvas[entry.setting.key] = entry.setting.before;
     this.redoList.push(entry);
     return true;
   }
@@ -414,6 +507,7 @@ export class DrawingHistory {
     for (const { item } of entry.remove || []) removeItem(canvas, item);
     if (entry.move) for (const item of entry.move.items) moveItem(item, entry.move.dx, entry.move.dy);
     if (entry.edit) Object.assign(entry.edit.item, entry.edit.after);
+    if (entry.setting) canvas[entry.setting.key] = entry.setting.after;
     this.undoList.push(entry);
     return true;
   }
