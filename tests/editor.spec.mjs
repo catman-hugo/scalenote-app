@@ -1982,7 +1982,12 @@ await test("typing finds pages by title and text, ranks titles first, marks the 
   await closePaletteBox(page);
   await openPaletteBox(page);
   await page.keyboard.type("quadratic");
-  await page.waitForSelector('#palette .palette-title:has-text("Maths")');
+  // This test fails now and then on a slow machine and never on a fast one. If it does, the
+  // message says what the box held, which is the part that was missing when it first failed.
+  await page.waitForSelector('#palette .palette-title:has-text("Maths")', { timeout: 10000 }).catch(async (error) => {
+    const state = await page.evaluate(() => ({ typed: document.querySelector("#palette .palette-input")?.value, rows: [...document.querySelectorAll("#palette .palette-row")].map((r) => r.textContent), status: document.querySelector("#palette .visually-hidden")?.textContent }));
+    throw new Error(`search for "quadratic" showed no Maths page: ${JSON.stringify(state)} (${error.message.split("\n")[0]})`);
+  });
   assert.equal(await page.locator("#palette .palette-where").first().textContent(), "School");
   assert.equal(await page.locator("#palette .palette-snippet mark").first().textContent(), "quadratic");
   assert.equal(await page.locator("#palette .palette-snippet").first().textContent(), "the quadratic formula");
