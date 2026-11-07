@@ -4502,6 +4502,17 @@ await test("the plain markdown view hides the id, keeps it when saving, and chan
   assert.ok(!(await page.locator("#editor").innerText()).includes(ID));
 }, idOptions);
 
+await test("an empty page with an id shows an empty page, not a kept-as-written block, and typing keeps the id", async (page) => {
+  await idVault(page, { ...idPages(), "Empty.md": `---\nid: ${ID}\n---\n\n` });
+  await openLinked(page, "Empty.md");
+  assert.equal(await page.locator(".raw-block").count(), 0, "no kept-as-written block");
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Empty.md")), `---\nid: ${ID}\n---\n\n`, "just looking changes nothing");
+  await page.click("#editor .ProseMirror");
+  await page.keyboard.type("hello");
+  await waitSaved(page);
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Empty.md")), `---\nid: ${ID}\n---\n\nhello\n`);
+}, idOptions);
+
 await test("a note that holds only an id shows an empty plain markdown view and still saves the id", async (page) => {
   await idVault(page, { ...idPages(), "Only.md": `---\nid: ${ID}\n---\n\nHello\n` });
   await openLinked(page, "Only.md");

@@ -199,3 +199,13 @@ test("the fallback view of a page shows only the body and still saves the same b
   assert.ok(!shown.includes(PAGE_ID), "the id is not in what the editor shows");
   assert.equal(composeNote(parts, doc, { serialize, assignId: false }), text);
 });
+
+test("a note with an id and an empty body opens as an empty page, not as a kept-as-written block", () => {
+  const parse = () => ({ type: "doc", content: [] });
+  const serialize = () => "";
+  for (const text of [`---\nid: ${PAGE_ID}\n---\n\n`, `---\nid: ${PAGE_ID}\n---\n`, `---\nid: ${PAGE_ID}\n---\n\n\n  \n`, "\n", ""]) {
+    const { parts, doc } = loadNote(text, { parse, serialize });
+    assert.ok(!doc.content.some((node) => node.type === "rawBlock"), JSON.stringify(text) + " shows no raw block");
+    assert.equal(composeNote(parts, doc, { serialize, assignId: false }), text, "and saves the same bytes");
+  }
+});
