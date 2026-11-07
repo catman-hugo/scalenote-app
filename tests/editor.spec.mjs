@@ -1972,6 +1972,15 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.isVisible("#palette"), false);
 });
 
+await test("a late close event from the earlier closing does not cancel the search of the box opened again", async (page) => {
+  await searchVault(page);
+  await openPaletteBox(page);
+  // What a slow machine does: the close event of the first closing arrives after the second opening.
+  await page.keyboard.type("quadratic");
+  await page.evaluate(() => document.querySelector("#palette").dispatchEvent(new Event("close")));
+  await page.waitForSelector('#palette .palette-title:has-text("Maths")', { timeout: 5000 });
+});
+
 await test("typing finds pages by title and text, ranks titles first, marks the match, and Enter opens the page", async (page) => {
   await searchVault(page);
   await openPaletteBox(page);

@@ -330,6 +330,7 @@ Owner request after 0.4.6 on the tablet (2026-11-07): do the same for the pen as
 - Extra feature (my choice): recolour the selection. With the loop tool and something selected, the colour menu recolours the selection (one undo step, no format change).
 - Tested here: 179 unit tests (`npm test`), 4 new browser tests (remove the square, long stray stroke with undo/redo, pen cut, recolour with undo), mutation-checked by hand (they fail without the behaviour), screenshots light and dark.
 - NOT tested, needs a device: the feel with a real pen on the tablet; whether 12 units of slack is right for stray detection; strokes drawn before 0.4.7 are not cut (by design).
+- Found the cause of the flaky search test: the search box reuses one dialog element and the close event of an earlier closing could arrive after a new opening and cancel that box's search. `palette.js` now ignores a close event while the box is open; a test sends such an event and fails without the fix.
 - Release notes: `docs/release-notes/0.4.7.md`.
 
 ## 0.3 wrap-up
