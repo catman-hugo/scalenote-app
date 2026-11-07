@@ -21,7 +21,17 @@
 
 export const FORMAT = 2;
 export const PEN_COLOURS = ["ink", "red", "blue", "green", "orange", "purple"];
-export const PEN_WIDTHS = [2, 4, 8];
+// Five line widths, picked with a slider. The first three are the thin, medium and thick of
+// 0.4.0 to 0.4.2, so older drawings land on the same stop. Any width up to 100 is still a valid
+// file; a width that is not a stop is shown at the nearest one.
+export const PEN_WIDTHS = [2, 4, 6, 8, 12];
+export function nearestWidthStop(width) {
+  let best = 0;
+  PEN_WIDTHS.forEach((value, index) => {
+    if (Math.abs(value - width) < Math.abs(PEN_WIDTHS[best] - width)) best = index;
+  });
+  return best;
+}
 export const SHAPES = ["line", "arrow", "rect", "ellipse"];
 // A highlighter line is this many times as wide as the pen line of the same width setting.
 export const HIGHLIGHT_FACTOR = 4;

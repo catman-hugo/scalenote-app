@@ -2,6 +2,7 @@
 // of a version or only the parts you choose. This file only draws and collects choices; the
 // restore itself (and the checks around it) is done by `restore` from main.js.
 
+import { hideNoteId } from "./blocks.js";
 import { applyChosen, countChanges, diffLines } from "./historyrules.js";
 import { strings } from "./strings.js";
 
@@ -199,7 +200,7 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
     if (!chosenId) return;
     detail.append(viewSwitch());
     if (view === "text") {
-      const lines = versionText.split(/(?<=\n)/).slice(0, MAX_LINES * 5);
+      const lines = hideNoteId(versionText).text.split(/(?<=\n)/).slice(0, MAX_LINES * 5);
       detail.append(make("pre", "history-lines history-whole", lines.join("")));
     } else {
       detail.append(...drawChanges());

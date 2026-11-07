@@ -14,9 +14,13 @@ import { withoutStyleSyntax } from "./inlinestyles.js";
 import { withoutTags } from "./tagrules.js";
 import { withoutWikilinks } from "./wikilinkrules.js";
 
-/** Splits off a leading `--- ... ---` frontmatter block. Returns exact text on both sides. */
+/**
+ * Splits off a leading `--- ... ---` frontmatter block. Returns exact text on both sides.
+ * Some Windows editors start a file with an invisible byte-order mark; it stays with the
+ * frontmatter so the block is still recognised (and so it is saved back unchanged).
+ */
 export function splitFrontmatter(text) {
-  const match = /^---[ \t]*\r?\n([\s\S]*?\r?\n)?---[ \t]*(\r?\n|$)/.exec(text);
+  const match = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?\r?\n)?---[ \t]*(\r?\n|$)/.exec(text);
   if (!match) return { front: "", body: text };
   return { front: match[0], body: text.slice(match[0].length) };
 }
@@ -245,4 +249,42 @@ export function withNoteId(front, id) {
   const closing = trimmed.lastIndexOf("---");
   if (closing <= 0 || trimmed[closing - 1] !== "\n") return front;
   return `${front.slice(0, closing)}id: ${id}${newline}${front.slice(closing)}`;
+}
+
+// ---------- hiding the page id ----------
+//
+// The id is bookkeeping for the app (it names the page's history folder). Nobody should have to
+// see or keep it while using the app, so the plain-markdown view shows the note without it.
+// `hideNoteId` takes the id line out and remembers exactly what it took; `restoreNoteId` puts
+// it back when the text is saved. If the text is not changed, the result is the original bytes.
+
+/**
+ * Returns the text without its `id:` line, plus what is needed to put it back (`null` when
+ * the note has no id). A frontmatter block that held nothing but the id is removed whole.
+ */
+export function hideNoteId(text) {
+  const { front, body } = splitFrontmatter(text);
+  const lines = front.match(/[^\n]*\n|[^\n]+$/g) || [];
+  const index = lines.findIndex((line, i) => i > 0 && /^id:/.test(line));
+  if (index < 0) return { text, hidden: null };
+  const rest = lines.filter((_, i) => i !== index);
+  const onlyId = rest.length === 2 && /^\uFEFF?---/.test(rest[0]) && /^---/.test(rest[1]);
+  if (!onlyId) return { text: rest.join("") + body, hidden: { kind: "line", line: lines[index], index } };
+  // Withholding the blank line that follows keeps the visible text starting at the first word.
+  const blank = /^\r?\n/.exec(body);
+  const prefix = front + (blank ? blank[0] : "");
+  return { text: body.slice(blank ? blank[0].length : 0), hidden: { kind: "whole", prefix } };
+}
+
+/** Puts back what `hideNoteId` took out of `text`. Does nothing when nothing was hidden. */
+export function restoreNoteId(text, hidden) {
+  if (!hidden) return text;
+  if (hidden.kind === "whole") return hidden.prefix + text;
+  const { front, body } = splitFrontmatter(text);
+  if (front === "") return `---\n${hidden.line.replace(/\r?\n$/, "")}\n---\n\n${text}`;
+  const lines = front.match(/[^\n]*\n|[^\n]+$/g) || [];
+  const at = Math.min(hidden.index, lines.length - 1);
+  const line = hidden.line.endsWith("\n") ? hidden.line : hidden.line + (front.includes("\r\n") ? "\r\n" : "\n");
+  lines.splice(at, 0, line);
+  return lines.join("") + body;
 }

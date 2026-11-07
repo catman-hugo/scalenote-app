@@ -4,7 +4,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { splitBlocks, splitFrontmatter, joinBlocks, withNoteId } from "../web/blocks.js";
+import { hideNoteId, restoreNoteId, splitBlocks, splitFrontmatter, joinBlocks, withNoteId } from "../web/blocks.js";
 import { loadNote, composeNote } from "../web/compose.js";
 
 const kinds = (text) => splitBlocks(splitFrontmatter(text).body).blocks.map((b) => b.kind);
@@ -149,4 +149,53 @@ test("well-formed text styles are editable; any other html or marker keeps the b
   ]) {
     assert.equal(kinds(text)[0], "raw", text);
   }
+});
+
+// ---------- the page id is never shown ----------
+
+const PAGE_ID = "0b9c7e52-3f1a-4d6e-9a58-2c7d41e6b0aa";
+
+test("a byte-order mark before the frontmatter does not stop it being recognised", () => {
+  const text = `\uFEFF---\nid: ${PAGE_ID}\n---\n\nHello\n`;
+  const { front, body } = splitFrontmatter(text);
+  assert.equal(front + body, text);
+  assert.equal(body, "\nHello\n");
+});
+
+test("hiding the id takes out only the id and putting it back gives the same bytes", () => {
+  for (const text of [
+    `---\nid: ${PAGE_ID}\n---\n\nHello\n`,
+    `---\r\nid: ${PAGE_ID}\r\n---\r\n\r\nHello\r\n`,
+    `\uFEFF---\nid: ${PAGE_ID}\n---\nHello\n`,
+    `---\nid: ${PAGE_ID}\ntags: [a]\n---\n\nHello\n`,
+    `---\ntitle: T\nid: ${PAGE_ID}\n---\n\nHello\n`,
+    `---\nid: ${PAGE_ID}\n---\n`,
+  ]) {
+    const { text: shown, hidden } = hideNoteId(text);
+    assert.ok(!shown.includes(PAGE_ID), "the id is not in the shown text");
+    assert.equal(restoreNoteId(shown, hidden), text, "untouched text comes back byte for byte");
+  }
+  assert.equal(hideNoteId(`---\nid: ${PAGE_ID}\n---\n\nHello\n`).text, "Hello\n");
+  assert.equal(hideNoteId(`---\nid: ${PAGE_ID}\ntags: [a]\n---\n\nHello\n`).text, "---\ntags: [a]\n---\n\nHello\n");
+});
+
+test("a note without an id is left alone, and an edit made while the id is hidden keeps the id", () => {
+  assert.deepEqual(hideNoteId("# Plain\n"), { text: "# Plain\n", hidden: null });
+  assert.equal(restoreNoteId("# Plain\n", null), "# Plain\n");
+  const { hidden } = hideNoteId(`---\nid: ${PAGE_ID}\ntags: [a]\n---\n\nHello\n`);
+  assert.equal(restoreNoteId("---\ntags: [a, b]\n---\n\nHello there\n", hidden), `---\nid: ${PAGE_ID}\ntags: [a, b]\n---\n\nHello there\n`);
+  // Even if the properties block was deleted in the box, the id is not lost.
+  assert.equal(restoreNoteId("Only text\n", hidden), `---\nid: ${PAGE_ID}\n---\n\nOnly text\n`);
+});
+
+test("the fallback view of a page shows only the body and still saves the same bytes", () => {
+  // A stand-in parser that rejects everything makes every block raw; the safety net is
+  // forced by a serializer that changes the text.
+  const text = `---\nid: ${PAGE_ID}\n---\n\n# Plan\n\nBody\n`;
+  const parse = () => ({ type: "doc", content: [{ type: "paragraph" }, { type: "paragraph" }] });
+  const serialize = () => "changed";
+  const { parts, doc } = loadNote(text, { parse, serialize });
+  const shown = JSON.stringify(doc);
+  assert.ok(!shown.includes(PAGE_ID), "the id is not in what the editor shows");
+  assert.equal(composeNote(parts, doc, { serialize, assignId: false }), text);
 });

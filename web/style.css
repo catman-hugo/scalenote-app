@@ -821,7 +821,13 @@ body.block-dragging .float-bar { visibility: hidden; }
 .canvas-line { display: block; width: 16px; background: var(--text); border-radius: 1px; }
 .canvas-line[data-size="0"] { height: 2px; }
 .canvas-line[data-size="1"] { height: 4px; }
-.canvas-line[data-size="2"] { height: 8px; }
+.canvas-line[data-size="2"] { height: 6px; }
+.canvas-line[data-size="3"] { height: 8px; }
+.canvas-line[data-size="4"] { height: 12px; }
+/* The width menu: a slider with five stops and a line that shows the width chosen. */
+.canvas-menu-slider { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: var(--space-2); width: 11rem; }
+.canvas-menu-slider .canvas-line { width: 100%; }
+.canvas-slider { width: 100%; margin: 0; accent-color: var(--accent); }
 .canvas-problem { margin: 0; padding: var(--space-2) var(--space-3); color: var(--bad); border-bottom: 1px solid var(--line); }
 .canvas-problem[hidden] { display: none; }
 .canvas-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }

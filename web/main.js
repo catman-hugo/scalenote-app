@@ -9,7 +9,7 @@ import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanRecent, removeRecent } from "./recent.js";
 import { backend, BackendError } from "./backend.js";
 import { composeNote, loadNote } from "./compose.js";
-import { newNoteId, withNoteId } from "./blocks.js";
+import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { createBacklinks } from "./backlinks.js";
@@ -1236,8 +1236,11 @@ async function toggleCanvas() {
 // A text box turns every line ending into "\n" inside. A note with Windows line endings
 // (all "\r\n") is shown with "\n" and gets "\r\n" back when saved, so nothing changes. A note
 // that mixes both cannot be given back exactly, so it is shown read-only.
-function fillSource(text) {
+// The page id is left out of the box and put back when the box is read (hideNoteId).
+function fillSource(fullText) {
   const box = el("source");
+  const { text, hidden } = hideNoteId(fullText);
+  app.hiddenId = hidden;
   const crlfCount = (text.match(/\r\n/g) || []).length;
   const lfCount = (text.match(/\n/g) || []).length;
   const loneCr = /\r(?!\n)/.test(text);
@@ -1250,7 +1253,7 @@ function fillSource(text) {
 
 function sourceText() {
   const value = el("source").value;
-  return app.lineEnding === "\r\n" ? value.replace(/\n/g, "\r\n") : value;
+  return restoreNoteId(app.lineEnding === "\r\n" ? value.replace(/\n/g, "\r\n") : value, app.hiddenId);
 }
 
 // The text the open note has right now, without adding anything (no id is created here).
