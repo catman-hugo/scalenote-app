@@ -20,7 +20,14 @@
 // format 1, so an older ScaleNote on another device can keep opening it.
 
 export const FORMAT = 2;
-export const PEN_COLOURS = ["ink", "red", "blue", "green", "orange", "purple"];
+// The pen colours, in the order of the picker: three rows of six, six, and four. The first
+// version had only ink, red, blue, green, orange and purple; those names still mean the same
+// colour family, so older drawings open as before (a little brighter than they were).
+export const PEN_COLOURS = [
+  "yellow", "orange", "pink", "red", "indigo", "purple",
+  "raspberry", "navy", "blue", "sky", "green", "lime",
+  "ink", "charcoal", "grey", "silver",
+];
 // Five line widths, picked with a slider. The first three are the thin, medium and thick of
 // 0.4.0 to 0.4.2, so older drawings land on the same stop. Any width up to 100 is still a valid
 // file; a width that is not a stop is shown at the nearest one.
@@ -355,8 +362,10 @@ export function wrapText(text, maxWidth, measure) {
 }
 
 /** The height a note needs for its text: at least the minimum, plus padding around the lines. */
-export function noteHeight(lineCount) {
-  return Math.max(NOTE.minHeight, lineCount * NOTE.lineHeight + 2 * NOTE.padding);
+// The height the text itself needs. A note is never shorter than this, so no text is hidden,
+// but it may be taller: its size is what the person drew or dragged it to.
+export function noteTextHeight(lineCount) {
+  return lineCount * NOTE.lineHeight + 2 * NOTE.padding;
 }
 
 // Takes an item out by identity. A missing item is ignored: splice(-1, 1) would remove the last one.
@@ -416,4 +425,12 @@ export class DrawingHistory {
   get canRedo() {
     return this.redoList.length > 0;
   }
+}
+
+// Shapes can snap to a grid so that two shapes drawn at different times line up exactly,
+// instead of one edge missing the other by a pixel. The grid is in drawing space (not screen
+// pixels), so it is the same at every zoom level and in every session.
+export const SHAPE_GRID = 20;
+export function snapToGrid(value, step = SHAPE_GRID) {
+  return Math.round(value / step) * step;
 }

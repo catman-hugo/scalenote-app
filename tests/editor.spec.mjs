@@ -1923,7 +1923,16 @@ await test("restoring while the old name is taken keeps both, and an item that i
 
 // ---------- 0.3.0: search and commands ----------
 
-const openPaletteBox = async (page) => { await page.keyboard.press("Control+k"); await page.waitForSelector("#palette[open] .palette-input"); };
+// The box is ready when its input is empty and has the focus: typing before that can land in the
+// old text or be lost, which made the search tests fail now and then on a slow machine.
+const openPaletteBox = async (page) => {
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector("#palette[open] .palette-input");
+  await page.waitForFunction(() => {
+    const input = document.querySelector("#palette .palette-input");
+    return input && document.activeElement === input && input.value === "";
+  });
+};
 // Escape closes the box a moment later. Opening it again before that finished would find the old box
 // still open, and what is typed next would go into a box that is about to disappear.
 const closePaletteBox = async (page) => { await page.keyboard.press("Escape"); await page.waitForSelector("#palette", { state: "hidden" }); };
@@ -4000,6 +4009,12 @@ async function dragPath(page, corners, steps = 6) {
   for (const [x, y] of corners.slice(1)) await page.mouse.move(box.x + x, box.y + y, { steps });
   await page.mouse.up();
 }
+// A sticky note is drawn as a box, like a shape; its text box opens when the pointer is released.
+async function dragNote(page, from, to) {
+  await tool(page, "Sticky note");
+  await dragPath(page, [from, to]);
+  await page.waitForSelector(".canvas-note-input");
+}
 const barrelEvents = (page, points, buttons) => page.evaluate(([pts, b]) => {
   const surface = document.querySelector(".canvas-surface");
   const box = surface.getBoundingClientRect();
@@ -4070,7 +4085,7 @@ await test("each shape is drawn by dragging, a stray tap draws nothing, and a sh
   await tool(page, "Undo");
   await waitSaved(page);
   assert.equal((await items(page)).length, 4);
-}, ctxOpts);
+}, { settings: existingUser({ updates: false, snapShapes: false }) });
 
 await test("a sticky note is typed into a box on the sheet, saved with its text, and a stray tap leaves nothing", async (page) => {
   await canvasVault(page);
@@ -4078,14 +4093,15 @@ await test("a sticky note is typed into a box on the sheet, saved with its text,
   await tool(page, "Sticky note");
   const box = await sheetBox(page);
   await page.mouse.click(box.x + 300, box.y + 40);
-  await page.waitForSelector(".canvas-note-input");
+  assert.equal(await page.locator(".canvas-note-input").count(), 0, "a tap does not choose a size for the note");
+  await page.waitForSelector(".toast");
+  await dragNote(page, [300, 40], [480, 100]);
   await page.keyboard.press("Escape");
   await page.waitForSelector(".canvas-note-input", { state: "detached" });
   await page.waitForTimeout(1200);
   assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), undefined, "an empty note adds nothing, so nothing is written");
   await chooseColour(page, "orange");
-  await page.mouse.click(box.x + 100, box.y + 100);
-  await page.waitForSelector(".canvas-note-input");
+  await dragNote(page, [100, 100], [280, 180]);
   await page.keyboard.type("Buy <b>milk</b> & \"eggs\"\nand a very long word that has to be wrapped inside the note");
   await page.keyboard.press("Control+Enter");
   await waitSaved(page);
@@ -4093,8 +4109,9 @@ await test("a sticky note is typed into a box on the sheet, saved with its text,
   assert.equal(note.tool, "note");
   assert.equal(note.color, "orange");
   assert.equal(note.text, 'Buy <b>milk</b> & "eggs"\nand a very long word that has to be wrapped inside the note');
-  assert.ok(note.h > 60, "a longer text makes a taller note");
-  assert.equal(note.w, 180);
+  assert.ok(note.h > 80, "a longer text than the drawn box holds makes the note taller");
+  assert.equal(note.w, 180, "the width is the width that was drawn");
+  const tall = note.h;
   assert.equal(await page.locator("#canvasHost b").count(), 0, "the text is never read as markup");
   // Tapping the note edits it; Undo goes back to the earlier text.
   await page.mouse.click(box.x + 124, box.y + 120);
@@ -4103,19 +4120,54 @@ await test("a sticky note is typed into a box on the sheet, saved with its text,
   await page.mouse.click(box.x + 400, box.y + 300);
   await waitSaved(page);
   assert.equal((await items(page))[0].text, "Changed");
-  assert.equal((await items(page))[0].h, 60);
+  assert.equal((await items(page))[0].h, tall, "a shorter text does not shrink the note");
   await tool(page, "Undo");
   await waitSaved(page);
   assert.match((await items(page))[0].text, /^Buy/);
 }, ctxOpts);
 
+await test("a sticky note is drawn as a box and gets that size, and a note can be resized from its corner", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await dragNote(page, [100, 100], [340, 220]);
+  await page.keyboard.type("Hi");
+  await page.keyboard.press("Control+Enter");
+  await waitSaved(page);
+  let note = (await items(page))[0];
+  assert.deepEqual([note.x, note.y, note.w, note.h], [80, 80, 240, 120], "the box that was drawn, on the grid");
+
+  // Tap the note with the select tool: it is selected and shows its handle; drag the handle.
+  await tool(page, "Select with a loop");
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 200, box.y + 160);
+  await page.mouse.move(box.x + 344, box.y + 224); // the bottom right corner on the screen
+  await page.mouse.down();
+  await page.mouse.move(box.x + 420, box.y + 300, { steps: 6 });
+  await page.mouse.up();
+  await waitSaved(page);
+  note = (await items(page))[0];
+  assert.deepEqual([note.x, note.y, note.w, note.h], [80, 80, 320, 200], "the corner went to the pointer, on the grid");
+
+  // It cannot be made too small to show its text.
+  await page.mouse.move(box.x + 424, box.y + 304);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 110, box.y + 110, { steps: 6 });
+  await page.mouse.up();
+  await waitSaved(page);
+  note = (await items(page))[0];
+  assert.ok(note.w >= 20 && note.h >= 19 + 16, "never smaller than the limits and the text: " + JSON.stringify(note));
+
+  // One undo takes the resize back.
+  await tool(page, "Undo");
+  await waitSaved(page);
+  note = (await items(page))[0];
+  assert.deepEqual([note.w, note.h], [320, 200]);
+}, ctxOpts);
+
 await test("a note still being typed is saved when the page is left or the window is hidden", async (page) => {
   await canvasVault(page);
   await openCanvas(page);
-  await tool(page, "Sticky note");
-  const box = await sheetBox(page);
-  await page.mouse.click(box.x + 100, box.y + 100);
-  await page.waitForSelector(".canvas-note-input");
+  await dragNote(page, [100, 100], [280, 180]);
   await page.keyboard.type("Half written");
   await page.click("#canvasToggle");
   await waitSaved(page);
@@ -4192,7 +4244,7 @@ await test("selecting and moving works with a pen, with a finger-free phone layo
   await waitSaved(page);
   const rect = (await items(page))[0];
   assert.ok(rect.a[0] > 100 && Math.abs(rect.a[1] - (56 + 40)) < 2);
-}, ctxOpts);
+}, { settings: existingUser({ updates: false, snapShapes: false }) });
 
 await test("the pen button erases by default, can select with a loop, or can be set to do nothing", async (page) => {
   await canvasVault(page);
@@ -4238,9 +4290,7 @@ await test("the drawing tools can be used in any order, quickly, with huge notes
       await page.keyboard.press("Escape");
     }
   }
-  await tool(page, "Sticky note");
-  await page.mouse.click(box.x + 300, box.y + 250);
-  await page.waitForSelector(".canvas-note-input");
+  await dragNote(page, [300, 250], [480, 330]);
   await page.fill(".canvas-note-input", "word ".repeat(1000));
   await page.keyboard.press("Control+Enter");
   await waitSaved(page);
@@ -4286,6 +4336,66 @@ await test("on a phone the drawing toolbar takes at most two lines", async (page
   const height = (await page.locator(".canvas-toolbar").boundingBox()).height;
   assert.ok(height < 110, `two lines at most: ${height}px`);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("shapes snap to a grid by default, so shapes drawn at different times line up, and the setting turns it off", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  // Two rectangles that are meant to share an edge, drawn a few pixels apart.
+  await dragPath(page, [[43, 143], [141, 221]]);
+  await dragPath(page, [[139, 145], [239, 218]]);
+  await waitSaved(page);
+  let saved = await items(page);
+  const corners = saved.flatMap((i) => [...i.a, ...i.b]);
+  assert.ok(corners.every((v) => Math.abs(v / 20 - Math.round(v / 20)) < 1e-9), "every corner is on the 20 unit grid: " + corners);
+  assert.equal(saved[0].b[0], saved[1].a[0], "the right edge of the first is the left edge of the second");
+  assert.equal(saved[0].a[1], saved[1].a[1], "and their tops match");
+
+  await page.click("#openSettings");
+  const box = page.locator('#settings label:has-text("Snap shapes to a grid") input');
+  assert.equal(await box.isChecked(), true, "on by default");
+  await box.uncheck();
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await dragPath(page, [[43, 343], [141, 421]]);
+  await waitSaved(page);
+  saved = await items(page);
+  assert.ok(saved[2].a.some((v) => Math.abs(v / 20 - Math.round(v / 20)) > 0.01), "off: the corner is where the pointer was");
+  const kept = await page.evaluate(() => JSON.parse(window.__mock.getSettings() || "{}").snapShapes);
+  assert.equal(kept, false, "the choice is saved");
+}, ctxOpts);
+
+// Is there ink at this spot of the sheet? Read from the pixels the canvas really shows.
+const inkAt = (page, x, y) => page.evaluate(([px, py]) => {
+  const canvas = document.querySelector(".canvas-surface");
+  const ratio = canvas.width / canvas.getBoundingClientRect().width;
+  const [r, g, b, a] = canvas.getContext("2d").getImageData(Math.round(px * ratio), Math.round(py * ratio), 1, 1).data;
+  return a > 0 && r + g + b < 600;
+}, [x, y]);
+
+await test("pinching zooms around the middle of the two fingers, in and out, without the drawing drifting", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await chooseWidth(page, 4);
+  // A short thick mark right under where the fingers will be.
+  await drawLine(page, [236, 200], [264, 200]);
+  assert.equal(await inkAt(page, 250, 200), true, "the mark is drawn");
+  const pinch = async (from, to) => {
+    await touchEvents(page, 21, "pointerdown", 250 - from, 200);
+    await touchEvents(page, 22, "pointerdown", 250 + from, 200);
+    for (let step = 1; step <= 12; step++) {
+      const half = from + ((to - from) * step) / 12;
+      await touchEvents(page, 21, "pointermove", 250 - half, 200);
+      await touchEvents(page, 22, "pointermove", 250 + half, 200);
+    }
+    await touchEvents(page, 21, "pointerup", 250 - to, 200);
+    await touchEvents(page, 22, "pointerup", 250 + to, 200);
+  };
+  await pinch(40, 120); // fingers apart: zoom in
+  assert.equal(await inkAt(page, 250, 200), true, "after zooming in, the mark is still under the middle of the fingers");
+  await pinch(120, 30); // fingers together: zoom out
+  assert.equal(await inkAt(page, 250, 200), true, "after zooming out, too");
+}, ctxOpts);
 
 await test("the shape menu opens under its button, shows the shape used last, and closes by choosing, Escape or a press elsewhere", async (page) => {
   await canvasVault(page);
@@ -4502,6 +4612,17 @@ await test("the plain markdown view hides the id, keeps it when saving, and chan
   assert.ok(!(await page.locator("#editor").innerText()).includes(ID));
 }, idOptions);
 
+await test("an empty page with an id shows an empty page, not a kept-as-written block, and typing keeps the id", async (page) => {
+  await idVault(page, { ...idPages(), "Empty.md": `---\nid: ${ID}\n---\n\n` });
+  await openLinked(page, "Empty.md");
+  assert.equal(await page.locator(".raw-block").count(), 0, "no kept-as-written block");
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Empty.md")), `---\nid: ${ID}\n---\n\n`, "just looking changes nothing");
+  await page.click("#editor .ProseMirror");
+  await page.keyboard.type("hello");
+  await waitSaved(page);
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Empty.md")), `---\nid: ${ID}\n---\n\nhello\n`);
+}, idOptions);
+
 await test("a note that holds only an id shows an empty plain markdown view and still saves the id", async (page) => {
   await idVault(page, { ...idPages(), "Only.md": `---\nid: ${ID}\n---\n\nHello\n` });
   await openLinked(page, "Only.md");
@@ -4571,11 +4692,8 @@ if (shots && !process.env.SHOTS_ONLY) {
       await tool(page, "Arrow");
       await chooseColour(page, "red");
       await dragPath(page, [[100, 330], [250, 280]]);
-      await tool(page, "Sticky note");
       await chooseColour(page, "green");
-      const box = await sheetBox(page);
-      await page.mouse.click(box.x + 40, box.y + 360);
-      await page.waitForSelector(".canvas-note-input");
+      await dragNote(page, [40, 360], [300, 440]);
       await page.keyboard.type("Ask about the exam: which chapters, and is the codon table given?");
       await page.screenshot({ path: name("2-typing-a-note") });
       await page.keyboard.press("Control+Enter");
@@ -4651,6 +4769,8 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
       await drawLine(page, [40, 100], [220, 100]);
       await page.click('.canvas-toolbar [data-menu="width"]');
       await page.screenshot({ path: name("1-width-slider") });
+      await page.click('.canvas-toolbar [data-menu="colour"]');
+      await page.screenshot({ path: name("1b-colour-menu") });
       await context.close();
     }
   }

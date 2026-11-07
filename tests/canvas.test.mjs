@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  moveItem, noteHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText,
-} from "../web/canvasrules.js";
+  moveItem, noteTextHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -50,10 +49,10 @@ test("an old reader's file is still read, and new kinds are not allowed in the o
 });
 
 test("anything not understood is refused as a whole, never partly kept", () => {
-  const stroke1 = (extra) => `{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[0,0,0.5]]${extra || ""}},{"tool":"pen","color":"pink","width":4,"points":[[0,0,0.5]]}]}`;
+  const stroke1 = (extra) => `{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[0,0,0.5]]${extra || ""}},{"tool":"pen","color":"teal","width":4,"points":[[0,0,0.5]]}]}`;
   const bad = [
     "", "not json", "[]", "null", '{"format":1}', '{"format":1,"strokes":{}}', '{"format":0,"strokes":[]}', '{"format":1.5,"strokes":[]}', '{"format":"2","items":[]}', '{"format":2}',
-    '{"format":1,"strokes":[{"tool":"pen","color":"pink","width":4,"points":[[0,0,0.5]]}]}',
+    '{"format":1,"strokes":[{"tool":"pen","color":"teal","width":4,"points":[[0,0,0.5]]}]}',
     '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":-1,"points":[[0,0,0.5]]}]}',
     '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[]}]}',
     '{"format":1,"strokes":[{"tool":"pen","color":"ink","width":4,"points":[[0,0]]}]}',
@@ -68,7 +67,7 @@ test("anything not understood is refused as a whole, never partly kept", () => {
     '{"format":2,"items":[{"tool":"shape","kind":"line","color":"ink","width":4,"a":[0,0],"b":[1e9,1]}]}',
     '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":10,"h":60,"text":"x"}]}',
     '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":5}]}',
-    '{"format":2,"items":[{"tool":"note","color":"pink","x":0,"y":0,"w":180,"h":60,"text":"x"}]}',
+    '{"format":2,"items":[{"tool":"note","color":"teal","x":0,"y":0,"w":180,"h":60,"text":"x"}]}',
     `{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":"${"a".repeat(LIMITS.noteText + 1)}"}]}`,
     '{"format":2,"items":[{"tool":"highlighter","color":"ink","width":4,"points":[]}]}',
     '{"format":2,"items":[{"tool":"eraser"}]}',
@@ -191,8 +190,8 @@ test("note text is cut into lines that fit, keeping new lines and breaking very 
   assert.deepEqual(wrapText("abcdefghijkl", 50, measure), ["abcde", "fghij", "kl"]);
   assert.deepEqual(wrapText("", 80, measure), [""]);
   assert.ok(wrapText("x ".repeat(3000), 30, measure).length > 100, "huge text does not hang or throw");
-  assert.equal(noteHeight(1), NOTE.minHeight, "a short note has the minimum height");
-  assert.equal(noteHeight(10), 10 * NOTE.lineHeight + 2 * NOTE.padding);
+  assert.equal(noteTextHeight(1), NOTE.lineHeight + 2 * NOTE.padding, "one line needs a line plus the padding");
+  assert.equal(noteTextHeight(10), 10 * NOTE.lineHeight + 2 * NOTE.padding);
 });
 
 test("the pen is thin for a light touch, plain for a mouse, thick for a firm one", () => {
@@ -261,4 +260,13 @@ test("history is limited so a long session does not grow without end", () => {
   const history = new DrawingHistory(3);
   for (let i = 0; i < 10; i++) history.record({ add: stroke([[i, 0, 0.5]]) });
   assert.equal(history.undoList.length, 3);
+});
+
+test("snapToGrid puts a value on the nearest grid line and leaves grid values alone", () => {
+  assert.equal(SHAPE_GRID, 20);
+  assert.equal(snapToGrid(16), 20);
+  assert.equal(snapToGrid(9), 0);
+  assert.equal(snapToGrid(-31), -40);
+  assert.equal(snapToGrid(140), 140);
+  assert.equal(snapToGrid(37, 10), 40);
 });

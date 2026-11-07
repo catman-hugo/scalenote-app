@@ -40,7 +40,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", snapShapes: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   expanded: new Set(),
   selectedFolder: "",
@@ -143,6 +143,8 @@ async function loadSettings() {
       showCovers: parsed.showCovers === true,
       // What the side button of a pen does on the canvas.
       penButton: PEN_BUTTONS.includes(parsed.penButton) ? parsed.penButton : "erase",
+      // Shapes snap to a grid unless turned off.
+      snapShapes: parsed.snapShapes !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
@@ -279,7 +281,17 @@ function canvasSettingsRows() {
   const row = document.createElement("label");
   row.className = "setting-row";
   row.append(textElement("span", s.penButton, "setting-label"), choice);
-  return [textElement("h3", s.canvasHeading, "setting-heading"), row, textElement("p", s.penButtonHint, "setting-hint")];
+  const snap = document.createElement("input");
+  snap.type = "checkbox";
+  snap.checked = app.settings.snapShapes;
+  snap.addEventListener("change", () => {
+    app.settings.snapShapes = snap.checked;
+    saveSettings();
+  });
+  const snapRow = document.createElement("label");
+  snapRow.className = "setting-row";
+  snapRow.append(textElement("span", s.snapShapes, "setting-label"), snap);
+  return [textElement("h3", s.canvasHeading, "setting-heading"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint")];
 }
 
 function setShowBacklinks(on) {
@@ -1160,6 +1172,7 @@ function ensureCanvasView() {
     onChange: () => app.canvasSave.touch(),
     onNotice: (text) => showToast(text),
     penButton: () => app.settings.penButton,
+    snapShapes: () => app.settings.snapShapes,
   });
   app.canvasSave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCanvas, onStatus: setStatus });
   // Leaving the window (or the app being put away on a phone) ends a note being typed, so its

@@ -362,3 +362,26 @@ Cost. Choosing a colour or width takes two presses instead of one. A menu is one
 Decision. The `id:` line in a page's properties stays in the file (history folders are named by it) but is never shown while using the app: the plain markdown view and the history "Text" view leave it out and put it back on save, search never matches it, and the fallback view of a page keeps all properties out of the shown block. The properties block is also recognised after a byte-order mark. Pen width is a slider with five stops (2, 4, 6, 8, 12) instead of three buttons; the file format is unchanged. This tidy-up ships as 0.4.3, so drawing over text becomes 0.4.4, the `/canvas` block 0.4.5, split mode 0.4.6 and PDF import 0.4.7.
 Alternatives. Moving the id out of the file into a separate index (rejected: the page would lose its history if the index is lost, and Obsidian users copying a folder would lose it). Showing other properties too (not asked for, they are the user's own).
 Cost. In the plain markdown view the first lines differ from the file on disk; the id is put back in the same place, and unchanged text is saved byte for byte. A user who deletes the whole properties block in that view still keeps the id (it is added back).
+
+## 2026-11-07: Shapes snap to a grid by default, with a setting to turn it off
+
+Decision. New shape corners snap to a 20 unit grid in drawing space. The setting "Snap shapes to a grid" is on by default and can be turned off in Settings. The grid is not drawn on the sheet.
+Alternatives. Snapping to other shapes' edges (smarter, but much more code and surprising on a pen); snapping only while a key is held (no key on a tablet); drawing a visible grid (not asked for, adds clutter).
+Cost. A shape cannot be placed finer than the grid while the setting is on, and a very short drag may snap to nothing and be ignored as a stray tap. Turning the setting off gives the old free placement.
+
+## 2026-11-07: The pen palette is OneNote's sixteen colours, as fixed colours
+
+Decision. The colour picker offers sixteen colours in the order and grid of OneNote's pen palette. They are fixed colours, the same on light and dark, except ink (black on light, white on dark). The six names from 0.4.0 keep their meaning, so old drawings open; ten new names are added. The file format number does not change.
+Alternatives. Free colour picker with any hex value (needs a new file format and an unlimited set of values to check); keeping the muted text colours of the page (they were chosen for text, not for ink).
+Cost. A drawing that uses a new colour opens read-only in 0.4.2 and older. Dark grey is hard to see on the dark theme, as in OneNote.
+
+## 2026-11-07: Sticky notes are drawn as a box and can be resized
+
+Decision. As in ScaleNote v1, a new sticky note is made by dragging a box with the note tool, and the note gets that size. A tap does nothing but show a hint. A note can be resized by selecting it (tap with the loop tool) and dragging the handle in its bottom right corner. A note is never shorter than its text needs, but it does not shrink when text is deleted.
+Alternatives. Keep the tap with a default size next to the drag (the owner asked for the size not to be chosen for them); resize with edge handles or a pinch (more code, more ways to miss on a tablet).
+Cost. Creating a note takes a drag instead of a tap, and a note that grew for a long text stays tall after the text is cut.
+
+## 2026-11-07: Work done after 0.4.3 was merged ships as 0.4.4
+
+Decision. 0.4.3 was merged and tagged with the pen width slider and the hidden page id. The sticky note boxes, the shape grid, the pen colours, the pinch zoom fix and the empty-page fix were made after that on the same branch and are a new release, 0.4.4, with its own branch and pull request. Drawing over text moves to 0.4.5, the `/canvas` block to 0.4.6, split mode to 0.4.7 and PDF import to 0.4.8. From now on work is not pushed to a branch whose pull request may already be merged: a new branch is made for each new request.
+Cost. The plan numbers moved again.

@@ -86,6 +86,9 @@ export function loadNote(text, { parse, serialize }) {
   // Safety net: opening a note and saving it untouched must give the same bytes. If that
   // ever fails, show the whole note as one raw block rather than risk changing it.
   if (again !== text) {
+    // A page with only properties and blank lines is just an empty page. The blank lines are
+    // kept apart (`tail`) so saving it untouched writes the same bytes.
+    if (body.trim() === "") return { parts: { front, lead: body, count: 0, tail: body }, doc };
     return wholeBodyRaw(text, { parse, serialize });
   }
   return { parts, doc };
@@ -139,8 +142,9 @@ export function composeNote(parts, doc, { serialize, assignId = true, makeId = n
     body += piece.text + gapAfter(piece, next, parts.count);
   });
   const lead = pieces.length ? parts.lead : "";
+  const tail = pieces.length ? "" : parts.tail || "";
   const front = assignId ? withNoteId(parts.front, makeId()) : parts.front;
-  return front + lead + body;
+  return front + lead + body + tail;
 }
 
 // The blank lines saved with a block are only right while the block still has the same

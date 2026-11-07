@@ -810,15 +810,27 @@ body.block-dragging .float-bar { visibility: hidden; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 .canvas-menu[hidden] { display: none; }
+/* The colour menu is a grid of six, like a paint palette. */
+.canvas-menu[data-menu="colour"]:not([hidden]) { display: grid; grid-template-columns: repeat(6, 2rem); justify-content: start; }
 .canvas-menu-row { font-size: var(--text-s); padding: var(--space-2) var(--space-3); min-height: 2rem; }
 .canvas-swatch { display: block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); }
 .pen-ink { background: var(--text); }
-.pen-red { background: var(--sn-text-red); }
-.pen-blue { background: var(--sn-text-blue); }
-.pen-green { background: var(--sn-text-green); }
-.pen-orange { background: var(--sn-text-orange); }
-.pen-purple { background: var(--sn-text-purple); }
-.canvas-line { display: block; width: 16px; background: var(--text); border-radius: 1px; }
+.pen-yellow { background: var(--pen-yellow); }
+.pen-orange { background: var(--pen-orange); }
+.pen-pink { background: var(--pen-pink); }
+.pen-red { background: var(--pen-red); }
+.pen-indigo { background: var(--pen-indigo); }
+.pen-purple { background: var(--pen-purple); }
+.pen-raspberry { background: var(--pen-raspberry); }
+.pen-navy { background: var(--pen-navy); }
+.pen-blue { background: var(--pen-blue); }
+.pen-sky { background: var(--pen-sky); }
+.pen-green { background: var(--pen-green); }
+.pen-lime { background: var(--pen-lime); }
+.pen-charcoal { background: var(--pen-charcoal); }
+.pen-grey { background: var(--pen-grey); }
+.pen-silver { background: var(--pen-silver); }
+.canvas-line { display: block; width: 16px; background: var(--text); border-radius: 999px; /* round ends, like the pen line it stands for */ }
 .canvas-line[data-size="0"] { height: 2px; }
 .canvas-line[data-size="1"] { height: 4px; }
 .canvas-line[data-size="2"] { height: 6px; }
@@ -1139,6 +1151,22 @@ body.block-dragging .float-bar { visibility: hidden; }
 :root[data-theme="sepia"],
 :root[data-theme="sage"],
 :root[data-theme="lavender"] {
+  /* The pen palette: fixed colours, the same in light and dark. Ink (--text) is the one that follows the theme. */
+  --pen-yellow: #ffc20e;
+  --pen-orange: #f7630c;
+  --pen-pink: #f50057;
+  --pen-red: #e81123;
+  --pen-indigo: #5c2d91;
+  --pen-purple: #b4009e;
+  --pen-raspberry: #cc0066;
+  --pen-navy: #00539c;
+  --pen-blue: #009fdb;
+  --pen-sky: #33ccff;
+  --pen-green: #008a3b;
+  --pen-lime: #66cc00;
+  --pen-charcoal: #373737;
+  --pen-grey: #848e94;
+  --pen-silver: #e3e3e3;
   --sn-text-gray: #7d7a75;
   --sn-text-brown: #9f765a;
   --sn-text-orange: #bb6d28;
