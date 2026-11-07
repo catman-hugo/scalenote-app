@@ -380,3 +380,8 @@ Cost. A drawing that uses a new colour opens read-only in 0.4.2 and older. Dark 
 Decision. As in ScaleNote v1, a new sticky note is made by dragging a box with the note tool, and the note gets that size. A tap does nothing but show a hint. A note can be resized by selecting it (tap with the loop tool) and dragging the handle in its bottom right corner. A note is never shorter than its text needs, but it does not shrink when text is deleted.
 Alternatives. Keep the tap with a default size next to the drag (the owner asked for the size not to be chosen for them); resize with edge handles or a pinch (more code, more ways to miss on a tablet).
 Cost. Creating a note takes a drag instead of a tap, and a note that grew for a long text stays tall after the text is cut.
+
+## 2026-11-07: Work done after 0.4.3 was merged ships as 0.4.4
+
+Decision. 0.4.3 was merged and tagged with the pen width slider and the hidden page id. The sticky note boxes, the shape grid, the pen colours, the pinch zoom fix and the empty-page fix were made after that on the same branch and are a new release, 0.4.4, with its own branch and pull request. Drawing over text moves to 0.4.5, the `/canvas` block to 0.4.6, split mode to 0.4.7 and PDF import to 0.4.8. From now on work is not pushed to a branch whose pull request may already be merged: a new branch is made for each new request.
+Cost. The plan numbers moved again.

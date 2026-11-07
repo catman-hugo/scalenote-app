@@ -1923,7 +1923,16 @@ await test("restoring while the old name is taken keeps both, and an item that i
 
 // ---------- 0.3.0: search and commands ----------
 
-const openPaletteBox = async (page) => { await page.keyboard.press("Control+k"); await page.waitForSelector("#palette[open] .palette-input"); };
+// The box is ready when its input is empty and has the focus: typing before that can land in the
+// old text or be lost, which made the search tests fail now and then on a slow machine.
+const openPaletteBox = async (page) => {
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector("#palette[open] .palette-input");
+  await page.waitForFunction(() => {
+    const input = document.querySelector("#palette .palette-input");
+    return input && document.activeElement === input && input.value === "";
+  });
+};
 // Escape closes the box a moment later. Opening it again before that finished would find the old box
 // still open, and what is typed next would go into a box that is about to disappear.
 const closePaletteBox = async (page) => { await page.keyboard.press("Escape"); await page.waitForSelector("#palette", { state: "hidden" }); };
