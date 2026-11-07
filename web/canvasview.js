@@ -14,7 +14,7 @@
 import {
   DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
-  itemsInLoop, itemsTouched, moveItem, noteTextHeight, widthAt, wrapText,
+  itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, snappedShift, widthAt, wrapText,
 } from "./canvasrules.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
@@ -728,7 +728,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     const around = boundsOf(state.selection);
     const slack = GRAB_PIXELS / state.view.scale;
     if (around && world.x >= around.minX - slack && world.x <= around.maxX + slack && world.y >= around.minY - slack && world.y <= around.maxY + slack) {
-      state.gesture = { kind: "move", id, items: state.selection.slice(), last: world, dx: 0, dy: 0 };
+      const items = state.selection.slice();
+      state.gesture = { kind: "move", id, items, start: world, anchor: moveAnchor(items), dx: 0, dy: 0 };
     } else {
       state.gesture = { kind: "lasso", id, loop: [[world.x, world.y]], last: screen, length: 0 };
     }
@@ -757,15 +758,19 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     for (const index of hit.reverse()) state.canvas.items.splice(index, 1);
   }
 
+  // The pointer has moved from where the gesture began; `g.dx/dy` is how far the items have been
+  // moved so far. With snapping on, the target is the nearest spot that puts the anchor on the grid.
   function moveGesture(g, world) {
-    const dx = world.x - g.last.x;
-    const dy = world.y - g.last.y;
+    let total = [world.x - g.start.x, world.y - g.start.y];
+    if (snapShapes() && g.anchor) total = snappedShift(g.anchor, total[0], total[1]);
+    const dx = total[0] - g.dx;
+    const dy = total[1] - g.dy;
+    if (dx === 0 && dy === 0) return;
     // Items may not be pushed past the edge of the sheet the file can hold.
     if (!canMove(g.items, dx, dy)) return;
     for (const item of g.items) moveItem(item, dx, dy);
-    g.dx += dx;
-    g.dy += dy;
-    g.last = world;
+    g.dx = total[0];
+    g.dy = total[1];
   }
 
   function finishGesture(cancelled) {

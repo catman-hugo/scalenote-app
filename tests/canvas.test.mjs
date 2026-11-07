@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  moveItem, noteTextHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
+  moveAnchor, moveItem, noteTextHeight, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -269,4 +269,20 @@ test("snapToGrid puts a value on the nearest grid line and leaves grid values al
   assert.equal(snapToGrid(-31), -40);
   assert.equal(snapToGrid(140), 140);
   assert.equal(snapToGrid(37, 10), 40);
+});
+
+test("the anchor of a selection is a corner of its first shape or note, and pen lines have none", () => {
+  assert.equal(moveAnchor([]), null);
+  assert.equal(moveAnchor([stroke([[1, 1, 0.5]])]), null);
+  assert.deepEqual(moveAnchor([stroke([[1, 1, 0.5]]), shape("rect", [40, 60], [100, 120])]), [40, 60]);
+  assert.deepEqual(moveAnchor([note(200, 80, "hi"), shape("rect", [40, 60], [100, 120])]), [200, 80]);
+});
+
+test("a snapped move puts the anchor exactly on the grid, whether or not it started there", () => {
+  assert.deepEqual(snappedShift([40, 60], 37, 52), [40, 60]);
+  assert.deepEqual(snappedShift([40, 60], 9, 9), [0, 0]);
+  const [dx, dy] = snappedShift([43, 57], 10, -4);
+  assert.equal(43 + dx, 60);
+  assert.equal(57 + dy, 60);
+  assert.deepEqual(snappedShift([0, 0], -31, 0), [-40, 0]);
 });

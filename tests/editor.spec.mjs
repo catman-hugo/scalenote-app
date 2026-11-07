@@ -4365,6 +4365,37 @@ await test("shapes snap to a grid by default, so shapes drawn at different times
   assert.equal(kept, false, "the choice is saved");
 }, ctxOpts);
 
+await test("moving a selection with the loop tool snaps shapes and notes to the grid, and pen lines follow by the same amount", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  await dragPath(page, [[60, 80], [160, 160]]);
+  await tool(page, "Pen");
+  await drawLine(page, [70, 200], [150, 200]);
+  await waitSaved(page);
+  const before = await items(page);
+  const rect0 = before[0];
+  const pen0 = before[1].points[0];
+  await tool(page, "Select with a loop");
+  await dragPath(page, [[30, 50], [200, 50], [200, 230], [30, 230], [30, 52]], 3);
+  // An awkward distance on purpose: not a multiple of the grid.
+  await dragPath(page, [[100, 100], [111, 118], [137, 152]], 3);
+  await waitSaved(page);
+  const after = await items(page);
+  const onGrid = (v) => Math.abs(v / 20 - Math.round(v / 20)) < 1e-6;
+  assert.ok(onGrid(after[0].a[0]) && onGrid(after[0].a[1]), "the corner that was grabbed is on the grid: " + after[0].a);
+  assert.ok(onGrid(after[0].b[0]) && onGrid(after[0].b[1]), "so is the other corner: " + after[0].b);
+  const moved = [after[0].a[0] - rect0.a[0], after[0].a[1] - rect0.a[1]];
+  assert.ok(moved[0] > 0 && moved[1] > 0, "it did move");
+  assert.ok(Math.abs(after[0].b[0] - after[0].a[0] - (rect0.b[0] - rect0.a[0])) < 0.2, "the rectangle kept its size");
+  const pen1 = after[1].points[0];
+  assert.ok(Math.abs(pen1[0] - pen0[0] - moved[0]) < 0.2 && Math.abs(pen1[1] - pen0[1] - moved[1]) < 0.2, "the pen line moved the same amount");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  const undone = (await items(page))[0];
+  assert.deepEqual(undone.a, rect0.a, "undo puts the rectangle back where it was");
+}, ctxOpts);
+
 // Is there ink at this spot of the sheet? Read from the pixels the canvas really shows.
 const inkAt = (page, x, y) => page.evaluate(([px, py]) => {
   const canvas = document.querySelector(".canvas-surface");

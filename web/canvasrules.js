@@ -434,3 +434,17 @@ export const SHAPE_GRID = 20;
 export function snapToGrid(value, step = SHAPE_GRID) {
   return Math.round(value / step) * step;
 }
+
+// Moving a selection with the loop tool snaps too. One corner of the first shape or note in the
+// selection (the "anchor") is put on the grid, and everything else in the selection moves by the
+// same amount, so the picture keeps its shape. Pen lines are not on the grid and just follow.
+export function moveAnchor(items) {
+  const item = items.find((one) => one.tool === "shape" || one.tool === "note");
+  if (!item) return null;
+  return item.tool === "note" ? [item.x, item.y] : [item.a[0], item.a[1]];
+}
+
+/** How far to move so that an anchor that was dragged by (dx, dy) ends up exactly on the grid. */
+export function snappedShift(anchor, dx, dy, step = SHAPE_GRID) {
+  return [snapToGrid(anchor[0] + dx, step) - anchor[0], snapToGrid(anchor[1] + dy, step) - anchor[1]];
+}
