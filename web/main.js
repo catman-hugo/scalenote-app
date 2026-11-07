@@ -42,7 +42,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", snapShapes: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -147,6 +147,8 @@ async function loadSettings() {
       showCovers: parsed.showCovers === true,
       // What the side button of a pen does on the canvas.
       penButton: PEN_BUTTONS.includes(parsed.penButton) ? parsed.penButton : "erase",
+      // The view a page opens in: its text, its drawing, or both side by side.
+      openIn: OPEN_IN.includes(parsed.openIn) ? parsed.openIn : "text",
       // Shapes snap to a grid unless turned off.
       snapShapes: parsed.snapShapes !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
@@ -266,6 +268,7 @@ function coverSettingsRows() {
 }
 
 const PEN_BUTTONS = ["erase", "select", "none"];
+const OPEN_IN = ["text", "canvas", "split"];
 
 function canvasSettingsRows() {
   const s = strings.settings;
@@ -285,6 +288,22 @@ function canvasSettingsRows() {
   const row = document.createElement("label");
   row.className = "setting-row";
   row.append(textElement("span", s.penButton, "setting-label"), choice);
+  const open = document.createElement("select");
+  for (const value of OPEN_IN) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = s.openInOptions[value];
+    open.append(option);
+  }
+  open.value = app.settings.openIn;
+  open.setAttribute("aria-label", s.openIn);
+  open.addEventListener("change", () => {
+    app.settings.openIn = OPEN_IN.includes(open.value) ? open.value : "text";
+    saveSettings();
+  });
+  const openRow = document.createElement("label");
+  openRow.className = "setting-row";
+  openRow.append(textElement("span", s.openIn, "setting-label"), open);
   const snap = document.createElement("input");
   snap.type = "checkbox";
   snap.checked = app.settings.snapShapes;
@@ -295,7 +314,7 @@ function canvasSettingsRows() {
   const snapRow = document.createElement("label");
   snapRow.className = "setting-row";
   snapRow.append(textElement("span", s.snapShapes, "setting-label"), snap);
-  return [textElement("h3", s.canvasHeading, "setting-heading"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint")];
+  return [textElement("h3", s.canvasHeading, "setting-heading"), openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint")];
 }
 
 function setShowBacklinks(on) {
@@ -839,7 +858,7 @@ async function exportCurrentPage() {
 async function printCurrentPage() {
   if (!app.current) return;
   if (app.mode === "source") toggleSource();
-  if (app.mode === "canvas") await leaveCanvas();
+  await leaveCanvas();
   if (app.autosave) await app.autosave.flush();
   window.print();
 }
@@ -1142,7 +1161,7 @@ function openSearch() {
     { label: c.tags, run: () => openTagsDialog() },
     { label: c.sidebar, run: toggleSidebar },
   ];
-  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: c.canvas, run: toggleCanvas }, { label: c.source, run: toggleSource });
+  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: c.canvas, run: toggleCanvas }, { label: c.split, run: toggleSplit }, { label: c.source, run: toggleSource });
   if (app.current && !isAndroid) commands.push({ label: c.exportPage, run: exportCurrentPage }, { label: c.printPage, run: printCurrentPage });
   openPalette(el("palette"), {
     recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
@@ -1174,6 +1193,7 @@ async function showNoNote() {
   el("source").hidden = true;
   el("sourceToggle").hidden = true;
   el("canvasToggle").hidden = true;
+  el("splitToggle").hidden = true;
   el("canvasHost").hidden = true;
   el("title").hidden = true;
   drawFavorite();
@@ -1196,6 +1216,8 @@ async function openNote(path) {
   try {
     const note = await backend.readNote(path);
     showNote(path, note);
+    // A page opens in the view chosen in Settings. Text is the plain page, as before.
+    if (app.settings.openIn !== "text") await enterCanvas(app.settings.openIn);
   } catch (error) {
     logProblem("open note failed", error);
     showBanner(errorText(error));
@@ -1274,8 +1296,18 @@ async function saveCanvas() {
   }
 }
 
-async function enterCanvas() {
-  if (!app.current || app.mode === "canvas") return;
+// The drawing is on screen in two views: alone ("canvas") or beside the text ("split").
+const drawingOpen = () => app.mode === "canvas" || app.mode === "split";
+
+async function enterCanvas(mode = "canvas") {
+  if (!app.current || app.mode === mode) return;
+  if (drawingOpen()) {
+    // Already loaded for this page: only the layout changes.
+    app.mode = mode;
+    applyMode();
+    if (mode === "canvas") app.canvasView.focus();
+    return;
+  }
   if (app.mode === "source") await toggleSource();
   await app.autosave.flush();
   const view = ensureCanvasView();
@@ -1296,15 +1328,16 @@ async function enterCanvas() {
     return;
   }
   if (!app.current || app.current.path !== path) return;
-  app.mode = "canvas";
+  app.mode = mode;
   applyMode();
   view.show(canvas, problem);
-  view.focus();
+  // In the split view the text keeps the cursor; the drawing is only looked at until it is touched.
+  if (mode === "canvas") view.focus();
 }
 
 // Saves what was drawn and goes back to the text. Safe to call when the canvas is not open.
 async function leaveCanvas() {
-  if (app.mode !== "canvas") return;
+  if (!drawingOpen()) return;
   // A sticky note still being typed is put into the drawing first, so it is part of the save.
   if (app.canvasView) app.canvasView.finish();
   if (app.canvasSave) await app.canvasSave.flush();
@@ -1315,7 +1348,12 @@ async function leaveCanvas() {
 
 async function toggleCanvas() {
   if (app.mode === "canvas") await leaveCanvas();
-  else await enterCanvas();
+  else await enterCanvas("canvas");
+}
+
+async function toggleSplit() {
+  if (app.mode === "split") await leaveCanvas();
+  else await enterCanvas("split");
 }
 
 // ---------- markdown source view ----------
@@ -1354,15 +1392,22 @@ function plainCurrentText() {
 function applyMode() {
   const source = app.mode === "source" && app.current;
   const canvas = app.mode === "canvas" && app.current;
+  const split = app.mode === "split" && app.current;
   el("editor").hidden = !app.current || source || canvas;
   el("source").hidden = !source;
-  el("canvasHost").hidden = !canvas;
+  el("canvasHost").hidden = !canvas && !split;
+  el("panes").classList.toggle("split", Boolean(split));
+  const toggleSplitButton = el("splitToggle");
+  toggleSplitButton.hidden = !app.current;
+  toggleSplitButton.textContent = strings.canvas.split;
+  toggleSplitButton.setAttribute("aria-label", split ? strings.canvas.splitBackLabel : strings.canvas.splitLabel);
+  toggleSplitButton.setAttribute("aria-pressed", String(Boolean(split)));
   const toggleCanvas = el("canvasToggle");
   toggleCanvas.hidden = !app.current;
   toggleCanvas.textContent = canvas ? strings.canvas.toggleBack : strings.canvas.toggle;
   toggleCanvas.setAttribute("aria-label", canvas ? strings.canvas.toggleBackLabel : strings.canvas.toggleLabel);
   toggleCanvas.setAttribute("aria-pressed", String(Boolean(canvas)));
-  el("sourceToggle").hidden = !app.current || canvas;
+  el("sourceToggle").hidden = !app.current || canvas || split;
   const toggle = el("sourceToggle");
   toggle.textContent = source ? strings.source.hide : strings.source.show;
   toggle.setAttribute("aria-label", source ? strings.source.hideLabel : strings.source.showLabel);
@@ -1373,7 +1418,7 @@ function applyMode() {
 
 async function toggleSource() {
   if (!app.current) return;
-  if (app.mode === "canvas") await leaveCanvas();
+  await leaveCanvas();
   if (app.mode === "editor") {
     // The note on screen is the truth: show exactly what saving it would write.
     fillSource(plainCurrentText());
@@ -1649,6 +1694,7 @@ function wireEvents() {
   el("toggle").addEventListener("click", toggleSidebar);
   el("sourceToggle").addEventListener("click", toggleSource);
   el("canvasToggle").addEventListener("click", toggleCanvas);
+  el("splitToggle").addEventListener("click", toggleSplit);
   el("source").addEventListener("input", () => app.autosave.touch());
   el("scrim").addEventListener("click", toggleSidebar);
   el("bannerClose").addEventListener("click", hideBanner);

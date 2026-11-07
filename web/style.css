@@ -459,6 +459,18 @@ body.tree-dragging .tree-button { cursor: grabbing; }
   font-size: var(--text-s);
 }
 
+/* The page itself: text, drawing or markdown, or text and drawing side by side. */
+.panes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.panes.split { flex-direction: row; }
+.panes.split > .editor,
+.panes.split > .canvas-host { flex: 1 1 0; min-width: 0; }
+.panes.split > .canvas-host { border-left: 1px solid var(--line); }
+@media (max-width: 700px) {
+  /* A phone is too narrow for two columns: the text above, the drawing below. */
+  .panes.split { flex-direction: column; }
+  .panes.split > .canvas-host { border-left: none; border-top: 1px solid var(--line); }
+}
+
 .banner[hidden],
 .empty[hidden],
 .editor[hidden] {
@@ -1663,7 +1675,7 @@ button.danger:hover { background: var(--bg-hover); }
 @media print {
   :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
   .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host { display: none !important; }
-  .app, .main, .editor { display: block; height: auto; overflow: visible; }
+  .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; }
   .title { border: 0; padding-left: 0; }
   .note-body { max-width: none; padding: 0; }
   .note-body pre, .note-body blockquote, .note-body table, .note-body img { break-inside: avoid; }

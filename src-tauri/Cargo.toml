@@ -1,6 +1,6 @@
 [package]
 name = "scalenote"
-version = "0.4.5"
+version = "0.4.6"
 description = "ScaleNote: a local-first markdown note app."
 edition = "2021"
 rust-version = "1.77"

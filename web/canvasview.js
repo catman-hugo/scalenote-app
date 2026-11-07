@@ -13,7 +13,7 @@
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
 import {
   DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
-  arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
+  arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, highlightFigure,
   itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
 } from "./canvasrules.js";
 import { icon } from "./icons.js";
@@ -564,7 +564,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     return lines;
   }
 
-  function paintNote(note, box, withText) {
+  // The box of a note (its fill and edge). The text is painted later, on top of everything else.
+  function paintNote(note, box) {
     const colour = state.colours[note.color] || "#000";
     context.fillStyle = state.pageFill;
     context.fillRect(box.x, box.y, box.w, box.h);
@@ -576,7 +577,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.strokeStyle = colour;
     context.lineWidth = 1.5;
     context.strokeRect(box.x, box.y, box.w, box.h);
-    if (!withText) return;
+  }
+
+  function paintNoteText(note, box) {
     context.save();
     context.beginPath();
     context.rect(box.x, box.y, box.w, box.h);
@@ -588,12 +591,38 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.restore();
   }
 
-  function paintItem(item) {
-    if (item.tool === "shape") paintShape(item);
-    else if (item.tool === "note") {
-      const editing = state.editing && state.editing.item === item;
-      paintNote(item, { x: item.x, y: item.y, w: item.w, h: editing ? state.editing.height : item.h }, !editing);
-    } else paintStroke(item);
+  // A highlight is cut at the edge of the figure it covers when it only goes a little over it.
+  function paintHighlight(stroke, items) {
+    const figure = highlightFigure(stroke, items);
+    if (!figure) return paintStroke(stroke);
+    context.save();
+    context.beginPath();
+    if (figure.kind === "rect") context.rect(figure.x, figure.y, figure.w, figure.h);
+    else {
+      ellipseOutline([figure.x, figure.y], [figure.x + figure.w, figure.y + figure.h], 64).forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+      context.closePath();
+    }
+    context.clip();
+    paintStroke(stroke);
+    context.restore();
+  }
+
+  const noteBox = (note) => ({ x: note.x, y: note.y, w: note.w, h: state.editing && state.editing.item === note ? state.editing.height : note.h });
+
+  // The layers, back to front: sticky note boxes, highlights (also over a note), then shapes and
+  // pen lines, then the text of notes. So ink and text are never hidden by a highlight.
+  function paintItems(items) {
+    const g = state.gesture;
+    const live = g && g.kind === "pen" && g.stroke.tool === "highlighter" ? g.stroke : null;
+    const notes = items.filter((item) => item.tool === "note");
+    for (const note of notes) paintNote(note, noteBox(note));
+    for (const item of items) if (item.tool === "highlighter") paintHighlight(item, items);
+    if (live) paintHighlight(live, items);
+    for (const item of items) {
+      if (item.tool === "shape") paintShape(item);
+      else if (item.tool !== "note" && item.tool !== "highlighter") paintStroke(item);
+    }
+    for (const note of notes) if (!(state.editing && state.editing.item === note)) paintNoteText(note, noteBox(note));
   }
 
   // The lines of the paper, in drawing space, only the part that is on the screen. Lines closer
@@ -672,9 +701,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     const { x, y, scale } = state.view;
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
     paintPaper(box);
-    for (const item of state.canvas.items) paintItem(item);
+    paintItems(state.canvas.items);
     const g = state.gesture;
-    if (g && g.kind === "pen") paintStroke(g.stroke);
+    if (g && g.kind === "pen" && g.stroke.tool !== "highlighter") paintStroke(g.stroke);
     if (g && g.kind === "shape") paintShape(g.shape);
     if (g && g.kind === "notebox") {
       const box = boxOf(g.a, g.b);
@@ -685,7 +714,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       context.strokeRect(box.x, box.y, box.w, box.h);
       context.restore();
     }
-    if (state.editing && !state.editing.item) paintNote(state.editing.pending, { ...state.editing.pending, h: state.editing.height }, false);
+    if (state.editing && !state.editing.item) paintNote(state.editing.pending, { ...state.editing.pending, h: state.editing.height });
     paintSelection();
     if (g && g.kind === "lasso") {
       context.save();

@@ -255,6 +255,65 @@ export function drawnWidth(item) {
   return item.tool === "highlighter" ? item.width * HIGHLIGHT_FACTOR : item.width;
 }
 
+// ---- tidy highlights ----
+// A highlighter stroke that covers a figure (a rectangle, an ellipse or a sticky note) and only
+// goes a little over its edge is cut off at the edge when it is drawn. The stroke in the file is
+// not changed, so moving the figure or the stroke away shows the stroke as it was drawn.
+// A stroke that goes well outside is left alone, so a highlight can still be put beside a figure.
+
+/** Extra distance, in drawing units, a highlight may go outside a figure beyond half its width. */
+export const HIGHLIGHT_SLACK = 12;
+const HIGHLIGHT_INSIDE = 0.6; // share of the stroke that must lie inside the figure
+const HIGHLIGHT_SAMPLES = 64; // enough to judge a stroke; keeps drawing fast with long strokes
+
+/** The figure of an item as `{kind, x, y, w, h}`, or null when it is not a closed figure. */
+export function figureOf(item) {
+  if (item.tool === "note") return item.w > 0 && item.h > 0 ? { kind: "rect", x: item.x, y: item.y, w: item.w, h: item.h } : null;
+  if (item.tool !== "shape" || (item.kind !== "rect" && item.kind !== "ellipse")) return null;
+  const { x, y, w, h } = boxOf(item.a, item.b);
+  return w > 0 && h > 0 ? { kind: item.kind, x, y, w, h } : null;
+}
+
+// How far a point is outside a figure; 0 inside. For an ellipse this is an estimate that is
+// close for the small distances that matter here.
+function distanceOutside(figure, px, py) {
+  if (figure.kind === "rect") {
+    return Math.hypot(Math.max(figure.x - px, 0, px - (figure.x + figure.w)), Math.max(figure.y - py, 0, py - (figure.y + figure.h)));
+  }
+  const rx = figure.w / 2;
+  const ry = figure.h / 2;
+  const r = Math.hypot((px - figure.x - rx) / rx, (py - figure.y - ry) / ry);
+  return r <= 1 ? 0 : (r - 1) * Math.min(rx, ry);
+}
+
+/**
+ * The figure a highlighter stroke should be cut to, or null. `items` are all the items of the
+ * drawing. When several figures fit, the smallest one wins (a box inside a box).
+ */
+export function highlightFigure(stroke, items) {
+  const points = stroke.points;
+  if (!points.length) return null;
+  const step = Math.max(1, Math.ceil(points.length / HIGHLIGHT_SAMPLES));
+  const allowed = drawnWidth(stroke) / 2 + HIGHLIGHT_SLACK;
+  let best = null;
+  for (const item of items) {
+    const figure = figureOf(item);
+    if (!figure) continue;
+    let inside = 0;
+    let total = 0;
+    let farthest = 0;
+    for (let i = 0; i < points.length; i += step) {
+      const out = distanceOutside(figure, points[i][0], points[i][1]);
+      total++;
+      if (out === 0) inside++;
+      if (out > farthest) farthest = out;
+    }
+    if (inside / total < HIGHLIGHT_INSIDE || farthest > allowed) continue;
+    if (!best || figure.w * figure.h < best.w * best.h) best = figure;
+  }
+  return best;
+}
+
 /** The corner and size of the box between two corners, whichever way they were dragged. */
 export function boxOf(a, b) {
   return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(a[0] - b[0]), h: Math.abs(a[1] - b[1]) };
