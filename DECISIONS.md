@@ -425,3 +425,14 @@ Cost. The plan numbers moved again.
 Decision. Split is a third view of a page next to Text and Canvas. It shows the same drawing the Canvas view shows, beside the text (above it on a phone), with the text keeping the cursor. The view a page opens in is Settings > Drawing > Open pages in (Text by default). The markdown view is not offered beside a drawing.
 Alternatives. A drag handle to change the split (more code, easy to misjudge with a finger, can come later); a second copy of the drawing (two copies to keep in step); keeping the markdown view available in Split (three things on screen).
 Cost. The two halves are fixed at the same size. On a phone the text gets about half the height.
+
+## 2026-11-07: The cut is saved in the stroke (drawing format 4)
+
+Decision. This replaces the 0.4.6 decision that the stroke stays unchanged and the cut is worked out when painting. Tried on the tablet, that showed the overshoot again when the square was removed, and one long stroke that strayed far lost its cut completely. Now a finished pen or highlighter stroke over a figure gets a `clip` (the figure's shape), and a part that strays far is split off as a plain stroke. The pieces go in and out with one undo. Format 4 is written only when a clip exists; older versions open it read-only, so nothing is lost. The points are never changed.
+Alternatives. Keep computing at paint time and remember the figure (breaks when the figure goes); cut the points themselves (loses what was drawn).
+Cost. A drawing with cuts cannot be edited in 0.4.6 and older. Strokes made before 0.4.7 are not cut. A long stroke becomes a few items in the file.
+
+## 2026-11-07: Recolour the selection is the extra feature of 0.4.7, and the plan numbers move again
+
+Decision. The owner asked for "another feature" and left the choice to me. I chose recolouring the loop selection with the existing colour menu, because it is small, needs no file format change and removes a common redraw. Draw over text becomes 0.4.8, the `/canvas` block 0.4.9, PDF import 0.4.10.
+Cost. The plan numbers moved again.

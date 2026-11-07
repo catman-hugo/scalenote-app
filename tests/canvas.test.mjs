@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, highlightFigure, HIGHLIGHT_SLACK } from "../web/canvasrules.js";
+  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, tidyStroke, HIGHLIGHT_SLACK } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -73,7 +73,7 @@ test("anything not understood is refused as a whole, never partly kept", () => {
     '{"format":2,"items":[{"tool":"eraser"}]}',
   ];
   for (const text of bad) assert.ok(parseCanvas(text).problem, `refused: ${text}`);
-  assert.equal(parseCanvas('{"format":4,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
+  assert.equal(parseCanvas('{"format":5,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
   const mixed = '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":"ok"},{"tool":"pen","color":"x","width":4,"points":[[0,0,0.5]]}]}';
   assert.ok(parseCanvas(mixed).problem, "one bad item among good ones refuses the whole drawing");
 });
@@ -384,40 +384,137 @@ test("only rectangles, ellipses and notes are figures", () => {
   assert.equal(figureOf(stroke([[0, 0, 0.5]])), null);
 });
 
-test("a highlight that goes a little over a figure is cut to it", () => {
+test("a highlight that goes a little over a figure is cut to it, and the cut is saved in the stroke", () => {
   // Width 4 is drawn 16 wide, so up to 8 + the slack beyond the edge is allowed.
   const over = hl([[110, 150], [290, 150], [300 + HIGHLIGHT_SLACK + 8, 150]]);
-  assert.deepEqual(highlightFigure(over, [box, over]), figureOf(box));
+  const [only, ...rest] = tidyStroke(over, [box]);
+  assert.equal(rest.length, 0);
+  assert.deepEqual(only.clip, figureOf(box));
+  assert.deepEqual(only.points, over.points, "the points are kept as drawn");
   const inside = hl([[120, 150], [280, 150]]);
-  assert.deepEqual(highlightFigure(inside, [box, inside]), figureOf(box), "a stroke inside is cut too, so its round ends stay in");
+  assert.deepEqual(tidyStroke(inside, [box])[0].clip, figureOf(box), "a highlight inside is cut too, so its round ends stay in");
 });
 
-test("a highlight that goes well outside, or mostly lies outside, is left alone", () => {
-  const far = hl([[110, 150], [290, 150], [300 + HIGHLIGHT_SLACK + 9, 150]]);
-  assert.equal(highlightFigure(far, [box, far]), null);
+test("a pen line is only cut when it really goes over the edge", () => {
+  const within = stroke([[120, 150, 0.5], [280, 150, 0.5]]);
+  assert.deepEqual(tidyStroke(within, [box]), [within], "the very same stroke, nothing to cut");
+  const over = stroke([[120, 150, 0.5], [290, 150, 0.5], [305, 150, 0.5]]);
+  const [cut] = tidyStroke(over, [box]);
+  assert.deepEqual(cut.clip, figureOf(box));
+  assert.equal(cut.tool, "pen");
+});
+
+test("a stroke that stays away from every figure is left alone", () => {
   const beside = hl([[310, 150], [400, 150], [500, 150]]);
-  assert.equal(highlightFigure(beside, [box, beside]), null);
+  assert.deepEqual(tidyStroke(beside, [box]), [beside]);
   const mostlyOut = hl([[280, 150], [310, 150], [320, 150], [330, 150]]);
-  assert.equal(highlightFigure(mostlyOut, [box, mostlyOut]), null);
-  assert.equal(highlightFigure(hl([]), [box]), null);
+  assert.deepEqual(tidyStroke(mostlyOut, [box]), [mostlyOut]);
+  assert.deepEqual(tidyStroke(hl([]), [box]), [hl([])]);
+});
+
+test("a long fill that strays far at the end is split: only the stray part is left uncut", () => {
+  const fill = hl([[110, 110], [290, 110], [290, 190], [110, 190], [150, 190], [220, 190], [400, 190], [420, 260]]);
+  const parts = tidyStroke(fill, [box]);
+  const cut = parts.filter((part) => part.clip);
+  const free = parts.filter((part) => !part.clip);
+  assert.equal(cut.length, 1);
+  assert.equal(free.length, 1);
+  // The free part starts where the line leaves the box (a point in it) and goes on to the end.
+  assert.deepEqual(free[0].points.map((p) => [p[0], p[1]]), [[220, 190], [400, 190], [420, 260]]);
+  assert.deepEqual(cut[0].points.at(-1).slice(0, 2), [220, 190], "the cut part ends where the free part starts");
+  assert.equal(cut[0].points.length + free[0].points.length, fill.points.length + 1);
+});
+
+test("a stray in the middle gives two cut parts and a free part between them", () => {
+  const s = hl([[120, 150], [290, 150], [380, 150], [290, 160], [200, 160]]);
+  const parts = tidyStroke(s, [box]);
+  assert.equal(parts.filter((part) => part.clip).length, 2);
+  assert.equal(parts.filter((part) => !part.clip).length, 1);
+});
+
+test("splitting leaves the original stroke untouched, and the pieces do not share points", () => {
+  const fill = hl([[110, 150], [200, 150], [290, 150], [400, 150], [420, 260]]);
+  const before = JSON.stringify(fill);
+  const parts = tidyStroke(fill, [box]);
+  assert.equal(JSON.stringify(fill), before);
+  parts[0].points[0][0] = -5;
+  assert.equal(fill.points[0][0], 110);
+  assert.notEqual(parts[0].points, parts[1].points);
 });
 
 test("the smallest figure around the stroke wins, and an ellipse is judged by its curve", () => {
   const inner = shape("rect", [150, 120], [250, 180]);
   const s = hl([[160, 150], [240, 150]]);
-  assert.deepEqual(highlightFigure(s, [box, inner, s]), figureOf(inner));
+  assert.deepEqual(tidyStroke(s, [box, inner])[0].clip, figureOf(inner));
   const ellipse = shape("ellipse", [0, 0], [200, 100]);
   // The corner of the bounding box is outside the ellipse by far more than the allowance.
   const corner = hl([[190, 10], [195, 12], [198, 8]]);
-  assert.equal(highlightFigure(corner, [ellipse, corner]), null);
+  assert.deepEqual(tidyStroke(corner, [ellipse]), [corner]);
   const middle = hl([[40, 50], [160, 50]]);
-  assert.deepEqual(highlightFigure(middle, [ellipse, middle]), figureOf(ellipse));
+  assert.deepEqual(tidyStroke(middle, [ellipse])[0].clip, figureOf(ellipse));
 });
 
 test("a long stroke is judged from a sample and stays quick", () => {
   const points = Array.from({ length: 5000 }, (_, i) => [110 + (i % 180), 150]);
   const long = hl(points);
   const started = Date.now();
-  for (let i = 0; i < 200; i++) assert.deepEqual(highlightFigure(long, [box, long]), figureOf(box));
+  for (let i = 0; i < 200; i++) assert.deepEqual(tidyStroke(long, [box])[0].clip, figureOf(box));
   assert.ok(Date.now() - started < 1000);
+});
+
+// ---- 0.4.7: saved cuts, grouped undo, recolour ----
+
+test("a cut is saved as format 4 and read back; a drawing without cuts keeps its old format", () => {
+  const cut = tidyStroke(hl([[110, 150], [290, 150], [305, 150]]), [box])[0];
+  const text = serializeCanvas({ items: [box, cut], paper: "none", page: "none" });
+  assert.match(text, /^\{"format":4,/);
+  const back = parseCanvas(text);
+  assert.deepEqual(back.canvas.items[1].clip, figureOf(box));
+  assert.match(serializeCanvas({ items: [box, hl([[1, 1]])], paper: "none", page: "none" }), /^\{"format":2,/);
+  assert.match(serializeCanvas({ items: [hl([[1, 1]])], paper: "rule-1", page: "none" }), /^\{"format":3,/);
+});
+
+test("a bad cut, or a cut in a file that is too old for it, makes the drawing read-only", () => {
+  const line = (clip, format) => `{"format":${format},"items":[{"tool":"highlighter","color":"yellow","width":4,"points":[[1,1,0.5]],"clip":${JSON.stringify(clip)}}]}`;
+  assert.equal(parseCanvas(line({ kind: "rect", x: 0, y: 0, w: 10, h: 10 }, 4)).canvas.items[0].clip.w, 10);
+  for (const bad of [{ kind: "star", x: 0, y: 0, w: 1, h: 1 }, { kind: "rect", x: 0, y: 0, w: 0, h: 1 }, { kind: "rect", x: "0", y: 0, w: 1, h: 1 }, null, [], { kind: "rect", x: 9e9, y: 0, w: 1, h: 1 }]) {
+    assert.equal(parseCanvas(line(bad, 4)).problem, "broken", JSON.stringify(bad));
+  }
+  assert.equal(parseCanvas(line({ kind: "rect", x: 0, y: 0, w: 10, h: 10 }, 3)).problem, "broken");
+  assert.equal(parseCanvas('{"format":5,"items":[]}').problem, "newer");
+});
+
+test("moving a cut stroke moves its cut with it", () => {
+  const cut = tidyStroke(hl([[110, 150], [290, 150]]), [box])[0];
+  moveItem(cut, 10, -20);
+  assert.deepEqual(cut.clip, { kind: "rect", x: 110, y: 80, w: 200, h: 100 });
+  assert.deepEqual(cut.points[0].slice(0, 2), [120, 130]);
+});
+
+test("a stroke split into pieces goes in and out with one undo and one redo", () => {
+  const canvas = emptyCanvas();
+  const history = new DrawingHistory();
+  const parts = tidyStroke(hl([[110, 150], [200, 150], [290, 150], [400, 150], [420, 260]]), [box]);
+  canvas.items.push(...parts);
+  history.record({ add: parts });
+  assert.equal(canvas.items.length, 2);
+  history.undo(canvas);
+  assert.equal(canvas.items.length, 0);
+  history.redo(canvas);
+  assert.equal(canvas.items.length, 2);
+});
+
+test("several recolours in one step undo and redo together", () => {
+  const canvas = emptyCanvas();
+  const a = hl([[1, 1]]);
+  const b = shape("rect", [0, 0], [50, 50]);
+  canvas.items.push(a, b);
+  const history = new DrawingHistory();
+  const edits = [a, b].map((item) => ({ item, before: { color: item.color }, after: { color: "red" } }));
+  for (const edit of edits) Object.assign(edit.item, edit.after);
+  history.record({ edit: edits });
+  history.undo(canvas);
+  assert.deepEqual([a.color, b.color], ["yellow", b.color === "red" ? "ink" : b.color]);
+  history.redo(canvas);
+  assert.deepEqual([a.color, b.color], ["red", "red"]);
 });

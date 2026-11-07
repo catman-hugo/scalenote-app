@@ -321,6 +321,17 @@ Owner request after 0.4.5 on the tablet (2026-11-07), bundled with split mode, w
 - Tested here: 5 new unit tests, 3 browser tests for highlights (pixel checks; they fail when the behaviour is removed, checked by hand) and 6 for split mode and the setting (layout measured on desktop and phone, drawing and typing in both halves, switching, the setting saved and a damaged value), screenshots light and dark on desktop and phone.
 - NOT tested, needs a device: the feel with a real pen and tablet; whether 12 units of slack is the right amount; Split with a pen and the on-screen keyboard (the half that holds the text may be small on a phone with the keyboard open); the Open pages in setting on the tablet. Overlapping sticky notes: the text of a lower note can show through a note above it (text is one layer above all boxes).
 
+## 0.4.7: built
+Owner request after 0.4.6 on the tablet (2026-11-07): do the same for the pen as for the highlight; removing the square must not reveal the overshoot; one long stroke that strays at the end must not become fully visible.
+- The cut is saved in the stroke (`clip` on pen and highlighter strokes: `{kind: rect|ellipse, x, y, w, h}`) by `tidyStroke` in `canvasrules.js` when the stroke is finished. Painting uses the saved clip only (`paintClipped` in `canvasview.js`), nothing is computed from the figure at paint time any more, so removing or moving the figure changes nothing. A stroke in progress is shown as it will look after lifting the pen.
+- Stray parts: points more than half the drawn width plus 12 units outside the figure are a stray. A stray runs from where the line leaves the figure to where it comes back and becomes a plain stroke of its own (no clip); the rest becomes one or more clipped strokes that share the end points, so the line stays joined. Several strokes from one gesture go in as one undo step (`add` in `DrawingHistory` may be a list; `edit` may be a list).
+- A pen stroke only gets a clip when one of its points is really outside the figure; a highlighter stroke always gets one (the wide line would otherwise overflow the edge). So most pen lines in a note are stored as before.
+- Format 4 is written only when a stroke has a clip (otherwise 3, 2 or 1 as before); a clip in a file older than 4, or a bad clip, makes the drawing read-only; 0.4.6 and older open format 4 read-only. `moveItem` moves the clip with its stroke.
+- Extra feature (my choice): recolour the selection. With the loop tool and something selected, the colour menu recolours the selection (one undo step, no format change).
+- Tested here: 179 unit tests (`npm test`), 4 new browser tests (remove the square, long stray stroke with undo/redo, pen cut, recolour with undo), mutation-checked by hand (they fail without the behaviour), screenshots light and dark.
+- NOT tested, needs a device: the feel with a real pen on the tablet; whether 12 units of slack is right for stray detection; strokes drawn before 0.4.7 are not cut (by design).
+- Release notes: `docs/release-notes/0.4.7.md`.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -357,9 +368,10 @@ Owner request after 0.4.5 on the tablet (2026-11-07), bundled with split mode, w
 | 0.4.4 | Sticky notes drawn as boxes and resizable, shapes snap to a grid, the OneNote pen colours, pinch zoom fix (see "0.4.4: built") | built, not tried on a device |
 | 0.4.5 | Paper and page colour for drawings, loop moves snap to the grid, folder icons (see "0.4.5: built") | built, not tried on a device |
 | 0.4.6 | Highlights behind ink and tidied against figures, split mode and the "Open pages in" setting (see "0.4.6: built") | built, not tried on a device |
-| 0.4.7 | Draw over text: ink anchored to blocks | not started |
-| 0.4.8 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.9 | PDF import as page images to draw on | not started |
+| 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
+| 0.4.8 | Draw over text: ink anchored to blocks | not started |
+| 0.4.9 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.10 | PDF import as page images to draw on | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

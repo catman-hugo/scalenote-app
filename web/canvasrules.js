@@ -22,7 +22,11 @@
 // written when one of them is set, and an older ScaleNote shows it read-only instead of saving
 // over it and losing the paper.
 
-export const FORMAT = 3;
+// Format 4 (0.4.7) is a drawing in which a pen or highlighter stroke has a `clip`: the figure the
+// stroke was cut to when it was drawn. It is only written when a clip exists; an older ScaleNote
+// shows it read-only, because opening and saving it there would drop the cut and show the overshoot.
+
+export const FORMAT = 4;
 // The pen colours, in the order of the picker: three rows of six, six, and four. The first
 // version had only ink, red, blue, green, orange and purple; those names still mean the same
 // colour family, so older drawings open as before (a little brighter than they were).
@@ -142,8 +146,15 @@ const inRange = (value) => isNumber(value) && Math.abs(value) <= LIMITS.coordina
 const validCorner = (corner) => Array.isArray(corner) && corner.length === 2 && corner.every(inRange);
 const validWidth = (width) => isNumber(width) && width > 0 && width <= 100;
 
-function validStroke(item, tools) {
+function validClip(clip) {
+  const size = (value) => isNumber(value) && value > 0 && value <= 2 * LIMITS.coordinate;
+  return isObject(clip) && (clip.kind === "rect" || clip.kind === "ellipse") && inRange(clip.x) && inRange(clip.y) && size(clip.w) && size(clip.h);
+}
+
+function validStroke(item, tools, format) {
   if (!tools.includes(item.tool) || !PEN_COLOURS.includes(item.color) || !validWidth(item.width)) return false;
+  // A clip belongs to format 4; in an older file it is not something this version wrote.
+  if (item.clip !== undefined && (format < 4 || !validClip(item.clip))) return false;
   const points = item.points;
   if (!Array.isArray(points) || points.length === 0 || points.length > LIMITS.pointsPerStroke) return false;
   return points.every((point) => Array.isArray(point) && point.length === 3 && inRange(point[0]) && inRange(point[1]) && isNumber(point[2]) && point[2] >= 0 && point[2] <= 1);
@@ -158,11 +169,11 @@ function validNote(item) {
   return PEN_COLOURS.includes(item.color) && inRange(item.x) && inRange(item.y) && size(item.w) && size(item.h) && typeof item.text === "string" && item.text.length <= LIMITS.noteText;
 }
 
-function validItem(item, tools) {
+function validItem(item, tools, format) {
   if (!isObject(item)) return false;
   if (item.tool === "shape") return tools.includes("shape") && validShape(item);
   if (item.tool === "note") return tools.includes("note") && validNote(item);
-  return validStroke(item, tools);
+  return validStroke(item, tools, format);
 }
 
 // Builds a clean copy that holds only the fields the format knows, so nothing else in the file
@@ -170,7 +181,9 @@ function validItem(item, tools) {
 function cleanItem(item) {
   if (item.tool === "shape") return { tool: "shape", kind: item.kind, color: item.color, width: item.width, a: [...item.a], b: [...item.b] };
   if (item.tool === "note") return { tool: "note", color: item.color, x: item.x, y: item.y, w: item.w, h: item.h, text: item.text };
-  return { tool: item.tool, color: item.color, width: item.width, points: item.points.map((p) => [p[0], p[1], p[2]]) };
+  const stroke = { tool: item.tool, color: item.color, width: item.width, points: item.points.map((p) => [p[0], p[1], p[2]]) };
+  if (item.clip) stroke.clip = { kind: item.clip.kind, x: item.clip.x, y: item.clip.y, w: item.clip.w, h: item.clip.h };
+  return stroke;
 }
 
 /**
@@ -199,7 +212,7 @@ export function parseCanvas(text) {
   if (!PAPERS.includes(paper) || !PAGE_COLOURS.includes(page)) return { problem: "broken" };
   let total = 0;
   for (const item of list) {
-    if (!validItem(item, tools)) return { problem: "broken" };
+    if (!validItem(item, tools, data.format)) return { problem: "broken" };
     if (item.points) total += item.points.length;
   }
   if (total > LIMITS.totalPoints) return { problem: "too-big" };
@@ -212,7 +225,9 @@ const corner = ([x, y]) => [round(x, 1), round(y, 1)];
 function itemLine(item) {
   if (item.tool === "shape") return JSON.stringify({ tool: "shape", kind: item.kind, color: item.color, width: item.width, a: corner(item.a), b: corner(item.b) });
   if (item.tool === "note") return JSON.stringify({ tool: "note", color: item.color, x: round(item.x, 1), y: round(item.y, 1), w: round(item.w, 1), h: round(item.h, 1), text: item.text });
-  return JSON.stringify({ tool: item.tool, color: item.color, width: item.width, points: item.points.map(([x, y, p]) => [round(x, 1), round(y, 1), round(p, 2)]) });
+  const stroke = { tool: item.tool, color: item.color, width: item.width, points: item.points.map(([x, y, p]) => [round(x, 1), round(y, 1), round(p, 2)]) };
+  if (item.clip) stroke.clip = { kind: item.clip.kind, x: round(item.clip.x, 1), y: round(item.clip.y, 1), w: round(item.clip.w, 1), h: round(item.clip.h, 1) };
+  return JSON.stringify(stroke);
 }
 
 /** The text to write: one item per line, so a change to one item is a small change in the file. */
@@ -221,9 +236,11 @@ export function serializeCanvas(canvas) {
   const body = lines.length ? "\n" + lines.join(",\n") + "\n" : "";
   const paper = canvas.paper && canvas.paper !== "none" ? canvas.paper : null;
   const page = canvas.page && canvas.page !== "none" ? canvas.page : null;
-  if (paper || page) {
+  const clipped = canvas.items.some((item) => item.clip);
+  if (paper || page || clipped) {
     const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
-    return `{"format":${FORMAT},"items":[${body}]${extra}}\n`;
+    // Format 3 unless a clip needs 4, so a drawing without clips stays readable by 0.4.5 and 0.4.6.
+    return `{"format":${clipped ? 4 : 3},"items":[${body}]${extra}}\n`;
   }
   const penOnly = canvas.items.every((item) => item.tool === "pen");
   return penOnly ? `{"format":1,"strokes":[${body}]}\n` : `{"format":2,"items":[${body}]}\n`;
@@ -255,13 +272,14 @@ export function drawnWidth(item) {
   return item.tool === "highlighter" ? item.width * HIGHLIGHT_FACTOR : item.width;
 }
 
-// ---- tidy highlights ----
-// A highlighter stroke that covers a figure (a rectangle, an ellipse or a sticky note) and only
-// goes a little over its edge is cut off at the edge when it is drawn. The stroke in the file is
-// not changed, so moving the figure or the stroke away shows the stroke as it was drawn.
-// A stroke that goes well outside is left alone, so a highlight can still be put beside a figure.
+// ---- tidy strokes ----
+// A highlighter or pen stroke that covers a figure (a rectangle, an ellipse or a sticky note) and
+// only goes a little over its edge is cut off at the edge. From 0.4.7 the cut is saved in the
+// stroke (`clip`), so taking the figure away later does not bring the overshoot back.
+// A part of the stroke that goes well outside is not cut: it is split off as a stroke of its own.
+// So one long fill that strays at the end loses nothing but the stray part's tidiness.
 
-/** Extra distance, in drawing units, a highlight may go outside a figure beyond half its width. */
+/** Extra distance, in drawing units, a stroke may go outside a figure beyond half its width. */
 export const HIGHLIGHT_SLACK = 12;
 const HIGHLIGHT_INSIDE = 0.6; // share of the stroke that must lie inside the figure
 const HIGHLIGHT_SAMPLES = 64; // enough to judge a stroke; keeps drawing fast with long strokes
@@ -276,7 +294,7 @@ export function figureOf(item) {
 
 // How far a point is outside a figure; 0 inside. For an ellipse this is an estimate that is
 // close for the small distances that matter here.
-function distanceOutside(figure, px, py) {
+export function distanceOutside(figure, px, py) {
   if (figure.kind === "rect") {
     return Math.hypot(Math.max(figure.x - px, 0, px - (figure.x + figure.w)), Math.max(figure.y - py, 0, py - (figure.y + figure.h)));
   }
@@ -286,32 +304,79 @@ function distanceOutside(figure, px, py) {
   return r <= 1 ? 0 : (r - 1) * Math.min(rx, ry);
 }
 
-/**
- * The figure a highlighter stroke should be cut to, or null. `items` are all the items of the
- * drawing. When several figures fit, the smallest one wins (a box inside a box).
- */
-export function highlightFigure(stroke, items) {
+// The figure most of the stroke lies in (the smallest one when several do), or null.
+function coveredFigure(stroke, items) {
   const points = stroke.points;
   if (!points.length) return null;
   const step = Math.max(1, Math.ceil(points.length / HIGHLIGHT_SAMPLES));
-  const allowed = drawnWidth(stroke) / 2 + HIGHLIGHT_SLACK;
   let best = null;
   for (const item of items) {
     const figure = figureOf(item);
     if (!figure) continue;
     let inside = 0;
     let total = 0;
-    let farthest = 0;
     for (let i = 0; i < points.length; i += step) {
-      const out = distanceOutside(figure, points[i][0], points[i][1]);
       total++;
-      if (out === 0) inside++;
-      if (out > farthest) farthest = out;
+      if (distanceOutside(figure, points[i][0], points[i][1]) === 0) inside++;
     }
-    if (inside / total < HIGHLIGHT_INSIDE || farthest > allowed) continue;
+    if (inside / total < HIGHLIGHT_INSIDE) continue;
     if (!best || figure.w * figure.h < best.w * best.h) best = figure;
   }
   return best;
+}
+
+const copyPoints = (points) => points.map((p) => [p[0], p[1], p[2]]);
+
+/**
+ * Cuts a finished stroke to the figure it covers. Returns the strokes to put in the drawing in
+ * place of it: the same stroke when no figure fits, or one stroke with a `clip` for the tidy part
+ * plus a plain stroke for every part that strays further than half the line width plus a little.
+ * A stray part runs from where the line leaves the figure to where it comes back, so the line
+ * stays joined. `items` are the other items of the drawing; the stroke itself is not changed.
+ */
+export function tidyStroke(stroke, items) {
+  const figure = coveredFigure(stroke, items);
+  if (!figure) return [stroke];
+  const points = stroke.points;
+  const allowed = drawnWidth(stroke) / 2 + HIGHLIGHT_SLACK;
+  const out = points.map((p) => distanceOutside(figure, p[0], p[1]));
+  // Stray parts as [from, to] index pairs, widened to the points where the line is in the figure.
+  const strays = [];
+  for (let i = 0; i < points.length; i++) {
+    if (out[i] <= allowed) continue;
+    let from = i;
+    while (from > 0 && out[from] > 0) from--;
+    let to = i;
+    while (to < points.length - 1 && out[to] > 0) to++;
+    const last = strays[strays.length - 1];
+    if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+    else strays.push([from, to]);
+    i = to;
+  }
+  const piece = (from, to, clip) => {
+    const copy = { tool: stroke.tool, color: stroke.color, width: stroke.width, points: copyPoints(points.slice(from, to + 1)) };
+    if (clip) copy.clip = { ...figure };
+    return copy;
+  };
+  // A pen line that stays on the figure needs no cut; a broad highlight still overflows the edge.
+  const needsCut = (from, to) => stroke.tool === "highlighter" || out.slice(from, to + 1).some((d) => d > 0);
+  const tidyParts = [];
+  let start = 0;
+  for (const [from, to] of strays) {
+    tidyParts.push([start, from]);
+    start = to;
+  }
+  tidyParts.push([start, points.length - 1]);
+  const result = [];
+  for (const [from, to] of tidyParts) {
+    // A part that never touches the figure is not tidy, it is a stray that was cut off: drop it.
+    if (!out.slice(from, to + 1).some((d) => d === 0)) continue;
+    result.push(piece(from, to, needsCut(from, to)));
+  }
+  for (const [from, to] of strays) result.push(piece(from, to, false));
+  // Everything is a stray piece or untouched, and nothing needed cutting: keep the original.
+  if (result.length === 1 && !result[0].clip && strays.length === 0) return [stroke];
+  return result.length ? result : [stroke];
 }
 
 /** The corner and size of the box between two corners, whichever way they were dragged. */
@@ -462,6 +527,7 @@ export function moveItem(item, dx, dy) {
       point[0] += dx;
       point[1] += dy;
     }
+    if (item.clip) item.clip = { ...item.clip, x: item.clip.x + dx, y: item.clip.y + dy };
   }
 }
 
@@ -549,11 +615,11 @@ export class DrawingHistory {
   undo(canvas) {
     const entry = this.undoList.pop();
     if (!entry) return false;
-    if (entry.add) removeItem(canvas, entry.add);
+    for (const item of [].concat(entry.add || [])) removeItem(canvas, item);
     // Items go back at their old places, lowest index first, so every index is right again.
     for (const { index, item } of [...(entry.remove || [])].sort((a, b) => a.index - b.index)) canvas.items.splice(index, 0, item);
     if (entry.move) for (const item of entry.move.items) moveItem(item, -entry.move.dx, -entry.move.dy);
-    if (entry.edit) Object.assign(entry.edit.item, entry.edit.before);
+    for (const edit of [].concat(entry.edit || [])) Object.assign(edit.item, edit.before);
     if (entry.setting) canvas[entry.setting.key] = entry.setting.before;
     this.redoList.push(entry);
     return true;
@@ -562,10 +628,10 @@ export class DrawingHistory {
   redo(canvas) {
     const entry = this.redoList.pop();
     if (!entry) return false;
-    if (entry.add) canvas.items.push(entry.add);
+    for (const item of [].concat(entry.add || [])) canvas.items.push(item);
     for (const { item } of entry.remove || []) removeItem(canvas, item);
     if (entry.move) for (const item of entry.move.items) moveItem(item, entry.move.dx, entry.move.dy);
-    if (entry.edit) Object.assign(entry.edit.item, entry.edit.after);
+    for (const edit of [].concat(entry.edit || [])) Object.assign(edit.item, edit.after);
     if (entry.setting) canvas[entry.setting.key] = entry.setting.after;
     this.undoList.push(entry);
     return true;

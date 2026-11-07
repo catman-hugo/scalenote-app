@@ -3921,7 +3921,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":4,"items":[]}');
+  await canvasVault(page, '{"format":5,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -5193,6 +5193,98 @@ await test("a highlight that only goes a little over a figure is cut at its edge
   assert.ok(list.find((i) => i.tool === "highlighter").points.at(-1)[0] > list[0].b[0] - 1, "the first stroke still reaches past the edge in the file");
 }, ctxOpts);
 
+// ---------- 0.4.7: the cut is saved in the stroke ----------
+
+// A rectangle with the right edge found on the sheet (corners snap to the grid).
+async function rectangleEdge(page, from, to, row) {
+  await tool(page, "Rectangle");
+  await dragPath(page, [from, to]);
+  const outline = await sheetProfile(page, "row", row);
+  return outline.pixels.map(dark).lastIndexOf(true);
+}
+
+await test("taking the square away keeps the highlight cut, and undo brings both back", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const edge = await rectangleEdge(page, [100, 60], [300, 140], 100);
+  await tool(page, "Highlighter");
+  await chooseColour(page, "yellow");
+  await drawLine(page, [edge - 120, 100], [edge + 6, 100]);
+  await waitSaved(page);
+  assert.ok((await items(page)).find((i) => i.tool === "highlighter").clip, "the cut is saved in the stroke");
+  assert.equal((await savedDrawing(page)).format, 4);
+  // Rub out the rectangle at its top-left corner, far from the highlight.
+  await tool(page, "Eraser");
+  await dragPath(page, [[96, 56], [108, 66]], 3);
+  await waitSaved(page);
+  assert.deepEqual((await items(page)).map((i) => i.tool), ["highlighter"]);
+  const after = await sheetProfile(page, "row", 100);
+  assert.ok(tinted(after.pixels[edge - 20], after.page), "the highlight is still there");
+  for (const at of [edge + 3, edge + 6, edge + 10]) assert.ok(!tinted(after.pixels[at], after.page), `the overshoot stays hidden at +${at - edge}: ${after.pixels[at]}`);
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.deepEqual((await items(page)).map((i) => i.tool), ["shape", "highlighter"]);
+}, ctxOpts);
+
+await test("one long fill that strays far at the end only shows the stray part", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const edge = await rectangleEdge(page, [100, 60], [300, 200], 100);
+  await tool(page, "Highlighter");
+  await chooseColour(page, "yellow");
+  // Down the inside, then out to the right well past the edge, in one stroke.
+  await dragPath(page, [[edge - 150, 90], [edge + 6, 90], [edge + 6, 120], [edge - 150, 120], [edge - 100, 150], [edge - 20, 150], [edge + 90, 150]], 4);
+  await waitSaved(page);
+  const list = (await items(page)).filter((i) => i.tool === "highlighter");
+  assert.equal(list.length, 2, "a cut part and a free part");
+  assert.equal(list.filter((i) => i.clip).length, 1);
+  const fill = await sheetProfile(page, "row", 90);
+  assert.ok(!tinted(fill.pixels[edge + 5], fill.page), "the upper rows are still cut at the edge: " + fill.pixels[edge + 5]);
+  const tail = await sheetProfile(page, "row", 150);
+  assert.ok(tinted(tail.pixels[edge + 60], tail.page), "the stray part shows: " + tail.pixels[edge + 60]);
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await items(page)).filter((i) => i.tool === "highlighter").length, 0, "one undo takes the whole stroke away");
+  await tool(page, "Redo");
+  await waitSaved(page);
+  assert.equal((await items(page)).filter((i) => i.tool === "highlighter").length, 2);
+}, ctxOpts);
+
+await test("a pen line that goes a little over a figure is cut too, one inside is left alone", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const edge = await rectangleEdge(page, [100, 60], [300, 140], 100);
+  await tool(page, "Pen");
+  await chooseWidth(page, 4);
+  await drawLine(page, [edge - 120, 100], [edge + 8, 100]);
+  await drawLine(page, [edge - 120, 80], [edge - 30, 80]);
+  await waitSaved(page);
+  const pens = (await items(page)).filter((i) => i.tool === "pen");
+  assert.equal(pens.length, 2);
+  assert.ok(pens[0].clip && !pens[1].clip, "only the one that goes over is cut");
+  const row = await sheetProfile(page, "row", 100);
+  assert.ok(!dark(row.pixels[edge + 7]), "the pen line does not go outside: " + row.pixels[edge + 7]);
+}, ctxOpts);
+
+await test("a selection is recoloured in one step, and a cut stroke moves with its cut", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await drawLine(page, [60, 80], [200, 80]);
+  await drawLine(page, [60, 120], [200, 120]);
+  await tool(page, "Select with a loop");
+  await dragPath(page, [[30, 50], [260, 50], [260, 150], [30, 150], [30, 52]], 3);
+  await chooseColour(page, "red");
+  await waitSaved(page);
+  assert.deepEqual((await items(page)).map((i) => i.color), ["red", "red"]);
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.deepEqual((await items(page)).map((i) => i.color), ["ink", "ink"], "one undo puts both back");
+  await tool(page, "Redo");
+  await waitSaved(page);
+  assert.deepEqual((await items(page)).map((i) => i.color), ["red", "red"]);
+  assert.equal(await page.locator('.canvas-toolbar [data-menu="colour"] .canvas-swatch').evaluate((e) => e.className.includes("pen-ink")), true, "the colour of the next line did not change");
+}, ctxOpts);
+
 // ---------- 0.4.6: split mode and the view a page opens in ----------
 
 const splitBoxes = (page) => page.evaluate(() => {
@@ -5397,6 +5489,46 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "046")) {
     await page.click("#openSettings");
     await page.waitForSelector("#settings[open]");
     await page.screenshot({ path: `${shots}/v046-${label}-${scheme}-3-settings.png` });
+    await context.close();
+  }
+}
+
+// Screenshots for 0.4.7 (only when SHOTS_DIR is set): strokes cut to their figures, a highlight
+// that stays cut after its box is removed, a long stroke with a stray end, and the recolour.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "047")) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"], ["phone", { width: 390, height: 800 }, "dark"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await canvasVault(page);
+    await openCanvas(page);
+    await tool(page, "Rectangle");
+    await dragPath(page, [[40, 40], [200, 120]]);
+    await dragPath(page, [[40, 180], [200, 260]]);
+    await dragPath(page, [[40, 320], [200, 400]]);
+    await tool(page, "Highlighter");
+    await chooseColour(page, "yellow");
+    await chooseWidth(page, 3);
+    await drawLine(page, [30, 80], [212, 80], 20); // a little over both ends, then its box is removed
+    await dragPath(page, [[34, 200], [196, 200], [196, 230], [34, 230], [100, 250], [190, 250], [330, 250]], 6); // a long fill that strays at the end
+    await tool(page, "Pen");
+    await chooseColour(page, "indigo");
+    await chooseWidth(page, 2);
+    await drawLine(page, [34, 360], [212, 360], 20); // a pen line a little over the edge
+    await tool(page, "Eraser");
+    await dragPath(page, [[38, 38], [50, 48]], 3);
+    await waitSaved(page);
+    await page.screenshot({ path: `${shots}/v047-${label}-${scheme}-1-cuts.png` });
+    await tool(page, "Select with a loop");
+    await dragPath(page, [[20, 160], [360, 160], [360, 280], [20, 280], [20, 162]], 4);
+    await page.click('.canvas-toolbar [data-menu="colour"]');
+    await page.screenshot({ path: `${shots}/v047-${label}-${scheme}-2-recolour.png` });
+    await chooseColour(page, "pink");
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: `${shots}/v047-${label}-${scheme}-3-recoloured.png` });
     await context.close();
   }
 }
