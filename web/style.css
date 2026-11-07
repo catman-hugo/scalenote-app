@@ -818,7 +818,7 @@ body.block-dragging .float-bar { visibility: hidden; }
 .pen-green { background: var(--sn-text-green); }
 .pen-orange { background: var(--sn-text-orange); }
 .pen-purple { background: var(--sn-text-purple); }
-.canvas-line { display: block; width: 16px; background: var(--text); border-radius: 1px; }
+.canvas-line { display: block; width: 16px; background: var(--text); border-radius: 999px; /* round ends, like the pen line it stands for */ }
 .canvas-line[data-size="0"] { height: 2px; }
 .canvas-line[data-size="1"] { height: 4px; }
 .canvas-line[data-size="2"] { height: 6px; }
