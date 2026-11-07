@@ -1217,7 +1217,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Delete"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -1424,7 +1424,7 @@ await test("moving the open page keeps what was typed and keeps the page open", 
 await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
   await moveSetup(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Delete"]);
   await page.click(".context-menu .menu-item:has-text('Move to')");
   const names = await page.locator(".context-menu .menu-item").allTextContents();
   assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
@@ -4465,6 +4465,7 @@ await test("the paper menu has none, four rule lines and four grids; a choice is
   await page.click("#canvasToggle");
   await openCanvas(page);
   assert.equal(await page.locator('.canvas-menu[data-menu="paper"] button[aria-pressed="true"]').getAttribute("aria-label"), "Grid, large squares", "kept on reopening");
+  await page.waitForTimeout(200); // the sheet is drawn on the next frame after reopening
   assert.ok((await sheetProfile(page, "column", 300)).lines.length > 4);
 
   // Reopening starts a new undo list, so the next steps are made after it.
@@ -4984,6 +4985,120 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
   }
 }
 
+// ---------- 0.4.5: folder icons ----------
+
+const iconFile = (page) => page.evaluate(() => window.__mock.folderIcons.text);
+const glyphColour = (page, p) => page.evaluate((path) => {
+  const svg = document.querySelector(`.tree-button[data-path="${path}"] svg:nth-of-type(2)`);
+  return { colour: getComputedStyle(svg).color, filled: svg.querySelector("path").getAttribute("fill"), d: svg.querySelector("path").getAttribute("d") };
+}, p);
+async function openIconMenuFor(page, p) {
+  await rightClick(page, p);
+  await page.click('.context-menu .menu-item:has-text("Icon")');
+  await page.waitForSelector(".icon-menu");
+}
+
+await test("a folder starts with the plain folder icon, and a page has no Icon entry", async (page) => {
+  await withFolderAndPage(page);
+  assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
+  await rightClick(page, "Plan.md");
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+}, ctxOpts);
+
+await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
+  await withFolderAndPage(page);
+  await openIconMenuFor(page, "Biology");
+  assert.equal(await page.locator(".icon-menu [data-icon-style]").count(), 3);
+  assert.equal(await page.locator(".icon-menu [data-icon-colour]").count(), 17);
+  assert.deepEqual(await page.locator(".icon-menu .icon-menu-colour").evaluateAll((b) => b.map((x) => x.title)), [
+    "Blue", "Yellow", "Green", "Red", "Purple", "Cyan", "Orange", "Magenta", "Blue Mist", "Purple Mist", "Tan", "Lemon Lime", "Apple", "Teal", "Red Chalk", "Silver",
+  ]);
+  const before = await glyphColour(page, "Biology");
+  await page.click('.icon-menu [data-icon-style="notebook"]');
+  await page.click('.icon-menu [data-icon-colour="blue"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)), { format: 1, icons: { Biology: { style: "notebook", colour: "blue" } } });
+  const after = await glyphColour(page, "Biology");
+  assert.notEqual(after.d, before.d, "the notebook is drawn instead of the folder");
+  assert.equal(after.colour, "rgb(43, 124, 211)");
+  assert.equal(await page.locator('.icon-menu [data-icon-style="notebook"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator('.icon-menu [data-icon-colour="blue"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator(".icon-menu").count(), 1, "the menu stays open for the next choice");
+  await page.click('.icon-menu [data-icon-style="line"]');
+  const bar = await glyphColour(page, "Biology");
+  assert.equal(bar.filled, "currentColor", "the line is a solid bar");
+  assert.equal(bar.d, "M6.25 3.25h3.5v9.5h-3.5z", "and not the line of the drawing tools");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".icon-menu").count(), 0);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.path), "Biology", "focus returns to the folder");
+  // Notes are untouched.
+  assert.equal((await files(page))["Biology/Cells.md"], "cells\n");
+}, ctxOpts);
+
+await test("choosing the plain folder with no colour removes the entry again", async (page) => {
+  await withFolderAndPage(page);
+  await openIconMenuFor(page, "Biology");
+  await page.click('.icon-menu [data-icon-colour="red"]');
+  assert.equal(JSON.parse(await iconFile(page)).icons.Biology.colour, "red");
+  await page.click('.icon-menu [data-icon-colour="none"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, {});
+}, ctxOpts);
+
+await test("the icon is kept after the list is drawn again, and follows a renamed folder", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Biology: { style: "notebook", colour: "green" } } }); });
+  await page.click("#newFolder"); // draws the list again
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  assert.equal((await glyphColour(page, "Biology")).colour, "rgb(47, 158, 68)");
+  await rightClick(page, "Biology");
+  await page.click('.context-menu .menu-item:has-text("Rename")');
+  await page.locator(".inline-rename").fill("Plants");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Plants"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, { Plants: { style: "notebook", colour: "green" } });
+  assert.equal((await glyphColour(page, "Plants")).colour, "rgb(47, 158, 68)");
+}, ctxOpts);
+
+await test("a damaged icon file shows plain folders, is left alone and says so when a change is tried", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = "{ not json"; });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  await openIconMenuFor(page, "Biology");
+  await page.click('.icon-menu [data-icon-colour="red"]');
+  assert.equal(await iconFile(page), "{ not json", "the file is not overwritten");
+  assert.match(await page.textContent("#bannerText"), /folder icon file could not be read/);
+}, ctxOpts);
+
+await test("entries this version does not understand are kept when another folder changes", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Old: { style: "star", colour: "pink" } } }); });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  await openIconMenuFor(page, "Biology");
+  await page.click('.icon-menu [data-icon-colour="teal"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, { Old: { style: "star", colour: "pink" }, Biology: { style: "folder", colour: "teal" } });
+}, ctxOpts);
+
+await test("a folder called __proto__ can have an icon, and rapid clicking in the menu stays consistent", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => { window.__mock.folders.add("__proto__"); });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="__proto__"]');
+  await openIconMenuFor(page, "__proto__");
+  for (const name of ["red", "blue", "tan", "silver", "apple", "none", "magenta"]) await page.click(`.icon-menu [data-icon-colour="${name}"]`, { noWaitAfter: true });
+  for (const style of ["line", "notebook", "folder", "line"]) await page.click(`.icon-menu [data-icon-style="${style}"]`, { noWaitAfter: true });
+  await page.waitForFunction(() => JSON.parse(window.__mock.folderIcons.text).icons.__proto__?.style === "line");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(JSON.parse(await iconFile(page)).icons, "__proto__").value, { style: "line", colour: "magenta" });
+}, ctxOpts);
+
+await test("the icon menu fits a phone screen and the colours have names", async (page) => {
+  await withFolderAndPage(page);
+  await openIconMenuFor(page, "Biology");
+  const box = await page.locator(".icon-menu").boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 412 && box.y >= 0 && box.y + box.height <= 860, "inside the window");
+  for (const b of await page.locator(".icon-menu button").all()) assert.ok((await b.getAttribute("aria-label")) || (await b.textContent()).trim(), "every button has a name");
+}, { ...ctxOpts, userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
 // Screenshots of the screens changed in 0.4.5 (only when SHOTS_DIR is set): the paper and page
 // colour menus and some papers, in light and dark, on a desktop and a phone, and on other themes.
 if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
@@ -5002,6 +5117,25 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
     const name = (n) => `${shots}/v045-${label}-${scheme}-${n}.png`;
     await page.goto(url);
     await canvasVault(page);
+    // Folder icons: every colour in all three styles, then the Icon menu.
+    await page.evaluate(() => {
+      const names = ["blue", "yellow", "green", "red", "purple", "cyan", "orange", "magenta", "blueMist", "purpleMist", "tan", "lemonLime", "apple", "teal", "redChalk", "silver"];
+      const styles = ["folder", "notebook", "line"];
+      const icons = {};
+      names.forEach((colour, i) => { const name = `${styles[i % 3]} ${colour}`; window.__mock.folders.add(name); icons[name] = { style: styles[i % 3], colour }; });
+      names.slice(0, 6).forEach((colour, i) => { const name = `${styles[(i + 1) % 3]} ${colour} 2`; window.__mock.folders.add(name); icons[name] = { style: styles[(i + 1) % 3], colour }; });
+      window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons });
+    });
+    // On a phone the page list is a drawer that is closed after the vault is set up.
+    if (!(await page.isVisible("#newFolder"))) await page.click("#toggle");
+    await page.click("#newFolder");
+    await page.waitForSelector('.tree-button[data-path="notebook yellow"]');
+    await page.screenshot({ path: name("5-folder-icons") });
+    await openIconMenuFor(page, "notebook yellow");
+    await page.click('.icon-menu [data-icon-colour="teal"]');
+    await page.screenshot({ path: name("6-icon-menu") });
+    await page.keyboard.press("Escape");
+    if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
     await openCanvas(page);
     await chooseWidth(page, 2);
     await drawLine(page, [110, 80], [300, 80]);

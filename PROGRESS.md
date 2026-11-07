@@ -304,6 +304,15 @@ Owner requests after trying 0.4.3 on the tablet (2026-11-07). 0.4.3 had already 
 - Also: the width preview bar has rounded ends.
 - Release notes: `docs/release-notes/0.4.4.md`.
 
+## 0.4.5: built
+Owner requests after trying 0.4.4 (2026-11-07). Three parts, one branch (`feature/v0.4.5-paper-and-icons`).
+- Lasso moves snap (`moveAnchor`, `snappedShift` in `canvasrules.js`, `moveGesture` in `canvasview.js`): the first shape or note corner in the selection is put on the 20 unit grid and everything selected moves by the same amount, pen lines included. Follows the "Snap shapes to a grid" setting. Tested: unit tests and a browser test that fails when the snapping is removed.
+- Paper and page colour (`canvasrules.js`, `canvasview.js`, `icons.js`, `strings.js`, `style.css`): two toolbar menus like OneNote's View tab. Paper: none, four rule line spacings with a red margin line, four grid sizes (spacings 20, 40, 60, 80 drawing units, multiples of the snap grid). Page colour: sixteen colours and "No colour", stored by name and tinted for the theme (multiply on a light theme, a 75 percent mix on a dark one), so all eight themes work from one list. New drawings are plain. Saved as drawing file format 3 only when paper or page is set; ScaleNote 0.4.4 and older open such a drawing read-only (nothing is lost). Changes go through undo and redo. Tested: unit tests (format round trip, unknown values refused, spacings, tints, undo), browser tests (menus, drawn lines measured from pixels, save and reopen, four themes, read-only drawing, rapid clicking and far zoom), screenshots in light, dark, sepia, midnight, forest and sage on desktop and phone.
+- Folder icons (`foldericons.js`, `iconmenu.js`, `sidebar.js`, `foldericons.rs`): right-click or long-press a folder, "Icon": style (folder, notebook, line) and one of OneNote's sixteen section colours, or none. Stored in one small hidden file, `.scalenote/folder-icons.json`, so it syncs with the vault and no note is touched. Written atomically with a version check (one retry on a conflict) and a 256 KiB limit; a link in place of the file or folder is not followed. The file is untrusted: values are checked against lists, a damaged or newer file is left alone and shows plain folders, entries this version does not understand are kept when another folder changes, a folder named `__proto__` works. A renamed or moved folder keeps its icon and so do the folders inside it. A deleted folder's entry is left in the file (harmless, and a restore keeps the icon). Tested: 6 Rust tests (version check, size, link, hidden from the page list), 11 unit tests, 8 browser tests, screenshots light, dark, sepia, midnight, forest and sage on desktop and phone. The Tauri side (`read_folder_icons`, `write_folder_icons` in `src-tauri/src/lib.rs`) could not be compiled in this environment (no GTK libraries); it is a copy of the drawing commands and is built by the GitHub release build.
+- NOT tested, needs a device: the lasso snapping with a pen on the tablet; paper and page colours on the real screen; the Icon menu with a long press on Android; the hidden file on a real Windows/Android vault; the packaged app (built by the release workflow).
+- Not done: "Zoom to 100%" (owner said no). Handwriting to text was asked about (an in-app version of Gboard "Write in text fields"); it needs its own recogniser and is not scheduled.
+- Release notes: `docs/release-notes/0.4.5.md`.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -338,9 +347,10 @@ Owner requests after trying 0.4.3 on the tablet (2026-11-07). 0.4.3 had already 
 | 0.4.2 | Compact drawing toolbar with menus; Settings, Tags and Trash as buttons like New page (see "0.4.2: built") | built, not tried on a device |
 | 0.4.3 | Pen width as a five-stop slider; the page id is never shown in the app (see "0.4.3: built") | merged and tagged, not tried on a device |
 | 0.4.4 | Sticky notes drawn as boxes and resizable, shapes snap to a grid, the OneNote pen colours, pinch zoom fix (see "0.4.4: built") | built, not tried on a device |
-| 0.4.5 | Draw over text: ink anchored to blocks | not started |
-| 0.4.6 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.7+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
+| 0.4.5 | Paper and page colour for drawings, loop moves snap to the grid, folder icons (see "0.4.5: built") | built, not tried on a device |
+| 0.4.6 | Draw over text: ink anchored to blocks | not started |
+| 0.4.7 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.8+ | Rest of canvas and ink: split mode with a default mode setting, PDF import | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

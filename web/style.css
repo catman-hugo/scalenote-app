@@ -1678,3 +1678,16 @@ button.danger:hover { background: var(--bg-hover); }
   .topbar > button { flex: none; }
   .title { flex: 1 1 8rem; }
 }
+
+/* ---------- folder icon menu ---------- */
+.icon-menu { min-width: 0; width: 15rem; max-width: calc(100vw - 16px); padding-bottom: var(--space-1); }
+.icon-menu .menu-label:first-child { border-top: none; margin-top: 0; }
+.icon-menu-styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-1); padding: var(--space-1) var(--space-2); }
+.icon-menu-style { display: flex; align-items: center; justify-content: center; min-height: 36px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.icon-menu-style[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.icon-menu-colours { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-1); padding: var(--space-1) var(--space-2); }
+.icon-menu-colour { min-height: 36px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); position: relative; }
+/* The swatch is a solid square in the folder colour; the pressed one gets a ring. */
+.icon-menu-colour::after { content: ""; position: absolute; inset: 7px; background: var(--swatch); border-radius: 2px; }
+.icon-menu-colour[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.icon-menu-none[aria-pressed="true"] { background: var(--accent-soft); }

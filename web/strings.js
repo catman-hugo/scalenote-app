@@ -48,6 +48,24 @@ export const strings = {
     moveTop: "Top level",
     renameFolderLabel: "Folder name",
     renamePageLabel: "Page name",
+    icon: "Icon",
+  },
+
+  folderIcon: {
+    label: "Folder icon",
+    style: "Icon",
+    colour: "Colour",
+    styles: { folder: "Folder", notebook: "Notebook", line: "Line" },
+    none: "No colour",
+    colours: {
+      blue: "Blue", yellow: "Yellow", green: "Green", red: "Red",
+      purple: "Purple", cyan: "Cyan", orange: "Orange", magenta: "Magenta",
+      blueMist: "Blue Mist", purpleMist: "Purple Mist", tan: "Tan", lemonLime: "Lemon Lime",
+      apple: "Apple", teal: "Teal", redChalk: "Red Chalk", silver: "Silver",
+    },
+    readOnly: "The folder icon file could not be read, so icons cannot be changed. The file was left as it is.",
+    saveFailed: "The folder icon could not be saved.",
+    conflict: "The folder icons changed somewhere else. Try again.",
   },
 
   editor: {
