@@ -12,7 +12,7 @@
 //   "Pen button" setting says: erase (the default), select with a loop, or nothing.
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
 import {
-  DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop,
+  DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
   itemsInLoop, itemsTouched, moveItem, noteHeight, widthAt, wrapText,
 } from "./canvasrules.js";
@@ -70,9 +70,10 @@ function plainButton(label, iconName, onClick) {
 /**
  * Builds the canvas inside `host`. `onChange()` is called after every finished gesture,
  * `onNotice(text)` for a short message (for example, the drawing is full), and `penButton()`
- * says what the barrel button of a pen does: "erase", "select" or "none".
+ * says what the barrel button of a pen does: "erase", "select" or "none". `snapShapes()` says
+ * whether shape corners snap to a grid.
  */
-export function createCanvasView(host, { onChange, onNotice, penButton = () => "erase" }) {
+export function createCanvasView(host, { onChange, onNotice, penButton = () => "erase", snapShapes = () => true }) {
   const t = strings.canvas;
   const state = {
     canvas: emptyCanvas(),
@@ -421,6 +422,11 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
   }
 
+  // Where a shape corner goes: on the grid when snapping is on, otherwise exactly where the pointer is.
+  function shapePoint(world) {
+    return snapShapes() ? [snapToGrid(world.x), snapToGrid(world.y)] : [world.x, world.y];
+  }
+
   function paintShape(shape) {
     context.strokeStyle = state.colours[shape.color] || "#000";
     context.lineWidth = shape.width;
@@ -659,7 +665,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       setTimeout(() => openNote(existing, world), 0);
     } else if (SHAPES.includes(tool)) {
       clearSelection();
-      const shape = { tool: "shape", kind: tool, color: state.colour, width: state.width, a: [world.x, world.y], b: [world.x, world.y] };
+      const shape = { tool: "shape", kind: tool, color: state.colour, width: state.width, a: shapePoint(world), b: shapePoint(world) };
       state.gesture = { kind: "shape", id, shape, start: screen };
     } else {
       clearSelection();
@@ -857,8 +863,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       const events = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
       for (const part of events.length ? events : [event]) addPoint(part);
     } else if (g.kind === "shape") {
-      const world = toWorld(now.x, now.y);
-      g.shape.b = [world.x, world.y];
+      g.shape.b = shapePoint(toWorld(now.x, now.y));
     } else if (g.kind === "lasso") {
       const world = toWorld(now.x, now.y);
       g.length += Math.hypot(now.x - g.last.x, now.y - g.last.y);

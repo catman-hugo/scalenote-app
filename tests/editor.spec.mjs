@@ -4070,7 +4070,7 @@ await test("each shape is drawn by dragging, a stray tap draws nothing, and a sh
   await tool(page, "Undo");
   await waitSaved(page);
   assert.equal((await items(page)).length, 4);
-}, ctxOpts);
+}, { settings: existingUser({ updates: false, snapShapes: false }) });
 
 await test("a sticky note is typed into a box on the sheet, saved with its text, and a stray tap leaves nothing", async (page) => {
   await canvasVault(page);
@@ -4286,6 +4286,34 @@ await test("on a phone the drawing toolbar takes at most two lines", async (page
   const height = (await page.locator(".canvas-toolbar").boundingBox()).height;
   assert.ok(height < 110, `two lines at most: ${height}px`);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("shapes snap to a grid by default, so shapes drawn at different times line up, and the setting turns it off", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  // Two rectangles that are meant to share an edge, drawn a few pixels apart.
+  await dragPath(page, [[43, 143], [141, 221]]);
+  await dragPath(page, [[139, 145], [239, 218]]);
+  await waitSaved(page);
+  let saved = await items(page);
+  const corners = saved.flatMap((i) => [...i.a, ...i.b]);
+  assert.ok(corners.every((v) => Math.abs(v / 20 - Math.round(v / 20)) < 1e-9), "every corner is on the 20 unit grid: " + corners);
+  assert.equal(saved[0].b[0], saved[1].a[0], "the right edge of the first is the left edge of the second");
+  assert.equal(saved[0].a[1], saved[1].a[1], "and their tops match");
+
+  await page.click("#openSettings");
+  const box = page.locator('#settings label:has-text("Snap shapes to a grid") input');
+  assert.equal(await box.isChecked(), true, "on by default");
+  await box.uncheck();
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await dragPath(page, [[43, 343], [141, 421]]);
+  await waitSaved(page);
+  saved = await items(page);
+  assert.ok(saved[2].a.some((v) => Math.abs(v / 20 - Math.round(v / 20)) > 0.01), "off: the corner is where the pointer was");
+  const kept = await page.evaluate(() => JSON.parse(window.__mock.getSettings() || "{}").snapShapes);
+  assert.equal(kept, false, "the choice is saved");
+}, ctxOpts);
 
 await test("the shape menu opens under its button, shows the shape used last, and closes by choosing, Escape or a press elsewhere", async (page) => {
   await canvasVault(page);

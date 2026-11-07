@@ -362,3 +362,9 @@ Cost. Choosing a colour or width takes two presses instead of one. A menu is one
 Decision. The `id:` line in a page's properties stays in the file (history folders are named by it) but is never shown while using the app: the plain markdown view and the history "Text" view leave it out and put it back on save, search never matches it, and the fallback view of a page keeps all properties out of the shown block. The properties block is also recognised after a byte-order mark. Pen width is a slider with five stops (2, 4, 6, 8, 12) instead of three buttons; the file format is unchanged. This tidy-up ships as 0.4.3, so drawing over text becomes 0.4.4, the `/canvas` block 0.4.5, split mode 0.4.6 and PDF import 0.4.7.
 Alternatives. Moving the id out of the file into a separate index (rejected: the page would lose its history if the index is lost, and Obsidian users copying a folder would lose it). Showing other properties too (not asked for, they are the user's own).
 Cost. In the plain markdown view the first lines differ from the file on disk; the id is put back in the same place, and unchanged text is saved byte for byte. A user who deletes the whole properties block in that view still keeps the id (it is added back).
+
+## 2026-11-07: Shapes snap to a grid by default, with a setting to turn it off
+
+Decision. New shape corners snap to a 20 unit grid in drawing space. The setting "Snap shapes to a grid" is on by default and can be turned off in Settings. The grid is not drawn on the sheet.
+Alternatives. Snapping to other shapes' edges (smarter, but much more code and surprising on a pen); snapping only while a key is held (no key on a tablet); drawing a visible grid (not asked for, adds clutter).
+Cost. A shape cannot be placed finer than the grid while the setting is on, and a very short drag may snap to nothing and be ignored as a stray tap. Turning the setting off gives the old free placement.

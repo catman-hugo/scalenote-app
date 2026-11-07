@@ -417,3 +417,11 @@ export class DrawingHistory {
     return this.redoList.length > 0;
   }
 }
+
+// Shapes can snap to a grid so that two shapes drawn at different times line up exactly,
+// instead of one edge missing the other by a pixel. The grid is in drawing space (not screen
+// pixels), so it is the same at every zoom level and in every session.
+export const SHAPE_GRID = 20;
+export function snapToGrid(value, step = SHAPE_GRID) {
+  return Math.round(value / step) * step;
+}

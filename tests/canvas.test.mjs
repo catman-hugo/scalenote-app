@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  moveItem, noteHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText,
-} from "../web/canvasrules.js";
+  moveItem, noteHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText,, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -261,4 +260,13 @@ test("history is limited so a long session does not grow without end", () => {
   const history = new DrawingHistory(3);
   for (let i = 0; i < 10; i++) history.record({ add: stroke([[i, 0, 0.5]]) });
   assert.equal(history.undoList.length, 3);
+});
+
+test("snapToGrid puts a value on the nearest grid line and leaves grid values alone", () => {
+  assert.equal(SHAPE_GRID, 20);
+  assert.equal(snapToGrid(16), 20);
+  assert.equal(snapToGrid(9), 0);
+  assert.equal(snapToGrid(-31), -40);
+  assert.equal(snapToGrid(140), 140);
+  assert.equal(snapToGrid(37, 10), 40);
 });

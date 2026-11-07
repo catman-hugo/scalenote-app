@@ -102,6 +102,8 @@ export const strings = {
     penButton: "Pen button",
     penButtonOptions: { erase: "Erases", select: "Selects with a loop", none: "Does nothing" },
     penButtonHint: "What the button on the side of a pen does while you hold it on the canvas. The eraser end of a pen always erases.",
+    snapShapes: "Snap shapes to a grid",
+    snapShapesHint: "Corners of rectangles, ellipses, lines and arrows land on an invisible grid, so shapes drawn at different times line up exactly. Shapes already drawn are not moved.",
     historyHeading: "Page history",
     historyHint: "Older versions of your pages are kept automatically in a hidden folder inside your notes folder. They also hold text you have since deleted. Deleting the history removes the older versions of every page; the pages themselves are not changed.",
     historyButton: "Delete all history",
