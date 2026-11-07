@@ -8,6 +8,7 @@
   const logs = [];
   const attachments = new Map(); // path -> base64 text
   const trashed = []; // oldest first
+  const folderIcons = { text: null };
   const canvases = new Map(); // path of the page -> text of its drawing
   const history = new Map(); // path -> [{ id, time (seconds), text }]
   let trashSeq = 0;
@@ -47,6 +48,12 @@
       if (canvases.has(path)) { if (expected !== hash(canvases.get(path))) fail("conflict"); }
       else if (expected) fail("conflict");
       canvases.set(path, text); return hash(text);
+    },
+    // The folder icon file (.scalenote/folder-icons.json in the real vault).
+    read_folder_icons: () => (folderIcons.text === null ? null : { text: folderIcons.text, version: hash(folderIcons.text) }),
+    write_folder_icons: ({ text, expected }) => {
+      if (folderIcons.text === null ? expected : expected !== hash(folderIcons.text)) fail("conflict");
+      folderIcons.text = text; return hash(text);
     },
     // A stand-in for the page history: the copies a test puts in window.__mock.history are listed
     // as they are. The real rules (when copies are made, thinning, limits) are tested in Rust.
@@ -251,5 +258,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { canvases, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

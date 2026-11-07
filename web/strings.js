@@ -48,6 +48,24 @@ export const strings = {
     moveTop: "Top level",
     renameFolderLabel: "Folder name",
     renamePageLabel: "Page name",
+    icon: "Icon",
+  },
+
+  folderIcon: {
+    label: "Folder icon",
+    style: "Icon",
+    colour: "Colour",
+    styles: { folder: "Folder", notebook: "Notebook", line: "Line" },
+    none: "No colour",
+    colours: {
+      blue: "Blue", yellow: "Yellow", green: "Green", red: "Red",
+      purple: "Purple", cyan: "Cyan", orange: "Orange", magenta: "Magenta",
+      blueMist: "Blue Mist", purpleMist: "Purple Mist", tan: "Tan", lemonLime: "Lemon Lime",
+      apple: "Apple", teal: "Teal", redChalk: "Red Chalk", silver: "Silver",
+    },
+    readOnly: "The folder icon file could not be read, so icons cannot be changed. The file was left as it is.",
+    saveFailed: "The folder icon could not be saved.",
+    conflict: "The folder icons changed somewhere else. Try again.",
   },
 
   editor: {
@@ -146,6 +164,23 @@ export const strings = {
       ink: "Black or white (follows the theme)", charcoal: "Dark grey", grey: "Grey", silver: "Light grey",
     },
     widths: ["Thinnest line", "Thin line", "Medium line", "Thick line", "Thickest line"],
+    paper: "Paper",
+    pageColour: "Page colour",
+    noLines: "None",
+    noColour: "No colour",
+    ruleLines: "Rule lines",
+    gridLines: "Grid lines",
+    papers: {
+      none: "No lines",
+      "rule-1": "Rule lines, closest together", "rule-2": "Rule lines, close", "rule-3": "Rule lines, wide", "rule-4": "Rule lines, widest",
+      "grid-1": "Grid, smallest squares", "grid-2": "Grid, small squares", "grid-3": "Grid, large squares", "grid-4": "Grid, largest squares",
+    },
+    pageNames: {
+      sky: "Light blue", aqua: "Aqua", mint: "Mint", rose: "Rose",
+      periwinkle: "Periwinkle", frost: "Frost", meadow: "Meadow", blush: "Blush",
+      iris: "Iris", fog: "Fog", pistachio: "Pistachio", sand: "Sand",
+      lilac: "Lilac", orchid: "Orchid", cream: "Cream", peach: "Peach",
+    },
     undo: "Undo",
     redo: "Redo",
     finger: "Finger draws",

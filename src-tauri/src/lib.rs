@@ -191,6 +191,24 @@ fn write_canvas(
     with_vault(&state, "save canvas", |vault| vault.write_canvas(&path, &text, expected).map(version_to_text))
 }
 
+/// The folder icon file (see `scalenote_core::foldericons`), or nothing when none has been chosen.
+#[tauri::command]
+fn read_folder_icons(state: State<AppState>) -> Result<Option<NoteReply>, String> {
+    with_vault(&state, "read folder icons", |vault| {
+        Ok(vault.read_folder_icons()?.map(|c| NoteReply { text: c.text, version: version_to_text(c.version) }))
+    })
+}
+
+/// `expected` is the version text from the last read or write, or `None` when there was no file.
+#[tauri::command]
+fn write_folder_icons(text: String, expected: Option<String>, state: State<AppState>) -> Result<String, String> {
+    let expected = match expected {
+        Some(text) => Some(version_from_text(&text)?),
+        None => None,
+    };
+    with_vault(&state, "save folder icons", |vault| vault.write_folder_icons(&text, expected).map(version_to_text))
+}
+
 #[tauri::command]
 fn create_note(parent: String, title: String, state: State<AppState>) -> Result<String, String> {
     with_vault(&state, "create note", |vault| vault.create_note(&parent, &title))
@@ -530,6 +548,8 @@ pub fn run() {
             write_note,
             read_canvas,
             write_canvas,
+            read_folder_icons,
+            write_folder_icons,
             create_note,
             create_folder,
             rename_entry,

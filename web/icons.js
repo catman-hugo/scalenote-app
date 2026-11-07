@@ -4,6 +4,10 @@ const paths = {
   menu: "M2 4h12M2 8h12M2 12h12",
   plus: "M8 3v10M3 8h10",
   folder: "M2 4.5h4l1.5 1.5H14v6.5H2z",
+  // A book with a spiral binding down the left side.
+  notebook: "M5 2.5h8v11H5zM2.5 5h5M2.5 8h5M2.5 11h5",
+  // A short upright bar, like the tab of a OneNote section. It is drawn filled.
+  bar: "M6.25 3.25h3.5v9.5h-3.5z",
   note: "M4 2h5l3 3v9H4zM9 2v3h3",
   check: "M3 8.5l3.5 3.5L13 4.5",
   chevronRight: "M6 3l5 5-5 5",
@@ -28,12 +32,13 @@ const paths = {
   rectangle: "M2.5 4h11v8h-11z",
   ellipse: "M8 3.5c3.3 0 5.5 1.9 5.5 4.5S11.3 12.5 8 12.5 2.5 10.1 2.5 8 4.7 3.5 8 3.5z",
   sticky: "M3 2.5h10v7l-4 4H3zM13 9.5H9v4",
+  paper: "M3 2.5h10v11H3zM3 6.5h10M3 9.5h10M6 2.5v11",
   undo: "M5.5 3.5l-3 3 3 3M2.5 6.5h6.5a3.5 3.5 0 0 1 0 7H6",
   redo: "M10.5 3.5l3 3-3 3M13.5 6.5H7a3.5 3.5 0 0 0 0 7h3",
   folderOpen: "M2 13V4.5h4L7.5 6H12v2M2 13l2-5h11l-2 5z",
 };
 
-export function icon(name) {
+export function icon(name, { filled = false } = {}) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("width", "16");
@@ -42,7 +47,7 @@ export function icon(name) {
   svg.setAttribute("class", "icon");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", paths[name]);
-  path.setAttribute("fill", "none");
+  path.setAttribute("fill", filled ? "currentColor" : "none");
   path.setAttribute("stroke", "currentColor");
   path.setAttribute("stroke-width", "1.5");
   path.setAttribute("stroke-linecap", "round");

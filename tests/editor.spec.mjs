@@ -8,6 +8,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { COLOURS } from "../web/inlinestyles.js";
+import { pageFill } from "../web/canvasrules.js";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
@@ -1216,7 +1217,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Delete"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -1423,7 +1424,7 @@ await test("moving the open page keeps what was typed and keeps the page open", 
 await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
   await moveSetup(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Delete"]);
   await page.click(".context-menu .menu-item:has-text('Move to')");
   const names = await page.locator(".context-menu .menu-item").allTextContents();
   assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
@@ -3915,7 +3916,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":3,"items":[]}');
+  await canvasVault(page, '{"format":4,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -4365,6 +4366,208 @@ await test("shapes snap to a grid by default, so shapes drawn at different times
   assert.equal(kept, false, "the choice is saved");
 }, ctxOpts);
 
+await test("moving a selection with the loop tool snaps shapes and notes to the grid, and pen lines follow by the same amount", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await tool(page, "Rectangle");
+  await dragPath(page, [[60, 80], [160, 160]]);
+  await tool(page, "Pen");
+  await drawLine(page, [70, 200], [150, 200]);
+  await waitSaved(page);
+  const before = await items(page);
+  const rect0 = before[0];
+  const pen0 = before[1].points[0];
+  await tool(page, "Select with a loop");
+  await dragPath(page, [[30, 50], [200, 50], [200, 230], [30, 230], [30, 52]], 3);
+  // An awkward distance on purpose: not a multiple of the grid.
+  await dragPath(page, [[100, 100], [111, 118], [137, 152]], 3);
+  await waitSaved(page);
+  const after = await items(page);
+  const onGrid = (v) => Math.abs(v / 20 - Math.round(v / 20)) < 1e-6;
+  assert.ok(onGrid(after[0].a[0]) && onGrid(after[0].a[1]), "the corner that was grabbed is on the grid: " + after[0].a);
+  assert.ok(onGrid(after[0].b[0]) && onGrid(after[0].b[1]), "so is the other corner: " + after[0].b);
+  const moved = [after[0].a[0] - rect0.a[0], after[0].a[1] - rect0.a[1]];
+  assert.ok(moved[0] > 0 && moved[1] > 0, "it did move");
+  assert.ok(Math.abs(after[0].b[0] - after[0].a[0] - (rect0.b[0] - rect0.a[0])) < 0.2, "the rectangle kept its size");
+  const pen1 = after[1].points[0];
+  assert.ok(Math.abs(pen1[0] - pen0[0] - moved[0]) < 0.2 && Math.abs(pen1[1] - pen0[1] - moved[1]) < 0.2, "the pen line moved the same amount");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  const undone = (await items(page))[0];
+  assert.deepEqual(undone.a, rect0.a, "undo puts the rectangle back where it was");
+}, ctxOpts);
+
+// The colours down a column (or along a row) of the sheet as it is shown, to see where the paper
+// lines run. `at` is in screen pixels from the corner of the sheet. Returns the pixels, the
+// positions (in screen pixels) of every line that differs from the page colour, and the page colour.
+async function sheetProfile(page, direction, at) {
+  // The sheet is drawn on the next animation frame, and a slow machine can need longer, so the
+  // pixels are read again until something has been painted (an unpainted canvas reads as clear).
+  let profile;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    profile = await page.evaluate(([dir, position]) => {
+      const canvas = document.querySelector(".canvas-surface");
+      const ratio = canvas.width / canvas.getBoundingClientRect().width;
+      const column = dir === "column";
+      const length = column ? canvas.height : canvas.width;
+      const data = canvas.getContext("2d").getImageData(column ? Math.round(position * ratio) : 0, column ? 0 : Math.round(position * ratio), column ? 1 : length, column ? length : 1).data;
+      const pixels = [];
+      let painted = false;
+      for (let i = 0; i < length; i++) {
+        pixels.push([data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]);
+        if (data[i * 4 + 3] !== 0) painted = true;
+      }
+      return { ratio, pixels, painted };
+    }, [direction, at]);
+    if (profile.painted) break;
+    await page.waitForTimeout(100);
+  }
+  const counts = new Map();
+  for (const pixel of profile.pixels) counts.set(pixel.join(), (counts.get(pixel.join()) || 0) + 1);
+  const page_ = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0].split(",").map(Number);
+  const differs = (pixel) => Math.abs(pixel[0] - page_[0]) + Math.abs(pixel[1] - page_[1]) + Math.abs(pixel[2] - page_[2]) > 12;
+  const lines = [];
+  let start = -1;
+  profile.pixels.forEach((pixel, i) => {
+    if (differs(pixel) && start === -1) start = i;
+    if (!differs(pixel) && start !== -1) { lines.push((start + i - 1) / 2 / profile.ratio); start = -1; }
+  });
+  return { ...profile, lines, page: page_ };
+}
+const gaps = (lines) => lines.slice(1).map((v, i) => Math.round(v - lines[i]));
+const themeBackground = (page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
+const closeTo = (a, b, tolerance = 3) => a.every((v, i) => Math.abs(v - b[i]) <= tolerance);
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+await test("the paper menu has none, four rule lines and four grids; a choice is drawn, saved with the drawing, kept on reopening and undone", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await page.click('.canvas-toolbar [data-menu="paper"]');
+  const labels = await page.locator('.canvas-menu[data-menu="paper"] button').evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+  assert.deepEqual(labels, [
+    "No lines", "Rule lines, closest together", "Rule lines, close", "Rule lines, wide", "Rule lines, widest",
+    "Grid, smallest squares", "Grid, small squares", "Grid, large squares", "Grid, largest squares",
+  ]);
+  assert.equal(await page.locator('.canvas-menu[data-menu="paper"] button[aria-pressed="true"]').getAttribute("aria-label"), "No lines");
+  assert.equal((await sheetProfile(page, "column", 300)).lines.length, 0, "a new drawing has plain paper");
+
+  await menuPick(page, "paper", "Rule lines, wide");
+  await waitSaved(page);
+  const saved = await savedDrawing(page);
+  assert.equal(saved.format, 3);
+  assert.equal(saved.paper, "rule-3");
+  assert.equal(await page.locator('.canvas-menu[data-menu="paper"]').isVisible(), false, "the menu closes after a choice");
+  const column = await sheetProfile(page, "column", 300);
+  assert.ok(column.lines.length > 4, "lines are drawn");
+  assert.ok(gaps(column.lines).every((g) => g === 60), "60 units apart: " + gaps(column.lines));
+  const margin = await sheetProfile(page, "row", 200);
+  assert.equal(margin.lines.length, 1, "one margin line across a row");
+  const [r, , b] = margin.pixels[Math.round(margin.lines[0] * margin.ratio)];
+  assert.ok(r > b + 40, "and it is red");
+  assert.equal(Math.round(margin.lines[0]), 84, "60 units from the left edge, with the sheet starting 24 in");
+
+  await menuPick(page, "paper", "Grid, large squares");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "grid-3");
+  const across = await sheetProfile(page, "row", 54);
+  assert.ok(across.lines.length > 4 && gaps(across.lines).every((g) => g === 60), "vertical lines too: " + gaps(across.lines));
+  assert.ok(!across.pixels.some(([red, , blue]) => red > blue + 40), "and no margin line on a grid");
+
+  await page.click("#canvasToggle");
+  await openCanvas(page);
+  assert.equal(await page.locator('.canvas-menu[data-menu="paper"] button[aria-pressed="true"]').getAttribute("aria-label"), "Grid, large squares", "kept on reopening");
+  await page.waitForTimeout(200); // the sheet is drawn on the next frame after reopening
+  assert.ok((await sheetProfile(page, "column", 300)).lines.length > 4);
+
+  // Reopening starts a new undo list, so the next steps are made after it.
+  await menuPick(page, "paper", "Rule lines, close");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "rule-2");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "grid-3", "undo brings back the grid");
+  await tool(page, "Redo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "rule-2");
+  await menuPick(page, "paper", "No lines");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, undefined, "no lines: nothing stored");
+  assert.equal((await savedDrawing(page)).format, 1, "and a drawing without lines is the old format again");
+}, ctxOpts);
+
+await test("a page colour is tinted for the theme, saved with the drawing, shown on its button and undone; No colour goes back to the theme", async (page) => {
+  await canvasVault(page, '{"format":2,"items":[{"tool":"pen","color":"red","width":4,"points":[[40,40,0.5],[80,60,0.5]]}]}');
+  await openCanvas(page);
+  const bg = await themeBackground(page);
+  assert.ok(closeTo((await sheetProfile(page, "column", 400)).page, rgbOf(bg), 1), "no page colour: the theme's own");
+  await page.click('.canvas-toolbar [data-menu="page"]');
+  assert.equal(await page.locator('.canvas-menu[data-menu="page"] button.canvas-page').count(), 16);
+  await menuPick(page, "page", "Light blue");
+  await waitSaved(page);
+  const saved = await savedDrawing(page);
+  assert.equal(saved.format, 3);
+  assert.equal(saved.page, "sky");
+  assert.equal(saved.items.length, 1, "an older drawing keeps what it had");
+  assert.ok(closeTo((await sheetProfile(page, "column", 400)).page, rgbOf(pageFill("sky", bg)), 1), "the sheet is that colour on this theme");
+  const shown = await page.locator('.canvas-toolbar [data-menu="page"] .canvas-page-swatch').evaluate((n) => getComputedStyle(n).backgroundColor);
+  assert.equal(shown, `rgb(${rgbOf(pageFill("sky", bg)).join(", ")})`, "the button shows it");
+  assert.equal(await page.locator('.canvas-menu[data-menu="page"] button[aria-pressed="true"]').getAttribute("aria-label"), "Light blue");
+
+  await menuPick(page, "page", "No colour");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).page, undefined);
+  assert.equal((await savedDrawing(page)).format, 1, "a pen-only drawing with no colour is the old format again, as before 0.4.5");
+  await tool(page, "Undo");
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).page, "sky", "undo brings the colour back");
+}, ctxOpts);
+
+for (const [theme, dark] of [["midnight", true], ["sepia", false], ["forest", true], ["lavender", false]]) {
+  await test(`the same page colour looks right on the ${theme} theme`, async (page) => {
+    await canvasVault(page, '{"format":3,"items":[],"page":"mint","paper":"rule-2"}');
+    await openCanvas(page);
+    const bg = await themeBackground(page);
+    const sheet = await sheetProfile(page, "column", 400);
+    assert.ok(closeTo(sheet.page, rgbOf(pageFill("mint", bg)), 1), `${theme}: ${sheet.page} vs ${pageFill("mint", bg)}`);
+    const brightness = (sheet.page[0] + sheet.page[1] + sheet.page[2]) / 3;
+    assert.equal(brightness > 128, !dark, `${theme} stays ${dark ? "dark" : "light"}`);
+    assert.ok(sheet.lines.length > 4, "the lines show on a tinted page");
+  }, { settings: existingUser({ updates: false, theme }) });
+}
+
+await test("on a drawing that cannot be changed the paper and page colour cannot be changed either, and rapid clicking breaks nothing", async (page) => {
+  await canvasVault(page, '{"format":1,"strokes":[{"tool":"laser"}]}');
+  await openCanvas(page);
+  assert.equal(await page.locator('.canvas-toolbar [data-menu="paper"]').isDisabled(), true);
+  assert.equal(await page.locator('.canvas-toolbar [data-menu="page"]').isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), '{"format":1,"strokes":[{"tool":"laser"}]}', "the file is untouched");
+}, ctxOpts);
+
+await test("clicking the paper and page colour choices very fast, zooming far out and in, and an empty drawing all stay calm", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  for (let round = 0; round < 3; round++) {
+    for (const label of ["Rule lines, closest together", "Grid, smallest squares", "Rule lines, widest", "No lines"]) await menuPick(page, "paper", label);
+    for (const label of ["Light blue", "Peach", "No colour", "Mint"]) await menuPick(page, "page", label);
+  }
+  await menuPick(page, "paper", "Grid, smallest squares");
+  const box = await sheetBox(page);
+  await page.mouse.move(box.x + 300, box.y + 200);
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 25; i++) await page.mouse.wheel(0, 400); // zoom far out: the lines would be a smear, so they are left out
+  await page.waitForTimeout(100);
+  assert.equal((await sheetProfile(page, "column", 300)).lines.length, 0, "no lines when they would be closer than a few pixels");
+  for (let i = 0; i < 40; i++) await page.mouse.wheel(0, -400);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(100);
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).paper, "grid-1");
+  assert.equal((await savedDrawing(page)).page, "mint");
+  assert.deepEqual(errors, []);
+}, ctxOpts);
+
 // Is there ink at this spot of the sheet? Read from the pixels the canvas really shows.
 const inkAt = (page, x, y) => page.evaluate(([px, py]) => {
   const canvas = document.querySelector(".canvas-surface");
@@ -4789,6 +4992,176 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
     await page.screenshot({ path: `${shots}/v043-desktop-${scheme}-2-page-after-link.png` });
     await page.click("#sourceToggle");
     await page.screenshot({ path: `${shots}/v043-desktop-${scheme}-3-plain-markdown.png` });
+    await context.close();
+  }
+}
+
+// ---------- 0.4.5: folder icons ----------
+
+const iconFile = (page) => page.evaluate(() => window.__mock.folderIcons.text);
+const glyphColour = (page, p) => page.evaluate((path) => {
+  const svg = document.querySelector(`.tree-button[data-path="${path}"] svg:nth-of-type(2)`);
+  return { colour: getComputedStyle(svg).color, filled: svg.querySelector("path").getAttribute("fill"), d: svg.querySelector("path").getAttribute("d") };
+}, p);
+async function openIconMenuFor(page, p) {
+  await rightClick(page, p);
+  await page.click('.context-menu .menu-item:has-text("Icon")');
+  await page.waitForSelector(".icon-menu");
+}
+
+await test("a folder starts with the plain folder icon, and a page has no Icon entry", async (page) => {
+  await withFolderAndPage(page);
+  assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
+  await rightClick(page, "Plan.md");
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+}, ctxOpts);
+
+await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
+  await withFolderAndPage(page);
+  await openIconMenuFor(page, "Biology");
+  assert.equal(await page.locator(".icon-menu [data-icon-style]").count(), 3);
+  assert.equal(await page.locator(".icon-menu [data-icon-colour]").count(), 17);
+  assert.deepEqual(await page.locator(".icon-menu .icon-menu-colour").evaluateAll((b) => b.map((x) => x.title)), [
+    "Blue", "Yellow", "Green", "Red", "Purple", "Cyan", "Orange", "Magenta", "Blue Mist", "Purple Mist", "Tan", "Lemon Lime", "Apple", "Teal", "Red Chalk", "Silver",
+  ]);
+  const before = await glyphColour(page, "Biology");
+  await page.click('.icon-menu [data-icon-style="notebook"]');
+  await page.click('.icon-menu [data-icon-colour="blue"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)), { format: 1, icons: { Biology: { style: "notebook", colour: "blue" } } });
+  const after = await glyphColour(page, "Biology");
+  assert.notEqual(after.d, before.d, "the notebook is drawn instead of the folder");
+  assert.equal(after.colour, "rgb(43, 124, 211)");
+  assert.equal(await page.locator('.icon-menu [data-icon-style="notebook"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator('.icon-menu [data-icon-colour="blue"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator(".icon-menu").count(), 1, "the menu stays open for the next choice");
+  await page.click('.icon-menu [data-icon-style="line"]');
+  const bar = await glyphColour(page, "Biology");
+  assert.equal(bar.filled, "currentColor", "the line is a solid bar");
+  assert.equal(bar.d, "M6.25 3.25h3.5v9.5h-3.5z", "and not the line of the drawing tools");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".icon-menu").count(), 0);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.path), "Biology", "focus returns to the folder");
+  // Notes are untouched.
+  assert.equal((await files(page))["Biology/Cells.md"], "cells\n");
+}, ctxOpts);
+
+await test("choosing the plain folder with no colour removes the entry again", async (page) => {
+  await withFolderAndPage(page);
+  await openIconMenuFor(page, "Biology");
+  await page.click('.icon-menu [data-icon-colour="red"]');
+  assert.equal(JSON.parse(await iconFile(page)).icons.Biology.colour, "red");
+  await page.click('.icon-menu [data-icon-colour="none"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, {});
+}, ctxOpts);
+
+await test("the icon is kept after the list is drawn again, and follows a renamed folder", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Biology: { style: "notebook", colour: "green" } } }); });
+  await page.click("#newFolder"); // draws the list again
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  assert.equal((await glyphColour(page, "Biology")).colour, "rgb(47, 158, 68)");
+  await rightClick(page, "Biology");
+  await page.click('.context-menu .menu-item:has-text("Rename")');
+  await page.locator(".inline-rename").fill("Plants");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Plants"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, { Plants: { style: "notebook", colour: "green" } });
+  assert.equal((await glyphColour(page, "Plants")).colour, "rgb(47, 158, 68)");
+}, ctxOpts);
+
+await test("a damaged icon file shows plain folders, is left alone and says so when a change is tried", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = "{ not json"; });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  await openIconMenuFor(page, "Biology");
+  await page.click('.icon-menu [data-icon-colour="red"]');
+  assert.equal(await iconFile(page), "{ not json", "the file is not overwritten");
+  assert.match(await page.textContent("#bannerText"), /folder icon file could not be read/);
+}, ctxOpts);
+
+await test("entries this version does not understand are kept when another folder changes", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Old: { style: "star", colour: "pink" } } }); });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Biology"]');
+  await openIconMenuFor(page, "Biology");
+  await page.click('.icon-menu [data-icon-colour="teal"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, { Old: { style: "star", colour: "pink" }, Biology: { style: "folder", colour: "teal" } });
+}, ctxOpts);
+
+await test("a folder called __proto__ can have an icon, and rapid clicking in the menu stays consistent", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => { window.__mock.folders.add("__proto__"); });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="__proto__"]');
+  await openIconMenuFor(page, "__proto__");
+  for (const name of ["red", "blue", "tan", "silver", "apple", "none", "magenta"]) await page.click(`.icon-menu [data-icon-colour="${name}"]`, { noWaitAfter: true });
+  for (const style of ["line", "notebook", "folder", "line"]) await page.click(`.icon-menu [data-icon-style="${style}"]`, { noWaitAfter: true });
+  await page.waitForFunction(() => JSON.parse(window.__mock.folderIcons.text).icons.__proto__?.style === "line");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(JSON.parse(await iconFile(page)).icons, "__proto__").value, { style: "line", colour: "magenta" });
+}, ctxOpts);
+
+await test("the icon menu fits a phone screen and the colours have names", async (page) => {
+  await withFolderAndPage(page);
+  await openIconMenuFor(page, "Biology");
+  const box = await page.locator(".icon-menu").boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 412 && box.y >= 0 && box.y + box.height <= 860, "inside the window");
+  for (const b of await page.locator(".icon-menu button").all()) assert.ok((await b.getAttribute("aria-label")) || (await b.textContent()).trim(), "every button has a name");
+}, { ...ctxOpts, userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
+
+// Screenshots of the screens changed in 0.4.5 (only when SHOTS_DIR is set): the paper and page
+// colour menus and some papers, in light and dark, on a desktop and a phone, and on other themes.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "045")) {
+  const looks = [
+    ["desktop", { width: 1100, height: 760 }, "light", null], ["desktop", { width: 1100, height: 760 }, "dark", null],
+    ["phone", { width: 390, height: 800 }, "light", null], ["phone", { width: 390, height: 800 }, "dark", null],
+    ["sepia", { width: 1100, height: 760 }, "light", "sepia"], ["midnight", { width: 1100, height: 760 }, "dark", "midnight"],
+    ["forest", { width: 1100, height: 760 }, "dark", "forest"], ["sage", { width: 1100, height: 760 }, "light", "sage"],
+  ];
+  for (const [label, viewport, scheme, theme] of looks) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, ...(theme ? { theme } : {}) }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    const name = (n) => `${shots}/v045-${label}-${scheme}-${n}.png`;
+    await page.goto(url);
+    await canvasVault(page);
+    // Folder icons: every colour in all three styles, then the Icon menu.
+    await page.evaluate(() => {
+      const names = ["blue", "yellow", "green", "red", "purple", "cyan", "orange", "magenta", "blueMist", "purpleMist", "tan", "lemonLime", "apple", "teal", "redChalk", "silver"];
+      const styles = ["folder", "notebook", "line"];
+      const icons = {};
+      names.forEach((colour, i) => { const name = `${styles[i % 3]} ${colour}`; window.__mock.folders.add(name); icons[name] = { style: styles[i % 3], colour }; });
+      names.slice(0, 6).forEach((colour, i) => { const name = `${styles[(i + 1) % 3]} ${colour} 2`; window.__mock.folders.add(name); icons[name] = { style: styles[(i + 1) % 3], colour }; });
+      window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons });
+    });
+    // On a phone the page list is a drawer that is closed after the vault is set up.
+    if (!(await page.isVisible("#newFolder"))) await page.click("#toggle");
+    await page.click("#newFolder");
+    await page.waitForSelector('.tree-button[data-path="notebook yellow"]');
+    await page.screenshot({ path: name("5-folder-icons") });
+    await openIconMenuFor(page, "notebook yellow");
+    await page.click('.icon-menu [data-icon-colour="teal"]');
+    await page.screenshot({ path: name("6-icon-menu") });
+    await page.keyboard.press("Escape");
+    if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+    await openCanvas(page);
+    await chooseWidth(page, 2);
+    await drawLine(page, [110, 80], [300, 80]);
+    await tool(page, "Rectangle");
+    await dragPath(page, [[110, 130], [250, 200]]);
+    await page.click('.canvas-toolbar [data-menu="paper"]');
+    await page.screenshot({ path: name("1-paper-menu") });
+    await menuPick(page, "paper", "Rule lines, wide");
+    await menuPick(page, "page", "Light blue");
+    await page.screenshot({ path: name("2-rule-lines-light-blue") });
+    await page.click('.canvas-toolbar [data-menu="page"]');
+    await page.screenshot({ path: name("3-page-colour-menu") });
+    await menuPick(page, "paper", "Grid, large squares");
+    await menuPick(page, "page", "Peach");
+    await page.screenshot({ path: name("4-grid-peach") });
     await context.close();
   }
 }

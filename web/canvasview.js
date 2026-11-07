@@ -12,9 +12,9 @@
 //   "Pen button" setting says: erase (the default), select with a loop, or nothing.
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
 import {
-  DrawingHistory, LIMITS, NOTE, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
+  DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas,
-  itemsInLoop, itemsTouched, moveItem, noteTextHeight, widthAt, wrapText,
+  itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
 } from "./canvasrules.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
@@ -71,6 +71,35 @@ function plainButton(label, iconName, onClick) {
   return button;
 }
 
+const SVG = "http://www.w3.org/2000/svg";
+// A small picture of a paper for its button in the paper menu: the lines at the spacing that
+// paper really has, scaled down, and the red margin line for rule lines.
+function paperThumb(paper) {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 40 28");
+  svg.setAttribute("width", "40");
+  svg.setAttribute("height", "28");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", "paper-thumb");
+  const layout = paperLayout(paper);
+  const line = (x1, y1, x2, y2, cls) => {
+    const node = document.createElementNS(SVG, "line");
+    node.setAttribute("x1", x1);
+    node.setAttribute("y1", y1);
+    node.setAttribute("x2", x2);
+    node.setAttribute("y2", y2);
+    node.setAttribute("class", cls);
+    svg.append(node);
+  };
+  if (layout) {
+    const gap = layout.step / 6;
+    for (let at = gap; at < 28; at += gap) line(0, at, 40, at, "paper-line");
+    if (layout.kind === "grid") for (let at = gap; at < 40; at += gap) line(at, 0, at, 28, "paper-line");
+    else line(7, 0, 7, 28, "paper-margin");
+  }
+  return svg;
+}
+
 /**
  * Builds the canvas inside `host`. `onChange()` is called after every finished gesture,
  * `onNotice(text)` for a short message (for example, the drawing is full), and `penButton()`
@@ -97,6 +126,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     spaceDown: false,
     frame: 0,
     colours: {},
+    pageFill: "#fff",
     wrapped: new WeakMap(),
   };
 
@@ -235,6 +265,44 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   menus.width.panel.classList.add("canvas-menu-slider");
   toolbar.append(colourButton, widthButton, make("span", "canvas-gap"));
 
+  // The paper (lines behind the drawing) and the page colour belong to the drawing, not to the app,
+  // so they are saved with it and can be undone.
+  const paperButton = menuButton(t.paper, () => icon("paper"));
+  paperButton.addEventListener("click", () => toggleMenu("paper"));
+  const paperButtons = {};
+  const paperChoice = (name) => {
+    const button = toggleButton(t.papers[name], () => setSetting("paper", name));
+    button.classList.add("canvas-paper");
+    button.dataset.paper = name;
+    button.append(name === "none" ? make("span", "canvas-paper-none", t.noLines) : paperThumb(name));
+    paperButtons[name] = button;
+    return button;
+  };
+  makeMenu("paper", t.paper, paperButton, [
+    make("p", "canvas-menu-heading", t.ruleLines),
+    ...PAPERS.slice(0, 5).map(paperChoice),
+    make("p", "canvas-menu-heading", t.gridLines),
+    ...PAPERS.slice(5).map(paperChoice),
+  ]);
+
+  const pageButton = menuButton(t.pageColour, () => make("span", "canvas-page-swatch"));
+  pageButton.addEventListener("click", () => {
+    refreshPageSwatches();
+    toggleMenu("page");
+  });
+  const pageButtons = {};
+  const pageChoice = (name) => {
+    const button = toggleButton(name === "none" ? t.noColour : t.pageNames[name], () => setSetting("page", name));
+    button.classList.add(name === "none" ? "canvas-menu-row" : "canvas-page");
+    button.dataset.page = name;
+    if (name === "none") button.textContent = t.noColour;
+    else button.append(make("span", "canvas-page-swatch"));
+    pageButtons[name] = button;
+    return button;
+  };
+  makeMenu("page", t.pageColour, pageButton, PAGE_COLOURS.slice(1).map(pageChoice).concat(pageChoice("none")));
+  toolbar.append(paperButton, pageButton, make("span", "canvas-gap"));
+
   const undoButton = plainButton(t.undo, "undo", undo);
   const redoButton = plainButton(t.redo, "redo", redo);
   const deleteButton = plainButton(t.deleteSelection, "trash", deleteSelection);
@@ -271,11 +339,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     widthSlider.setAttribute("aria-valuetext", t.widths[stop]);
     widthPreview.dataset.size = String(stop);
     shapeButton.setAttribute("aria-pressed", String(SHAPES.includes(state.tool)));
-    for (const button of [shapeButton, colourButton, widthButton]) {
+    for (const [name, button] of Object.entries(paperButtons)) button.setAttribute("aria-pressed", String(state.canvas.paper === name));
+    for (const [name, button] of Object.entries(pageButtons)) button.setAttribute("aria-pressed", String(state.canvas.page === name));
+    for (const button of [shapeButton, colourButton, widthButton, paperButton, pageButton]) {
       button.show();
       button.disabled = state.readOnly;
     }
+    refreshPageSwatches();
     widthSlider.disabled = state.readOnly;
+    for (const button of [...Object.values(paperButtons), ...Object.values(pageButtons)]) button.disabled = state.readOnly;
     fingerButton.setAttribute("aria-pressed", String(state.fingerDraws));
     fingerButton.disabled = state.readOnly;
     undoButton.disabled = state.readOnly || !state.history.canUndo;
@@ -308,6 +380,28 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       if (!keepMenu) closeMenu();
       drawToolbar();
     }
+  }
+
+  // Shows every page colour as it will look in the theme that is on now, and the one in use on the button.
+  function refreshPageSwatches() {
+    readColours();
+    for (const [name, button] of Object.entries(pageButtons)) {
+      const swatch = button.querySelector(".canvas-page-swatch");
+      if (swatch) swatch.style.background = pageFill(name, state.background);
+    }
+    const shown = pageButton.querySelector(".canvas-page-swatch");
+    if (shown) shown.style.background = pageFill(state.canvas.page, state.background);
+  }
+  // Paper and page colour are saved with the drawing and are one step each in the undo list.
+  function setSetting(key, value) {
+    if (state.readOnly || state.gesture) return;
+    commitNote();
+    closeMenu();
+    const before = state.canvas[key];
+    if (before === value) return;
+    state.canvas[key] = value;
+    state.history.record({ setting: { key, before, after: value } });
+    changed();
   }
 
   // ---- history ----
@@ -472,7 +566,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
 
   function paintNote(note, box, withText) {
     const colour = state.colours[note.color] || "#000";
-    context.fillStyle = state.background;
+    context.fillStyle = state.pageFill;
     context.fillRect(box.x, box.y, box.w, box.h);
     context.save();
     context.globalAlpha = NOTE_FILL_ALPHA;
@@ -500,6 +594,44 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       const editing = state.editing && state.editing.item === item;
       paintNote(item, { x: item.x, y: item.y, w: item.w, h: editing ? state.editing.height : item.h }, !editing);
     } else paintStroke(item);
+  }
+
+  // The lines of the paper, in drawing space, only the part that is on the screen. Lines closer
+  // together than a few pixels would only turn the sheet into a smear, so they are left out when
+  // zoomed far out. A line is one screen pixel wide at any zoom.
+  const MIN_PAPER_PIXELS = 6;
+  function paintPaper(screen) {
+    const layout = paperLayout(state.canvas.paper);
+    const { x, y, scale } = state.view;
+    if (!layout || layout.step * scale < MIN_PAPER_PIXELS) return;
+    const left = -x / scale;
+    const right = (screen.width - x) / scale;
+    const top = -y / scale;
+    const bottom = (screen.height - y) / scale;
+    const inks = paperInks(state.pageFill);
+    context.save();
+    context.lineWidth = 1 / scale;
+    context.strokeStyle = inks.line;
+    context.beginPath();
+    for (let at = Math.ceil(top / layout.step) * layout.step; at <= bottom; at += layout.step) {
+      context.moveTo(left, at);
+      context.lineTo(right, at);
+    }
+    if (layout.kind === "grid") {
+      for (let at = Math.ceil(left / layout.step) * layout.step; at <= right; at += layout.step) {
+        context.moveTo(at, top);
+        context.lineTo(at, bottom);
+      }
+    }
+    context.stroke();
+    if (layout.kind === "rule" && MARGIN_X >= left && MARGIN_X <= right) {
+      context.strokeStyle = inks.margin;
+      context.beginPath();
+      context.moveTo(MARGIN_X, top);
+      context.lineTo(MARGIN_X, bottom);
+      context.stroke();
+    }
+    context.restore();
   }
 
   function paintSelection() {
@@ -533,11 +665,13 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       surface.height = height;
     }
     readColours();
+    state.pageFill = pageFill(state.canvas.page, state.background);
     context.setTransform(1, 0, 0, 1, 0, 0);
-    context.fillStyle = state.background;
+    context.fillStyle = state.pageFill;
     context.fillRect(0, 0, surface.width, surface.height);
     const { x, y, scale } = state.view;
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
+    paintPaper(box);
     for (const item of state.canvas.items) paintItem(item);
     const g = state.gesture;
     if (g && g.kind === "pen") paintStroke(g.stroke);
@@ -728,7 +862,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     const around = boundsOf(state.selection);
     const slack = GRAB_PIXELS / state.view.scale;
     if (around && world.x >= around.minX - slack && world.x <= around.maxX + slack && world.y >= around.minY - slack && world.y <= around.maxY + slack) {
-      state.gesture = { kind: "move", id, items: state.selection.slice(), last: world, dx: 0, dy: 0 };
+      const items = state.selection.slice();
+      state.gesture = { kind: "move", id, items, start: world, anchor: moveAnchor(items), dx: 0, dy: 0 };
     } else {
       state.gesture = { kind: "lasso", id, loop: [[world.x, world.y]], last: screen, length: 0 };
     }
@@ -757,15 +892,19 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     for (const index of hit.reverse()) state.canvas.items.splice(index, 1);
   }
 
+  // The pointer has moved from where the gesture began; `g.dx/dy` is how far the items have been
+  // moved so far. With snapping on, the target is the nearest spot that puts the anchor on the grid.
   function moveGesture(g, world) {
-    const dx = world.x - g.last.x;
-    const dy = world.y - g.last.y;
+    let total = [world.x - g.start.x, world.y - g.start.y];
+    if (snapShapes() && g.anchor) total = snappedShift(g.anchor, total[0], total[1]);
+    const dx = total[0] - g.dx;
+    const dy = total[1] - g.dy;
+    if (dx === 0 && dy === 0) return;
     // Items may not be pushed past the edge of the sheet the file can hold.
     if (!canMove(g.items, dx, dy)) return;
     for (const item of g.items) moveItem(item, dx, dy);
-    g.dx += dx;
-    g.dy += dy;
-    g.last = world;
+    g.dx = total[0];
+    g.dy = total[1];
   }
 
   function finishGesture(cancelled) {

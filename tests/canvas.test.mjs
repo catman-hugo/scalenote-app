@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  moveItem, noteTextHeight, parseCanvas, pointInLoop, serializeCanvas, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
+  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -18,7 +18,7 @@ test("a pen-only drawing is written and read back exactly, apart from rounding, 
   assert.deepEqual(back.canvas.items[0].points, [[1, 2.1, 0.5], [10, 20, 0.12]]);
   assert.equal(back.canvas.items[1].color, "red");
   assert.equal(serializeCanvas(back.canvas), text, "writing what was read changes nothing");
-  assert.deepEqual(parseCanvas(serializeCanvas(emptyCanvas())), { canvas: { items: [] } });
+  assert.deepEqual(parseCanvas(serializeCanvas(emptyCanvas())), { canvas: { items: [], paper: "none", page: "none" } });
 });
 
 test("a drawing with highlighter, shapes and notes round-trips in the new format", () => {
@@ -73,7 +73,7 @@ test("anything not understood is refused as a whole, never partly kept", () => {
     '{"format":2,"items":[{"tool":"eraser"}]}',
   ];
   for (const text of bad) assert.ok(parseCanvas(text).problem, `refused: ${text}`);
-  assert.equal(parseCanvas('{"format":3,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
+  assert.equal(parseCanvas('{"format":4,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
   const mixed = '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":"ok"},{"tool":"pen","color":"x","width":4,"points":[[0,0,0.5]]}]}';
   assert.ok(parseCanvas(mixed).problem, "one bad item among good ones refuses the whole drawing");
 });
@@ -269,4 +269,103 @@ test("snapToGrid puts a value on the nearest grid line and leaves grid values al
   assert.equal(snapToGrid(-31), -40);
   assert.equal(snapToGrid(140), 140);
   assert.equal(snapToGrid(37, 10), 40);
+});
+
+test("the anchor of a selection is a corner of its first shape or note, and pen lines have none", () => {
+  assert.equal(moveAnchor([]), null);
+  assert.equal(moveAnchor([stroke([[1, 1, 0.5]])]), null);
+  assert.deepEqual(moveAnchor([stroke([[1, 1, 0.5]]), shape("rect", [40, 60], [100, 120])]), [40, 60]);
+  assert.deepEqual(moveAnchor([note(200, 80, "hi"), shape("rect", [40, 60], [100, 120])]), [200, 80]);
+});
+
+test("a snapped move puts the anchor exactly on the grid, whether or not it started there", () => {
+  assert.deepEqual(snappedShift([40, 60], 37, 52), [40, 60]);
+  assert.deepEqual(snappedShift([40, 60], 9, 9), [0, 0]);
+  const [dx, dy] = snappedShift([43, 57], 10, -4);
+  assert.equal(43 + dx, 60);
+  assert.equal(57 + dy, 60);
+  assert.deepEqual(snappedShift([0, 0], -31, 0), [-40, 0]);
+});
+
+test("a drawing with a paper or a page colour is written as format 3 and read back; without them nothing changes", () => {
+  const pen = stroke([[1, 2, 0.5]]);
+  const plain = serializeCanvas({ items: [pen], paper: "none", page: "none" });
+  assert.ok(plain.startsWith('{"format":1,"strokes":['), "no paper: still the 0.4.0 format");
+  const text = serializeCanvas({ items: [pen], paper: "grid-2", page: "sky" });
+  assert.ok(text.startsWith('{"format":3,"items":['));
+  assert.ok(text.trimEnd().endsWith('],"paper":"grid-2","page":"sky"}'), text);
+  const back = parseCanvas(text);
+  assert.equal(back.canvas.paper, "grid-2");
+  assert.equal(back.canvas.page, "sky");
+  assert.equal(back.canvas.items.length, 1);
+  assert.equal(serializeCanvas(back.canvas), text, "writing what was read changes nothing");
+  const onlyPage = parseCanvas(serializeCanvas({ items: [], paper: "none", page: "peach" })).canvas;
+  assert.deepEqual([onlyPage.paper, onlyPage.page], ["none", "peach"]);
+  const old = parseCanvas('{"format":2,"items":[{"tool":"pen","color":"ink","width":4,"points":[[0,0,0.5]]}]}').canvas;
+  assert.deepEqual([old.paper, old.page], ["none", "none"], "an older drawing has no paper");
+});
+
+test("a paper or page colour this version does not know makes the drawing read-only instead of being dropped", () => {
+  for (const extra of ['"paper":"dots"', '"paper":5', '"page":"teal"', '"page":null', '"paper":"rule-9"', '"paper":"none","page":"chartreuse"']) {
+    assert.equal(parseCanvas(`{"format":3,"items":[],${extra}}`).problem, "broken", extra);
+  }
+  assert.ok(parseCanvas('{"format":3,"items":[],"paper":"rule-1"}').canvas, "a known one is fine");
+});
+
+test("papers have four spacings that are multiples of the shape grid, and the margin is on the grid too", () => {
+  assert.deepEqual(PAPERS.slice(0, 2), ["none", "rule-1"]);
+  assert.equal(paperLayout("none"), null);
+  assert.equal(paperLayout("nonsense"), null);
+  const steps = (kind) => [1, 2, 3, 4].map((n) => paperLayout(`${kind}-${n}`).step);
+  assert.deepEqual(steps("rule"), [20, 40, 60, 80]);
+  assert.deepEqual(steps("grid"), [20, 40, 60, 80]);
+  for (const paper of PAPERS.slice(1)) assert.equal(paperLayout(paper).step % SHAPE_GRID, 0, paper);
+  assert.equal(MARGIN_X % SHAPE_GRID, 0);
+  assert.equal(paperLayout("rule-3").kind, "rule");
+  assert.equal(paperLayout("grid-3").kind, "grid");
+});
+
+test("page colours are tinted by the theme: multiplied on a light background, mixed into a dark one", () => {
+  assert.equal(PAGE_COLOURS.length, 17, "none and the sixteen colours");
+  assert.equal(pageFill("none", "#f9f7f4"), "#f9f7f4");
+  assert.equal(pageFill("not-a-colour", "#f9f7f4"), "#f9f7f4");
+  assert.equal(pageFill("sky", "not a colour"), "not a colour", "a background that cannot be read is left alone");
+  const light = pageFill("sky", "#ffffff");
+  assert.equal(light, "#e8eefa", "on white the light tint is the colour itself");
+  assert.equal(pageFill("sky", "#000000"), "#081424", "on black it is three quarters of the dark tint");
+  assert.equal(pageFill("sky", "#181818"), "#0e1a2a", "and the rest is the theme's own dark");
+  const warm = pageFill("sky", "#f5f0e8");
+  assert.notEqual(warm, light, "a warm theme keeps some of its warmth");
+  assert.ok(parseInt(warm.slice(1, 3), 16) > parseInt(warm.slice(5, 7), 16) - 20, "still warm: " + warm);
+  for (const name of PAGE_COLOURS.slice(1)) {
+    for (const background of ["#f9f7f4", "#181818", "#131c24", "#f8faf7"]) {
+      assert.match(pageFill(name, background), /^#[0-9a-f]{6}$/, `${name} on ${background}`);
+      assert.equal(isLightBackground(pageFill(name, background)), isLightBackground(background), `${name} keeps a ${background} page light or dark`);
+    }
+  }
+});
+
+test("paper lines are pale on a light page and dark on a dark one, with a red margin either way", () => {
+  const light = paperInks("#f9f7f4");
+  const dark = paperInks("#181818");
+  assert.notEqual(light.line, dark.line);
+  assert.ok(isLightBackground(light.line) && !isLightBackground(dark.line));
+  assert.match(light.margin, /^#e/);
+  assert.match(dark.margin, /^#8/);
+});
+
+test("changing the paper or the page colour can be undone and redone", () => {
+  const canvas = emptyCanvas();
+  const history = new DrawingHistory();
+  canvas.paper = "rule-2";
+  history.record({ setting: { key: "paper", before: "none", after: "rule-2" } });
+  canvas.page = "mint";
+  history.record({ setting: { key: "page", before: "none", after: "mint" } });
+  assert.ok(history.undo(canvas));
+  assert.deepEqual([canvas.paper, canvas.page], ["rule-2", "none"]);
+  assert.ok(history.undo(canvas));
+  assert.deepEqual([canvas.paper, canvas.page], ["none", "none"]);
+  assert.ok(history.redo(canvas));
+  assert.ok(history.redo(canvas));
+  assert.deepEqual([canvas.paper, canvas.page], ["rule-2", "mint"]);
 });

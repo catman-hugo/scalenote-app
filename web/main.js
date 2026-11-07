@@ -19,6 +19,8 @@ import { updateWikilinks } from "./wikilinks.js";
 import { createResolver } from "./wikilinkrules.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
+import { openIconMenu } from "./iconmenu.js";
+import { has, parseIcons, withIcon, withRenamed } from "./foldericons.js";
 import { openContextMenu } from "./contextmenu.js";
 import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
@@ -42,6 +44,8 @@ const el = (id) => document.getElementById(id);
 const app = {
   settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", snapShapes: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
+  // How folders look (see foldericons.js): the parsed file, read again with every page list.
+  folderIcons: parseIcons(null),
   expanded: new Set(),
   selectedFolder: "",
   // The open note: path, last known version on disk, and the parts kept for saving.
@@ -613,9 +617,75 @@ async function refreshTree() {
     showBanner(errorText(error));
     app.entries = [];
   }
+  await loadFolderIcons();
   drawTree();
   syncLinks();
   refreshIndex();
+}
+
+// ---------- folder icons ----------
+
+// A missing or unreadable file only means the plain look; nothing here may stop the list.
+async function loadFolderIcons() {
+  try {
+    const file = await backend.readFolderIcons();
+    app.folderIcons = parseIcons(file ? file.text : null);
+  } catch (error) {
+    logProblem("folder icons failed", error);
+    app.folderIcons = parseIcons(null);
+  }
+}
+
+// Changes the file and saves it. The file is read again just before, so a change made on another
+// device in the meantime is kept; if it still changes underneath, one more try is made.
+async function changeFolderIcons(compute) {
+  const f = strings.folderIcon;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const file = await backend.readFolderIcons();
+      const parsed = parseIcons(file ? file.text : null);
+      if (parsed.readOnly) {
+        showBanner(f.readOnly);
+        return false;
+      }
+      const text = compute(parsed);
+      if (text === null) return false;
+      await backend.writeFolderIcons(text, file ? file.version : null);
+      app.folderIcons = parseIcons(text);
+      return true;
+    } catch (error) {
+      const conflict = error instanceof BackendError && error.code === "conflict";
+      if (conflict && attempt === 0) continue;
+      logProblem("folder icons save failed", error);
+      showBanner(conflict ? f.conflict : f.saveFailed);
+      return false;
+    }
+  }
+  return false;
+}
+
+// A renamed or moved folder keeps its icon, and so do the folders inside it.
+async function carryFolderIcons(oldPath, newPath) {
+  const known = Object.keys(app.folderIcons.raw).some((path) => path === oldPath || path.startsWith(`${oldPath}/`));
+  if (known) await changeFolderIcons((parsed) => withRenamed(parsed, oldPath, newPath));
+}
+
+function openFolderIconMenu(node, x, y, button) {
+  const look = has(app.folderIcons.icons, node.path) ? app.folderIcons.icons[node.path] : { style: "folder", colour: "none" };
+  openIconMenu(x, y, look, {
+    returnFocus: button,
+    async choose(style, colour) {
+      await changeFolderIcons((parsed) => withIcon(parsed, node.path, style, colour));
+      drawTree();
+      const now = app.folderIcons.icons;
+      return has(now, node.path) ? now[node.path] : { style: "folder", colour: "none" };
+    },
+    onClose() {
+      // The list was drawn again, so the old button is gone; focus goes to the new one.
+      const again = [...el("tree").querySelectorAll("button.tree-button")].find((b) => b.dataset.path === node.path);
+      if (again) again.focus();
+    },
+  });
 }
 
 // ---------- tags and favorites ----------
@@ -889,6 +959,7 @@ function drawTree() {
       expanded: app.expanded,
       currentPath: app.current ? app.current.path : null,
       selectedFolder: app.selectedFolder,
+      icons: app.folderIcons.icons,
     },
     {
       openNote: (path) => openNote(path),
@@ -909,6 +980,7 @@ function drawTree() {
 function openEntryMenu(node, x, y, button) {
   const c = strings.contextMenu;
   const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
+  if (node.kind === "folder") items.push({ label: c.icon, run: () => openFolderIconMenu(node, x, y, button) });
   const targets = moveTargets(node.path);
   if (targets.length) {
     const choose = () =>
@@ -940,6 +1012,7 @@ async function moveEntry(path, folder) {
     if (app.autosave) await app.autosave.flush();
     const newPath = await backend.move(path, folder);
     remapPaths(path, newPath);
+    await carryFolderIcons(path, newPath);
     if (folder) app.expanded.add(folder); // so the result can be seen
   } catch (error) {
     logProblem("move failed", error);
@@ -982,6 +1055,7 @@ function renameEntryInline(node, button) {
         if (app.autosave) await app.autosave.flush();
         const newPath = await backend.rename(path, wanted);
         remapPaths(path, newPath);
+        await carryFolderIcons(path, newPath);
         if (app.current) el("title").value = noteTitle(app.current.path);
       } catch (error) {
         logProblem("rename failed", error);

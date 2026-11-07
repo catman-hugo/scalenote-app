@@ -1,6 +1,7 @@
 // The note list: folders that open and close, notes that open the editor.
 
 import { icon } from "./icons.js";
+import { COLOUR_HEX, has } from "./foldericons.js";
 import { strings } from "./strings.js";
 
 // Turns the flat, sorted list from Rust into nested folders.
@@ -19,7 +20,7 @@ export function buildTree(entries) {
 
 /**
  * Draws the tree into `container`.
- * `state` holds { expanded: Set, currentPath, selectedFolder }.
+ * `state` holds { expanded: Set, currentPath, selectedFolder, icons } (icons: folder path -> look).
  * `actions` has { openNote, toggleFolder, selectFolder, renameEntry, entryMenu, trashEntry }.
  * `entryMenu(node, x, y, button)` opens the right-click menu; `renameEntry(node, button)` renames in place.
  */
@@ -34,6 +35,15 @@ export function renderTree(container, entries, state, actions) {
     return;
   }
   container.append(renderList(root.children, state, actions));
+}
+
+// The icon of a folder: its own style and colour from the folder icon file, or the plain folder.
+export function folderGlyph(look) {
+  // The picture called "line" in the icon set is the drawing tool, so the bar has its own name.
+  const style = look ? look.style : "folder";
+  const glyph = icon(style === "line" ? "bar" : style, { filled: style === "line" });
+  if (look && look.colour !== "none") glyph.style.color = COLOUR_HEX[look.colour];
+  return glyph;
 }
 
 function renderList(nodes, state, actions) {
@@ -58,7 +68,7 @@ function renderNode(node, state, actions) {
   if (node.kind === "folder") {
     const open = state.expanded.has(node.path);
     item.setAttribute("aria-expanded", String(open));
-    button.append(icon(open ? "chevronDown" : "chevronRight"), icon("folder"), label(node.name));
+    button.append(icon(open ? "chevronDown" : "chevronRight"), folderGlyph(state.icons && has(state.icons, node.path) ? state.icons[node.path] : null), label(node.name));
     button.title = open ? strings.sidebar.collapse : strings.sidebar.expand;
     if (state.selectedFolder === node.path) row.classList.add("selected-folder");
     button.addEventListener("click", () => actions.toggleFolder(node.path));

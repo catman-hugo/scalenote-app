@@ -385,3 +385,26 @@ Cost. Creating a note takes a drag instead of a tap, and a note that grew for a 
 
 Decision. 0.4.3 was merged and tagged with the pen width slider and the hidden page id. The sticky note boxes, the shape grid, the pen colours, the pinch zoom fix and the empty-page fix were made after that on the same branch and are a new release, 0.4.4, with its own branch and pull request. Drawing over text moves to 0.4.5, the `/canvas` block to 0.4.6, split mode to 0.4.7 and PDF import to 0.4.8. From now on work is not pushed to a branch whose pull request may already be merged: a new branch is made for each new request.
 Cost. The plan numbers moved again.
+
+## 2026-11-07: Paper and page colour are stored in drawing format 3
+
+Decision. A drawing gets optional `paper` and `page` values, written only when one is set, as file format 3. A drawing without them is still written as before (format 1 or 2), so only drawings that use the new options need the new version. Page colours are stored by name and tinted per theme when drawn (multiply on a light background, a 75 percent mix with a darker tint on a dark one, found from the theme's background), so the same sixteen names work on all eight themes and any new theme. Paper spacings are multiples of the snap grid. New drawings are plain white with no lines.
+Alternatives. Store real colour values (would look wrong on the other themes); store the settings per device (would not travel with the drawing); a screen blend for dark themes (tried, too bright and muddy).
+Cost. ScaleNote 0.4.4 and older open a drawing with paper or page colour read-only, so every device must be updated.
+
+## 2026-11-07: Loop moves snap by one anchor corner
+
+Decision. When a selection is moved with the loop and snapping is on, the first shape or note in it has its first corner put on the grid and everything selected moves by the same amount. Pen lines follow without being snapped.
+Alternatives. Snap every item separately (would change the distances between shapes); snap the middle of the selection (not on the grid for most shapes).
+Cost. A selection of only pen lines is not snapped.
+
+## 2026-11-07: Folder icons live in a hidden file in the vault
+
+Decision. The icon style (folder, notebook, line) and colour (OneNote's sixteen section colours) of a folder are kept in `.scalenote/folder-icons.json` at the top of the vault, keyed by folder path, with an atomic, version-checked write. A hidden folder is never listed, searched or exported, and Obsidian ignores it. The file may be edited elsewhere, so it is treated as untrusted and never overwritten when it cannot be read or is newer. The picture colours are one set of mid-tones used on every theme.
+Alternatives. A setting in the app (would not sync or follow the vault); text in each folder (folders have no file of their own, and it would clutter the vault).
+Cost. A renamed or moved folder is followed only by renames made in ScaleNote; one renamed in another program loses its icon. Entries of deleted folders stay in the file.
+
+## 2026-11-07: 0.4.5 is the owner's view and icon requests; drawing over text moves on
+
+Decision. 0.4.5 holds the paper and page colour, lasso snapping and folder icons. Drawing over text becomes 0.4.6, the `/canvas` block 0.4.7, split mode 0.4.8 and PDF import 0.4.9.
+Cost. The plan numbers moved once more.
