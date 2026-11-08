@@ -1192,8 +1192,7 @@ async function showNoNote() {
   el("editor").hidden = true;
   el("source").hidden = true;
   el("sourceToggle").hidden = true;
-  el("canvasToggle").hidden = true;
-  el("splitToggle").hidden = true;
+  el("viewButton").hidden = true;
   el("canvasHost").hidden = true;
   el("title").hidden = true;
   drawFavorite();
@@ -1351,6 +1350,26 @@ async function toggleCanvas() {
   else await enterCanvas("canvas");
 }
 
+// The View button opens a menu of the ways to show this page. The names are the places you
+// will go; the one you are in is ticked. The Markdown view counts as Text.
+function openViewMenu() {
+  const button = el("viewButton");
+  const c = strings.canvas;
+  const places = [
+    ["text", c.viewText, leaveCanvas],
+    ["canvas", c.viewCanvas, () => enterCanvas("canvas")],
+    ["split", c.viewSplit, () => enterCanvas("split")],
+  ];
+  const here = app.mode === "canvas" || app.mode === "split" ? app.mode : "text";
+  const rect = button.getBoundingClientRect();
+  openContextMenu(
+    Math.max(8, Math.min(rect.left, window.innerWidth - 168)),
+    rect.bottom + 4,
+    places.map(([name, label, run]) => ({ label, run, current: name === here })),
+    { returnFocus: button, label: c.viewMenuLabel },
+  );
+}
+
 async function toggleSplit() {
   if (app.mode === "split") await leaveCanvas();
   else await enterCanvas("split");
@@ -1397,19 +1416,18 @@ function applyMode() {
   el("source").hidden = !source;
   el("canvasHost").hidden = !canvas && !split;
   el("panes").classList.toggle("split", Boolean(split));
-  const toggleSplitButton = el("splitToggle");
-  toggleSplitButton.hidden = !app.current;
-  toggleSplitButton.textContent = strings.canvas.split;
-  toggleSplitButton.setAttribute("aria-label", split ? strings.canvas.splitBackLabel : strings.canvas.splitLabel);
-  toggleSplitButton.setAttribute("aria-pressed", String(Boolean(split)));
-  const toggleCanvas = el("canvasToggle");
-  toggleCanvas.hidden = !app.current;
-  toggleCanvas.textContent = canvas ? strings.canvas.toggleBack : strings.canvas.toggle;
-  toggleCanvas.setAttribute("aria-label", canvas ? strings.canvas.toggleBackLabel : strings.canvas.toggleLabel);
-  toggleCanvas.setAttribute("aria-pressed", String(Boolean(canvas)));
+  const view = el("viewButton");
+  view.hidden = !app.current;
+  const viewLabel = document.createElement("span");
+  viewLabel.textContent = strings.canvas.view;
+  view.replaceChildren(viewLabel, icon("chevronDown"));
+  view.setAttribute("aria-label", strings.canvas.viewLabel);
   el("sourceToggle").hidden = !app.current || canvas || split;
   const toggle = el("sourceToggle");
-  toggle.textContent = source ? strings.source.hide : strings.source.show;
+  const sourceLabel = document.createElement("span");
+  sourceLabel.className = "btn-label";
+  sourceLabel.textContent = source ? strings.source.hide : strings.source.show;
+  toggle.replaceChildren(icon("code"), sourceLabel);
   toggle.setAttribute("aria-label", source ? strings.source.hideLabel : strings.source.showLabel);
   toggle.setAttribute("aria-pressed", String(Boolean(source)));
   if (source && el("source").readOnly) showBanner(strings.source.mixedLineEndings);
@@ -1693,8 +1711,7 @@ function wireEvents() {
   }
   el("toggle").addEventListener("click", toggleSidebar);
   el("sourceToggle").addEventListener("click", toggleSource);
-  el("canvasToggle").addEventListener("click", toggleCanvas);
-  el("splitToggle").addEventListener("click", toggleSplit);
+  el("viewButton").addEventListener("click", openViewMenu);
   el("source").addEventListener("input", () => app.autosave.touch());
   el("scrim").addEventListener("click", toggleSidebar);
   el("bannerClose").addEventListener("click", hideBanner);

@@ -134,13 +134,13 @@ export const strings = {
   },
 
   canvas: {
-    toggle: "Canvas",
-    toggleBack: "Text",
-    toggleLabel: "Draw on this page",
-    toggleBackLabel: "Back to the text of this page",
-    split: "Split",
-    splitLabel: "Show the text and the drawing of this page side by side",
-    splitBackLabel: "Back to the text of this page",
+    // The View button on the top bar: its menu lists the views this page can go to.
+    view: "View",
+    viewLabel: "Choose how this page is shown",
+    viewMenuLabel: "Show this page as",
+    viewText: "Text",
+    viewCanvas: "Canvas",
+    viewSplit: "Split",
     splitCommand: "Show the text and the drawing of this page side by side",
     command: "Switch between the text and the canvas of this page",
     toolbar: "Drawing tools",

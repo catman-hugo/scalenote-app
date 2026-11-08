@@ -333,6 +333,13 @@ Owner request after 0.4.6 on the tablet (2026-11-07): do the same for the pen as
 - Found the cause of the flaky search test: the search box reuses one dialog element and the close event of an earlier closing could arrive after a new opening and cancel that box's search. `palette.js` now ignores a close event while the box is open; a test sends such an event and fails without the fix.
 - Release notes: `docs/release-notes/0.4.7.md`.
 
+## Top bar View menu (after 0.4.7, not a version of its own)
+Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown button crowded the top bar, especially on a phone.
+- One View button replaces the Canvas and Split buttons. Its menu lists Text, Canvas and Split, named by where you go, and ticks the one you are in (the Markdown view counts as Text).
+- The Markdown button stays and shows only with text (not beside a drawing); it has an icon, and on screens up to 560 px wide the icon alone, so the top bar stays on one row on a phone. The title may shrink to about five characters before buttons wrap.
+- Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
+- No release notes yet: they go into the next version's notes.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
