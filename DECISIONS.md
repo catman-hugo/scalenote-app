@@ -436,3 +436,10 @@ Cost. A drawing with cuts cannot be edited in 0.4.6 and older. Strokes made befo
 
 Decision. The owner asked for "another feature" and left the choice to me. I chose recolouring the loop selection with the existing colour menu, because it is small, needs no file format change and removes a common redraw. Draw over text becomes 0.4.8, the `/canvas` block 0.4.9, PDF import 0.4.10.
 Cost. The plan numbers moved again.
+
+## 2026-11-08: One View menu instead of loose Canvas and Split buttons
+
+Decision. The top bar had three view buttons that named where you would go, which wrapped to a second row on a phone. The owner likes labels that name the destination, so those stay, but they move into one View menu that lists all three views and ticks the current one (the owner asked for all three to stay in the list). Markdown keeps its own button, shown only with text, as an icon on narrow screens.
+Alternatives. A segmented control that shows the current view (clearer where you are, but it needs four wide buttons and was not what the owner wanted).
+Cost. One more click to reach Canvas or Split; the button does not show the current view (the page itself does).
+

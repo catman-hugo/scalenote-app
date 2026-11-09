@@ -3765,8 +3765,21 @@ async function canvasVault(page, drawing) {
   await page.waitForSelector('.tree-button[data-path="Sketch.md"]');
   await openTagged(page, "Sketch.md");
 }
+// The View button opens a menu of the other views; choosing one goes there.
+const viewChoices = async (page) => {
+  await page.click("#viewButton");
+  await page.waitForSelector(".context-menu button");
+  const names = await page.$$eval(".context-menu button", (b) => b.map((x) => x.textContent.trim() + (x.getAttribute("aria-checked") === "true" ? " (here)" : "")));
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".context-menu", { state: "detached" });
+  return names;
+};
+const view = async (page, name) => {
+  await page.click("#viewButton");
+  await page.click(`.context-menu button:has-text("${name}")`);
+};
 const openCanvas = async (page) => {
-  await page.click("#canvasToggle");
+  await view(page, "Canvas");
   await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
 };
 const sheetBox = (page) => page.locator(".canvas-surface").boundingBox();
@@ -3814,7 +3827,7 @@ const touchEvents = (page, id, type, x, y) => page.evaluate(([i, t, px, py]) => 
 
 await test("a page can switch to its canvas and back, and a stroke is saved next to the page, not in it", async (page) => {
   await canvasVault(page);
-  assert.equal(await page.locator("#canvasToggle").isVisible(), true);
+  assert.equal(await page.locator("#viewButton").isVisible(), true);
   await openCanvas(page);
   assert.equal(await page.locator("#editor").isVisible(), false);
   await drawLine(page, [60, 80], [260, 160]);
@@ -3826,7 +3839,7 @@ await test("a page can switch to its canvas and back, and a stroke is saved next
   assert.equal(drawing.strokes[0].width, 4);
   assert.ok(drawing.strokes[0].points.length >= 5);
   assert.equal((await files(page))["Sketch.md"], "A page to draw on\n", "the page text is untouched");
-  await page.click("#canvasToggle");
+  await view(page, "Text");
   assert.equal(await page.locator("#editor").isVisible(), true);
   assert.equal(await page.locator("#canvasHost").isVisible(), false);
   await openCanvas(page);
@@ -4184,7 +4197,7 @@ await test("a note still being typed is saved when the page is left or the windo
   await openCanvas(page);
   await dragNote(page, [100, 100], [280, 180]);
   await page.keyboard.type("Half written");
-  await page.click("#canvasToggle");
+  await view(page, "Text");
   await waitSaved(page);
   assert.equal((await items(page))[0].text, "Half written");
 }, ctxOpts);
@@ -4487,7 +4500,7 @@ await test("the paper menu has none, four rule lines and four grids; a choice is
   assert.ok(across.lines.length > 4 && gaps(across.lines).every((g) => g === 60), "vertical lines too: " + gaps(across.lines));
   assert.ok(!across.pixels.some(([red, , blue]) => red > blue + 40), "and no margin line on a grid");
 
-  await page.click("#canvasToggle");
+  await view(page, "Text");
   await openCanvas(page);
   assert.equal(await page.locator('.canvas-menu[data-menu="paper"] button[aria-pressed="true"]').getAttribute("aria-label"), "Grid, large squares", "kept on reopening");
   await page.waitForTimeout(200); // the sheet is drawn on the next frame after reopening
@@ -5294,6 +5307,40 @@ await test("a selection is recoloured in one step, and a cut stroke moves with i
   assert.equal(await page.locator('.canvas-toolbar [data-menu="colour"] .canvas-swatch').evaluate((e) => e.className.includes("pen-ink")), true, "the colour of the next line did not change");
 }, ctxOpts);
 
+// ---------- the View menu on the top bar ----------
+
+await test("one View button lists Text, Canvas and Split and ticks where you are; Markdown shows only with text", async (page) => {
+  await canvasVault(page);
+  assert.equal(await page.locator("#canvasToggle, #splitToggle").count(), 0, "the loose buttons are gone");
+  assert.equal(await page.textContent("#viewButton"), "View");
+  assert.deepEqual(await viewChoices(page), ["Text (here)", "Canvas", "Split"]);
+  assert.equal(await page.isVisible("#sourceToggle"), true, "at start");
+  await view(page, "Split");
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  assert.deepEqual(await viewChoices(page), ["Text", "Canvas", "Split (here)"]);
+  assert.equal(await page.isVisible("#sourceToggle"), false, "after split");
+  await view(page, "Canvas");
+  assert.deepEqual(await viewChoices(page), ["Text", "Canvas (here)", "Split"]);
+  assert.equal(await page.isVisible("#sourceToggle"), false, "after canvas");
+  await view(page, "Text");
+  await page.waitForSelector("#canvasHost", { state: "hidden" });
+  assert.equal(await page.isVisible("#sourceToggle"), true, "after text");
+  // From the markdown view the page can still be drawn on, and Text is the one ticked there.
+  await page.click("#sourceToggle");
+  assert.deepEqual(await viewChoices(page), ["Text (here)", "Canvas", "Split"]);
+}, ctxOpts);
+
+await test("the View menu opens with the keyboard and closes with Escape", async (page) => {
+  await canvasVault(page);
+  await page.focus("#viewButton");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".context-menu button");
+  assert.equal(await page.evaluate(() => document.activeElement.closest(".context-menu") !== null), true, "focus moves into the menu");
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".context-menu", { state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement.id), "viewButton", "focus returns to the button");
+}, ctxOpts);
+
 // ---------- 0.4.6: split mode and the view a page opens in ----------
 
 const splitBoxes = (page) => page.evaluate(() => {
@@ -5303,14 +5350,12 @@ const splitBoxes = (page) => page.evaluate(() => {
 
 await test("Split shows the text and the drawing side by side, both work, and leaving keeps both saved", async (page) => {
   await canvasVault(page);
-  assert.equal(await page.getAttribute("#splitToggle", "aria-pressed"), "false");
-  await page.click("#splitToggle");
+  await view(page, "Split");
   await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
   const both = await splitBoxes(page);
   assert.ok(both.panes && both.editor.shown && both.canvas.shown, "text and drawing are both shown");
   assert.ok(both.editor.x < both.canvas.x && Math.abs(both.editor.y - both.canvas.y) < 2, "the text is on the left, the drawing on the right");
   assert.ok(both.editor.w > 200 && both.canvas.w > 200, "both have room: " + both.editor.w + " and " + both.canvas.w);
-  assert.equal(await page.getAttribute("#splitToggle", "aria-pressed"), "true");
   assert.equal(await page.isVisible("#sourceToggle"), false, "the markdown view is not offered beside the drawing");
   // Draw on the right, type on the left.
   await drawLine(page, [60, 80], [200, 120]);
@@ -5322,23 +5367,22 @@ await test("Split shows the text and the drawing side by side, both work, and le
   assert.equal((await items(page)).length, 1, "the line was saved");
   assert.match((await files(page))["Sketch.md"], /A page to draw on and more/, "the text was saved: " + JSON.stringify((await files(page))["Sketch.md"]));
   // Back to the text alone: nothing is lost, the button is not pressed again.
-  await page.click("#splitToggle");
+  await view(page, "Text");
   await page.waitForSelector("#canvasHost", { state: "hidden" });
-  assert.equal(await page.getAttribute("#splitToggle", "aria-pressed"), "false");
   assert.equal(await page.isVisible("#editor"), true);
   assert.equal(await page.isVisible("#sourceToggle"), true);
 }, ctxOpts);
 
 await test("from Split the Canvas button shows the drawing alone, and Canvas then Split goes back, without losing the drawing", async (page) => {
   await canvasVault(page);
-  await page.click("#splitToggle");
+  await view(page, "Split");
   await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
   await drawLine(page, [60, 80], [200, 120]);
-  await page.click("#canvasToggle");
+  await view(page, "Canvas");
   const alone = await splitBoxes(page);
   assert.ok(alone.canvas.shown && !alone.editor.shown && !alone.panes, "the drawing alone");
-  assert.equal(await page.textContent("#canvasToggle"), "Text");
-  await page.click("#splitToggle");
+  assert.deepEqual(await viewChoices(page), ["Text", "Canvas (here)", "Split"], "from the drawing alone the menu lists all three and ticks where you are");
+  await view(page, "Split");
   const again = await splitBoxes(page);
   assert.ok(again.canvas.shown && again.editor.shown && again.panes);
   await waitSaved(page);
@@ -5351,7 +5395,7 @@ await test("from Split the Canvas button shows the drawing alone, and Canvas the
 
 await test("opening another page from Split shows that page's own drawing, and the markdown view still works afterwards", async (page) => {
   await canvasVault(page, '{"format":2,"items":[{"tool":"pen","color":"ink","width":4,"points":[[40,40,0.5],[80,60,0.5]]}]}');
-  await page.click("#splitToggle");
+  await view(page, "Split");
   await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
   await page.click('.tree-button[data-path="Other.md"]');
   await page.waitForFunction(() => document.querySelector("#title").value === "Other");
@@ -5389,7 +5433,7 @@ await test("a damaged Open pages in setting means Text", async (page) => {
 
 await test("on a phone Split puts the text above the drawing", async (page) => {
   await canvasVault(page);
-  await page.click("#splitToggle");
+  await view(page, "Split");
   await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
   const both = await splitBoxes(page);
   assert.ok(both.editor.y < both.canvas.y && Math.abs(both.editor.x - both.canvas.x) < 2, "stacked");
@@ -5490,8 +5534,8 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "046")) {
       if (label === "phone") await page.click("#toggle");
       await page.click(`.tree-button[data-path="${target}"]`);
     }
-    await page.waitForSelector("#splitToggle:not([hidden])");
-    await page.click("#splitToggle");
+    await page.waitForSelector("#viewButton:not([hidden])");
+    await view(page, "Split");
     await page.waitForTimeout(300);
     await page.screenshot({ path: `${shots}/v046-${label}-${scheme}-2-split.png` });
     if (label === "phone") await page.click("#toggle");
@@ -5538,6 +5582,27 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "047")) {
     await chooseColour(page, "pink");
     await page.waitForTimeout(200);
     await page.screenshot({ path: `${shots}/v047-${label}-${scheme}-3-recoloured.png` });
+    await context.close();
+  }
+}
+
+// Screenshots of the top bar with the View menu (only when SHOTS_DIR is set).
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "view")) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 700 }, "light"], ["desktop", { width: 1100, height: 700 }, "dark"], ["phone", { width: 390, height: 800 }, "light"], ["phone", { width: 390, height: 800 }, "dark"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await canvasVault(page);
+    await page.screenshot({ path: `${shots}/view-${label}-${scheme}-1-text.png` });
+    await page.click("#viewButton");
+    await page.screenshot({ path: `${shots}/view-${label}-${scheme}-2-menu.png` });
+    await page.keyboard.press("Escape");
+    await view(page, "Canvas");
+    await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+    await page.screenshot({ path: `${shots}/view-${label}-${scheme}-3-canvas.png` });
     await context.close();
   }
 }

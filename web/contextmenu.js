@@ -2,6 +2,7 @@
 // menu key) for one entry in the page list. It only holds the actions that exist today.
 
 import { strings } from "./strings.js";
+import { icon } from "./icons.js";
 
 /**
  * Opens a menu at (x, y). `items` is a list of { label, run, indent } (indent is how many levels to push it in). Returns a function that closes it.
@@ -42,8 +43,21 @@ export function openContextMenu(x, y, items, { returnFocus = null, label = strin
     const button = document.createElement("button");
     button.type = "button";
     button.className = "menu-item";
-    button.setAttribute("role", "menuitem");
-    button.textContent = entry.label;
+    // An entry with `current` set (true or false) is one of a group of places, and the one you are in is ticked.
+    if (entry.current === undefined) {
+      button.setAttribute("role", "menuitem");
+      button.textContent = entry.label;
+    } else {
+      button.setAttribute("role", "menuitemradio");
+      button.setAttribute("aria-checked", String(entry.current));
+      button.classList.add("menu-item-choice");
+      const tick = document.createElement("span");
+      tick.className = "menu-tick";
+      if (entry.current) tick.append(icon("check"));
+      const name = document.createElement("span");
+      name.textContent = entry.label;
+      button.append(tick, name);
+    }
     if (entry.indent) button.style.paddingLeft = `calc(var(--space-3) + ${entry.indent} * var(--space-3))`;
     // The menu is closed before the action runs, so an action that opens an input can take the focus.
     button.addEventListener("click", () => {
