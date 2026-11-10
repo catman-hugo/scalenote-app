@@ -340,6 +340,9 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## Planned for 0.4.8 (owner requests, not built)
+- Toggle block outline always visible (owner, 2026-11-09, from screenshots of a folded and an unfolded toggle). Today the box around a toggle is only drawn while the cursor is in it (0.2.2 item 6), so a toggle you are not working in looks like loose text and it is unclear where it ends. Build: draw the outline in the same quiet border colour whether the toggle is folded, unfolded, focused or not, in every theme, light and dark, with a screenshot check of a folded and an unfolded toggle in each; the editing highlight, if any, may still be stronger than the resting outline. Check the markdown file is unchanged (this is only style) and that folding still works.
+
 ## 0.3 wrap-up
 0.3 is complete with 0.3.8 (0.3.4 was never used). Carried over, not started: columns (waits for a format decision, see "Block layout"), renaming a page does not rewrite links to it, the Android in-app installer, a fix for the occasionally flaky search test, a Windows-runner browser-test flake (`ERR_NO_BUFFER_SPACE` once, passed on re-run). Still to be tried on a real device: export and print/PDF (Windows, Linux), everything marked "NOT tested" in the 0.3.x sections. Next version: 0.4, canvas and pressure-sensitive ink.
 
@@ -377,7 +380,7 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 | 0.4.5 | Paper and page colour for drawings, loop moves snap to the grid, folder icons (see "0.4.5: built") | built, not tried on a device |
 | 0.4.6 | Highlights behind ink and tidied against figures, split mode and the "Open pages in" setting (see "0.4.6: built") | built, not tried on a device |
 | 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
-| 0.4.8 | Draw over text: ink anchored to blocks | not started |
+| 0.4.8 | Draw over text: ink anchored to blocks; the outline around a toggle block always visible (owner request, see "Planned for 0.4.8") | not started |
 | 0.4.9 | The `/canvas` block: a region of the page's canvas inside the text | not started |
 | 0.4.10 | PDF import as page images to draw on | not started |
 | 0.5 | Home server, sync, browser client | not started |

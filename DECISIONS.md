@@ -443,3 +443,8 @@ Decision. The top bar had three view buttons that named where you would go, whic
 Alternatives. A segmented control that shows the current view (clearer where you are, but it needs four wide buttons and was not what the owner wanted).
 Cost. One more click to reach Canvas or Split; the button does not show the current view (the page itself does).
 
+## 2026-11-09: The toggle block outline will always be visible (planned for 0.4.8)
+
+Decision. This will replace the 0.2.2 choice to show the box around a toggle only while working in it. The owner finds it unclear where a toggle block is when no outline shows. Not built yet; it goes into 0.4.8 when the owner asks to start it.
+Cost. More lines on a page with many toggles; keep the resting outline quiet.
+
