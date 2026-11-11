@@ -448,3 +448,29 @@ Cost. One more click to reach Canvas or Split; the button does not show the curr
 Decision. This will replace the 0.2.2 choice to show the box around a toggle only while working in it. The owner finds it unclear where a toggle block is when no outline shows. Not built yet; it goes into 0.4.8 when the owner asks to start it.
 Cost. More lines on a page with many toggles; keep the resting outline quiet.
 
+## 2026-11-11: Empty lines are saved as extra blank lines
+
+Decision. An empty line in the editor is written as one more blank line in the file, and read back from it. One blank line between blocks is the normal separation, so only the extra ones count. After a last block that is not a paragraph the editor keeps one empty line by itself, which is not saved. Empty lines inside a toggle or a callout are still dropped.
+Alternatives. A marker such as `&nbsp;` on its own line (visible and ugly in Obsidian, and not plain markdown); not keeping them (what happened before: pressing Enter a few times was undone when the page was reopened).
+Cost. A page written by hand with several blank lines in a row now shows them as empty lines.
+
+## 2026-11-11: Folded toggles are remembered while the app is open, not in the file
+
+Decision. Which toggles are folded is kept by the editor and remembered per page until the app is closed. A page seen for the first time since the app started has every toggle folded, even one the file marks as `<details open>`. Nothing about it is written to the page. The always-visible outline replaces the 0.2.2 choice.
+Alternatives. Saving the state in the file (changes the page for a view setting).
+Cost. After restarting the app every toggle is folded again.
+
+## 2026-11-11: History is compared by blocks when shown as the page looks
+
+Decision. Opened from the normal text, the History box shows versions as formatted text and splits them into whole blocks (a list, a table or a toggle is one piece) so every part can be shown as the page looks and put back whole. From the Markdown view it still compares line by line. Putting back is exact either way.
+Cost. A change inside a long list shows the whole list on both sides.
+
+## 2026-11-11: Tags start folded, and renaming a page updates links to it
+
+Decision. Main tags start folded; a filter lists every match. Renaming a page (in the list or from its title) finds the pages that link to it first, then changes only the page name inside each matching link, keeping a link that was written with folders or with `.md` in that form. A page that cannot be written is reported and the rename stands. Folder renames and moves are not covered.
+Cost. A link written with a folder path breaks if its folder is renamed.
+
+## 2026-11-11: Draw over text moves to 0.4.9
+
+Decision. 0.4.8 is already large, so draw over text moves to 0.4.9 together with columns and the Android in-app installer. The `/canvas` block becomes 0.4.10 and PDF import 0.4.11. The Linux two-finger zoom problem (the web engine zooms the whole window) is known and not yet fixed or investigated.
+

@@ -12,6 +12,9 @@ import { composeNote, loadNote } from "./compose.js";
 import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
+import { applyFolds, foldFlags } from "./togglefold.js";
+import { createPageText } from "./pagetext.js";
+import { rewriteLinks } from "./renamelinks.js";
 import { createBacklinks } from "./backlinks.js";
 import { createCover } from "./cover.js";
 import { readCover, withCover, withoutCover } from "./coverrules.js";
@@ -76,6 +79,13 @@ const app = {
   backlinkRun: 0,
   backlinkTimer: 0,
   following: false,
+  // Which toggles are folded, per page (path -> true or false for each toggle, top to bottom).
+  // Kept only while the app is open: a page seen for the first time has every toggle folded.
+  folds: new Map(),
+  placingPage: false,
+  pageInEditor: null,
+  // Draws markdown as the page looks, for reading only (pagetext.js).
+  pageText: null,
 };
 
 // ---------- small helpers ----------
@@ -568,6 +578,7 @@ async function openVaultFrom(choice) {
   el("vaultName").textContent = opened.name || strings.appName;
   app.expanded = new Set();
   app.selectedFolder = "";
+  app.folds = new Map();
   await showNoNote();
   await refreshTree();
 }
@@ -815,6 +826,9 @@ async function openHistoryDialog() {
     read: (id) => backend.historyRead(path, id),
     current: async () => (await backend.readNote(path)).text,
     restore: (text, base) => putBackVersion(path, text, base),
+    // From the normal text an older version reads like the page; from the Markdown view it is
+    // shown as the file, like the view it was opened from.
+    render: app.mode === "source" ? undefined : app.pageText,
     onError: (error) => {
       logProblem("history failed", error);
       if (error instanceof Error && error.message === "page changed") return strings.history.changed;
@@ -1072,10 +1086,12 @@ function renameEntryInline(node, button) {
       try {
         // An open page is saved first, so nothing typed so far is written to the old name.
         if (app.autosave) await app.autosave.flush();
+        const plan = await planLinkUpdates(path);
         const newPath = await backend.rename(path, wanted);
         remapPaths(path, newPath);
         await carryFolderIcons(path, newPath);
         if (app.current) el("title").value = noteTitle(app.current.path);
+        await applyLinkUpdates(plan, path, newPath);
       } catch (error) {
         logProblem("rename failed", error);
         showBanner(errorText(error));
@@ -1097,6 +1113,58 @@ function remapPaths(oldPath, newPath) {
   app.expanded = new Set([...app.expanded].map(fix));
   app.selectedFolder = fix(app.selectedFolder);
   if (app.current) app.current.path = fix(app.current.path);
+  app.folds = new Map([...app.folds].map(([path, flags]) => [fix(path), flags]));
+  if (app.pageInEditor) app.pageInEditor = fix(app.pageInEditor);
+}
+
+
+// ---------- links after a rename ----------
+
+// Before a page is renamed: which pages link to it, found by the same search as "Linked from".
+// Nothing is changed yet. Returns null for a folder (renaming a folder keeps every page name, so
+// links by name still work) or when the search fails; the rename goes on either way.
+async function planLinkUpdates(path) {
+  if (!/\.md$/i.test(path)) return null;
+  try {
+    const result = await backend.backlinks(path);
+    return { pages: notePaths(), holders: result.items.map((item) => item.path), truncated: Boolean(result.truncated) };
+  } catch (error) {
+    logProblem("links before rename failed", error);
+    return null;
+  }
+}
+
+// After the page was renamed: points the links in the pages found by `planLinkUpdates` at the new
+// name. A page that cannot be written (it changed meanwhile, say) is skipped and counted, and the
+// rename itself is never undone. The open page is reloaded if it was one of the changed ones.
+async function applyLinkUpdates(plan, oldPath, newPath) {
+  if (!plan) return;
+  let changed = 0;
+  let failed = 0;
+  let reopen = false;
+  // The renamed page may link to itself; it is not in the list of pages linking to it.
+  for (const holder of new Set([...plan.holders, oldPath])) {
+    const now = holder === oldPath ? newPath : holder;
+    try {
+      const note = await backend.readNote(now);
+      const text = rewriteLinks(note.text, { pages: plan.pages, oldPath, newPath, from: holder, fromAfter: now });
+      if (text === null) continue;
+      await backend.writeNote(now, text, note.version);
+      changed++;
+      if (app.current && app.current.path === now) reopen = true;
+    } catch (error) {
+      failed++;
+      logProblem("link update failed", error);
+    }
+  }
+  if (reopen) {
+    if (app.autosave) app.autosave.cancel();
+    app.current = null;
+    app.lastSavedText = null;
+    await openNote(newPath);
+  }
+  if (failed || plan.truncated) showBanner(strings.links.someNotUpdated);
+  else if (changed) showToast(changed === 1 ? strings.links.updatedOne : fill(strings.links.updated, { count: changed }));
 }
 
 // ---------- trash ----------
@@ -1229,7 +1297,28 @@ async function openNote(path) {
 // did, pressing Undo straight after opening a page would go back to the empty editor, and
 // autosave would then write that empty page over the real one.
 function putInEditor(doc) {
-  app.editor.chain().setMeta("addToHistory", false).setContent(doc, { emitUpdate: false }).run();
+  // What was remembered is read first: putting the page in changes the editor, and that must
+  // not be taken for the person unfolding everything.
+  const remembered = app.current ? app.folds.get(app.current.path) : undefined;
+  app.placingPage = true;
+  try {
+    app.editor.chain().setMeta("addToHistory", false).setContent(doc, { emitUpdate: false }).run();
+    // Toggles are folded the first time a page is opened since the app started, and as they
+    // were left after that.
+    applyFolds(app.editor, remembered);
+    app.pageInEditor = app.current ? app.current.path : null;
+  } finally {
+    app.placingPage = false;
+  }
+  rememberFolds();
+}
+
+// Keeps which toggles of the open page are folded, for as long as the app is open. While a
+// page is being opened the editor still holds the page before it for a moment; what is seen
+// then says nothing about the new page.
+function rememberFolds() {
+  if (app.placingPage || !app.current || app.pageInEditor !== app.current.path) return;
+  app.folds.set(app.current.path, foldFlags(app.editor.state));
 }
 
 function showNote(path, note) {
@@ -1563,9 +1652,13 @@ async function renameCurrent() {
   }
   try {
     await app.autosave.flush();
-    current.path = await backend.rename(current.path, wanted);
+    const oldPath = current.path;
+    const plan = await planLinkUpdates(oldPath);
+    current.path = await backend.rename(oldPath, wanted);
+    remapPaths(oldPath, current.path);
     input.value = noteTitle(current.path);
     await refreshTree();
+    await applyLinkUpdates(plan, oldPath, current.path);
   } catch (error) {
     logProblem("rename failed", error);
     showBanner(errorText(error));
@@ -1742,6 +1835,8 @@ async function start() {
     openTag: (name) => openTagsDialog(name),
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
+  app.editor.on("transaction", rememberFolds);
+  app.pageText = createPageText(app.editor);
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
     onAdd: chooseCover,

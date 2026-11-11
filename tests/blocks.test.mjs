@@ -100,11 +100,97 @@ test("a new block gets a blank line before it and the file ends with a newline",
   assert.equal(composeNote(loaded.parts, doc, { ...io, assignId: false }), "Only line\n\nSecond\n");
 });
 
-test("empty paragraphs are not written", () => {
-  const loaded = loadNote("a\n", io);
+// ---------- empty lines ----------
+const para = (text) => ({ type: "paragraph", content: [{ type: "text", text }] });
+const empty = () => ({ type: "paragraph" });
+const isEmpty = (n) => n.type === "paragraph" && !(n.content && n.content.length);
+// The page as a list: a block's text, or "" for an empty line.
+const shape = (doc) => doc.content.map((n) => (isEmpty(n) ? "" : n.content ? n.content[0].text : n.attrs.src));
+const save = (parts, doc) => composeNote(parts, doc, { ...io, assignId: false });
+
+test("empty lines between blocks are saved as extra blank lines and come back", () => {
+  const loaded = loadNote("a\n\nb\n", io);
   const doc = structuredClone(loaded.doc);
-  doc.content.push({ type: "paragraph" });
-  assert.equal(composeNote(loaded.parts, doc, { ...io, assignId: false }), "a\n");
+  doc.content.splice(1, 0, empty(), empty());
+  const saved = save(loaded.parts, doc);
+  assert.equal(saved, "a\n\n\n\nb\n");
+  const again = loadNote(saved, io);
+  assert.deepEqual(shape(again.doc), ["a", "", "", "b"]);
+  assert.equal(save(again.parts, again.doc), saved, "opened and saved untouched");
+  // Taking them out again goes back to one blank line.
+  const without = structuredClone(again.doc);
+  without.content.splice(1, 2);
+  assert.equal(save(again.parts, without), "a\n\nb\n");
+});
+
+test("empty lines at the start and the end of a page are kept, with and without properties", () => {
+  for (const front of ["", "---\ntitle: t\n---\n\n", "---\ntitle: t\n---\n"]) {
+    const loaded = loadNote(front + "a\n", io);
+    assert.deepEqual(shape(loaded.doc), ["a"], "one blank line under the properties is not an empty line");
+    const doc = structuredClone(loaded.doc);
+    doc.content.unshift(empty());
+    doc.content.push(empty(), empty());
+    const saved = save(loaded.parts, doc);
+    const again = loadNote(saved, io);
+    assert.deepEqual(shape(again.doc), ["", "a", "", ""], JSON.stringify(saved));
+    assert.equal(save(again.parts, again.doc), saved);
+  }
+});
+
+test("the line the editor keeps under a last block that is not a paragraph is not saved", () => {
+  const loaded = loadNote("# Title\n", io);
+  assert.deepEqual(shape(loaded.doc), ["# Title"]);
+  const doc = structuredClone(loaded.doc);
+  doc.content.push(empty()); // the editor's own line
+  assert.equal(save(loaded.parts, doc), "# Title\n", "the file does not change");
+  doc.content.push(empty()); // one the person added
+  const saved = save(loaded.parts, doc);
+  assert.equal(saved, "# Title\n\n");
+  const again = loadNote(saved, io);
+  assert.deepEqual(shape(again.doc), ["# Title", "", ""], "both lines are back");
+  assert.equal(save(again.parts, again.doc), saved);
+});
+
+test("a heading directly above a list keeps its tight line break until an empty line is put between", () => {
+  const loaded = loadNote("# h\n- x\n", io);
+  assert.equal(save(loaded.parts, loaded.doc), "# h\n- x\n");
+  const doc = structuredClone(loaded.doc);
+  doc.content.splice(1, 0, empty());
+  assert.equal(save(loaded.parts, doc), "# h\n\n\n- x\n");
+});
+
+test("blank lines with spaces in them and Windows line endings come back byte for byte", () => {
+  for (const text of ["a\n  \n\t\n\nb\n\n \n", "a\r\n\r\n\r\n\r\nb\r\n\r\n", "\n\n\na\n\n\n\n\nb", "---\nx: 1\n---\n\n\n\na\n"]) {
+    const loaded = loadNote(text, io);
+    assert.equal(save(loaded.parts, loaded.doc), text);
+  }
+});
+
+test("random pages with empty lines keep every empty line through save and open", () => {
+  let seed = 4242;
+  const rand = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
+  // Blocks that never merge with a neighbour (two lists in a row would become one list).
+  const words = ["alpha", "# head", "beta gamma", "## two", "```\ncode\n```"];
+  for (let round = 0; round < 2000; round++) {
+    const start = loadNote(rand(2) ? "---\ntitle: t\n---\n\nseed\n" : "seed\n", io);
+    const doc = { type: "doc", content: [] };
+    const blocks = 1 + rand(5);
+    for (let i = 0; i < rand(3); i++) doc.content.push(empty());
+    for (let b = 0; b < blocks; b++) {
+      const node = fakeParse(words[rand(words.length)]).content[0];
+      doc.content.push(node);
+      for (let i = 0; i < rand(4); i++) doc.content.push(empty());
+    }
+    const saved = save(start.parts, doc);
+    const again = loadNote(saved, io);
+    const want = shape(doc);
+    // The one line the editor keeps for itself after a last block that is not a paragraph.
+    const lastBlock = doc.content.findLast((n) => !isEmpty(n));
+    const trailing = want.length - 1 - want.findLastIndex((t) => t !== "");
+    if (lastBlock.type !== "paragraph" && trailing === 1) want.pop();
+    assert.deepEqual(shape(again.doc), want, JSON.stringify(saved));
+    assert.equal(save(again.parts, again.doc), saved, "stable: " + JSON.stringify(saved));
+  }
 });
 
 test("the note id is added once and existing frontmatter is kept", () => {

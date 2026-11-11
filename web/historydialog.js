@@ -3,7 +3,7 @@
 // restore itself (and the checks around it) is done by `restore` from main.js.
 
 import { hideNoteId } from "./blocks.js";
-import { applyChosen, countChanges, diffLines } from "./historyrules.js";
+import { applyChosen, countChanges, diffLines, lineCount, splitPageBlocks } from "./historyrules.js";
 import { strings } from "./strings.js";
 
 // Drawing everything of a huge page would freeze a phone, so only this much is drawn.
@@ -28,14 +28,23 @@ function sizeText(bytes) {
 
 const timeFormat = () => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-// Lines of one side of a change, as text. A part with no lines says so in words.
-function linesBox(label, lines, kind) {
+// Some lines of the page. With `render` (the History box was opened from the normal text) they
+// are shown as the page looks; without it, as the markdown in the file.
+function textOf(lines, render) {
+  const text = lines.join("");
+  if (!render) return make("pre", "history-lines", text);
+  // Lines that are all blank would draw as nothing at all.
+  if (text.trim() === "") return make("p", "history-note history-blank", lineCount(lines) === 1 ? strings.history.blankOne : fill(strings.history.blank, { count: lineCount(lines) }));
+  return render(text);
+}
+
+// Lines of one side of a change. A part with no lines says so in words.
+function linesBox(label, lines, kind, render) {
   const h = strings.history;
   const box = make("div", `history-side history-${kind}`);
   box.append(make("p", "history-side-label", label));
   const shown = lines.slice(0, MAX_LINES);
-  const pre = make("pre", "history-lines", shown.length ? shown.join("") : h.partNothing);
-  box.append(pre);
+  box.append(shown.length ? textOf(shown, render) : make("pre", "history-lines", h.partNothing));
   if (lines.length > MAX_LINES) box.append(make("p", "history-note", fill(h.moreLines, { count: lines.length - MAX_LINES })));
   return box;
 }
@@ -54,24 +63,24 @@ function propertyLines(lines) {
 }
 
 // Shows a few unchanged lines next to a change and folds the rest.
-function sameLines(lines, before, after, first) {
+function sameLines(lines, before, after, first, render) {
   const wrap = make("div", "history-same");
   const props = first ? propertyLines(lines) : 0;
   if (props) {
     wrap.append(make("p", "history-fold", fill(strings.history.properties, { count: props })));
     const rest = lines.slice(props);
-    if (rest.length) wrap.append(sameLines(rest, false, after, false));
+    if (rest.length) wrap.append(sameLines(rest, false, after, false, render));
     return wrap;
   }
   const need = (before ? CONTEXT : 0) + (after ? CONTEXT : 0);
   if (lines.length <= need + 1) {
-    wrap.append(make("pre", "history-lines", lines.join("")));
+    wrap.append(textOf(lines, render));
     return wrap;
   }
-  if (before) wrap.append(make("pre", "history-lines", lines.slice(0, CONTEXT).join("")));
-  const hidden = lines.length - (before ? CONTEXT : 0) - (after ? CONTEXT : 0);
-  wrap.append(unchangedNote(hidden));
-  if (after) wrap.append(make("pre", "history-lines", lines.slice(lines.length - CONTEXT).join("")));
+  if (before) wrap.append(textOf(lines.slice(0, CONTEXT), render));
+  // A piece can be a whole block of several lines (see splitPageBlocks); the note counts lines.
+  wrap.append(unchangedNote(lineCount(lines.slice(before ? CONTEXT : 0, lines.length - (after ? CONTEXT : 0)))));
+  if (after) wrap.append(textOf(lines.slice(lines.length - CONTEXT), render));
   return wrap;
 }
 
@@ -82,8 +91,11 @@ function sameLines(lines, before, after, first) {
  *  - `restore(text, baseText)` writes the text to the page; it throws if the page changed
  *    since `baseText` was read. It returns once the page is back in the editor.
  *  - `onError(error)` logs a problem and returns the sentence to show.
+ *  - `render(markdown)`, when given, returns an element showing the text as the page looks
+ *    (pagetext.js). It is given when the box is opened from the normal text; from the Markdown
+ *    view it is left out and the text is shown as it is in the file.
  */
-export async function openHistory(dialog, { list, read, current, restore, onError }) {
+export async function openHistory(dialog, { list, read, current, restore, onError, render }) {
   const h = strings.history;
   const formatter = timeFormat();
   let versions = [];
@@ -173,7 +185,7 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
       setBusy(false);
     });
     label.append(check, make("span", "", h.putPartBack));
-    box.append(label, linesBox(h.partNow, part.current, "now"), linesBox(h.partThen, part.version, "then"));
+    box.append(label, linesBox(h.partNow, part.current, "now", render), linesBox(h.partThen, part.version, "then", render));
     return box;
   }
 
@@ -185,7 +197,7 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
       if (part.same) {
         const before = index > 0;
         const after = index < parts.length - 1;
-        out.push(sameLines(part.same, before, after, index === 0));
+        out.push(sameLines(part.same, before, after, index === 0, render));
       } else if (shown < MAX_CHANGES) {
         shown++;
         out.push(changeBox(part, index));
@@ -201,7 +213,16 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
     detail.append(viewSwitch());
     if (view === "text") {
       const lines = hideNoteId(versionText).text.split(/(?<=\n)/).slice(0, MAX_LINES * 5);
-      detail.append(make("pre", "history-lines history-whole", lines.join("")));
+      if (render) {
+        // The properties block is not page text: it is one folded note, as in the changes view.
+        const props = propertyLines(lines);
+        if (props) detail.append(make("p", "history-fold", fill(h.properties, { count: props })));
+        const whole = textOf(lines.slice(props), render);
+        whole.classList.add("history-whole");
+        detail.append(whole);
+      } else {
+        detail.append(make("pre", "history-lines history-whole", lines.join("")));
+      }
     } else {
       detail.append(...drawChanges());
     }
@@ -216,7 +237,9 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
     try {
       base = await current();
       versionText = await read(id);
-      parts = diffLines(base, versionText);
+      // As the page looks, versions are compared block by block, so every part is something
+      // that can be shown whole; as markdown, line by line.
+      parts = diffLines(base, versionText, render ? splitPageBlocks : undefined);
     } catch (error) {
       chosenId = "";
       drawList();
@@ -249,6 +272,10 @@ export async function openHistory(dialog, { list, read, current, restore, onErro
     message = onError(error) || h.loadFailed;
   }
   dialog.classList.add("history-dialog");
+  dialog.classList.toggle("history-as-page", Boolean(render));
+  // The shown text is taken away again when the box closes, so nothing that looks like page
+  // text is left behind where it cannot be seen.
+  dialog.addEventListener("close", () => detail.replaceChildren(), { once: true });
   dialog.replaceChildren(make("h2", "", h.title), make("p", "setting-hint", h.hint), listBox, detail, status, foot);
   drawList();
   setBusy(false);

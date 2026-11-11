@@ -64,6 +64,8 @@ async function start(page) {
   await page.click("#welcome button:last-of-type");
   await page.waitForSelector("#newNote");
 }
+// The text of a saved page without the id the app puts at the top.
+const bodyOfPage = (text) => text.replace(/^---\n(id: [^\n]*\n)?---\n\n/, "");
 const files = (page) => page.evaluate(() => Object.fromEntries(window.__mock.files));
 const seed = (page, name, text) => page.evaluate(([n, t]) => window.__mock.files.set(n, t), [name, text]);
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById("status").dataset.state === "saved", null, { timeout: 5000 }); }
@@ -1156,39 +1158,155 @@ await test("the sidebar says page, not note", async (page) => {
 
 const TOGGLE = ["Intro", "", "<details>", "<summary>Title</summary>", "", "Hello", "", "flip", "", "</details>", ""].join("\n");
 
+// A click puts the cursor in a line a moment later (the editor reads it after the mouse is let
+// go). Keys pressed sooner than a person could would land where the cursor was before.
+const clickLine = async (locator) => { await locator.click(); await locator.page().waitForTimeout(80); };
+const toggleStates = (page) => page.evaluate(() => [...document.querySelectorAll(".toggle")].map((t) => ({ folded: t.classList.contains("folded"), body: getComputedStyle(t.querySelector(".toggle-body")).display, expanded: t.querySelector(".toggle-fold").getAttribute("aria-expanded") })));
+const FOLDED = { folded: true, body: "none", expanded: "false" };
+const OPEN = { folded: false, body: "block", expanded: "true" };
+
 await test("a toggle folds and unfolds, and folding is not an edit", async (page) => {
   await openSeeded(page, "T.md", TOGGLE);
   await page.waitForSelector(".toggle");
-  const state = () => page.evaluate(() => ({ folded: document.querySelector(".toggle").classList.contains("folded"), body: getComputedStyle(document.querySelector(".toggle-body")).display, expanded: document.querySelector(".toggle-fold").getAttribute("aria-expanded") }));
-  assert.deepEqual(await state(), { folded: false, body: "block", expanded: "true" });
+  // A page opens with its toggles folded (0.4.8).
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
   await page.click(".toggle-fold");
-  assert.deepEqual(await state(), { folded: true, body: "none", expanded: "false" });
+  assert.deepEqual(await toggleStates(page), [OPEN]);
+  await page.click(".toggle-fold");
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
   // Typing in the title must not unfold it.
   await page.click(".toggle-summary");
   await page.keyboard.type("x");
-  assert.equal((await state()).folded, true);
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
   await page.click(".toggle-fold");
-  assert.deepEqual(await state(), { folded: false, body: "block", expanded: "true" });
+  assert.deepEqual(await toggleStates(page), [OPEN]);
   await page.waitForTimeout(700);
   await waitSaved(page).catch(() => {});
   const saved = (await files(page))["T.md"];
   assert.ok(saved.includes("<summary>Titlex</summary>"), saved);
   assert.ok(!/folded/.test(saved), "the fold state is never written to the page");
+  // Folding and unfolding is not something Undo steps through: one Undo takes the "x" back.
+  await page.click(".toggle-fold");
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("Control+z");
+  assert.equal(await page.inputValue(".toggle-summary"), "Title");
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
 });
 
-await test("a toggle shows only its arrow and title until you work in it", async (page) => {
+const TWO_TOGGLES = ["Intro", "", "<details>", "<summary>First</summary>", "", "one", "", "</details>", "", "Between", "", "<details open>", "<summary>Second</summary>", "", "two", "", "</details>", ""].join("\n");
+
+await test("a page opens with every toggle folded the first time, and as it was left after that", async (page) => {
+  await start(page);
+  await seed(page, "T.md", TWO_TOGGLES);
+  await seed(page, "Other.md", "Other page\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="T.md"]');
+  await page.waitForSelector(".toggle");
+  // Folded the first time, also the one the file marks as open.
+  assert.deepEqual(await toggleStates(page), [FOLDED, FOLDED]);
+  await page.locator(".toggle-fold").nth(1).click();
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  // Typing above the toggles and in the open one does not change which are folded.
+  await clickLine(page.locator(".note-body > p").first());
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("new line");
+  await clickLine(page.locator(".toggle").nth(1).locator(".toggle-body p"));
+  await page.keyboard.type("!");
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  await waitSaved(page);
+  // Away and back: as it was left.
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelectorAll(".toggle").length === 0);
+  await page.click('.tree-button[data-path="T.md"]');
+  await page.waitForSelector(".toggle");
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  // The Markdown view and back keeps it too.
+  await page.click("#sourceToggle");
+  await page.click("#sourceToggle");
+  await page.waitForSelector(".toggle");
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  // Nothing about folding reached the file, and the file's own "open" word is untouched.
+  const saved = (await files(page))["T.md"];
+  assert.ok(saved.includes("<details>\n<summary>First</summary>") && saved.includes("<details open>\n<summary>Second</summary>"), saved);
+  // Opening the app again starts folded again.
+  await page.reload();
+  await start(page);
+  await seed(page, "T.md", TWO_TOGGLES);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="T.md"]');
+  await page.waitForSelector(".toggle");
+  assert.deepEqual(await toggleStates(page), [FOLDED, FOLDED]);
+});
+
+await test("a toggle made from the slash menu starts open, next to folded ones", async (page) => {
   await openSeeded(page, "T.md", TOGGLE);
   await page.waitForSelector(".toggle");
-  const edge = (selector) => page.evaluate((sel) => { const c = getComputedStyle(document.querySelector(sel)); return [c.borderTopColor, c.backgroundColor]; }, selector);
+  await clickLine(page.locator(".note-body > p").first());
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/toggle");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("typed inside");
+  assert.deepEqual(await toggleStates(page), [OPEN, FOLDED]);
+});
+
+await test("the outline of a toggle always shows, and the title field only while typing in it", async (page) => {
+  await openSeeded(page, "T.md", TOGGLE);
+  await page.waitForSelector(".toggle");
+  const edge = (selector) => page.evaluate((sel) => { const c = getComputedStyle(document.querySelector(sel)); return [c.borderTopColor, c.backgroundColor, c.borderTopWidth]; }, selector);
   const clear = (rgba) => /rgba\(0, 0, 0, 0\)|transparent/.test(rgba);
+  const line = await page.evaluate(() => { const probe = document.createElement("div"); probe.style.borderTop = "1px solid var(--line)"; document.body.append(probe); const c = getComputedStyle(probe).borderTopColor; probe.remove(); return c; });
   await page.locator(".note-body p").first().click(); // outside the toggle
-  assert.ok(clear((await edge(".toggle"))[0]), "no outline around the block");
+  // Folded, cursor elsewhere.
+  assert.deepEqual((await edge(".toggle")).filter((_, i) => i !== 1), [line, "1px"], "outline while folded and not in use");
   assert.ok(clear((await edge(".toggle-summary"))[0]) && clear((await edge(".toggle-summary"))[1]), "no field around the title");
+  // Open, cursor elsewhere.
+  await page.click(".toggle-fold");
+  await page.locator(".note-body p").first().click();
+  assert.equal((await edge(".toggle"))[0], line, "outline while open and not in use");
+  // In use.
   await page.click(".toggle-summary");
   assert.ok(!clear((await edge(".toggle"))[0]), "outline while working in the toggle");
   assert.ok(!clear((await edge(".toggle-summary"))[0]), "the title field shows when selected");
   await page.locator(".note-body p").first().click();
-  assert.ok(clear((await edge(".toggle"))[0]), "hidden again after leaving");
+  assert.equal((await edge(".toggle"))[0], line, "the quiet outline again after leaving");
+  assert.ok(clear((await edge(".toggle-summary"))[0]), "the title field is hidden again");
+});
+
+await test("empty lines on a page are still there after opening another page and coming back", async (page) => {
+  await start(page);
+  await seed(page, "E.md", "First\n\nSecond\n");
+  await seed(page, "Other.md", "Other page\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="E.md"]');
+  await page.waitForSelector("#editor .note-body p");
+  await clickLine(page.locator(".note-body p", { hasText: "First" }));
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await clickLine(page.locator(".note-body p", { hasText: "Second" }));
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await waitSaved(page);
+  const lines = () => page.$$eval(".note-body > p", (ps) => ps.map((p) => p.textContent));
+  assert.deepEqual(await lines(), ["First", "", "", "", "Second", "", ""]);
+  const saved = bodyOfPage((await files(page))["E.md"]);
+  assert.equal(saved, "First\n\n\n\n\nSecond\n\n\n", "each empty line is one more blank line in the file");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelector(".note-body").textContent.includes("Other page"));
+  await page.click('.tree-button[data-path="E.md"]');
+  await page.waitForFunction(() => document.querySelector(".note-body").textContent.includes("Second"));
+  assert.deepEqual(await lines(), ["First", "", "", "", "Second", "", ""]);
+  // Only opened: the file is as it was.
+  await page.waitForTimeout(900);
+  assert.equal(bodyOfPage((await files(page))["E.md"]), saved);
+  // The empty lines have height on screen.
+  const heights = await page.$$eval(".note-body > p", (ps) => ps.map((p) => Math.round(p.getBoundingClientRect().height)));
+  assert.ok(heights.every((h) => h >= 16), JSON.stringify(heights));
 });
 
 await test("on a phone the note list is open at the start", async (page) => {
@@ -3357,7 +3475,8 @@ await test("clicking a tag opens the Tags box on that tag with its pages, and a 
   await openTagged(page, "A.md");
   await page.locator(".note-body .tag").first().click();
   await page.waitForSelector("#tags[open]");
-  assert.equal(await page.locator("#tags .tag-row[aria-expanded=true] .tag-name").textContent(), "#plan");
+  assert.equal(await page.locator("#tags .tag-row.selected .tag-name").textContent(), "#plan");
+  assert.equal(await page.locator("#tags .tag-row.selected").getAttribute("aria-expanded"), "true");
   assert.deepEqual(await page.locator("#tags .tag-pages .tag-page").evaluateAll((n) => n.map((x) => x.innerText.replace(/\s+/g, " ").trim())), ["A", "B School", "Tagged"]);
   await page.locator("#tags .tag-page", { hasText: "B" }).click();
   await page.waitForFunction(() => document.querySelector("#title").value === "B");
@@ -3369,7 +3488,25 @@ await test("the Tags box lists tags with page counts, nested tags count for thei
   await page.click("#openTags");
   await page.waitForSelector("#tags[open]");
   const rows = async () => page.locator("#tags .tag-row").evaluateAll((nodes) => nodes.map((n) => n.innerText.replace(/\s+/g, " ").trim()));
+  // Subtags are folded away under their main tag until it is pressed.
+  assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#tag 1 page"]);
+  const school = page.locator("#tags .tag-row", { hasText: "#school" }).first();
+  assert.equal(await school.getAttribute("aria-expanded"), "false");
+  assert.equal(await page.locator("#tags .tag-row[data-parent] .tag-arrow svg").count(), 1, "only the main tag has an arrow");
+  await school.click();
   assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#School/Maths 2 pages", "#tag 1 page"]);
+  assert.equal(await page.locator("#tags .tag-row", { hasText: "#school" }).first().getAttribute("aria-expanded"), "true");
+  assert.equal(await page.locator("#tags .tag-pages .tag-page").count(), 2, "its pages are listed too");
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.key), "school", "the keyboard stays on the pressed tag");
+  // A subtag opened inside it, then the main tag pressed again: both go away.
+  await page.locator("#tags .tag-row", { hasText: "#School/Maths" }).click();
+  assert.equal(await page.locator("#tags .tag-row.selected .tag-name").textContent(), "#School/Maths");
+  await page.locator("#tags .tag-row", { hasText: "#school" }).first().click();
+  assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#tag 1 page"]);
+  assert.equal(await page.locator("#tags .tag-pages").count(), 0);
+  // The names line up whether or not a tag has an arrow.
+  const lefts = await page.locator("#tags .tag-row[data-depth='0'] .tag-name").evaluateAll((n) => n.map((x) => Math.round(x.getBoundingClientRect().left)));
+  assert.equal(new Set(lefts).size, 1, JSON.stringify(lefts));
   await page.fill("#tags .tags-filter", "#SCH");
   assert.deepEqual(await rows(), ["#school 2 pages", "#School/Maths 2 pages"]);
   await page.fill("#tags .tags-filter", "zzz");
@@ -3662,6 +3799,146 @@ await test("if the page changes while the box is open nothing is put back", asyn
   await page.waitForSelector(".history-status:not(:empty)");
   assert.match(await page.locator(".history-status").innerText(), /changed while the history was open/);
   assert.equal((await files(page))["Hist.md"], "changed elsewhere\n");
+}, { ...ctxOpts, allow: [/./] });
+
+const RICH_OLD = ["---", "id: 11111111-1111-4111-8111-111111111111", "---", "", "# Complement", "", "- MBL binds carbohydrates", "- MASPs, C4, C2", "", "Plain line", "", "---", "", "rule above", "", "| A | B |", "| --- | --- |", "| 1 | 2 |", "", "<details>", "<summary>Old title</summary>", "", "inside", "", "</details>", ""].join("\n");
+const RICH_NOW = RICH_OLD.replace("- MBL binds", "- **<u>MBL</u>** binds").replace("Plain line", "Plain ==marked== line").replace("| 1 | 2 |", "| 1 | 3 |").replace("Old title", "New title").replace("rule above", "rule above\n\n\n\nmore");
+async function richHistory(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([oldText, nowText]) => {
+    window.__mock.files.set("Rich.md", nowText);
+    window.__mock.history.set("Rich.md", [{ id: "1700000000000", time: 1700000000, text: oldText }]);
+  }, [RICH_OLD, RICH_NOW]);
+  await page.click("#newFolder");
+  await openTagged(page, "Rich.md");
+}
+
+await test("history opened from the normal text shows versions as the page looks", async (page) => {
+  await richHistory(page);
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  const detail = page.locator(".history-detail");
+  const text = await detail.innerText();
+  assert.doesNotMatch(text, /\*\*|<u>|==|^\s*- MBL|\| ---|<details>|<summary>/m, "no markdown signs: " + text);
+  // The changed list line: bold and underlined now, plain in the older version, both as list items.
+  assert.equal(await detail.locator(".history-now li strong u", { hasText: "MBL" }).count(), 1);
+  assert.equal(await detail.locator(".history-then li", { hasText: "MBL binds carbohydrates" }).count(), 1);
+  assert.equal(await detail.locator(".history-then strong").count(), 0);
+  assert.equal(await detail.locator(".history-now mark", { hasText: "marked" }).count(), 1);
+  // A toggle and a table read as a toggle and a table.
+  assert.equal(await detail.locator(".history-now .toggle .page-text-title", { hasText: "New title" }).count() + await detail.locator(".history-now .page-text-raw", { hasText: "New title" }).count(), 1);
+  assert.ok((await detail.locator(".history-now td", { hasText: "3" }).count()) + (await detail.locator(".history-now", { hasText: "| 1 | 3 |" }).count()) >= 1);
+  // Lines that are only blank say so instead of drawing nothing.
+  assert.match(text, /empty line/);
+  // The page properties stay one folded note, and the id is never shown.
+  assert.match(text, /Page properties \(3 lines\)/);
+  assert.doesNotMatch(text, /11111111/);
+  // Whole text: the older version as a page, starting with its heading; the rule is a rule.
+  await page.click(".history-view >> text=Whole text");
+  assert.equal(await detail.locator(".history-whole h1", { hasText: "Complement" }).count(), 1);
+  assert.equal(await detail.locator(".history-whole hr").count(), 1);
+  assert.equal(await detail.locator(".history-whole table td").count(), 2);
+  assert.equal(await detail.locator(".history-whole .toggle .toggle-body", { hasText: "inside" }).count(), 1);
+  assert.doesNotMatch(await detail.innerText(), /11111111|^---$/m);
+  // Nothing in the box can be typed in or takes the place of the page's own text.
+  assert.equal(await page.locator("#historyBox [contenteditable=true], #historyBox .toggle input").count(), 0);
+  // Putting back is still exact, to the byte.
+  await page.click("#historyBox >> text=Put back this whole version");
+  await page.waitForFunction(() => !document.querySelector("#historyBox").open);
+  assert.equal((await files(page))["Rich.md"], RICH_OLD);
+  // The box's close event fires a moment after it stops being open, so wait for the clearing.
+  await page.waitForFunction(() => document.querySelectorAll("#historyBox .page-text").length === 0, null, { timeout: 3000 });
+  assert.equal(await page.locator(".note-body").count(), 1);
+}, ctxOpts);
+
+await test("history opened from the Markdown view shows the markdown, as before", async (page) => {
+  await richHistory(page);
+  await page.click("#sourceToggle");
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  const detail = page.locator(".history-detail");
+  assert.match(await detail.innerText(), /- \*\*<u>MBL<\/u>\*\* binds carbohydrates/);
+  assert.match(await detail.innerText(), /<summary>New title<\/summary>/);
+  assert.equal(await detail.locator(".page-text, strong, li, table").count(), 0);
+  await page.click(".history-view >> text=Whole text");
+  assert.match(await detail.locator("pre.history-whole").innerText(), /^# Complement\n\n- MBL binds carbohydrates/);
+}, ctxOpts);
+
+await test("a piece of history that starts with a rule line is shown whole, not hidden as properties", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    window.__mock.files.set("Rule.md", "top\n\nkeep\n");
+    window.__mock.history.set("Rule.md", [{ id: "1700000000000", time: 1700000000, text: "top\n\n---\nhidden?\n---\n\nkeep\n" }]);
+  });
+  await page.click("#newFolder");
+  await openTagged(page, "Rule.md");
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  assert.match(await page.locator(".history-then").innerText(), /hidden\?/);
+}, ctxOpts);
+
+async function renameVault(page) {
+  await page.waitForSelector("#newNote");
+  await seed(page, "Cells.md", "# Cells\n\nself [[Cells#Top]]\n");
+  await seed(page, "Notes.md", "See [[Cells]] and [[cells#Membrane|membrane]]\n\nunrelated [[Other]]\n");
+  await seed(page, "Other.md", "Back to [[Notes]]\n");
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Cells.md"]');
+}
+
+await test("renaming a page in the list updates the links to it in other pages and in itself", async (page) => {
+  await renameVault(page);
+  await page.click('.tree-button[data-path="Notes.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await rightClick(page, "Cells.md");
+  await page.click(".context-menu >> text=Rename");
+  await page.fill(".inline-rename", "Cell biology");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Cell biology.md"]');
+  const all = await files(page);
+  assert.equal(all["Cell biology.md"], "# Cells\n\nself [[Cell biology#Top]]\n");
+  assert.equal(all["Notes.md"], "See [[Cell biology]] and [[Cell biology#Membrane|membrane]]\n\nunrelated [[Other]]\n");
+  assert.equal(all["Other.md"], "Back to [[Notes]]\n", "a page with no link to it is not written");
+  // The open page (Notes) shows the new links without being reopened by hand.
+  await page.waitForFunction(() => document.querySelector(".note-body").innerText.includes("Cell biology"));
+  assert.match(await page.locator(".toast").innerText(), /Updated the links to this page in 2 pages/);
+}, ctxOpts);
+
+await test("renaming the open page from its title updates links, and saving afterwards keeps the new links", async (page) => {
+  await renameVault(page);
+  await page.click('.tree-button[data-path="Cells.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await page.fill("#title", "Cell biology");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Cell biology.md"]');
+  assert.match((await files(page))["Notes.md"], /^See \[\[Cell biology\]\]/);
+  // Typing in the renamed page still saves it under the new name.
+  await page.locator(".note-body p").last().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await waitSaved(page);
+  assert.match((await files(page))["Cell biology.md"], /self \[\[Cell biology#Top\]\]!/);
+  assert.equal(await page.evaluate(() => window.__mock.files.has("Cells.md")), false);
+}, ctxOpts);
+
+await test("a link update that cannot be written is reported, and the rename stands", async (page) => {
+  await renameVault(page);
+  await page.evaluate(() => {
+    const original = window.__mock.files.set.bind(window.__mock.files);
+    const hook = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = (cmd, args) => (cmd === "write_note" && args.path === "Notes.md" ? Promise.reject("conflict") : hook(cmd, args));
+  });
+  await rightClick(page, "Cells.md");
+  await page.click(".context-menu >> text=Rename");
+  await page.fill(".inline-rename", "Cell biology");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Cell biology.md"]');
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.match(await page.locator("#banner").innerText(), /could not all be updated/);
+  assert.match((await files(page))["Notes.md"], /\[\[Cells\]\]/, "the failed page is left as it was");
 }, { ...ctxOpts, allow: [/./] });
 
 await test("deleting all history asks twice", async (page) => {
@@ -5603,6 +5880,37 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "view")) {
     await view(page, "Canvas");
     await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
     await page.screenshot({ path: `${shots}/view-${label}-${scheme}-3-canvas.png` });
+    await context.close();
+  }
+}
+
+// Screenshots of the screens changed in 0.4.8 (only when SHOTS_DIR is set), in light and dark: the Tags
+// box folded and open, History shown as the page looks, and a page with toggles.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"], ["phone", { width: 390, height: 800 }, "dark"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await richHistory(page);
+    await page.evaluate(() => {
+      window.__mock.files.set("Tags.md", "Plan for #school/maths and #school/art and #plan.\n\nAlso #other\n");
+    });
+    await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-1-toggles.png` });
+    await page.click("#historyButton");
+    await page.click(".history-row");
+    await page.waitForSelector(".history-change");
+    await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-2-history-changes.png` });
+    await page.click(".history-view >> text=Whole text");
+    await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-3-history-whole.png` });
+    await page.keyboard.press("Escape");
+    if (label === "desktop") {
+      await page.click("#openTags");
+      await page.waitForSelector("#tags[open]");
+      await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-4-tags-folded.png` });
+    }
     await context.close();
   }
 }

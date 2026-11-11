@@ -209,6 +209,10 @@ export const strings = {
     failed: "The page could not be exported.",
   },
 
+  pageText: {
+    picture: "Picture: {name}",
+  },
+
   history: {
     button: "History of this page",
     title: "History",
@@ -226,6 +230,8 @@ export const strings = {
     partNow: "Now",
     partThen: "This version",
     partNothing: "(nothing)",
+    blankOne: "(1 empty line)",
+    blank: "({count} empty lines)",
     properties: "Page properties ({count} lines)",
     unchanged: "{count} unchanged lines",
     unchangedOne: "1 unchanged line",
@@ -294,6 +300,12 @@ export const strings = {
     table: "Table",
     image: "Image",
     noResults: "No matching block",
+  },
+
+  links: {
+    updatedOne: "Updated the links to this page in 1 page.",
+    updated: "Updated the links to this page in {count} pages.",
+    someNotUpdated: "The page was renamed, but the links to it in some pages could not all be updated. Pages that still link to the old name show it as a page that does not exist.",
   },
 
   wikilinks: {
@@ -462,7 +474,7 @@ export const strings = {
 
   tags: {
     title: "Tags",
-    hint: "A tag is written #name in a page, or listed under tags in the page properties. A tag such as #school/maths is also listed under #school.",
+    hint: "A tag is written #name in a page, or listed under tags in the page properties. A tag such as #school/maths is also listed under #school: press #school to show or hide the tags inside it.",
     filterLabel: "Filter tags",
     empty: "No tags yet. Write #name in a page to make one.",
     noMatch: "No tag matches.",

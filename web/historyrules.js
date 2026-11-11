@@ -6,13 +6,36 @@
 // joining the lines of any result gives back exact text and a restore cannot change a byte
 // that was not part of the chosen part.
 
-import { splitFrontmatter, withNoteId } from "./blocks.js";
+import { splitBlocks, splitFrontmatter, withNoteId } from "./blocks.js";
 
 // Comparing two long texts line by line costs (lines x lines). Above this many cells the part
 // that differs is shown as one change instead, which is less detailed but never slow.
 const MAX_CELLS = 4_000_000;
 
 const splitLines = (text) => (text === "" ? [] : text.split(/(?<=\n)/));
+
+/**
+ * Cuts a page into whole blocks instead of lines, for comparing versions as the page looks: a
+ * list, a table or a toggle is one piece, so it can be shown (and put back) as a whole. The
+ * properties block and blank lines stay one line each. Joining the pieces gives the exact text.
+ */
+export function splitPageBlocks(text) {
+  const { front, body } = splitFrontmatter(text);
+  const { lead, blocks } = splitBlocks(body);
+  const pieces = [...splitLines(front), ...splitLines(lead)];
+  for (const { src, gap } of blocks) {
+    // The block with the line break that ends it; any blank lines after it are pieces of their own.
+    const firstBreak = gap.indexOf("\n");
+    const end = firstBreak === -1 ? gap.length : firstBreak + 1;
+    pieces.push(src + gap.slice(0, end), ...splitLines(gap.slice(end)));
+  }
+  return pieces;
+}
+
+/** How many lines a list of pieces holds. */
+export function lineCount(pieces) {
+  return pieces.reduce((sum, piece) => sum + Math.max(1, (piece.match(/\n/g) || []).length), 0);
+}
 
 // The lines that are in both, found by the longest-common-subsequence table. Returns a list of
 // [index in a, index in b] pairs that match, in order.
@@ -43,10 +66,12 @@ function matches(a, b) {
  * Compares the page as it is now with an older version. Returns the parts in order:
  * `{ same: [lines] }` for lines that are in both and `{ current: [lines], version: [lines] }`
  * for a stretch that differs (either side may be empty: lines added or removed since).
+ * `split` cuts a text into the pieces that are compared: lines, unless something else is given
+ * (see `splitPageBlocks`). Whatever it is, its pieces must join back into the exact text.
  */
-export function diffLines(currentText, versionText) {
-  const a = splitLines(currentText);
-  const b = splitLines(versionText);
+export function diffLines(currentText, versionText, split = splitLines) {
+  const a = split(currentText);
+  const b = split(versionText);
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length;
