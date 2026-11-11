@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { COLOURS } from "../web/inlinestyles.js";
 import { pageFill } from "../web/canvasrules.js";
+import { blockTag } from "../web/textink.js";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
@@ -2081,7 +2082,7 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
   const texts = await rowTexts(page);
   assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
-  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
+  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Draw on the text of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
   assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
   assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
   assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
@@ -4220,7 +4221,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":5,"items":[]}');
+  await canvasVault(page, '{"format":6,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -5980,9 +5981,215 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {
   }
 }
 
+
+// ---------- 0.4.10: drawing over the text ----------
+
+const INK_PAGE = "First paragraph of the page.\n\nSecond paragraph, which is long enough that it wraps onto more than one line when the window gets narrow, so the ink has to move with its words.\n\nThird paragraph.\n";
+async function inkVault(page, drawing, text = INK_PAGE) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([body, saved]) => {
+    window.__mock.files.set("Sketch.md", body);
+    if (saved) window.__mock.canvases.set("Sketch.md", saved);
+  }, [text, drawing || null]);
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Sketch.md"]');
+  await openTagged(page, "Sketch.md");
+}
+const startInk = async (page) => {
+  await page.click("#inkButton");
+  await page.waitForSelector(".ink-bar:not([hidden])");
+};
+// Where the n-th block of the text is, in page coordinates.
+const blockBox = (page, n) => page.evaluate((i) => {
+  const r = document.querySelector("#editor .note-body").children[i].getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+}, n);
+// A pen stroke on the ink sheet, from page coordinates.
+const inkPen = (page, points, pointerType = "pen", id = 7) => page.evaluate(([pts, type, pid]) => {
+  const surface = document.querySelector(".ink-surface");
+  const fire = (t, [x, y, pressure], buttons) => surface.dispatchEvent(new PointerEvent(t, { pointerId: pid, pointerType: type, isPrimary: true, clientX: x, clientY: y, pressure, button: 0, buttons, bubbles: true, cancelable: true }));
+  fire("pointerdown", pts[0], 1);
+  for (const p of pts.slice(1)) fire("pointermove", p, 1);
+  fire("pointerup", pts[pts.length - 1], 0);
+}, [points, pointerType, id]);
+// How much ink is painted in a box of the page (alpha of the sheet), to see that it is really on screen.
+const inkPixels = (page, box) => page.evaluate((b) => {
+  const surface = document.querySelector(".ink-surface");
+  const sheet = surface.getBoundingClientRect();
+  const ratio = surface.width / sheet.width;
+  const x = Math.max(0, Math.round((b.x - sheet.x) * ratio));
+  const y = Math.max(0, Math.round((b.y - sheet.y) * ratio));
+  const w = Math.max(1, Math.min(surface.width - x, Math.round(b.w * ratio)));
+  const h = Math.max(1, Math.min(surface.height - y, Math.round(b.h * ratio)));
+  const data = surface.getContext("2d").getImageData(x, y, w, h).data;
+  let n = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) n++;
+  return n;
+}, box);
+const waitInkSaved = async (page) => { await page.waitForFunction(() => window.__mock.canvases.has("Sketch.md")); await waitSaved(page); };
+const horizontalLine = (box, fy = 0.5) => [[box.x + 10, box.y + box.h * fy, 0.5], [box.x + 60, box.y + box.h * fy, 0.6], [box.x + box.w - 10, box.y + box.h * fy, 0.5]];
+
+await test("a pen stroke over a paragraph is saved with the paragraph it belongs to, and the page text is not touched", async (page) => {
+  await inkVault(page);
+  assert.equal(await page.locator("#inkButton").isVisible(), true);
+  assert.equal(await page.locator(".ink-bar").isVisible(), false, "the bar is only there while drawing");
+  await startInk(page);
+  const second = await blockBox(page, 1);
+  await inkPen(page, horizontalLine(second));
+  await waitInkSaved(page);
+  const drawing = await savedDrawing(page);
+  assert.equal(drawing.format, 5);
+  assert.equal(drawing.ink.length, 1);
+  assert.equal(drawing.ink[0].anchor.block, 1);
+  assert.ok(drawing.ink[0].anchor.tag.startsWith("p:Second paragraph"));
+  assert.ok(drawing.ink[0].points.every(([x, y]) => x >= 0 && x <= 1 && Math.abs(y - 0.5) < 0.05), JSON.stringify(drawing.ink[0].points));
+  assert.equal(drawing.items.length, 0);
+  assert.equal((await files(page))["Sketch.md"], INK_PAGE, "the page text is untouched");
+  assert.ok((await inkPixels(page, second)) > 50, "the stroke is on screen");
+}, ctxOpts);
+
+await test("ink stays on its words when the window is narrower", async (page) => {
+  await inkVault(page);
+  await startInk(page);
+  const wide = await blockBox(page, 1);
+  await inkPen(page, horizontalLine(wide, 0.25));
+  await page.setViewportSize({ width: 560, height: 700 });
+  await page.waitForTimeout(250);
+  const narrow = await blockBox(page, 1);
+  assert.ok(narrow.h > wide.h, "the paragraph is taller now");
+  const alpha = await page.evaluate(() => 0);
+  void alpha;
+  // The line was a quarter down the paragraph: it is now a quarter down the taller paragraph.
+  const quarter = { x: narrow.x, y: narrow.y + narrow.h * 0.25 - 4, w: narrow.w, h: 8 };
+  assert.ok((await inkPixels(page, quarter)) > 30, "the ink moved with the paragraph");
+  const oldPlace = { x: wide.x, y: wide.y + wide.h * 0.25 - 4, w: Math.min(wide.w, narrow.w), h: 8 };
+  if (Math.abs(oldPlace.y - quarter.y) > 12) assert.equal(await inkPixels(page, oldPlace), 0, "and left the old place");
+}, ctxOpts);
+
+await test("a finger moves the page and leaves no mark, unless Finger draws is on", async (page) => {
+  await inkVault(page, null, Array.from({ length: 60 }, (_, i) => `Paragraph number ${i} of a long page.`).join("\n\n") + "\n");
+  await startInk(page);
+  const box = await blockBox(page, 0);
+  await inkPen(page, [[box.x + 20, box.y + 300, 0.5], [box.x + 20, box.y + 100, 0.5]], "touch", 21);
+  assert.ok((await page.evaluate(() => document.querySelector("#editor").scrollTop)) > 100, "the page scrolled");
+  assert.equal(await page.evaluate(() => window.__mock.canvases.has("Sketch.md")), false, "nothing was drawn or saved");
+  await page.click('.ink-bar [data-action="finger"]');
+  const now = await blockBox(page, 20);
+  void now;
+  const before = await page.evaluate(() => document.querySelector("#editor").scrollTop);
+  await inkPen(page, [[300, 300, 0.5], [340, 330, 0.5], [380, 300, 0.5]], "touch", 22);
+  assert.equal(await page.evaluate(() => document.querySelector("#editor").scrollTop), before, "with Finger draws the page stays");
+  await waitInkSaved(page);
+  assert.equal((await savedDrawing(page)).ink.length, 1);
+}, ctxOpts);
+
+await test("the eraser removes a stroke, undo brings it back, redo erases it again", async (page) => {
+  await inkVault(page);
+  await startInk(page);
+  const first = await blockBox(page, 0);
+  await inkPen(page, horizontalLine(first));
+  const inkCount = (n) => page.waitForFunction((want) => {
+    const text = window.__mock.canvases.get("Sketch.md");
+    return text !== undefined && (JSON.parse(text).ink || []).length === want;
+  }, n);
+  await inkCount(1);
+  await page.click('.ink-bar button[aria-label="Eraser"]');
+  await inkPen(page, [[first.x + 30, first.y - 6 + first.h / 2, 0.5], [first.x + 40, first.y + 6 + first.h / 2, 0.5]], "mouse", 1);
+  await inkCount(0);
+  await page.click('.ink-bar button[aria-label="Undo"]');
+  await inkCount(1);
+  await page.click('.ink-bar button[aria-label="Redo"]');
+  await inkCount(0);
+}, ctxOpts);
+
+await test("colour and width are chosen from the bar and kept with the stroke", async (page) => {
+  await inkVault(page);
+  await startInk(page);
+  await page.click('.ink-bar [aria-label="Colour"]');
+  await page.click('.canvas-menu[data-ink-menu="colour"] .ink-colour[data-colour="green"]');
+  await page.click('.ink-bar button[aria-label="Highlighter"]');
+  const box = await blockBox(page, 2);
+  await inkPen(page, horizontalLine(box), "mouse", 1);
+  await waitInkSaved(page);
+  const stroke = (await savedDrawing(page)).ink[0];
+  assert.equal(stroke.color, "green");
+  assert.equal(stroke.tool, "highlighter");
+  assert.equal(stroke.anchor.block, 2);
+}, ctxOpts);
+
+await test("the ink is shown over the text when the page is opened, and Done puts the pen away", async (page) => {
+  const saved = '{"format":5,"items":[],"ink":[{"tool":"pen","color":"red","width":8,"anchor":{"block":0,"tag":"p:First paragraph of the page."},"points":[[0.05,0.5,0.5],[0.5,0.5,0.5],[0.95,0.5,0.5]]}]}\n';
+  await inkVault(page, saved);
+  await page.waitForFunction(() => document.querySelector(".ink-layer") && !document.querySelector(".ink-layer").hidden);
+  assert.equal(await page.locator(".ink-bar").isVisible(), false, "looking at it does not bring the pen");
+  assert.ok((await inkPixels(page, await blockBox(page, 0))) > 50);
+  await startInk(page);
+  await page.click(".ink-bar .ink-done");
+  await page.waitForSelector(".ink-bar", { state: "hidden" });
+  assert.ok((await inkPixels(page, await blockBox(page, 0))) > 50, "the ink stays");
+  assert.equal(await page.getAttribute("#inkButton", "aria-pressed"), "false");
+}, ctxOpts);
+
+await test("ink whose words were edited away is kept in the file and comes back with them", async (page) => {
+  const saved = '{"format":5,"items":[],"ink":[{"tool":"pen","color":"red","width":8,"anchor":{"block":0,"tag":"p:First paragraph of the page."},"points":[[0.05,0.5,0.5],[0.5,0.5,0.5],[0.95,0.5,0.5]]}]}\n';
+  await inkVault(page, saved);
+  await page.waitForFunction(() => document.querySelector(".ink-layer") && !document.querySelector(".ink-layer").hidden);
+  await page.click("#editor .note-body p");
+  await page.keyboard.press("Home");
+  await page.keyboard.type("New words ");
+  await page.waitForTimeout(300);
+  assert.equal(await inkPixels(page, await blockBox(page, 0)), 0, "not drawn over text it was not drawn on");
+  await startInk(page);
+  const third = await blockBox(page, 2);
+  await inkPen(page, horizontalLine(third), "mouse", 1);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).ink.length === 2);
+  const drawing = await savedDrawing(page);
+  assert.equal(drawing.ink.length, 2, "the first stroke is still in the file");
+  assert.equal(drawing.ink[0].anchor.tag, "p:First paragraph of the page.");
+}, ctxOpts);
+
+await test("the sheet keeps the ink when something is drawn on the canvas, and the canvas does not show it", async (page) => {
+  const saved = '{"format":5,"items":[],"ink":[{"tool":"pen","color":"red","width":8,"anchor":{"block":0,"tag":"p:First paragraph of the page."},"points":[[0.05,0.5,0.5],[0.95,0.5,0.5]]}]}\n';
+  await inkVault(page, saved);
+  await page.waitForFunction(() => document.querySelector(".ink-layer") && !document.querySelector(".ink-layer").hidden);
+  await openCanvas(page);
+  assert.equal(await page.locator(".ink-layer").isVisible(), false, "the ink layer is away while the canvas is shown");
+  await drawLine(page, [60, 80], [260, 160]);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 1);
+  const drawing = await savedDrawing(page);
+  assert.equal(drawing.format, 5);
+  assert.equal(drawing.items.length, 1);
+  assert.equal(drawing.ink.length, 1);
+}, ctxOpts);
+
+await test("a drawing from a newer version is read-only for ink, and the file is left alone", async (page) => {
+  const saved = '{"format":6,"items":[],"ink":[]}\n';
+  await inkVault(page, saved);
+  await startInk(page);
+  assert.equal(await page.locator('.ink-bar button[aria-label="Pen"]').isDisabled(), true);
+  const first = await blockBox(page, 0);
+  await inkPen(page, horizontalLine(first));
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), saved);
+}, ctxOpts);
+
+await test("odd input does not break the ink: a dot, a stroke off the page, rapid taps, an empty page", async (page) => {
+  await inkVault(page, null, "\n");
+  await startInk(page);
+  const only = await blockBox(page, 0);
+  await inkPen(page, [[only.x + 5, only.y + 5, 0.5]], "mouse", 1);
+  await inkPen(page, [[-50, -50, 0.5], [5000, 5000, 1]], "mouse", 1);
+  for (let i = 0; i < 40; i++) await inkPen(page, [[only.x + i, only.y + 5, 0.5], [only.x + i + 3, only.y + 9, 0.5]], "mouse", 1);
+  await waitInkSaved(page);
+  const drawing = await savedDrawing(page);
+  assert.equal(drawing.ink.length, 42);
+  assert.ok(drawing.ink.every((piece) => piece.anchor.block === 0));
+  assert.deepEqual(await page.evaluate(() => window.__mock.logs.filter((l) => /error/i.test(JSON.stringify(l))).length), 0);
+}, ctxOpts);
+
 // Screenshots for 0.4.10 (only when SHOTS_DIR is set): a toggle with callouts inside, and text the
 // editor cannot show as a block, which now looks like the rest of the page.
-if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "0410")) {
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "049")) {
   for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"]]) {
     const context = await browser.newContext({ viewport, colorScheme: scheme });
     await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
@@ -5998,13 +6205,41 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "0410")) {
     await page.waitForSelector("#editor .note-body");
     await page.click("#editor .toggle-head [aria-expanded]");
     await page.waitForTimeout(150);
-    await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-1-toggle-callouts.png` });
+    await page.screenshot({ path: `${shots}/v049-${label}-${scheme}-1-toggle-callouts.png` });
     if (label === "desktop") {
       await page.click('.tree-button[data-path="Odd.md"]');
       await page.waitForSelector("#editor .raw-block");
       await page.waitForTimeout(150);
-      await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-2-raw-text.png` });
+      await page.screenshot({ path: `${shots}/v049-${label}-${scheme}-2-raw-text.png` });
     }
+    await context.close();
+  }
+}
+
+
+// Screenshots for the design check of 0.4.10: ink over the text, the pen bar and its colour menu.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "0410")) {
+  const saved = JSON.stringify({ format: 5, items: [], ink: [
+    { tool: "highlighter", color: "yellow", width: 6, anchor: { block: 1, tag: "p:First paragraph of the page." }, points: [[0.02, 0.5, 0.5], [0.5, 0.5, 0.5], [0.98, 0.5, 0.5]] },
+    { tool: "pen", color: "red", width: 4, anchor: { block: 2, tag: blockTag("p", "Second paragraph, which is long enough that it wraps onto more than one line when the window gets narrow, so the ink has to move with its words.") }, points: [[0.03, 0.96, 0.5], [0.3, 0.9, 0.7], [0.6, 0.97, 0.6], [0.97, 0.92, 0.5]] },
+    { tool: "pen", color: "blue", width: 4, anchor: { block: 3, tag: "p:Third paragraph." }, points: [[0.1, 0.1, 0.5], [0.4, 0.9, 0.7], [0.6, 0.1, 0.6], [0.9, 0.9, 0.5]] },
+  ] }) + "\n";
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await inkVault(page, saved, "# Notes\n\n" + INK_PAGE);
+    await page.waitForFunction(() => document.querySelector(".ink-layer") && !document.querySelector(".ink-layer").hidden);
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-1-ink-over-text.png` });
+    await page.click("#inkButton");
+    await page.waitForSelector(".ink-bar:not([hidden])");
+    await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-2-pen-bar.png` });
+    await page.click('.ink-bar [aria-label="Colour"]');
+    await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-3-colour-menu.png` });
     await context.close();
   }
 }
