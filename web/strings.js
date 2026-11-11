@@ -203,6 +203,19 @@ export const strings = {
     },
   },
 
+  // Drawing over the text of a page (the pen button on the top bar).
+  ink: {
+    button: "Draw on the text",
+    buttonLabel: "Draw on the text of this page",
+    command: "Draw on the text of this page",
+    toolbar: "Pen for the text",
+    surface: "Ink over the text",
+    done: "Done",
+    doneLabel: "Stop drawing on the text",
+    noText: "There is no text here to draw on yet.",
+    saveFailed: "The ink could not be saved.",
+  },
+
   exportPage: {
     done: "Exported to {path}. The folder holds the page and {pictures} pictures.",
     missing: " {missing} pictures could not be copied.",

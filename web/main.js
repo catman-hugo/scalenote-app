@@ -30,6 +30,7 @@ import { openTrash } from "./trashdialog.js";
 import { openTags } from "./tagsdialog.js";
 import { openHistory } from "./historydialog.js";
 import { createCanvasView } from "./canvasview.js";
+import { createInkLayer } from "./inklayer.js";
 import { parseCanvas, serializeCanvas } from "./canvasrules.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
@@ -64,6 +65,11 @@ const app = {
   canvasView: null,
   canvasSave: null,
   canvasVersion: null,
+  // The ink drawn over the text (inklayer.js). It lives in the page's drawing file, so the page the
+  // drawing was read for is remembered: the drawing in canvasView is the ink's only while this is
+  // the open page.
+  ink: null,
+  inkPath: null,
   // The line ending of the note in source view; a text box always uses "\n" inside.
   lineEnding: "\n",
   // Pages opened in this session, newest first, for the search box before anything is typed.
@@ -1229,7 +1235,7 @@ function openSearch() {
     { label: c.tags, run: () => openTagsDialog() },
     { label: c.sidebar, run: toggleSidebar },
   ];
-  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: c.canvas, run: toggleCanvas }, { label: c.split, run: toggleSplit }, { label: c.source, run: toggleSource });
+  if (app.current) commands.push({ label: c.favorite, run: toggleFavorite }, { label: c.history, run: openHistoryDialog }, { label: strings.ink.command, run: startInk }, { label: c.canvas, run: toggleCanvas }, { label: c.split, run: toggleSplit }, { label: c.source, run: toggleSource });
   if (app.current && !isAndroid) commands.push({ label: c.exportPage, run: exportCurrentPage }, { label: c.printPage, run: printCurrentPage });
   openPalette(el("palette"), {
     recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
@@ -1261,6 +1267,7 @@ async function showNoNote() {
   el("source").hidden = true;
   el("sourceToggle").hidden = true;
   el("viewButton").hidden = true;
+  el("inkButton").hidden = true;
   el("canvasHost").hidden = true;
   el("title").hidden = true;
   drawFavorite();
@@ -1269,6 +1276,7 @@ async function showNoNote() {
 }
 
 async function closeCurrentNote() {
+  await leaveInk();
   await leaveCanvas();
   if (app.autosave) await app.autosave.flush();
   if (app.autosave) app.autosave.cancel();
@@ -1344,6 +1352,8 @@ function showNote(path, note) {
   drawCover();
   drawHistoryButton();
   loadBacklinks(path);
+  // A page that has ink shows it over the text; a page without costs one small read.
+  if (app.settings.openIn === "text") void loadInk(path, false);
 }
 
 // ---------- canvas (drawing) ----------
@@ -1377,6 +1387,10 @@ async function saveCanvas() {
       // The file on disk wins, as for pages. Saving is switched off so it is never overwritten.
       app.canvasView.lock(strings.canvas.conflict);
       app.canvasSave.cancel();
+      if (app.ink && app.ink.visible) {
+        showBanner(strings.canvas.conflict);
+        app.ink.redraw();
+      }
       return;
     }
     logProblem("saving the drawing failed", error);
@@ -1389,6 +1403,7 @@ const drawingOpen = () => app.mode === "canvas" || app.mode === "split";
 
 async function enterCanvas(mode = "canvas") {
   if (!app.current || app.mode === mode) return;
+  if (!drawingOpen()) await leaveInk();
   if (drawingOpen()) {
     // Already loaded for this page: only the layout changes.
     app.mode = mode;
@@ -1396,6 +1411,7 @@ async function enterCanvas(mode = "canvas") {
     if (mode === "canvas") app.canvasView.focus();
     return;
   }
+  await leaveInk();
   if (app.mode === "source") await toggleSource();
   await app.autosave.flush();
   const view = ensureCanvasView();
@@ -1464,6 +1480,72 @@ async function toggleSplit() {
   else await enterCanvas("split");
 }
 
+// ---------- drawing over the text ----------
+
+// The ink of a page is kept in the same drawing file as the canvas (as `ink`), so it is read and
+// saved by the same code. The canvas view object holds the drawing in memory for both; the ink
+// layer only draws it over the text and adds strokes to it.
+const inkDrawing = () => (app.canvasView && app.inkPath && app.current ? { canvas: app.canvasView.canvas, readOnly: app.canvasView.readOnly } : null);
+
+// Reads the drawing of the open page for the text view. Without `force` it is only used when it
+// already holds ink (a page nobody drew on costs nothing); with `force` an empty drawing is made
+// ready to be drawn on. Returns whether the ink layer now has a drawing.
+async function loadInk(path, force) {
+  if (drawingOpen()) return false;
+  let file = null;
+  try {
+    file = await backend.readCanvas(path);
+  } catch (error) {
+    logProblem("opening the drawing for the ink failed", error);
+    if (force) showBanner(strings.canvas.loadFailed);
+    return false;
+  }
+  if (!app.current || app.current.path !== path || drawingOpen()) return false;
+  let canvas = null;
+  let problem = "";
+  if (file) {
+    const read = parseCanvas(file.text);
+    canvas = read.canvas || null;
+    problem = read.problem || "";
+  }
+  if (!force && !(canvas && canvas.ink.length)) return false;
+  const view = ensureCanvasView();
+  app.canvasVersion = file ? file.version : null;
+  view.show(canvas, problem);
+  app.inkPath = path;
+  app.ink.show();
+  return true;
+}
+
+async function startInk() {
+  if (!app.current || !app.ink || app.ink.active) return;
+  if (drawingOpen()) await leaveCanvas();
+  if (app.mode === "source") await toggleSource();
+  if (app.inkPath !== app.current.path && !(await loadInk(app.current.path, true))) return;
+  app.ink.start();
+  applyMode();
+}
+
+// Stops drawing and saves what was drawn. The ink stays on the text.
+async function stopInk() {
+  if (!app.ink || !app.ink.active) return;
+  app.ink.stop();
+  if (app.canvasSave) await app.canvasSave.flush();
+  applyMode();
+}
+
+// Takes the ink off the screen (another page is opening) after saving it. Safe to call when it is not shown.
+async function leaveInk() {
+  if (!app.ink || !app.ink.visible) return;
+  app.ink.stop();
+  if (app.canvasSave) {
+    await app.canvasSave.flush();
+    app.canvasSave.cancel();
+  }
+  app.ink.hide();
+  app.inkPath = null;
+}
+
 // ---------- markdown source view ----------
 
 // A text box turns every line ending into "\n" inside. A note with Windows line endings
@@ -1511,7 +1593,14 @@ function applyMode() {
   viewLabel.textContent = strings.canvas.view;
   view.replaceChildren(viewLabel, icon("chevronDown"));
   view.setAttribute("aria-label", strings.canvas.viewLabel);
-  el("sourceToggle").hidden = !app.current || canvas || split;
+  const inking = Boolean(app.ink && app.ink.active);
+  const inkButton = el("inkButton");
+  inkButton.hidden = !app.current || source || canvas || split;
+  inkButton.replaceChildren(icon("pen"));
+  inkButton.setAttribute("aria-label", strings.ink.buttonLabel);
+  inkButton.title = strings.ink.button;
+  inkButton.setAttribute("aria-pressed", String(inking));
+  el("sourceToggle").hidden = !app.current || canvas || split || inking;
   const toggle = el("sourceToggle");
   const sourceLabel = document.createElement("span");
   sourceLabel.className = "btn-label";
@@ -1525,6 +1614,7 @@ function applyMode() {
 
 async function toggleSource() {
   if (!app.current) return;
+  await leaveInk();
   await leaveCanvas();
   if (app.mode === "editor") {
     // The note on screen is the truth: show exactly what saving it would write.
@@ -1785,6 +1875,7 @@ function wireEvents() {
   el("openTags").addEventListener("click", () => openTagsDialog());
   el("favorite").addEventListener("click", toggleFavorite);
   el("historyButton").addEventListener("click", openHistoryDialog);
+  el("inkButton").addEventListener("click", () => (app.ink && app.ink.active ? stopInk() : startInk()));
   document.addEventListener("keydown", searchShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
@@ -1836,6 +1927,16 @@ async function start() {
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
   app.editor.on("transaction", rememberFolds);
+  app.ink = createInkLayer({
+    scroller: el("editor"),
+    panes: el("panes"),
+    body: () => app.editor.view.dom,
+    drawing: inkDrawing,
+    onChange: () => app.canvasSave.touch(),
+    onNotice: (text) => showToast(text),
+    onDone: stopInk,
+  });
+  app.editor.on("update", () => app.ink.refresh());
   app.pageText = createPageText(app.editor);
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),

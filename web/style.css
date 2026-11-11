@@ -460,7 +460,7 @@ body.tree-dragging .tree-button { cursor: grabbing; }
 }
 
 /* The page itself: text, drawing or markdown, or text and drawing side by side. */
-.panes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.panes { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .panes.split { flex-direction: row; }
 .panes.split > .editor,
 .panes.split > .canvas-host { flex: 1 1 0; min-width: 0; }
@@ -488,6 +488,7 @@ body.tree-dragging .tree-button { cursor: grabbing; }
 .editor {
   flex: 1;
   overflow-y: auto;
+  position: relative;
   /* Left room for the block handle. */
   padding: var(--space-5) var(--space-4) var(--space-6) calc(var(--space-4) + 36px);
 }
@@ -821,7 +822,8 @@ body.block-dragging .float-bar { visibility: hidden; }
 
 .canvas-host { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 .canvas-host[hidden] { display: none; }
-.canvas-toolbar {
+.canvas-toolbar,
+.ink-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -851,7 +853,8 @@ body.block-dragging .float-bar { visibility: hidden; }
 }
 .canvas-menu[hidden] { display: none; }
 /* The colour menu is a grid of six, like a paint palette. */
-.canvas-menu[data-menu="colour"]:not([hidden]) { display: grid; grid-template-columns: repeat(6, 2rem); justify-content: start; }
+.canvas-menu[data-menu="colour"]:not([hidden]),
+.canvas-menu[data-ink-menu="colour"]:not([hidden]) { display: grid; grid-template-columns: repeat(6, 2rem); justify-content: start; }
 .canvas-menu-row { font-size: var(--text-s); padding: var(--space-2) var(--space-3); min-height: 2rem; }
 .canvas-swatch { display: block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); }
 .pen-ink { background: var(--text); }
@@ -1750,3 +1753,16 @@ button.danger:hover { background: var(--bg-hover); }
 .icon-menu-colour::after { content: ""; position: absolute; inset: 7px; background: var(--swatch); border-radius: 2px; }
 .icon-menu-colour[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .icon-menu-none[aria-pressed="true"] { background: var(--accent-soft); }
+
+/* ---------- drawing over the text ---------- */
+
+/* A zero-height box that sticks to the top of the scrolling text; the sheet inside is as big as
+   the visible part of the text box and is drawn again on every scroll. */
+.ink-layer { position: sticky; top: 0; height: 0; z-index: 4; }
+.ink-layer[hidden] { display: none; }
+.ink-surface { position: absolute; top: 0; left: 0; pointer-events: none; }
+/* While drawing, the sheet takes the pen and the mouse; fingers are handled in code (they scroll). */
+.ink-surface.ink-drawing { pointer-events: auto; touch-action: none; cursor: crosshair; outline: none; }
+.ink-bar[hidden], .ink-menus[hidden] { display: none; }
+.ink-spacer { flex: 1; }
+.ink-done { font-size: var(--text-s); padding: var(--space-1) var(--space-3); }
