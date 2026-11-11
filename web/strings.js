@@ -462,7 +462,7 @@ export const strings = {
 
   tags: {
     title: "Tags",
-    hint: "A tag is written #name in a page, or listed under tags in the page properties. A tag such as #school/maths is also listed under #school.",
+    hint: "A tag is written #name in a page, or listed under tags in the page properties. A tag such as #school/maths is also listed under #school: press #school to show or hide the tags inside it.",
     filterLabel: "Filter tags",
     empty: "No tags yet. Write #name in a page to make one.",
     noMatch: "No tag matches.",

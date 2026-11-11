@@ -1,7 +1,8 @@
 // The Tags box: every tag in the notes folder with the number of pages, and the pages of the
 // tag you choose. Nothing in here changes a page; opening a page closes the box.
 
-import { buildTagList, filterTags, pageTitle } from "./tagindex.js";
+import { buildTagList, clickTag, pageTitle, parentTags, tagRows } from "./tagindex.js";
+import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
 // Drawing thousands of rows would make the box slow on a phone, so only this many are drawn.
@@ -32,6 +33,8 @@ export async function openTags(dialog, { load, open, onError, select }) {
   let message = "";
   let selected = select ? select.replace(/^#/, "").toLowerCase() : "";
   let filter = "";
+  // The main tags whose subtags are showing. Every main tag starts folded.
+  let unfolded = new Set();
 
   const input = make("input", "tags-filter");
   // A plain text box, not type="search": in a search box the first Escape only clears the text.
@@ -75,7 +78,7 @@ export async function openTags(dialog, { load, open, onError, select }) {
       if (!message) listBox.append(make("p", "tags-empty", t.empty));
       return;
     }
-    const shown = filterTags(list, filter);
+    const shown = tagRows(list, filter, unfolded);
     if (!shown.length) {
       listBox.append(make("p", "tags-empty", t.noMatch));
       return;
@@ -86,15 +89,29 @@ export async function openTags(dialog, { load, open, onError, select }) {
     for (const item of shown.slice(0, MAX_ROWS)) {
       const li = make("li");
       const open = item.key === selected;
-      const row = make("button", "tag-row");
+      const row = make("button", "tag-row" + (open ? " selected" : ""));
       row.type = "button";
-      row.setAttribute("aria-expanded", String(open));
+      // For a main tag "expanded" means its subtags are showing; for any other, its pages.
+      row.setAttribute("aria-expanded", String(item.parent ? item.unfolded : open));
       row.dataset.depth = String(Math.min(item.depth, 4));
-      row.append(make("span", "tag-name", `#${item.name}`), make("span", "tag-count", countText(item.pages.length)));
+      // An arrow in front of a main tag; the same room is left in front of the others, so
+      // the names line up.
+      const arrow = make("span", "tag-arrow");
+      if (item.parent) {
+        arrow.append(icon(item.unfolded ? "chevronDown" : "chevronRight"));
+        row.dataset.parent = "";
+      }
+      const name = make("span", "tag-label");
+      name.append(arrow, make("span", "tag-name", `#${item.name}`));
+      row.append(name, make("span", "tag-count", countText(item.pages.length)));
       row.addEventListener("click", () => {
-        selected = open ? "" : item.key;
+        ({ unfolded, selected } = clickTag(item, unfolded, selected));
         drawList();
+        // Drawing the list again makes new buttons; keep the keyboard on the one pressed.
+        const again = [...listBox.querySelectorAll(".tag-row")].find((b) => b.dataset.key === item.key);
+        if (again) again.focus();
       });
+      row.dataset.key = item.key;
       li.append(row);
       if (open) {
         li.append(pageRows(item));
@@ -125,6 +142,8 @@ export async function openTags(dialog, { load, open, onError, select }) {
     input.value = select.replace(/^#/, "");
     selected = "";
   }
+  // A tag opened from a page must be in view: unfold the tags it sits in, and itself.
+  if (selected) unfolded = new Set([...parentTags(selected), selected]);
 
   const close = make("button", "primary", t.close);
   close.type = "button";

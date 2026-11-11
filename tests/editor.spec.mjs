@@ -3475,7 +3475,8 @@ await test("clicking a tag opens the Tags box on that tag with its pages, and a 
   await openTagged(page, "A.md");
   await page.locator(".note-body .tag").first().click();
   await page.waitForSelector("#tags[open]");
-  assert.equal(await page.locator("#tags .tag-row[aria-expanded=true] .tag-name").textContent(), "#plan");
+  assert.equal(await page.locator("#tags .tag-row.selected .tag-name").textContent(), "#plan");
+  assert.equal(await page.locator("#tags .tag-row.selected").getAttribute("aria-expanded"), "true");
   assert.deepEqual(await page.locator("#tags .tag-pages .tag-page").evaluateAll((n) => n.map((x) => x.innerText.replace(/\s+/g, " ").trim())), ["A", "B School", "Tagged"]);
   await page.locator("#tags .tag-page", { hasText: "B" }).click();
   await page.waitForFunction(() => document.querySelector("#title").value === "B");
@@ -3487,7 +3488,25 @@ await test("the Tags box lists tags with page counts, nested tags count for thei
   await page.click("#openTags");
   await page.waitForSelector("#tags[open]");
   const rows = async () => page.locator("#tags .tag-row").evaluateAll((nodes) => nodes.map((n) => n.innerText.replace(/\s+/g, " ").trim()));
+  // Subtags are folded away under their main tag until it is pressed.
+  assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#tag 1 page"]);
+  const school = page.locator("#tags .tag-row", { hasText: "#school" }).first();
+  assert.equal(await school.getAttribute("aria-expanded"), "false");
+  assert.equal(await page.locator("#tags .tag-row[data-parent] .tag-arrow svg").count(), 1, "only the main tag has an arrow");
+  await school.click();
   assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#School/Maths 2 pages", "#tag 1 page"]);
+  assert.equal(await page.locator("#tags .tag-row", { hasText: "#school" }).first().getAttribute("aria-expanded"), "true");
+  assert.equal(await page.locator("#tags .tag-pages .tag-page").count(), 2, "its pages are listed too");
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.key), "school", "the keyboard stays on the pressed tag");
+  // A subtag opened inside it, then the main tag pressed again: both go away.
+  await page.locator("#tags .tag-row", { hasText: "#School/Maths" }).click();
+  assert.equal(await page.locator("#tags .tag-row.selected .tag-name").textContent(), "#School/Maths");
+  await page.locator("#tags .tag-row", { hasText: "#school" }).first().click();
+  assert.deepEqual(await rows(), ["#other 2 pages", "#plan 3 pages", "#school 2 pages", "#tag 1 page"]);
+  assert.equal(await page.locator("#tags .tag-pages").count(), 0);
+  // The names line up whether or not a tag has an arrow.
+  const lefts = await page.locator("#tags .tag-row[data-depth='0'] .tag-name").evaluateAll((n) => n.map((x) => Math.round(x.getBoundingClientRect().left)));
+  assert.equal(new Set(lefts).size, 1, JSON.stringify(lefts));
   await page.fill("#tags .tags-filter", "#SCH");
   assert.deepEqual(await rows(), ["#school 2 pages", "#School/Maths 2 pages"]);
   await page.fill("#tags .tags-filter", "zzz");
