@@ -5884,6 +5884,31 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "view")) {
   }
 }
 
+await test("a bulleted, a numbered and a to-do list in a row open as three lists, not a kept-as-written block", async (page) => {
+  await page.waitForSelector("#newNote");
+  const text = "Plain\n\n- a\n- b\n\n1. one\n2. two\n\n- [ ] todo\n- [x] done\n";
+  await seed(page, "Lists.md", text);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Lists.md"]');
+  await page.waitForSelector("#editor .note-body");
+  assert.equal(await page.locator(".raw-block").count(), 0, await page.locator(".raw-block").evaluateAll((n) => n.map((x) => x.textContent + "|" + (x.querySelector(".raw-text") ? x.querySelector(".raw-text").value || x.querySelector(".raw-text").textContent : "")).join(" // ")));
+  assert.equal(await page.locator("#editor ul:not([data-type=taskList])").count(), 1);
+  assert.equal(await page.locator("#editor ol").count(), 1);
+  assert.equal(await page.locator("#editor ul[data-type=taskList]").count(), 1);
+  // Opening and leaving the page without a change does not touch the file.
+  await page.click('.tree-button[data-path="Lists.md"]');
+  await page.waitForTimeout(900);
+  assert.equal((await files(page))["Lists.md"], text);
+  // Editing one list rewrites only that list; the other two stay as written.
+  await page.click('#editor li:has-text("two")');
+  await page.waitForTimeout(80);
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await page.waitForTimeout(900);
+  // (The first real edit also gives the page its id, which is not part of what is checked here.)
+  assert.equal((await files(page))["Lists.md"].replace(/^---\nid: [^\n]+\n---\n\n/, ""), text.replace("2. two", "2. two!"));
+}, ctxOpts);
+
 // Screenshots of the screens changed in 0.4.8 (only when SHOTS_DIR is set), in light and dark: the Tags
 // box folded and open, History shown as the page looks, and a page with toggles.
 if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {

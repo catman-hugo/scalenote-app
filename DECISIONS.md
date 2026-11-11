@@ -485,3 +485,14 @@ Cost. Somewhat slower drawing on Linux. Tauri's Linux notes describe this settin
 Decision. The Linux fix is its own small release, so the owner can test it. Draw over text, columns and the Android in-app installer become 0.4.10, the `/canvas` block 0.4.11 and PDF import 0.4.12.
 Also noted. Handwriting to text moves to after v1: use the system recognisers on Windows and Android, wait for Linux until there is a good small offline option, offer packs as optional downloads, English first and Dutch later. A Fedora install check of the .rpm is wanted around 0.8.
 
+## 2026-11-11: A different kind of list after a blank line starts a new list
+
+Decision. When a blank line is followed by a list item of another kind (a to-do list, a numbered list with a different closing mark, or a bulleted list with a different bullet), it starts a new list. Before, any list item after a blank line continued the old list, so lists written one after another by the editor itself came back as one "kept exactly as written" block. The text is still kept to the byte either way. A list with blank lines between items of the same kind is still kept as written, so the editor never removes those blank lines.
+Cost. A hand-written loose list that mixes a plain bullet with a to-do item is now two lists; its text is unchanged unless the owner edits it.
+
+## 2026-11-11: Image size is written Obsidian-style; image controls become 0.4.13
+
+Decision. When images can be resized, the size is written inside the picture's description, as `![alt|300x200](path)` (or `|300` for width alone). It is the simplest form that keeps the line a normal markdown image and that Obsidian also reads. Only a `|` followed by a number, or by `numberxnumber`, at the very end of the description counts as a size. A missing or odd size means the natural size. No Obsidian code is used.
+Scope. The same eight handles as ScaleNote v1: corners scale and keep the proportions, edges stretch or thin; a 50 px minimum; mouse and touch; plus Reset to original size. No rotate, flip, crop or colour controls (v1 had none).
+Also. The version plan moves up: 0.4.10 is this list fix, draw over text, columns and the Android installer are 0.4.11, the `/canvas` block 0.4.12, image controls 0.4.13 and PDF import 0.4.14.
+

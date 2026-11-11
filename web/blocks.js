@@ -150,9 +150,23 @@ function readQuote(lines, i) {
 
 const INDENTED = /^( {2,}|\t)/;
 
+// Which kind of list a line starts: a to-do list, a numbered list (by its closing mark) or a
+// bulleted list (by its bullet). In Markdown a different kind after a blank line is a new list,
+// not a loose continuation of the old one. The editor writes its own lists one after another
+// with a blank line between them, so reading them back as one block would turn a page of
+// ordinary lists into one "kept exactly as written" block.
+function listKind(text) {
+  const marker = LIST_MARKER.exec(text);
+  if (!marker) return "";
+  if (/^\d/.test(marker[1])) return `ordered${marker[1].slice(-1)}`;
+  if (/^ {0,3}[-*+][ \t]+\[[ xX]\](?:[ \t]|$)/.test(text)) return "task";
+  return `bullet${marker[1]}`;
+}
+
 function readList(lines, i) {
   let j = i;
   let sawBlankInside = false;
+  const kind = listKind(lines[i].text);
   while (j + 1 < lines.length) {
     const next = lines[j + 1];
     if (!isBlank(next)) {
@@ -167,7 +181,7 @@ function readList(lines, i) {
     // Blank line: the list goes on only if the next real line is indented or another item.
     let k = j + 1;
     while (k < lines.length && isBlank(lines[k])) k++;
-    if (k < lines.length && (INDENTED.test(lines[k].text) || LIST_MARKER.test(lines[k].text))) {
+    if (k < lines.length && (INDENTED.test(lines[k].text) || (LIST_MARKER.test(lines[k].text) && listKind(lines[k].text) === kind))) {
       sawBlankInside = true;
       j = k;
       continue;
