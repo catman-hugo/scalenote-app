@@ -340,6 +340,10 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.11 so far (not yet released; its notes are written when the release is made)
+- Pen bar: no Done button any more; the pen button on the top bar starts and stops drawing. The sheet now covers the whole text box, padding included, so a pen starting in the margin draws instead of scrolling (`placeSurface` in `web/inklayer.js`).
+- Fix: a long stroke from a short block made the saved drawing unreadable on the next opening. A stroke is now cut into one piece per block (`splitByBlock` in `web/textink.js`) and fractions are limited. Browser-tested here (3 new browser tests, 3 new unit tests); NOT tried on a device.
+
 ## 0.4.10: columns built
 - Format: top-level callout `> [!columns]` (no title, no fold) holding 2 to 5 callouts `> > [!column]`. Anything else stays an ordinary callout, byte for byte (`web/richblocks.js`, `readColumns`/`writeColumns`). Columns do not nest. Nodes `Columns`/`Column` in `web/richnodes.js`; slash items "2 columns" and "3 columns"; read-only renderers in `web/pagetext.js`.
 - Drag: `web/gutter.js` and `web/columnops.js`. Drop on the side of a block (56 px zone) wraps it into two columns, on the left or right end of a columns block adds a column, between blocks inside a column moves it. New content is inserted first and the source removed after; an emptied column is removed and a one-column set is unwrapped. Inner blocks have their own handle and menu; the columns block has "Turn columns into blocks".
@@ -352,7 +356,7 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 
 ## 0.4.10: draw over text built
 Release notes: `docs/release-notes/0.4.10.md`. Built and tested in a browser here; NOT tried on a device (pen pressure, finger scrolling, Android and Windows touch screens are untested). Columns and the Android in-app installer are built too (next two sections).
-- A pen button on the top bar (`#inkButton`) and the command "Draw on the text of this page" start drawing; a pen bar (`.ink-bar`) sits above the text: pen, highlighter, eraser, the sixteen colours, five widths, Undo, Redo, Finger draws, Done. Design notes and the reasons for the placement are in `docs/v0.4-plan.md`.
+- A pen button on the top bar (`#inkButton`) and the command "Draw on the text of this page" start drawing; a pen bar (`.ink-bar`) sits above the text: pen, highlighter, eraser, the sixteen colours, five widths, Undo, Redo, Finger draws (0.4.11 removes Done: the pen button on the top bar closes the bar). Design notes and the reasons for the placement are in `docs/v0.4-plan.md`.
 - Ink is stored in `Name.canvas.json` format 5 as a separate `ink` list; each stroke has `anchor: { block, tag }` and points as fractions of that block (`web/textink.js`, `web/canvasrules.js`). Older versions open it read-only. A page with ink shows it over the text when opened (one small read of the drawing file per page; a page without ink loads nothing).
 - Screen code: `web/inklayer.js` (sticky zero-height layer in the scroll box, a viewport-sized canvas redrawn on scroll and resize); wiring in `web/main.js` (`loadInk`, `startInk`, `stopInk`, `leaveInk`; the canvas view object holds the drawing for both).
 - Tests: 223 unit tests (11 new in `tests/textink.test.mjs` and the format tests in `tests/canvas.test.mjs`) and the browser tests (10 new: save with anchor, narrower window, finger scroll and Finger draws, eraser/undo/redo, colour and width, shown on open, orphaned ink kept, canvas keeps ink, newer file read-only, odd input). Screenshots checked in light, dark and phone width.

@@ -52,6 +52,35 @@ export function blockAtY(rects, y) {
   return best;
 }
 
+/**
+ * Cuts a stroke into the pieces that lie on each block. Every piece belongs to one block, so a long
+ * stroke across a page stays on the words it was drawn over, and its points stay near their block
+ * (the drawing file refuses points that are very far from the block they belong to). A piece
+ * also takes the first point of the next one, so the line stays joined. Returns
+ * `[{ block, points }]`; `rects` are `{ top, bottom }` in the same space as the points.
+ */
+export function splitByBlock(points, rects) {
+  const pieces = [];
+  let current = null;
+  for (const point of points) {
+    const block = blockAtY(rects, point[1]);
+    if (block < 0) return [];
+    if (!current || current.block !== block) {
+      if (current) current.points.push(point);
+      current = { block, points: [point] };
+      pieces.push(current);
+    } else {
+      current.points.push(point);
+    }
+  }
+  return pieces;
+}
+
+// How far outside its block a point may be, in block sizes. The drawing file refuses more than
+// 20, so a point far away (a stroke below the last block) is pulled in to this.
+export const FRACTION_LIMIT = 19;
+const keep = (value) => Math.max(-FRACTION_LIMIT, Math.min(FRACTION_LIMIT, value));
+
 // A block that is empty or has no height would divide by nothing.
 const span = (value) => Math.max(1, value);
 
@@ -75,7 +104,7 @@ export function inkFromScreen(stroke, rect, anchor) {
     color: stroke.color,
     width: stroke.width,
     anchor: { block: anchor.block, tag: anchor.tag },
-    points: stroke.points.map(([x, y, pressure]) => [...toFractions(x, y, rect), pressure]),
+    points: stroke.points.map(([x, y, pressure]) => [...toFractions(x, y, rect).map(keep), pressure]),
   };
 }
 
