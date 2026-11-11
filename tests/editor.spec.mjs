@@ -5994,8 +5994,20 @@ async function colsOpen(page, text) {
 const COLS_PAGE = "Alpha one\n\nBeta two\n\nGamma three\n\nDelta four\n";
 // Drags the block that holds `fromText` (grabbed by its handle) to a point of the page.
 async function dragBlockTo(page, fromText, x, y, scope = ".note-body p") {
-  await page.locator(scope, { hasText: fromText }).first().click();
+  const source = page.locator(scope, { hasText: fromText }).first();
+  await source.click();
   await page.waitForSelector(".gutter-handle:not([hidden])");
+  // The handle moves to the clicked block a moment after the click, and slower machines (the
+  // Windows runner) were grabbing the previous block. Wait until it sits beside this block.
+  await page.waitForFunction(({ scope, fromText }) => {
+    const block = [...document.querySelectorAll(scope)].find((n) => n.textContent.includes(fromText));
+    const handle = document.querySelector(".gutter-handle");
+    if (!block || !handle) return false;
+    const b = block.getBoundingClientRect();
+    const hr = handle.getBoundingClientRect();
+    const middle = hr.top + hr.height / 2;
+    return middle >= b.top && middle <= b.bottom;
+  }, { scope, fromText });
   const h = await page.locator(".gutter-handle").boundingBox();
   await page.mouse.move(h.x + 16, h.y + 16);
   await page.mouse.down();
