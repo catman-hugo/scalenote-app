@@ -295,3 +295,24 @@ test("a note with an id and an empty body opens as an empty page, not as a kept-
     assert.equal(composeNote(parts, doc, { serialize, assignId: false }), text, "and saves the same bytes");
   }
 });
+
+// ---- lists of different kinds one after another (0.4.10) ----
+
+test("a bulleted, a numbered and a to-do list in a row are three lists, not one raw block", () => {
+  const text = "- a\n- b\n\n1. one\n2. two\n\n- [ ] todo\n- [x] done\n";
+  assert.deepEqual(kinds(text), ["list", "list", "list"]);
+  const { lead, blocks } = splitBlocks(splitFrontmatter(text).body);
+  assert.equal(joinBlocks({ lead, blocks }), text, "the text is still kept to the byte");
+});
+
+test("a different bullet character or numbering mark after a blank line starts a new list", () => {
+  assert.deepEqual(kinds("- a\n\n* b\n"), ["list", "list"]);
+  assert.deepEqual(kinds("1. a\n\n- b\n"), ["list", "list"]);
+  assert.deepEqual(kinds("- a\n\n- [ ] b\n"), ["list", "list"]);
+});
+
+test("a loose list of one kind, and an indented item after a blank line, are still kept as written", () => {
+  assert.deepEqual(kinds("- a\n\n- b\n"), ["raw"]);
+  assert.deepEqual(kinds("1. a\n\n2. b\n"), ["raw"]);
+  assert.deepEqual(kinds("- a\n\n  more of a\n- b\n"), ["raw"]);
+});

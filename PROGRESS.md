@@ -340,6 +340,12 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.10: built (small fix)
+Release notes: `docs/release-notes/0.4.10.md`. Built and tested in a browser here; not tried on a device.
+- Lists of different kinds written one after another (bulleted, numbered, to-do) opened as one raw "Kept exactly as written" block. The list reader in `web/blocks.js` (`listKind`, `readList`) now starts a new list when the kind changes after a blank line.
+- Tests: 208 unit tests and 269 browser tests pass, including a test with the owner's three lists and an edit of one of them.
+- Not done: loose lists (blank lines between items of one list) are still raw on purpose.
+
 ## 0.4.9: built (small fix)
 Release notes: `docs/release-notes/0.4.9.md`. Built here; not tried on a device.
 - Linux text turning bold on long pages: the 0.4.8 change did not work. The owner found that `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `WEBKIT_DISABLE_COMPOSITING_MODE=1` each fix it. The app now sets the first at startup on Linux unless it is already set (`apply_webview_defaults` in `src-tauri/src/lib.rs`).
@@ -405,9 +411,11 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
 | 0.4.8 | Bold-text fix, empty lines kept, toggles folded with an always-visible outline, foldable subtags, History as the page looks, links updated on rename, View menu (see "0.4.8: built") | built, not tried on a device |
 | 0.4.9 | Linux text-weight fix: the faster web view drawing path is switched off at startup (see "0.4.9: built") | built, not tried on a device |
-| 0.4.10 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
-| 0.4.11 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.12 | PDF import as page images to draw on | not started |
+| 0.4.10 | Lists of different kinds in a row open as lists, not one raw block (see "0.4.10: built") | built, not tried on a device |
+| 0.4.11 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
+| 0.4.12 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.13 | Image controls: eight resize handles as in v1, size saved as `![alt\|300x200](path)` (see DECISIONS.md) | not started |
+| 0.4.14 | PDF import as page images to draw on | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
