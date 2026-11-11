@@ -645,29 +645,20 @@ body.tree-dragging .tree-button { cursor: grabbing; }
   pointer-events: none;
 }
 
-.raw-block {
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3);
-}
-
-.raw-label {
-  font-size: var(--text-s);
-  color: var(--text-soft);
-  margin-bottom: var(--space-1);
-}
-
+/* Text the editor cannot show as a block looks like the rest of the page: no frame, no label.
+   Its spacing comes from the one rule that spaces all blocks. */
 .raw-text {
   display: block;
   width: 100%;
   resize: none;
   border: none;
-  font-family: var(--mono);
-  font-size: var(--text-s);
-  line-height: 1.5;
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
   padding: 0;
-  white-space: pre;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
 }
 
 .raw-text:focus-visible {

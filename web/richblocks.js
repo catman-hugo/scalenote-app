@@ -17,42 +17,88 @@ export const MAX_TABLE_COLUMNS = 30;
 // Inline syntax the editor cannot hold. A cell or title with any of it keeps the whole block raw.
 const UNSAFE_TEXT = /\[\[|\]\]|==[^=\s]|\$[^$\s]|<[^>\n]+>|!\[|\[\^|%%|(^|\s)#[^\s#]|(^|\s)\^[\w-]+\s*$|~~~/;
 
-// Block kinds (from blocks.js) the editor can hold inside a callout or toggle.
+// Block kinds (from blocks.js) the editor can hold inside a callout or toggle: the plain ones,
+// and callouts, toggles, tables and images, which are read by the same readers as at the top
+// of a page. A callout in a toggle is very common (study notes use it all the time).
 const INNER_KINDS = new Set(["paragraph", "heading", "list", "quote", "code", "rule"]);
 const INNER_TYPES = new Set(["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule"]);
+
+// A callout or toggle inside another one, so deeply that nobody writes it on purpose, stays raw.
+const MAX_DEPTH = 8;
 
 const trimEnd = (text) => text.replace(/\n+$/, "");
 
 /**
  * Turns the text inside a callout or toggle into editor nodes, or null when anything in
- * it is something the editor cannot hold safely.
+ * it is something the editor cannot hold safely. Each block is read on its own, with the
+ * reader for its kind.
  */
-function parseInner(inner, parse) {
+function parseInner(inner, io, depth) {
   if (inner.trim() === "") return [{ type: "paragraph" }];
+  if (depth > MAX_DEPTH) return null;
   const { blocks } = splitBlocks(inner);
-  if (blocks.length === 0 || blocks.some((b) => !INNER_KINDS.has(b.kind))) return null;
+  if (blocks.length === 0) return null;
+  const nodes = [];
+  for (const { src, kind } of blocks) {
+    const node = readInnerBlock(kind, src, io, depth);
+    if (!node) return null;
+    nodes.push(node);
+  }
+  return nodes;
+}
+
+function readInnerBlock(kind, src, io, depth) {
+  switch (kind) {
+    case "callout":
+      return readCallout(src, io, depth + 1);
+    case "details":
+      return readDetails(src, io, depth + 1);
+    case "table":
+      return readTable(src, io);
+    case "image":
+      return readImage(src);
+    default:
+      break;
+  }
+  if (!INNER_KINDS.has(kind)) return null;
   let parsed;
   try {
-    parsed = parse(inner);
+    parsed = io.parse(src);
   } catch {
     return null;
   }
   const content = parsed && Array.isArray(parsed.content) ? parsed.content : [];
-  if (content.length !== blocks.length || content.some((n) => !INNER_TYPES.has(n.type))) return null;
-  return content;
+  if (content.length !== 1 || !INNER_TYPES.has(content[0].type)) return null;
+  return content[0];
 }
 
 function serializeInner(content, serialize) {
   const nodes = (content || []).filter((n) => !(n.type === "paragraph" && (!n.content || n.content.length === 0)));
   if (nodes.length === 0) return "";
-  return trimEnd(serialize({ type: "doc", content: nodes }));
+  // Plain blocks next to each other are written together, the way the editor writes a page;
+  // a callout, toggle, table or image in between is written by its own writer.
+  const pieces = [];
+  let run = [];
+  const flush = () => {
+    if (run.length) pieces.push(trimEnd(serialize({ type: "doc", content: run })));
+    run = [];
+  };
+  for (const node of nodes) {
+    if (INNER_TYPES.has(node.type)) run.push(node);
+    else {
+      flush();
+      pieces.push(writeBlock(node, serialize));
+    }
+  }
+  flush();
+  return pieces.join("\n\n");
 }
 
 // ---------- callouts:  > [!note]- Title ----------
 
 const CALLOUT_FIRST = /^ {0,3}>[ \t]?\[!([A-Za-z][A-Za-z0-9-]*)\]([+-]?)(?:[ \t]+(.*))?$/;
 
-export function readCallout(src, { parse }) {
+export function readCallout(src, io, depth = 0) {
   if (src.includes("\r")) return null;
   const lines = src.split("\n");
   const first = CALLOUT_FIRST.exec(lines[0]);
@@ -65,7 +111,7 @@ export function readCallout(src, { parse }) {
     if (!match) return null;
     inner.push(match[1]);
   }
-  const content = parseInner(inner.join("\n"), parse);
+  const content = parseInner(inner.join("\n"), io, depth);
   if (!content) return null;
   return { type: "callout", attrs: { kind: first[1].toLowerCase(), fold: first[2], title }, content };
 }
@@ -81,7 +127,7 @@ export function writeCallout(node, serialize) {
 
 // ---------- toggles:  <details><summary>Title</summary> ... </details> ----------
 
-export function readDetails(src, { parse }) {
+export function readDetails(src, io, depth = 0) {
   if (src.includes("\r")) return null;
   const lines = src.split("\n");
   if (lines.length < 3) return null;
@@ -93,7 +139,7 @@ export function readDetails(src, { parse }) {
   // by Obsidian and GitHub, but nothing else that is not the body.
   if (middle.length && middle[0].trim() === "") middle.shift();
   if (middle.length && middle[middle.length - 1].trim() === "") middle.pop();
-  const content = parseInner(middle.join("\n"), parse);
+  const content = parseInner(middle.join("\n"), io, depth);
   if (!content) return null;
   return { type: "toggle", attrs: { summary: summary[1].trim(), open: Boolean(open[1]) }, content };
 }

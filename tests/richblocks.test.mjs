@@ -56,7 +56,6 @@ test("a toggle is read and written back in the usual layout", () => {
 
 test("odd toggles stay raw", () => {
   assert.equal(readDetails("<details>\n<summary>A <b>b</b></summary>\n\nx\n\n</details>", io), null);
-  assert.equal(readDetails("<details>\n<summary>x</summary>\n\n<details>\n<summary>y</summary>\n\nz\n\n</details>\n\n</details>", io), null);
   assert.equal(readDetails("<details>\nno summary\n</details>", io), null);
 });
 
@@ -189,4 +188,60 @@ test("a block id is never written twice, and an id line after a list stays raw",
   assert.equal(composeNote(loaded.parts, loaded.doc, { ...io, assignId: false }), "one ^dup\n\ntwo\n");
   const list = loadNote("- a\n- b\n\n^list-id\n", io);
   assert.deepEqual(list.doc.content.map((n) => n.type), ["bulletList", "rawBlock"]);
+});
+
+test("a callout, a toggle, a table and an image can sit inside a toggle, and are written back the same", () => {
+  const src = [
+    "<details>",
+    "<summary>Skin</summary>",
+    "",
+    "> [!note] Drawing",
+    "> The drawings are on the canvas.",
+    "",
+    "## Layers",
+    "",
+    "- one",
+    "- two",
+    "",
+    "<details>",
+    "<summary>Inner</summary>",
+    "",
+    "deep text",
+    "",
+    "</details>",
+    "",
+    "| a | b |",
+    "| --- | --- |",
+    "| 1 | 2 |",
+    "",
+    "![fig](attachments/fig.png)",
+    "",
+    "> [!tip] Exam tip",
+    "> Draw it.",
+    "",
+    "</details>",
+  ].join("\n");
+  const node = readDetails(src, io);
+  assert.notEqual(node, null, "the toggle is read, not kept raw");
+  assert.deepEqual(node.content.map((n) => n.type), ["callout", "heading", "bulletList", "toggle", "table", "imageBlock", "callout"]);
+  assert.equal(writeDetails(node, serialize), src, "and written back in the same layout");
+});
+
+test("a callout inside a callout is read, and something it cannot hold keeps the whole block raw", () => {
+  const inside = readCallout("> [!note] Outer\n> text\n>\n> > [!tip] Inner\n> > deeper", io);
+  assert.deepEqual(inside.content.map((n) => n.type), ["paragraph", "callout"]);
+  assert.equal(readDetails("<details>\n<summary>x</summary>\n\n<div>raw html</div>\n\n</details>", io), null);
+});
+
+test("nesting that goes absurdly deep is kept raw instead of read without limit", () => {
+  let src = "text";
+  for (let i = 0; i < 20; i++) src = `<details>\n<summary>s</summary>\n\n${src}\n\n</details>`;
+  assert.equal(readDetails(src, io), null);
+});
+
+test("a page with a callout inside a toggle opens as a toggle, not a raw block", () => {
+  const text = "<details>\n<summary>Skin</summary>\n\n> [!note] Drawing\n> see canvas\n\ntext\n\n</details>\n";
+  const { doc } = loadNote(text, io);
+  assert.deepEqual(doc.content.map((n) => n.type), ["toggle"]);
+  assert.equal(composeNote(loadNote(text, io).parts, doc, { serialize, assignId: false }), text, "untouched, the text is kept to the byte");
 });

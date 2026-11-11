@@ -72,7 +72,7 @@ export const strings = {
     titleLabel: "Page title",
     placeholder: "Type / for blocks",
     noNoteOpen: "Open a page from the list, or create a new one.",
-    rawLabel: "Kept exactly as written",
+    rawLabel: "Text shown as it is written",
     saved: "Saved",
     saving: "Saving",
     unsaved: "Not saved yet",
