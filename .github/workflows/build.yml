@@ -40,6 +40,14 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # The runner's package list can be stale and point at a mirror that does not answer, which made
+      # "playwright install --with-deps" fail while fetching fonts. Refresh the list first, and retry.
+      - if: runner.os == 'Linux'
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update && break
+            sleep 10
+          done
       - run: npx playwright install --with-deps chromium
       - run: node tests/editor.spec.mjs
 
