@@ -3847,7 +3847,8 @@ await test("history opened from the normal text shows versions as the page looks
   await page.click("#historyBox >> text=Put back this whole version");
   await page.waitForFunction(() => !document.querySelector("#historyBox").open);
   assert.equal((await files(page))["Rich.md"], RICH_OLD);
-  assert.equal(await page.locator("#historyBox .page-text").count(), 0, "the shown text is cleared when the box closes");
+  // The box's close event fires a moment after it stops being open, so wait for the clearing.
+  await page.waitForFunction(() => document.querySelectorAll("#historyBox .page-text").length === 0, null, { timeout: 3000 });
   assert.equal(await page.locator(".note-body").count(), 1);
 }, ctxOpts);
 
