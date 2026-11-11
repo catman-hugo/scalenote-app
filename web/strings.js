@@ -302,6 +302,12 @@ export const strings = {
     noResults: "No matching block",
   },
 
+  links: {
+    updatedOne: "Updated the links to this page in 1 page.",
+    updated: "Updated the links to this page in {count} pages.",
+    someNotUpdated: "The page was renamed, but the links to it in some pages could not all be updated. Pages that still link to the old name show it as a page that does not exist.",
+  },
+
   wikilinks: {
     noPages: "No matching page",
     linkTo: "Link to “{name}”",

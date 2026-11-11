@@ -14,6 +14,7 @@ import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { applyFolds, foldFlags } from "./togglefold.js";
 import { createPageText } from "./pagetext.js";
+import { rewriteLinks } from "./renamelinks.js";
 import { createBacklinks } from "./backlinks.js";
 import { createCover } from "./cover.js";
 import { readCover, withCover, withoutCover } from "./coverrules.js";
@@ -1085,10 +1086,12 @@ function renameEntryInline(node, button) {
       try {
         // An open page is saved first, so nothing typed so far is written to the old name.
         if (app.autosave) await app.autosave.flush();
+        const plan = await planLinkUpdates(path);
         const newPath = await backend.rename(path, wanted);
         remapPaths(path, newPath);
         await carryFolderIcons(path, newPath);
         if (app.current) el("title").value = noteTitle(app.current.path);
+        await applyLinkUpdates(plan, path, newPath);
       } catch (error) {
         logProblem("rename failed", error);
         showBanner(errorText(error));
@@ -1112,6 +1115,56 @@ function remapPaths(oldPath, newPath) {
   if (app.current) app.current.path = fix(app.current.path);
   app.folds = new Map([...app.folds].map(([path, flags]) => [fix(path), flags]));
   if (app.pageInEditor) app.pageInEditor = fix(app.pageInEditor);
+}
+
+
+// ---------- links after a rename ----------
+
+// Before a page is renamed: which pages link to it, found by the same search as "Linked from".
+// Nothing is changed yet. Returns null for a folder (renaming a folder keeps every page name, so
+// links by name still work) or when the search fails; the rename goes on either way.
+async function planLinkUpdates(path) {
+  if (!/\.md$/i.test(path)) return null;
+  try {
+    const result = await backend.backlinks(path);
+    return { pages: notePaths(), holders: result.items.map((item) => item.path), truncated: Boolean(result.truncated) };
+  } catch (error) {
+    logProblem("links before rename failed", error);
+    return null;
+  }
+}
+
+// After the page was renamed: points the links in the pages found by `planLinkUpdates` at the new
+// name. A page that cannot be written (it changed meanwhile, say) is skipped and counted, and the
+// rename itself is never undone. The open page is reloaded if it was one of the changed ones.
+async function applyLinkUpdates(plan, oldPath, newPath) {
+  if (!plan) return;
+  let changed = 0;
+  let failed = 0;
+  let reopen = false;
+  // The renamed page may link to itself; it is not in the list of pages linking to it.
+  for (const holder of new Set([...plan.holders, oldPath])) {
+    const now = holder === oldPath ? newPath : holder;
+    try {
+      const note = await backend.readNote(now);
+      const text = rewriteLinks(note.text, { pages: plan.pages, oldPath, newPath, from: holder, fromAfter: now });
+      if (text === null) continue;
+      await backend.writeNote(now, text, note.version);
+      changed++;
+      if (app.current && app.current.path === now) reopen = true;
+    } catch (error) {
+      failed++;
+      logProblem("link update failed", error);
+    }
+  }
+  if (reopen) {
+    if (app.autosave) app.autosave.cancel();
+    app.current = null;
+    app.lastSavedText = null;
+    await openNote(newPath);
+  }
+  if (failed || plan.truncated) showBanner(strings.links.someNotUpdated);
+  else if (changed) showToast(changed === 1 ? strings.links.updatedOne : fill(strings.links.updated, { count: changed }));
 }
 
 // ---------- trash ----------
@@ -1599,9 +1652,13 @@ async function renameCurrent() {
   }
   try {
     await app.autosave.flush();
-    current.path = await backend.rename(current.path, wanted);
+    const oldPath = current.path;
+    const plan = await planLinkUpdates(oldPath);
+    current.path = await backend.rename(oldPath, wanted);
+    remapPaths(oldPath, current.path);
     input.value = noteTitle(current.path);
     await refreshTree();
+    await applyLinkUpdates(plan, oldPath, current.path);
   } catch (error) {
     logProblem("rename failed", error);
     showBanner(errorText(error));

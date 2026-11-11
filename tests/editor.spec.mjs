@@ -3879,6 +3879,67 @@ await test("a piece of history that starts with a rule line is shown whole, not 
   assert.match(await page.locator(".history-then").innerText(), /hidden\?/);
 }, ctxOpts);
 
+async function renameVault(page) {
+  await page.waitForSelector("#newNote");
+  await seed(page, "Cells.md", "# Cells\n\nself [[Cells#Top]]\n");
+  await seed(page, "Notes.md", "See [[Cells]] and [[cells#Membrane|membrane]]\n\nunrelated [[Other]]\n");
+  await seed(page, "Other.md", "Back to [[Notes]]\n");
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Cells.md"]');
+}
+
+await test("renaming a page in the list updates the links to it in other pages and in itself", async (page) => {
+  await renameVault(page);
+  await page.click('.tree-button[data-path="Notes.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await rightClick(page, "Cells.md");
+  await page.click(".context-menu >> text=Rename");
+  await page.fill(".inline-rename", "Cell biology");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Cell biology.md"]');
+  const all = await files(page);
+  assert.equal(all["Cell biology.md"], "# Cells\n\nself [[Cell biology#Top]]\n");
+  assert.equal(all["Notes.md"], "See [[Cell biology]] and [[Cell biology#Membrane|membrane]]\n\nunrelated [[Other]]\n");
+  assert.equal(all["Other.md"], "Back to [[Notes]]\n", "a page with no link to it is not written");
+  // The open page (Notes) shows the new links without being reopened by hand.
+  await page.waitForFunction(() => document.querySelector(".note-body").innerText.includes("Cell biology"));
+  assert.match(await page.locator(".toast").innerText(), /Updated the links to this page in 2 pages/);
+}, ctxOpts);
+
+await test("renaming the open page from its title updates links, and saving afterwards keeps the new links", async (page) => {
+  await renameVault(page);
+  await page.click('.tree-button[data-path="Cells.md"]');
+  await page.waitForSelector("#editor .note-body");
+  await page.fill("#title", "Cell biology");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Cell biology.md"]');
+  assert.match((await files(page))["Notes.md"], /^See \[\[Cell biology\]\]/);
+  // Typing in the renamed page still saves it under the new name.
+  await page.locator(".note-body p").last().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await waitSaved(page);
+  assert.match((await files(page))["Cell biology.md"], /self \[\[Cell biology#Top\]\]!/);
+  assert.equal(await page.evaluate(() => window.__mock.files.has("Cells.md")), false);
+}, ctxOpts);
+
+await test("a link update that cannot be written is reported, and the rename stands", async (page) => {
+  await renameVault(page);
+  await page.evaluate(() => {
+    const original = window.__mock.files.set.bind(window.__mock.files);
+    const hook = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = (cmd, args) => (cmd === "write_note" && args.path === "Notes.md" ? Promise.reject("conflict") : hook(cmd, args));
+  });
+  await rightClick(page, "Cells.md");
+  await page.click(".context-menu >> text=Rename");
+  await page.fill(".inline-rename", "Cell biology");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Cell biology.md"]');
+  await page.waitForSelector("#banner:not([hidden])");
+  assert.match(await page.locator("#banner").innerText(), /could not all be updated/);
+  assert.match((await files(page))["Notes.md"], /\[\[Cells\]\]/, "the failed page is left as it was");
+}, { ...ctxOpts, allow: [/./] });
+
 await test("deleting all history asks twice", async (page) => {
   await historyVault(page);
   await page.click("#openSettings");
