@@ -5997,18 +5997,28 @@ async function dragBlockTo(page, fromText, x, y, scope = ".note-body p") {
   const source = page.locator(scope, { hasText: fromText }).first();
   await source.click();
   await page.waitForSelector(".gutter-handle:not([hidden])");
-  // The handle moves to the clicked block a moment after the click, and slower machines (the
-  // Windows runner) were grabbing the previous block. Wait until it sits beside this block.
-  await page.waitForFunction(({ scope, fromText }) => {
-    const block = [...document.querySelectorAll(scope)].find((n) => n.textContent.includes(fromText));
+  // The handle moves to the clicked block a moment after the click, and moving the mouse onto
+  // it can hand it to the block under the pointer. Slower machines (the Windows runner) grabbed
+  // the last block this way. So: move onto the handle, let two frames pass, and only press when
+  // the handle still sits beside the block we meant; otherwise try again.
+  const beside = ({ scope, fromText }) => {
+    const block = [...document.querySelectorAll(scope)].find((n) => n.textContent.trim() === fromText || n.textContent.includes(fromText));
     const handle = document.querySelector(".gutter-handle");
-    if (!block || !handle) return false;
+    if (!block || !handle || handle.hidden) return false;
     const b = block.getBoundingClientRect();
     const hr = handle.getBoundingClientRect();
     const middle = hr.top + hr.height / 2;
     return middle >= b.top && middle <= b.bottom;
-  }, { scope, fromText });
-  const h = await page.locator(".gutter-handle").boundingBox();
+  };
+  let h;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.waitForFunction(beside, { scope, fromText });
+    h = await page.locator(".gutter-handle").boundingBox();
+    await page.mouse.move(h.x + 16, h.y + 16);
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    if (await page.evaluate(beside, { scope, fromText })) break;
+  }
+  h = await page.locator(".gutter-handle").boundingBox();
   await page.mouse.move(h.x + 16, h.y + 16);
   await page.mouse.down();
   await page.mouse.move(h.x + 16, h.y + 40, { steps: 3 });
