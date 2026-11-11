@@ -532,3 +532,8 @@ Cost. Ink over columns anchors to the whole columns block. Other programs show c
 Decision. The owner chose "build it, you test the APK". The Rust core stays free of network code: a Kotlin class added at build time by `scripts/patch-android.mjs` downloads the file from this project's GitHub releases only, checks size and that it is a zip, and opens Android's installer through a FileProvider of its own. The user still confirms in Android's screen. Any failure falls back to the browser download.
 Alternatives. Network code in Rust (rejected before: new dependency and attack surface), silent install (not possible without system rights).
 Cost. The Kotlin has never been compiled or run by me; the CI build is the first compile and the owner's tablet the first real test. The permission "install unknown apps" must be allowed once by the user. The APK is still unsigned beyond the debug key, so Android updates over an installed build only if the signing key is the same.
+
+## 2026-11-11: Android distribution through F-Droid and Google Play comes later
+
+Decision. The owner wants to distribute through F-Droid later and maybe Google Play once the app is fully finished, not now. Until then the in-app installer stays as built in 0.4.10, next to the browser download. Android has no way to give an app "install unknown apps" for itself only, so the in-app installer needs that permission for any file; with F-Droid or Google Play the store does the updates and ScaleNote needs no such permission.
+Open, not decided. Check that a downloaded apk is signed with the app's own key before opening the installer, make the in-app install opt-in, and sign release builds with a real key (CI builds a debug apk now, so updates over an installed build may fail on a key mismatch).
