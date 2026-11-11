@@ -13,6 +13,7 @@ import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { applyFolds, foldFlags } from "./togglefold.js";
+import { createPageText } from "./pagetext.js";
 import { createBacklinks } from "./backlinks.js";
 import { createCover } from "./cover.js";
 import { readCover, withCover, withoutCover } from "./coverrules.js";
@@ -82,6 +83,8 @@ const app = {
   folds: new Map(),
   placingPage: false,
   pageInEditor: null,
+  // Draws markdown as the page looks, for reading only (pagetext.js).
+  pageText: null,
 };
 
 // ---------- small helpers ----------
@@ -822,6 +825,9 @@ async function openHistoryDialog() {
     read: (id) => backend.historyRead(path, id),
     current: async () => (await backend.readNote(path)).text,
     restore: (text, base) => putBackVersion(path, text, base),
+    // From the normal text an older version reads like the page; from the Markdown view it is
+    // shown as the file, like the view it was opened from.
+    render: app.mode === "source" ? undefined : app.pageText,
     onError: (error) => {
       logProblem("history failed", error);
       if (error instanceof Error && error.message === "page changed") return strings.history.changed;
@@ -1773,6 +1779,7 @@ async function start() {
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
   app.editor.on("transaction", rememberFolds);
+  app.pageText = createPageText(app.editor);
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
     onAdd: chooseCover,

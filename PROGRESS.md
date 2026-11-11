@@ -340,6 +340,22 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.8: in progress (branch `feature/v0.4.8`, stopped part way on 2026-11-11)
+Scope the owner set (2026-11-11). Done on the branch, with unit and browser tests, none tried on a device:
+- Bold text on long pages (Linux): scrolling boxes get a solid background (`style.css`, above `.note-body`). Cause seen in the owner's screenshots: text on a scrolling layer with a see-through background is smoothed differently. NOT reproducible here (no Linux web engine in the build environment); the owner must confirm on Linux.
+- Empty lines are kept: saved as extra blank lines, read back (`compose.js`, "empty lines"). Top level of a page only, not inside toggles or callouts.
+- Toggles: outline always visible; folded on first open after the app starts, as left after that (`togglefold.js`, `app.folds` in `main.js`).
+- Tags box: a main tag shows or hides its subtags (`tagRows`, `clickTag` in `tagindex.js`). Main tags start folded.
+- History: from the normal text, versions are shown as the page looks and compared block by block (`pagetext.js`, `splitPageBlocks`); from the Markdown view, markdown as before.
+
+Still to do for 0.4.8, in this order:
+1. Renaming a page updates links to it.
+2. Linux two-finger zoom on the drawing. The owner's recording shows the web engine zooming the whole window (sidebar and all) instead of the sheet, while the fingers also draw. Not the device and not the distribution: the Linux web engine handles the pinch itself. Idea to try: stop it with touch event listeners that are not passive on the sheet, or a setting on the Linux web view in the Rust side; check the real documentation first. Needs the owner's Linux device to prove.
+3. Draw over text: ink anchored to blocks (the planned slice, see `docs/v0.4-plan.md`).
+4. Wrap-up: version 0.4.8 in package.json, Cargo.toml, tauri.conf.json and both lock files; `docs/release-notes/0.4.8.md` (include the View menu, which has no notes yet); DECISIONS.md entries (empty lines as blank lines; folds kept per session; history block comparison; tags start folded); design check on screenshots in light and dark; full `node tests/editor.spec.mjs` run (last full run was before these changes; only the touched tests were rerun); pull request.
+
+Moved by the owner (2026-11-11): columns and the Android in-app installer go to 0.4.9. Handwriting to text is wanted, to be discussed later.
+
 ## Planned for 0.4.8 (owner requests, not built)
 - Toggle block outline always visible (owner, 2026-11-09, from screenshots of a folded and an unfolded toggle). Today the box around a toggle is only drawn while the cursor is in it (0.2.2 item 6), so a toggle you are not working in looks like loose text and it is unclear where it ends. Build: draw the outline in the same quiet border colour whether the toggle is folded, unfolded, focused or not, in every theme, light and dark, with a screenshot check of a folded and an unfolded toggle in each; the editing highlight, if any, may still be stronger than the resting outline. Check the markdown file is unchanged (this is only style) and that folding still works.
 

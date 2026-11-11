@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyChosen, countChanges, diffLines, keepPageId } from "../web/historyrules.js";
+import { applyChosen, countChanges, diffLines, keepPageId, lineCount, splitPageBlocks } from "../web/historyrules.js";
 
 const all = (parts) => new Set(parts.map((p, i) => (p.same ? -1 : i)).filter((i) => i >= 0));
 const texts = (parts) => parts.map((p) => (p.same ? { same: p.same.join("") } : { current: p.current.join(""), version: p.version.join("") }));
@@ -60,4 +60,55 @@ test("a restored page keeps the id it has now", () => {
   assert.equal(keepPageId("old\n", now), "---\nid: abc\n---\n\nold\n");
   assert.equal(keepPageId("old\n", "no id now\n"), "old\n");
   assert.equal(keepPageId("---\r\nid: old\r\n---\r\n\r\nold\r\n", now), "---\r\nid: abc\r\n---\r\n\r\nold\r\n");
+});
+
+// ---------- comparing block by block (0.4.8) ----------
+const PAGE = "---\nid: x\n---\n\n# Title\n\n- one\n- two\n\n\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n<details>\n<summary>T</summary>\n\ninside\n\n</details>\nlast";
+
+test("a page cut into blocks joins back into the exact text", () => {
+  for (const text of [PAGE, "", "\n\n", "one line", "a\r\n\r\nb\r\n", "\n\nlead\n", "---\nonly: props\n---\n"]) {
+    assert.equal(splitPageBlocks(text).join(""), text, JSON.stringify(text));
+  }
+});
+
+test("a list, a table and a toggle are one piece each; properties and blank lines are one line each", () => {
+  assert.deepEqual(splitPageBlocks(PAGE), [
+    "---\n", "id: x\n", "---\n", "\n",
+    "# Title\n", "\n",
+    "- one\n- two\n", "\n", "\n", "\n",
+    "| A | B |\n| --- | --- |\n| 1 | 2 |\n", "\n",
+    "<details>\n<summary>T</summary>\n\ninside\n\n</details>\n",
+    "last",
+  ]);
+});
+
+test("compared block by block, a changed table cell gives the whole table on both sides", () => {
+  const now = PAGE.replace("| 1 | 2 |", "| 1 | 3 |");
+  const parts = diffLines(now, PAGE, splitPageBlocks);
+  assert.equal(countChanges(parts), 1);
+  const change = parts.find((p) => !p.same);
+  assert.deepEqual(change.current, ["| A | B |\n| --- | --- |\n| 1 | 3 |\n"]);
+  assert.deepEqual(change.version, ["| A | B |\n| --- | --- |\n| 1 | 2 |\n"]);
+  // Putting every change back is the older version, to the byte; none, the page now.
+  assert.equal(applyChosen(parts, all(parts)), PAGE);
+  assert.equal(applyChosen(parts, new Set()), now);
+});
+
+test("random pages compared block by block always put back exactly", () => {
+  let seed = 99;
+  const rand = (n) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
+  const pool = ["# h", "text", "", "- a", "- b", "> q", "```", "| a | b |", "|---|---|", "<details>", "<summary>s</summary>", "</details>", "---", "more text", "  "];
+  const make = () => Array.from({ length: rand(14) }, () => pool[rand(pool.length)]).join("\n") + (rand(2) ? "\n" : "");
+  for (let round = 0; round < 1500; round++) {
+    const a = make();
+    const b = make();
+    const parts = diffLines(a, b, splitPageBlocks);
+    assert.equal(applyChosen(parts, all(parts)), b);
+    assert.equal(applyChosen(parts, new Set()), a);
+  }
+});
+
+test("lines are counted inside pieces of several lines", () => {
+  assert.equal(lineCount(["a\n", "b\nc\nd\n", "\n", "end"]), 6);
+  assert.equal(lineCount([]), 0);
 });

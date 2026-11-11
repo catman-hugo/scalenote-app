@@ -54,8 +54,21 @@ function trimNewlines(text) {
  * Reads note text into editor content. Returns the parts that must be kept for saving
  * (frontmatter, leading blank lines) and the editor document.
  */
-export function loadNote(text, { parse, serialize }) {
+export function loadNote(text, io) {
   const { front, body } = splitFrontmatter(text);
+  return loadSplit(text, front, body, io);
+}
+
+/**
+ * Reads a piece of a page (some lines out of the middle, say) into editor content, for showing
+ * only. Nothing in it is taken for page properties, so a piece that happens to start with a
+ * `---` line is shown whole.
+ */
+export function loadPiece(text, io) {
+  return loadSplit(text, "", text, io).doc;
+}
+
+function loadSplit(text, front, body, { parse, serialize }) {
   const { lead, blocks } = splitBlocks(body);
   const content = blocks.map(({ src, gap, kind }, idx) => {
     if (kind === "raw") return rawNode(src, gap, idx);

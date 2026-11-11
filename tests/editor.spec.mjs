@@ -3801,6 +3801,84 @@ await test("if the page changes while the box is open nothing is put back", asyn
   assert.equal((await files(page))["Hist.md"], "changed elsewhere\n");
 }, { ...ctxOpts, allow: [/./] });
 
+const RICH_OLD = ["---", "id: 11111111-1111-4111-8111-111111111111", "---", "", "# Complement", "", "- MBL binds carbohydrates", "- MASPs, C4, C2", "", "Plain line", "", "---", "", "rule above", "", "| A | B |", "| --- | --- |", "| 1 | 2 |", "", "<details>", "<summary>Old title</summary>", "", "inside", "", "</details>", ""].join("\n");
+const RICH_NOW = RICH_OLD.replace("- MBL binds", "- **<u>MBL</u>** binds").replace("Plain line", "Plain ==marked== line").replace("| 1 | 2 |", "| 1 | 3 |").replace("Old title", "New title").replace("rule above", "rule above\n\n\n\nmore");
+async function richHistory(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([oldText, nowText]) => {
+    window.__mock.files.set("Rich.md", nowText);
+    window.__mock.history.set("Rich.md", [{ id: "1700000000000", time: 1700000000, text: oldText }]);
+  }, [RICH_OLD, RICH_NOW]);
+  await page.click("#newFolder");
+  await openTagged(page, "Rich.md");
+}
+
+await test("history opened from the normal text shows versions as the page looks", async (page) => {
+  await richHistory(page);
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  const detail = page.locator(".history-detail");
+  const text = await detail.innerText();
+  assert.doesNotMatch(text, /\*\*|<u>|==|^\s*- MBL|\| ---|<details>|<summary>/m, "no markdown signs: " + text);
+  // The changed list line: bold and underlined now, plain in the older version, both as list items.
+  assert.equal(await detail.locator(".history-now li strong u", { hasText: "MBL" }).count(), 1);
+  assert.equal(await detail.locator(".history-then li", { hasText: "MBL binds carbohydrates" }).count(), 1);
+  assert.equal(await detail.locator(".history-then strong").count(), 0);
+  assert.equal(await detail.locator(".history-now mark", { hasText: "marked" }).count(), 1);
+  // A toggle and a table read as a toggle and a table.
+  assert.equal(await detail.locator(".history-now .toggle .page-text-title", { hasText: "New title" }).count() + await detail.locator(".history-now .page-text-raw", { hasText: "New title" }).count(), 1);
+  assert.ok((await detail.locator(".history-now td", { hasText: "3" }).count()) + (await detail.locator(".history-now", { hasText: "| 1 | 3 |" }).count()) >= 1);
+  // Lines that are only blank say so instead of drawing nothing.
+  assert.match(text, /empty line/);
+  // The page properties stay one folded note, and the id is never shown.
+  assert.match(text, /Page properties \(3 lines\)/);
+  assert.doesNotMatch(text, /11111111/);
+  // Whole text: the older version as a page, starting with its heading; the rule is a rule.
+  await page.click(".history-view >> text=Whole text");
+  assert.equal(await detail.locator(".history-whole h1", { hasText: "Complement" }).count(), 1);
+  assert.equal(await detail.locator(".history-whole hr").count(), 1);
+  assert.equal(await detail.locator(".history-whole table td").count(), 2);
+  assert.equal(await detail.locator(".history-whole .toggle .toggle-body", { hasText: "inside" }).count(), 1);
+  assert.doesNotMatch(await detail.innerText(), /11111111|^---$/m);
+  // Nothing in the box can be typed in or takes the place of the page's own text.
+  assert.equal(await page.locator("#historyBox [contenteditable=true], #historyBox .toggle input").count(), 0);
+  // Putting back is still exact, to the byte.
+  await page.click("#historyBox >> text=Put back this whole version");
+  await page.waitForFunction(() => !document.querySelector("#historyBox").open);
+  assert.equal((await files(page))["Rich.md"], RICH_OLD);
+  assert.equal(await page.locator("#historyBox .page-text").count(), 0, "the shown text is cleared when the box closes");
+  assert.equal(await page.locator(".note-body").count(), 1);
+}, ctxOpts);
+
+await test("history opened from the Markdown view shows the markdown, as before", async (page) => {
+  await richHistory(page);
+  await page.click("#sourceToggle");
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  const detail = page.locator(".history-detail");
+  assert.match(await detail.innerText(), /- \*\*<u>MBL<\/u>\*\* binds carbohydrates/);
+  assert.match(await detail.innerText(), /<summary>New title<\/summary>/);
+  assert.equal(await detail.locator(".page-text, strong, li, table").count(), 0);
+  await page.click(".history-view >> text=Whole text");
+  assert.match(await detail.locator("pre.history-whole").innerText(), /^# Complement\n\n- MBL binds carbohydrates/);
+}, ctxOpts);
+
+await test("a piece of history that starts with a rule line is shown whole, not hidden as properties", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    window.__mock.files.set("Rule.md", "top\n\nkeep\n");
+    window.__mock.history.set("Rule.md", [{ id: "1700000000000", time: 1700000000, text: "top\n\n---\nhidden?\n---\n\nkeep\n" }]);
+  });
+  await page.click("#newFolder");
+  await openTagged(page, "Rule.md");
+  await page.click("#historyButton");
+  await page.click(".history-row");
+  await page.waitForSelector(".history-change");
+  assert.match(await page.locator(".history-then").innerText(), /hidden\?/);
+}, ctxOpts);
+
 await test("deleting all history asks twice", async (page) => {
   await historyVault(page);
   await page.click("#openSettings");

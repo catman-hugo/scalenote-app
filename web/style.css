@@ -1703,6 +1703,18 @@ button.danger:hover { background: var(--bg-hover); }
   font-size: var(--text-s);
   font-family: inherit;
 }
+/* An older version shown as the page looks (the box was opened from the normal text). It uses
+   the page's own text styles; only what the editor itself needs is switched off, and the
+   spacing the box gives its own lists and paragraphs is taken back. */
+.page-text { max-width: none; min-height: 0; margin: 0; padding: var(--space-1) var(--space-2); white-space: normal; }
+.page-text > * + * { margin-top: var(--space-2); }
+.dialog .page-text ul, .dialog .page-text ol { padding-left: var(--space-5); margin: 0; }
+.dialog .page-text li { margin: 0; }
+.history-side .page-text p { margin: 0; }
+.page-text-title { font-weight: 600; margin-bottom: var(--space-1); }
+.page-text-picture { color: var(--text-soft); }
+.page-text-raw { margin: 0; font-family: var(--mono); font-size: var(--text-s); white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-blank { margin: 0; padding: var(--space-1) var(--space-2); }
 .history-change { border: 1px solid var(--line); border-radius: var(--radius); margin: var(--space-2) 0; padding: var(--space-2); }
 .history-pick { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .history-side { margin: var(--space-1) 0; border-left: 3px solid var(--line); padding-left: var(--space-2); }

@@ -209,6 +209,10 @@ export const strings = {
     failed: "The page could not be exported.",
   },
 
+  pageText: {
+    picture: "Picture: {name}",
+  },
+
   history: {
     button: "History of this page",
     title: "History",
@@ -226,6 +230,8 @@ export const strings = {
     partNow: "Now",
     partThen: "This version",
     partNothing: "(nothing)",
+    blankOne: "(1 empty line)",
+    blank: "({count} empty lines)",
     properties: "Page properties ({count} lines)",
     unchanged: "{count} unchanged lines",
     unchangedOne: "1 unchanged line",
