@@ -340,6 +340,14 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.10: draw over text built
+Release notes: `docs/release-notes/0.4.10.md`. Built and tested in a browser here; NOT tried on a device (pen pressure, finger scrolling, Android and Windows touch screens are untested). Columns and the Android in-app installer are not built yet.
+- A pen button on the top bar (`#inkButton`) and the command "Draw on the text of this page" start drawing; a pen bar (`.ink-bar`) sits above the text: pen, highlighter, eraser, the sixteen colours, five widths, Undo, Redo, Finger draws, Done. Design notes and the reasons for the placement are in `docs/v0.4-plan.md`.
+- Ink is stored in `Name.canvas.json` format 5 as a separate `ink` list; each stroke has `anchor: { block, tag }` and points as fractions of that block (`web/textink.js`, `web/canvasrules.js`). Older versions open it read-only. A page with ink shows it over the text when opened (one small read of the drawing file per page; a page without ink loads nothing).
+- Screen code: `web/inklayer.js` (sticky zero-height layer in the scroll box, a viewport-sized canvas redrawn on scroll and resize); wiring in `web/main.js` (`loadInk`, `startInk`, `stopInk`, `leaveInk`; the canvas view object holds the drawing for both).
+- Tests: 223 unit tests (11 new in `tests/textink.test.mjs` and the format tests in `tests/canvas.test.mjs`) and the browser tests (10 new: save with anchor, narrower window, finger scroll and Finger draws, eraser/undo/redo, colour and width, shown on open, orphaned ink kept, canvas keeps ink, newer file read-only, odd input). Screenshots checked in light, dark and phone width.
+- Not done / known: ink is not in print or export; a stroke is not split when it crosses blocks (it belongs to the block it starts in); the bar wraps to two lines on a phone; the theme change does not repaint the ink until the next scroll or stroke.
+
 ## 0.4.9: built
 Release notes: `docs/release-notes/0.4.9.md`. The owner deleted the earlier 0.4.9 and 0.4.10 releases, so everything since 0.4.8 is one release, 0.4.9. Built and tested in a browser here; not tried on a device.
 - Linux text turning bold on long pages: the 0.4.8 change did not work. The owner found that `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `WEBKIT_DISABLE_COMPOSITING_MODE=1` each fix it. The app now sets the first at startup on Linux unless it is already set (`apply_webview_defaults` in `src-tauri/src/lib.rs`). NOT tried on a device. The Rust tests run in the GitHub checks (this workspace has no GTK libraries).
@@ -407,10 +415,8 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
 | 0.4.8 | Bold-text fix, empty lines kept, toggles folded with an always-visible outline, foldable subtags, History as the page looks, links updated on rename, View menu (see "0.4.8: built") | built, not tried on a device |
 | 0.4.9 | Linux text-weight fix, lists of different kinds in a row, callouts and toggles inside toggles and callouts, raw text without a frame (see "0.4.9: built") | built, not tried on a device |
-| 0.4.10 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
-| 0.4.11 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.12 | Image controls: eight resize handles as in v1, size saved as `![alt\|300x200](path)` (see DECISIONS.md) | not started |
-| 0.4.13 | PDF import as page images to draw on | not started |
+| 0.4.10 | Draw over text: ink anchored to blocks (see "0.4.10: draw over text built"); columns and the Android in-app installer are still to come in this version | draw over text built, not tried on a device; columns and installer not started |
+| 0.4.11 | One big release (owner request, 2026-11-11): the `/canvas` block, image controls (eight resize handles as in v1, size saved as `![alt\|300x200](path)`, see DECISIONS.md) and PDF import as page images to draw on. Evaluation of v1's `/canvas` is in `docs/v0.4-plan.md`; the markdown storage must be decided with the owner first | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
