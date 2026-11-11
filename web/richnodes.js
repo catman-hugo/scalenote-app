@@ -4,6 +4,7 @@
 import { Node } from "@tiptap/core";
 import { liftEmptyBlock } from "@tiptap/pm/commands";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import { MAX_COLUMNS, MIN_COLUMNS } from "./richblocks.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 import { flipFold, isFoldedBy } from "./togglefold.js";
@@ -49,6 +50,35 @@ function leaveOnEmptyEnter(name) {
     return editor.commands.command(({ state, dispatch }) => liftEmptyBlock(state, dispatch));
   };
 }
+
+// Side-by-side columns. How they are stored is in richblocks.js (a callout holding callouts).
+// A column holds the same blocks as a callout; columns do not nest.
+export const Columns = Node.create({
+  name: "columns",
+  group: "block",
+  content: `column{${MIN_COLUMNS},${MAX_COLUMNS}}`,
+  isolating: true,
+  defining: true,
+  parseHTML() {
+    return [{ tag: "div[data-columns]" }];
+  },
+  renderHTML() {
+    return ["div", { "data-columns": "", class: "columns" }, 0];
+  },
+});
+
+export const Column = Node.create({
+  name: "column",
+  content: INNER_BLOCKS,
+  isolating: true,
+  defining: true,
+  parseHTML() {
+    return [{ tag: "div[data-column]" }];
+  },
+  renderHTML() {
+    return ["div", { "data-column": "", class: "column" }, 0];
+  },
+});
 
 export const CALLOUT_KINDS = ["note", "info", "tip", "success", "question", "warning", "danger", "example", "quote"];
 

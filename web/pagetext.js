@@ -23,6 +23,8 @@ function readOnlyNodes(schema) {
       ["div", { class: "page-text-title" }, ["span", { class: "callout-kind" }, strings.callout.kinds[node.attrs.kind] || node.attrs.kind], node.attrs.title ? " " + node.attrs.title : ""],
       ["div", { class: "callout-body" }, 0],
     ],
+    columns: () => ["div", { class: "columns" }, 0],
+    column: () => ["div", { class: "column" }, 0],
     imageBlock: (node) => ["p", { class: "page-text-picture" }, strings.pageText.picture.replace("{name}", node.attrs.alt || node.attrs.path)],
     rawBlock: (node) => ["pre", { class: "raw-block page-text-raw" }, node.attrs.src],
     // The editor's own table carries a width as a style attribute, which the page's security

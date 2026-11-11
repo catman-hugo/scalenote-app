@@ -5982,6 +5982,157 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {
 }
 
 
+// ---------- 0.4.10: columns ----------
+
+async function colsOpen(page, text) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((body) => window.__mock.files.set("Cols.md", body), text);
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Cols.md"]');
+  await openTagged(page, "Cols.md");
+}
+const COLS_PAGE = "Alpha one\n\nBeta two\n\nGamma three\n\nDelta four\n";
+// Drags the block that holds `fromText` (grabbed by its handle) to a point of the page.
+async function dragBlockTo(page, fromText, x, y, scope = ".note-body p") {
+  await page.locator(scope, { hasText: fromText }).first().click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const h = await page.locator(".gutter-handle").boundingBox();
+  await page.mouse.move(h.x + 16, h.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y + 40, { steps: 3 });
+  await page.mouse.move(x, y, { steps: 10 });
+  return { release: () => page.mouse.up() };
+}
+const columnTexts = (page) => page.evaluate(() => [...document.querySelectorAll("#editor .columns")].map((c) => [...c.querySelectorAll(":scope > .column")].map((col) => col.textContent.trim())));
+const pageFile = async (page) => ((await files(page))["Cols.md"] || "").replace(/^---\nid: [^\n]*\n---\n\n/, "");
+
+await test("a page with columns shows them side by side and is written back untouched", async (page) => {
+  const md = "Before\n\n> [!columns]\n> > [!column]\n> > left\n>\n> > [!column]\n> > right\n\nAfter\n";
+  await colsOpen(page, md);
+  assert.deepEqual(await columnTexts(page), [["left", "right"]]);
+  const boxes = await page.$$eval("#editor .column", (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [r.x, r.y]; }));
+  assert.ok(boxes[1][0] > boxes[0][0] + 100 && Math.abs(boxes[1][1] - boxes[0][1]) < 2, "side by side: " + JSON.stringify(boxes));
+  assert.equal(await page.locator("#editor .raw-block").count(), 0, "not a raw block");
+  await page.waitForTimeout(400);
+  assert.equal((await files(page))["Cols.md"], md, "nothing is written when nothing changed");
+  await page.locator("#editor .column").nth(1).locator("p").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await waitSaved(page);
+  assert.equal(await pageFile(page), "Before\n\n> [!columns]\n> > [!column]\n> > left\n>\n> > [!column]\n> > right more\n\nAfter\n");
+}, ctxOpts);
+
+await test("the slash menu makes two or three columns, and typing in each column is saved in it", async (page) => {
+  await colsOpen(page, "Start\n");
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/three");
+  await page.waitForSelector(".slash-item");
+  await page.keyboard.press("Enter");
+  await page.locator("#editor .column").nth(0).locator("p").click();
+  await page.keyboard.type("one");
+  await page.locator("#editor .column").nth(1).locator("p").click();
+  await page.keyboard.type("two");
+  await page.locator("#editor .column").nth(2).locator("p").click();
+  await page.keyboard.type("three");
+  await waitSaved(page);
+  assert.equal(await pageFile(page), "Start\n> [!columns]\n> > [!column]\n> > one\n>\n> > [!column]\n> > two\n>\n> > [!column]\n> > three\n");
+  assert.deepEqual(await columnTexts(page), [["one", "two", "three"]]);
+}, ctxOpts);
+
+await test("dragging a block to the left or right edge of another makes columns, and Undo takes it back", async (page) => {
+  await colsOpen(page, COLS_PAGE);
+  const target = await page.locator(".note-body p", { hasText: "Alpha" }).boundingBox();
+  const drag = await dragBlockTo(page, "Gamma", target.x + 8, target.y + target.height / 2);
+  assert.equal(await page.locator(".drop-line.drop-line-vertical").isVisible(), true, "a vertical line shows where the column goes");
+  await drag.release();
+  await waitSaved(page);
+  assert.deepEqual(await columnTexts(page), [["Gamma three", "Alpha one"]]);
+  assert.equal(await pageFile(page), "> [!columns]\n> > [!column]\n> > Gamma three\n>\n> > [!column]\n> > Alpha one\n\nBeta two\n\nDelta four\n");
+  await page.click("#editor .note-body p >> nth=-1");
+  await page.keyboard.press("Control+z");
+  await waitSaved(page);
+  assert.equal(await pageFile(page), COLS_PAGE, "one Undo gives the page back exactly");
+  const beta = await page.locator(".note-body p", { hasText: "Beta" }).boundingBox();
+  const right = await dragBlockTo(page, "Delta", beta.x + beta.width - 8, beta.y + beta.height / 2);
+  await right.release();
+  await waitSaved(page);
+  assert.deepEqual(await columnTexts(page), [["Beta two", "Delta four"]]);
+}, ctxOpts);
+
+await test("a block can be dropped at the end of a columns block to add a column, up to five", async (page) => {
+  await colsOpen(page, "> [!columns]\n> > [!column]\n> > a\n>\n> > [!column]\n> > b\n\nc\n\nd\n\ne\n\nf\n\ng\n");
+  for (const word of ["c", "d", "e"]) {
+    const columns = await page.locator("#editor .columns").boundingBox();
+    const drag = await dragBlockTo(page, word, columns.x + columns.width - 6, columns.y + columns.height / 2, ".note-body > p");
+    await drag.release();
+    await page.waitForTimeout(150);
+  }
+  assert.deepEqual(await columnTexts(page), [["a", "b", "c", "d", "e"]]);
+  // A sixth column is not offered: the drop turns into a move between blocks.
+  const columns = await page.locator("#editor .columns").boundingBox();
+  const drag = await dragBlockTo(page, "f", columns.x + columns.width - 6, columns.y + columns.height / 2, ".note-body > p");
+  assert.equal(await page.locator(".drop-line.drop-line-vertical").isVisible(), false);
+  await page.keyboard.press("Escape");
+  await drag.release();
+  assert.deepEqual(await columnTexts(page), [["a", "b", "c", "d", "e"]]);
+}, ctxOpts);
+
+await test("a block inside a column can be dragged into another column or out, and a columns block with one column left turns back into blocks", async (page) => {
+  await colsOpen(page, "> [!columns]\n> > [!column]\n> > a1\n> >\n> > a2\n>\n> > [!column]\n> > b1\n\nAfter\n");
+  // a2 moves under b1
+  const b1 = await page.locator("#editor .column").nth(1).locator("p").boundingBox();
+  const a2 = await page.locator("#editor .column").nth(0).locator("p").nth(1);
+  await a2.click();
+  await page.mouse.move(b1.x + 10, b1.y + 4);
+  const handleBox = async () => page.locator(".gutter-handle").boundingBox();
+  await a2.hover();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const h = await handleBox();
+  await page.mouse.move(h.x + 16, h.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 16, h.y + 30, { steps: 3 });
+  await page.mouse.move(b1.x + 20, b1.y + b1.height + 10, { steps: 10 });
+  await page.mouse.up();
+  await waitSaved(page);
+  assert.deepEqual(await columnTexts(page), [["a1", "b1a2"]]);
+  // Taking a1 out leaves one column with b1/a2 only if the first column is empty: drag a1 below the block.
+  const after = await page.locator(".note-body > p", { hasText: "After" }).boundingBox();
+  const a1 = page.locator("#editor .column").nth(0).locator("p");
+  await a1.hover();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  const h2 = await handleBox();
+  await page.mouse.move(h2.x + 16, h2.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(h2.x + 16, h2.y + 30, { steps: 3 });
+  await page.mouse.move(after.x + 100, after.y + after.height + 20, { steps: 10 });
+  await page.mouse.up();
+  await waitSaved(page);
+  assert.equal(await page.locator("#editor .columns").count(), 0, "one column is not columns: the blocks are back at the top of the page");
+  const text = await pageFile(page);
+  assert.ok(!text.includes("[!column"), text);
+  assert.ok(text.indexOf("b1") < text.indexOf("After") && text.indexOf("After") < text.indexOf("a1"), text);
+}, ctxOpts);
+
+await test("the handle menu turns columns into blocks, and a block in a column can move out", async (page) => {
+  await colsOpen(page, "> [!columns]\n> > [!column]\n> > one\n>\n> > [!column]\n> > two\n\nAfter\n");
+  await page.locator("#editor .column").nth(0).locator("p").click();
+  await page.waitForSelector(".gutter-handle:not([hidden])");
+  await page.click(".gutter-handle");
+  await page.click('.gutter-menu button:has-text("Turn columns into blocks")');
+  await waitSaved(page);
+  assert.equal(await pageFile(page), "one\n\ntwo\n\nAfter\n");
+}, ctxOpts);
+
+await test("columns stack on a narrow window", async (page) => {
+  await colsOpen(page, "> [!columns]\n> > [!column]\n> > one\n>\n> > [!column]\n> > two\n");
+  await page.setViewportSize({ width: 380, height: 700 });
+  await page.waitForTimeout(150);
+  const boxes = await page.$$eval("#editor .column", (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [r.x, r.y]; }));
+  assert.ok(boxes[1][1] > boxes[0][1] + 10 && Math.abs(boxes[1][0] - boxes[0][0]) < 2, JSON.stringify(boxes));
+}, ctxOpts);
+
 // ---------- 0.4.10: drawing over the text ----------
 
 const INK_PAGE = "First paragraph of the page.\n\nSecond paragraph, which is long enough that it wraps onto more than one line when the window gets narrow, so the ink has to move with its words.\n\nThird paragraph.\n";
@@ -6240,6 +6391,27 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "0410")) {
     await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-2-pen-bar.png` });
     await page.click('.ink-bar [aria-label="Colour"]');
     await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-3-colour-menu.png` });
+    await page.click(".ink-bar .ink-done");
+    await page.evaluate(() => window.__mock.files.set("Cols.md", "# Columns\n\n> [!columns]\n> > [!column]\n> > ## Left\n> >\n> > A paragraph in the first column, long enough to wrap onto a second line.\n>\n> > [!column]\n> > ## Right\n> >\n> > - one\n> > - two\n\nA block under the columns.\n\nA block to drag.\n"));
+    if (label === "desktop") {
+    await page.click("#newFolder");
+    await page.click('.tree-button[data-path="Cols.md"]');
+    await page.waitForSelector("#editor .columns");
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-4-columns.png` });
+    if (label === "desktop") {
+      const target = await page.locator(".note-body > p", { hasText: "A block under" }).boundingBox();
+      await page.locator(".note-body > p", { hasText: "A block to drag" }).click();
+      await page.waitForSelector(".gutter-handle:not([hidden])");
+      const h = await page.locator(".gutter-handle").boundingBox();
+      await page.mouse.move(h.x + 16, h.y + 16);
+      await page.mouse.down();
+      await page.mouse.move(h.x + 16, h.y + 40, { steps: 3 });
+      await page.mouse.move(target.x + 10, target.y + target.height / 2, { steps: 10 });
+      await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-5-drag-to-columns.png` });
+      await page.mouse.up();
+    }
+    }
     await context.close();
   }
 }

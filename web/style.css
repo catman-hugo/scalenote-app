@@ -1766,3 +1766,17 @@ button.danger:hover { background: var(--bg-hover); }
 .ink-bar[hidden], .ink-menus[hidden] { display: none; }
 .ink-spacer { flex: 1; }
 .ink-done { font-size: var(--text-s); padding: var(--space-1) var(--space-3); }
+
+/* ---------- columns ---------- */
+
+/* Side by side, each column as wide as the others. On a narrow window they sit one under the other, so no column is squeezed too thin to read. */
+.columns { display: flex; gap: var(--space-4); align-items: flex-start; }
+.column { flex: 1 1 0; min-width: 0; }
+.column > * { margin: 0; }
+.column > * + * { margin-top: var(--space-3); }
+@media (max-width: 40rem) {
+  .columns { flex-direction: column; gap: var(--space-3); }
+  .column { width: 100%; }
+}
+
+.drop-line.drop-line-vertical { width: 3px; }

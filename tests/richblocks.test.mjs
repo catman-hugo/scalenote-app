@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { splitBlocks, splitFrontmatter } from "../web/blocks.js";
 import { loadNote, composeNote } from "../web/compose.js";
-import { readCallout, writeCallout, readDetails, writeDetails, readTable, writeTable, readImage, writeImage, writeBlock } from "../web/richblocks.js";
+import { readCallout, writeCallout, readDetails, writeDetails, readTable, writeTable, readImage, writeImage, writeBlock, readRichBlock, MAX_COLUMNS } from "../web/richblocks.js";
 
 const TYPE = { paragraph: "paragraph", heading: "heading", list: "bulletList", quote: "blockquote", code: "codeBlock", rule: "horizontalRule" };
 const text = (t) => ({ type: "text", text: t });
@@ -244,4 +244,57 @@ test("a page with a callout inside a toggle opens as a toggle, not a raw block",
   const { doc } = loadNote(text, io);
   assert.deepEqual(doc.content.map((n) => n.type), ["toggle"]);
   assert.equal(composeNote(loadNote(text, io).parts, doc, { serialize, assignId: false }), text, "untouched, the text is kept to the byte");
+});
+
+// ---------- columns ----------
+
+const TWO = "> [!columns]\n> > [!column]\n> > left one\n> >\n> > left two\n>\n> > [!column]\n> > right";
+
+test("a callout holding column callouts is read as columns and written back the same", () => {
+  const node = readRichBlock("callout", TWO, io);
+  assert.equal(node.type, "columns");
+  assert.equal(node.content.length, 2);
+  assert.ok(node.content.every((c) => c.type === "column"));
+  assert.equal(node.content[0].content.length, 2);
+  assert.equal(writeBlock(node, serialize), TWO);
+});
+
+test("columns hold callouts, toggles and tables, and an empty column is kept", () => {
+  const src = "> [!columns]\n> > [!column]\n> > > [!tip] Inside\n> > > text\n>\n> > [!column]\n>\n> > [!column]\n> > <details>\n> > <summary>T</summary>\n> >\n> > body\n> >\n> > </details>";
+  const node = readRichBlock("callout", src, io);
+  assert.equal(node.type, "columns");
+  assert.equal(node.content.length, 3);
+  assert.equal(node.content[0].content[0].type, "callout");
+  assert.equal(writeBlock(node, serialize), src);
+});
+
+test("a callout called columns that is not exactly columns stays an ordinary callout", () => {
+  for (const src of [
+    "> [!columns]\n> only text",
+    "> [!columns] Title\n> > [!column]\n> > a\n>\n> > [!column]\n> > b",
+    "> [!columns]-\n> > [!column]\n> > a\n>\n> > [!column]\n> > b",
+    "> [!columns]\n> > [!column]\n> > only one column",
+    "> [!columns]\n> > [!column] Named\n> > a\n>\n> > [!column]\n> > b",
+    "> [!columns]\n> > [!note]\n> > a\n>\n> > [!column]\n> > b",
+  ]) {
+    const node = readRichBlock("callout", src, io);
+    assert.equal(node.type, "callout", src);
+    assert.equal(writeBlock(node, serialize), src, "and it is written back as it was");
+  }
+});
+
+test("more columns than the limit is an ordinary callout, and columns do not nest", () => {
+  const many = ["> [!columns]", ...Array.from({ length: MAX_COLUMNS + 1 }, (_, i) => `> > [!column]\n> > c${i}\n>`)].join("\n").replace(/\n>$/, "");
+  assert.equal(readRichBlock("callout", many, io).type, "callout");
+  const nested = "> [!note]\n> > [!columns]\n> > > [!column]\n> > > a\n> >\n> > > [!column]\n> > > b";
+  const outer = readRichBlock("callout", nested, io);
+  assert.equal(outer.type, "callout");
+  assert.equal(outer.content[0].type, "callout", "inside another block it is a plain callout, which the editor can hold");
+});
+
+test("a page with columns opens with the columns block and an untouched page is written back byte for byte", () => {
+  const page = `Before\n\n${TWO}\n\nAfter\n`;
+  const { parts, doc } = loadNote(page, io);
+  assert.ok(doc.content.some((n) => n.type === "columns"));
+  assert.equal(composeNote(parts, doc, { ...io, assignId: false }), page);
 });

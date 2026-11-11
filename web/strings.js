@@ -277,6 +277,8 @@ export const strings = {
     plusLabel: "Add a block below",
     addBelow: "Add block below",
     moveUp: "Move up",
+    moveOut: "Move out of the columns",
+    unwrapColumns: "Turn columns into blocks",
     moveDown: "Move down",
     duplicate: "Duplicate",
     delete: "Delete",
@@ -312,6 +314,8 @@ export const strings = {
     toggle: "Toggle",
     table: "Table",
     image: "Image",
+    columns2: "2 columns",
+    columns3: "3 columns",
     noResults: "No matching block",
   },
 
