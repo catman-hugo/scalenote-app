@@ -169,6 +169,17 @@ jobs:
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
           "$apksigner" verify --print-certs "$apk" | grep -i "SHA-256"
 
+      # Android refuses to install an app that declares a component twice ("problem while parsing the
+      # package"). The build does not notice that, so look at the finished file.
+      - name: Check that no component is declared twice
+        run: |
+          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -n 1)
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          "$aapt2" dump xmltree --file AndroidManifest.xml "$apk" | awk '/E: (activity|provider|service|receiver)/ {want=1} want && /android:name\(/ {print; want=0}' > /tmp/components.txt
+          cat /tmp/components.txt
+          dupes=$(sort /tmp/components.txt | uniq -d)
+          if [ -n "$dupes" ]; then echo "::error::declared twice: $dupes"; exit 1; fi
+
       # Gradle names the file app-universal-debug.apk. Rename it like the desktop
       # installers: product name, version from the app config, then the CPU type.
       - name: Name the APK like the other installers

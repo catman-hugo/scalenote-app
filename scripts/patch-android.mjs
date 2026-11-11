@@ -37,7 +37,7 @@ export function patchManifest(text) {
 // authority and its own folder list), so nothing the Tauri template shares is widened.
 const INSTALL_PERMISSION = '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />';
 const PROVIDER = `<provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".ApkFileProvider"
             android:authorities="\${applicationId}.apkprovider"
             android:exported="false"
             android:grantUriPermissions="true">
@@ -55,6 +55,19 @@ function addInstaller(text) {
     out = out.replace("</application>", `    ${PROVIDER}\n    </application>`);
   }
   return out;
+}
+
+// The Tauri template already declares a provider of the class androidx.core.content.FileProvider.
+// Android refuses to install an app that declares the same component name twice ("There was a
+// problem while parsing the package"), which 0.4.10 did. So ours is its own small subclass with
+// its own name.
+export function apkFileProviderSource(pkg) {
+  return `package ${pkg}
+
+import androidx.core.content.FileProvider
+
+class ApkFileProvider : FileProvider()
+`;
 }
 
 // Only the "updates" folder of the cache can be shared, and nothing else.
@@ -281,6 +294,7 @@ async function main() {
   await writeFile(activity, patchActivity(activityText));
   const pkg = /^package\s+([^\s]+)\s*$/m.exec(activityText)[1];
   await writeFile(path.join(path.dirname(activity), "ApkInstaller.kt"), apkInstallerSource(pkg));
+  await writeFile(path.join(path.dirname(activity), "ApkFileProvider.kt"), apkFileProviderSource(pkg));
   await mkdir(path.join(root, "res", "xml"), { recursive: true });
   await writeFile(path.join(root, "res", "xml", "apk_paths.xml"), APK_PATHS_XML);
   console.log("patched", manifest);

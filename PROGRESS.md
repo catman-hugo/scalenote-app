@@ -340,6 +340,9 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## Known break in the 0.4.10 apk (fixed after 0.4.10, needs a new release)
+The Android apk of 0.4.10 cannot be installed: it declared the same file provider twice. Fixed by `ApkFileProvider` in `scripts/patch-android.mjs`; the Android job now checks the finished apk for duplicate components. Not yet tried on a device: install the apk built after this fix.
+
 ## 0.4.11 so far (not yet released; its notes are written when the release is made)
 - Pen bar: no Done button any more; the pen button on the top bar starts and stops drawing. The sheet now covers the whole text box, padding included, so a pen starting in the margin draws instead of scrolling (`placeSurface` in `web/inklayer.js`).
 - Fix: a long stroke from a short block made the saved drawing unreadable on the next opening. A stroke is now cut into one piece per block (`splitByBlock` in `web/textink.js`) and fractions are limited. Browser-tested here (3 new browser tests, 3 new unit tests); NOT tried on a device.
