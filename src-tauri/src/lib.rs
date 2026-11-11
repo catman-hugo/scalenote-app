@@ -527,8 +527,31 @@ fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>>
     })
 }
 
+// On Linux the web view (WebKitGTK) draws the window through a faster path that, on the
+// owner's laptop, draws all text bolder as soon as a page is long enough to scroll. Turning
+// that path off fixed it, and Tauri's own Linux notes describe this setting. The price is
+// somewhat slower drawing. It must be set before the web view exists. A value the person has
+// already set is left alone, even "0", so it can still be switched back from a terminal.
+// The two functions are given the environment as arguments so a test can check them.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const WEBVIEW_DEFAULTS: [(&str, &str); 1] = [("WEBKIT_DISABLE_DMABUF_RENDERER", "1")];
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn apply_webview_defaults(is_set: impl Fn(&str) -> bool, mut set: impl FnMut(&str, &str)) {
+    for (name, value) in WEBVIEW_DEFAULTS {
+        if !is_set(name) {
+            set(name, value);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    apply_webview_defaults(
+        |name| std::env::var_os(name).is_some(),
+        |name, value| std::env::set_var(name, value),
+    );
     // Startup is the one place where giving up is allowed: without a window there is
     // nothing to show. We still report why, instead of panicking with unwrap/expect.
     let result = tauri::Builder::default()
@@ -578,5 +601,31 @@ pub fn run() {
     if let Err(error) = result {
         eprintln!("ScaleNote failed to start: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[test]
+    fn the_web_view_setting_is_added_when_it_is_missing() {
+        let set_calls = RefCell::new(Vec::new());
+        apply_webview_defaults(
+            |_| false,
+            |name, value| set_calls.borrow_mut().push((name.to_string(), value.to_string())),
+        );
+        assert_eq!(
+            set_calls.into_inner(),
+            vec![("WEBKIT_DISABLE_DMABUF_RENDERER".to_string(), "1".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_setting_the_person_made_is_left_alone_even_when_it_is_zero() {
+        let called = RefCell::new(false);
+        apply_webview_defaults(|_| true, |_, _| *called.borrow_mut() = true);
+        assert!(!called.into_inner());
     }
 }
