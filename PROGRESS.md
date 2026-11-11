@@ -340,6 +340,13 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.9: built (small fix)
+Release notes: `docs/release-notes/0.4.9.md`. Built here; not tried on a device.
+- Linux text turning bold on long pages: the 0.4.8 change did not work. The owner found that `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `WEBKIT_DISABLE_COMPOSITING_MODE=1` each fix it. The app now sets the first at startup on Linux unless it is already set (`apply_webview_defaults` in `src-tauri/src/lib.rs`).
+- Tested here: the function and its two tests compile and pass on their own; the web interface tests were not rerun because no interface code changed. The Rust tests run in the GitHub checks (this workspace has no GTK libraries).
+- NOT tested, needs a device: that the app, started normally, shows normal text on Linux.
+- Not done: Linux two-finger zoom, and finger drawing on the canvas moving the screen (see DECISIONS.md and the owner's notes). Likely next: the web view takes over the gesture; a Rust-side gesture removal and non-passive touch listeners are the ideas to try, after checking their documentation.
+
 ## 0.4.8: built
 Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built and tested in a browser here; nothing tried on a device.
 - Bold text on Linux once a page scrolls: scrolling boxes get a solid background. NOT reproducible here (no Linux web engine in the build environment); the owner must confirm on Linux.
@@ -397,9 +404,10 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.6 | Highlights behind ink and tidied against figures, split mode and the "Open pages in" setting (see "0.4.6: built") | built, not tried on a device |
 | 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
 | 0.4.8 | Bold-text fix, empty lines kept, toggles folded with an always-visible outline, foldable subtags, History as the page looks, links updated on rename, View menu (see "0.4.8: built") | built, not tried on a device |
-| 0.4.9 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
-| 0.4.10 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.11 | PDF import as page images to draw on | not started |
+| 0.4.9 | Linux text-weight fix: the faster web view drawing path is switched off at startup (see "0.4.9: built") | built, not tried on a device |
+| 0.4.10 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
+| 0.4.11 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.12 | PDF import as page images to draw on | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

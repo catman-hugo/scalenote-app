@@ -474,3 +474,14 @@ Cost. A link written with a folder path breaks if its folder is renamed.
 
 Decision. 0.4.8 is already large, so draw over text moves to 0.4.9 together with columns and the Android in-app installer. The `/canvas` block becomes 0.4.10 and PDF import 0.4.11. The Linux two-finger zoom problem (the web engine zooms the whole window) is known and not yet fixed or investigated.
 
+## 2026-11-11: On Linux the faster web view drawing path is switched off at startup
+
+Decision. ScaleNote sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` at the start of the program on Linux, before the web view exists, unless the person has already set that variable (even to `0`). This fixes the text turning bold on long pages. The owner confirmed it on Linux Mint: this setting and `WEBKIT_DISABLE_COMPOSITING_MODE=1` each fixed it, and with neither it stayed. The solid-background change from 0.4.8 did not fix it, and the release notes of 0.4.8 were wrong to call it fixed.
+Alternatives. Switching off compositing completely (heavier, and the other setting was enough); changing the page so the web view draws it differently (tried in 0.4.8, no effect).
+Cost. Somewhat slower drawing on Linux. Tauri's Linux notes describe this setting. If another system shows the same bug under other conditions, this may need to be revisited.
+
+## 2026-11-11: A small 0.4.9 for the Linux text fix, later plans move up one
+
+Decision. The Linux fix is its own small release, so the owner can test it. Draw over text, columns and the Android in-app installer become 0.4.10, the `/canvas` block 0.4.11 and PDF import 0.4.12.
+Also noted. Handwriting to text moves to after v1: use the system recognisers on Windows and Android, wait for Linux until there is a good small offline option, offer packs as optional downloads, English first and Dutch later. A Fedora install check of the .rpm is wanted around 0.8.
+

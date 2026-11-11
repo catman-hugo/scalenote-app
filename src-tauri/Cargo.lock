@@ -2843,7 +2843,7 @@ dependencies = [
 
 [[package]]
 name = "scalenote"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "scalenote-core",
  "serde",
@@ -2855,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "scalenote-core"
-version = "0.4.8"
+version = "0.4.9"
 
 [[package]]
 name = "schemars"
