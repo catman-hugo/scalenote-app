@@ -12,7 +12,7 @@
 //   draws" is on. The bar sits above the text instead of floating over it, so it never covers
 //   the first lines, and it looks and works like the toolbar of the canvas.
 import { DrawingHistory, LIMITS, PEN_COLOURS, PEN_WIDTHS, canAddItem, drawnWidth, nearestWidthStop, widthAt } from "./canvasrules.js";
-import { blockAtY, blockTag, findBlock, inkFromScreen, inkToScreen, lineTouched } from "./textink.js";
+import { blockTag, findBlock, inkFromScreen, inkToScreen, lineTouched, splitByBlock } from "./textink.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -61,7 +61,7 @@ const kindOf = (node) => node.tagName.toLowerCase() + (node.dataset && node.data
  * `body()` gives the editor's root element, `drawing()` gives `{ canvas, readOnly }` for the open
  * page or null when none is loaded.
  */
-export function createInkLayer({ scroller, panes, body, drawing, onChange, onNotice, onDone }) {
+export function createInkLayer({ scroller, panes, body, drawing, onChange, onNotice }) {
   const t = strings.canvas;
   const s = strings.ink;
   const state = {
@@ -206,12 +206,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   });
   fingerButton.dataset.action = "finger";
   fingerButton.append(icon("hand"));
-  const doneButton = make("button", "canvas-tool ink-done", s.done);
-  doneButton.type = "button";
-  doneButton.title = s.doneLabel;
-  doneButton.setAttribute("aria-label", s.doneLabel);
-  doneButton.addEventListener("click", () => onDone());
-  bar.append(undoButton, redoButton, fingerButton, make("span", "ink-spacer"), doneButton);
+  bar.append(undoButton, redoButton, fingerButton);
   panes.prepend(bar, menuHost);
 
   function drawBar() {
@@ -333,9 +328,21 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     return out;
   }
 
+  // The layer sits inside the scroll box's padding, so before the first scroll it starts below and
+  // right of the box's corner. The sheet is moved back by exactly that much, so it covers the whole
+  // visible box, padding included. Otherwise a pen starting in the margin would hit the box
+  // underneath and scroll the page instead of drawing.
+  function placeSurface() {
+    const box = scroller.getBoundingClientRect();
+    const at = layer.getBoundingClientRect();
+    surface.style.left = `${box.left + scroller.clientLeft - at.left}px`;
+    surface.style.top = `${box.top + scroller.clientTop - at.top}px`;
+  }
+
   function draw() {
     state.frame = 0;
     if (!state.visible) return;
+    placeSurface();
     const ratio = window.devicePixelRatio || 1;
     const width = scroller.clientWidth;
     const height = scroller.clientHeight;
@@ -386,6 +393,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
 
   function onDown(event) {
     if (!state.active || state.gesture) return;
+    placeSurface();
     const touch = event.pointerType === "touch";
     if (touch && !state.fingerDraws) {
       // A finger moves the page, so a hand resting on the screen never leaves a mark.
@@ -474,14 +482,15 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     }
     const sheet = sheetBox();
     const rects = nodes.map((node) => blockRect(node, sheet));
-    const at = blockAtY(rects, points[0][1]);
-    if (!canAddItem(d.canvas, points.length) || d.canvas.items.length + d.canvas.ink.length >= LIMITS.items) {
+    const pieces = splitByBlock(points, rects);
+    if (!canAddItem(d.canvas, points.length + pieces.length) || d.canvas.items.length + d.canvas.ink.length + pieces.length > LIMITS.items) {
       onNotice(t.full);
       return scheduleDraw();
     }
-    const ink = inkFromScreen(g.stroke, rects[at], { block: at, tag: tags()[at] });
-    d.canvas.ink.push(ink);
-    historyOf(d).record({ add: ink });
+    const known = tags();
+    const added = pieces.map((piece) => inkFromScreen({ ...g.stroke, points: piece.points }, rects[piece.block], { block: piece.block, tag: known[piece.block] }));
+    d.canvas.ink.push(...added);
+    historyOf(d).record({ add: added });
     changed();
   }
   surface.addEventListener("pointerdown", onDown);

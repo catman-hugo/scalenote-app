@@ -1764,8 +1764,6 @@ button.danger:hover { background: var(--bg-hover); }
 /* While drawing, the sheet takes the pen and the mouse; fingers are handled in code (they scroll). */
 .ink-surface.ink-drawing { pointer-events: auto; touch-action: none; cursor: crosshair; outline: none; }
 .ink-bar[hidden], .ink-menus[hidden] { display: none; }
-.ink-spacer { flex: 1; }
-.ink-done { font-size: var(--text-s); padding: var(--space-1) var(--space-3); }
 
 /* ---------- columns ---------- */
 
