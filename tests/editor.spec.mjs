@@ -5883,6 +5883,37 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "view")) {
   }
 }
 
+// Screenshots of the screens changed in 0.4.8 (only when SHOTS_DIR is set), in light and dark: the Tags
+// box folded and open, History shown as the page looks, and a page with toggles.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"], ["phone", { width: 390, height: 800 }, "dark"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await richHistory(page);
+    await page.evaluate(() => {
+      window.__mock.files.set("Tags.md", "Plan for #school/maths and #school/art and #plan.\n\nAlso #other\n");
+    });
+    await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-1-toggles.png` });
+    await page.click("#historyButton");
+    await page.click(".history-row");
+    await page.waitForSelector(".history-change");
+    await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-2-history-changes.png` });
+    await page.click(".history-view >> text=Whole text");
+    await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-3-history-whole.png` });
+    await page.keyboard.press("Escape");
+    if (label === "desktop") {
+      await page.click("#openTags");
+      await page.waitForSelector("#tags[open]");
+      await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-4-tags-folded.png` });
+    }
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");

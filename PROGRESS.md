@@ -340,23 +340,23 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
-## 0.4.8: in progress (branch `feature/v0.4.8`, stopped part way on 2026-11-11)
-Scope the owner set (2026-11-11). Done on the branch, with unit and browser tests, none tried on a device:
-- Bold text on long pages (Linux): scrolling boxes get a solid background (`style.css`, above `.note-body`). Cause seen in the owner's screenshots: text on a scrolling layer with a see-through background is smoothed differently. NOT reproducible here (no Linux web engine in the build environment); the owner must confirm on Linux.
-- Empty lines are kept: saved as extra blank lines, read back (`compose.js`, "empty lines"). Top level of a page only, not inside toggles or callouts.
+## 0.4.8: built
+Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built and tested in a browser here; nothing tried on a device.
+- Bold text on Linux once a page scrolls: scrolling boxes get a solid background. NOT reproducible here (no Linux web engine in the build environment); the owner must confirm on Linux.
+- Empty lines are kept as extra blank lines (`compose.js`, "empty lines"); top level of a page only.
 - Toggles: outline always visible; folded on first open after the app starts, as left after that (`togglefold.js`, `app.folds` in `main.js`).
-- Tags box: a main tag shows or hides its subtags (`tagRows`, `clickTag` in `tagindex.js`). Main tags start folded.
+- Tags box: a main tag shows or hides its subtags (`tagRows`, `clickTag` in `tagindex.js`); main tags start folded.
 - History: from the normal text, versions are shown as the page looks and compared block by block (`pagetext.js`, `splitPageBlocks`); from the Markdown view, markdown as before.
+- Renaming a page updates links to it (`renamelinks.js`, `planLinkUpdates` and `applyLinkUpdates` in `main.js`). Not covered: folder renames and moves.
+- The View menu (built after 0.4.7) is described in the release notes.
+- NOT tested, needs a device: all of the above on a real device; the bold fix on Linux in particular.
+- Known and not fixed: two-finger zoom on Linux zooms the whole window instead of the drawing (seen in an owner recording; the cause was not looked into).
+- Design check done on screenshots (toggles, History as the page looks, Tags folded; light and dark; phone and desktop; block "048" in `tests/editor.spec.mjs`, run with `SHOTS_DIR`). Nothing new that is a gradient, glow or custom colour.
+- Security check: History pages and renamed-link text are built as text nodes, never run as code; the link rewrite touches only pages of the open vault and reports pages it could not write. No new network access, no secrets.
+- Tests here: 205 unit tests and 267 browser tests pass (packaged build checked in the browser build, not as an installed app).
+- Moved to 0.4.9: draw over text, columns, the Android in-app installer. Handwriting to text is wanted and to be discussed.
 
-Still to do for 0.4.8, in this order:
-1. Renaming a page updates links to it.
-2. Linux two-finger zoom on the drawing. The owner's recording shows the web engine zooming the whole window (sidebar and all) instead of the sheet, while the fingers also draw. Not the device and not the distribution: the Linux web engine handles the pinch itself. Idea to try: stop it with touch event listeners that are not passive on the sheet, or a setting on the Linux web view in the Rust side; check the real documentation first. Needs the owner's Linux device to prove.
-3. Draw over text: ink anchored to blocks (the planned slice, see `docs/v0.4-plan.md`).
-4. Wrap-up: version 0.4.8 in package.json, Cargo.toml, tauri.conf.json and both lock files; `docs/release-notes/0.4.8.md` (include the View menu, which has no notes yet); DECISIONS.md entries (empty lines as blank lines; folds kept per session; history block comparison; tags start folded); design check on screenshots in light and dark; full `node tests/editor.spec.mjs` run (last full run was before these changes; only the touched tests were rerun); pull request.
-
-Moved by the owner (2026-11-11): columns and the Android in-app installer go to 0.4.9. Handwriting to text is wanted, to be discussed later.
-
-## Planned for 0.4.8 (owner requests, not built)
+## Done in 0.4.8 (was planned)
 - Toggle block outline always visible (owner, 2026-11-09, from screenshots of a folded and an unfolded toggle). Today the box around a toggle is only drawn while the cursor is in it (0.2.2 item 6), so a toggle you are not working in looks like loose text and it is unclear where it ends. Build: draw the outline in the same quiet border colour whether the toggle is folded, unfolded, focused or not, in every theme, light and dark, with a screenshot check of a folded and an unfolded toggle in each; the editing highlight, if any, may still be stronger than the resting outline. Check the markdown file is unchanged (this is only style) and that folding still works.
 
 ## 0.3 wrap-up
@@ -396,9 +396,10 @@ Moved by the owner (2026-11-11): columns and the Android in-app installer go to 
 | 0.4.5 | Paper and page colour for drawings, loop moves snap to the grid, folder icons (see "0.4.5: built") | built, not tried on a device |
 | 0.4.6 | Highlights behind ink and tidied against figures, split mode and the "Open pages in" setting (see "0.4.6: built") | built, not tried on a device |
 | 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
-| 0.4.8 | Draw over text: ink anchored to blocks; the outline around a toggle block always visible (owner request, see "Planned for 0.4.8") | not started |
-| 0.4.9 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.10 | PDF import as page images to draw on | not started |
+| 0.4.8 | Bold-text fix, empty lines kept, toggles folded with an always-visible outline, foldable subtags, History as the page looks, links updated on rename, View menu (see "0.4.8: built") | built, not tried on a device |
+| 0.4.9 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
+| 0.4.10 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.11 | PDF import as page images to draw on | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
