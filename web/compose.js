@@ -79,7 +79,8 @@ export function loadNote(text, { parse, serialize }) {
     if (!isRich && hasTags(withoutStyleSyntax(src)) && !sameTags(withoutStyleSyntax(src), withoutStyleSyntax(base))) return rawNode(src, gap, idx);
     return { ...node, attrs: { ...(node.attrs || {}), src, base, gap, idx } };
   });
-  const doc = { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
+  const shown = withEmptyLines(content, blocks, front, lead);
+  const doc = { type: "doc", content: shown.length ? shown : [{ type: "paragraph" }] };
   // `count` lets compose tell which block was the last one in the original text.
   const parts = { front, lead, count: blocks.length };
   const again = composeNote(parts, doc, { serialize, assignId: false });
@@ -109,6 +110,37 @@ function isEmptyParagraph(node) {
   return node.type === "paragraph" && (!node.content || node.content.length === 0);
 }
 
+// ---------- empty lines ----------
+//
+// An empty line in the editor (Enter pressed on an empty line) is saved as one more blank line
+// in the file, and read back from it. Markdown itself has no empty paragraph, so this is the
+// only form that stays plain text: Obsidian shows the extra blank lines while editing and
+// ignores them in its reading view. The counts below are what make reading and writing agree:
+//   between two blocks: one blank line is the normal separation; every further one is an empty line
+//   before the first block: every blank line, except the one that separates it from the properties
+//   after the last block: every blank line; and when the last block is not a paragraph, one empty
+//     line more than that, because the editor always keeps one there itself (to click into)
+
+const newlineCount = (text) => (typeof text === "string" ? (text.match(/\n/g) || []).length : 0);
+const emptyLinesBetween = (gap) => Math.max(0, newlineCount(gap) - 2);
+const emptyLinesBefore = (front, lead) => Math.max(0, newlineCount(lead) - (front === "" ? 0 : 1));
+function emptyLinesAtEnd(gap, lastType) {
+  const blank = Math.max(0, newlineCount(gap) - 1);
+  return blank > 0 && lastType !== "paragraph" ? blank + 1 : blank;
+}
+
+function withEmptyLines(content, blocks, front, lead) {
+  const out = [];
+  const add = (n) => { for (let i = 0; i < n; i++) out.push({ type: "paragraph" }); };
+  if (content.length) add(emptyLinesBefore(front, lead));
+  content.forEach((node, index) => {
+    out.push(node);
+    const last = index === content.length - 1;
+    add(last ? emptyLinesAtEnd(blocks[index].gap, node.type) : emptyLinesBetween(blocks[index].gap));
+  });
+  return out;
+}
+
 /**
  * Builds the note text from the editor document.
  *
@@ -116,7 +148,16 @@ function isEmptyParagraph(node) {
  * its original text. Only blocks the user changed are written in the editor's style.
  */
 export function composeNote(parts, doc, { serialize, assignId = true, makeId = newNoteId }) {
-  const nodes = (doc.content || []).filter((node) => !isEmptyParagraph(node));
+  // Empty lines are not blocks of their own in the file: they are counted, and written as
+  // blank lines around the blocks (see "empty lines" above).
+  const nodes = [];
+  const emptyAfter = [];
+  let emptyBefore = 0;
+  for (const node of doc.content || []) {
+    if (!isEmptyParagraph(node)) { nodes.push(node); emptyAfter.push(0); }
+    else if (nodes.length) emptyAfter[nodes.length - 1]++;
+    else emptyBefore++;
+  }
   // A block link id must be unique in a note. Splitting a paragraph copies its id to both
   // halves, so only the first one keeps it.
   const seenIds = new Set();
@@ -139,12 +180,28 @@ export function composeNote(parts, doc, { serialize, assignId = true, makeId = n
   let body = "";
   pieces.forEach((piece, index) => {
     const next = pieces[index + 1];
-    body += piece.text + gapAfter(piece, next, parts.count);
+    body += piece.text + withEmptyLinesInGap(gapAfter(piece, next, parts.count), emptyAfter[index], next ? null : piece.type);
   });
-  const lead = pieces.length ? parts.lead : "";
+  const lead = pieces.length ? leadFor(parts, emptyBefore) : "";
   const tail = pieces.length ? "" : parts.tail || "";
   const front = assignId ? withNoteId(parts.front, makeId()) : parts.front;
   return front + lead + body + tail;
+}
+
+// `gap` is what would be written with no thought for empty lines. It is kept as it is when it
+// already stands for the number of empty lines on screen, which is always so for a page that
+// was only opened. `lastType` is the type of the last block, or null between two blocks.
+function withEmptyLinesInGap(gap, empty, lastType) {
+  if (lastType === null) return emptyLinesBetween(gap) === empty ? gap : "\n".repeat(empty + 2);
+  if (emptyLinesAtEnd(gap, lastType) === empty) return gap;
+  // The line the editor keeps for itself after a block that is not a paragraph is not saved.
+  const own = lastType !== "paragraph" && empty > 0 ? 1 : 0;
+  return "\n".repeat(empty - own + 1);
+}
+
+function leadFor(parts, empty) {
+  if (emptyLinesBefore(parts.front, parts.lead) === empty) return parts.lead;
+  return "\n".repeat(empty + (parts.front === "" ? 0 : 1));
 }
 
 // The blank lines saved with a block are only right while the block still has the same

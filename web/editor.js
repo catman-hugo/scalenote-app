@@ -15,6 +15,7 @@ import { choosePicture, checkPicture, storePicture } from "./images.js";
 import { Highlight, Subscript, Superscript, Colour } from "./inlinemarks.js";
 import { Tags } from "./tags.js";
 import { Wikilink } from "./wikilinks.js";
+import { ToggleFold } from "./togglefold.js";
 
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
 // vault first, and only then an image block is placed in the note.
@@ -350,6 +351,7 @@ export function createEditor(element, onChange, options = {}) {
       RawBlock,
       Callout,
       Toggle,
+      ToggleFold,
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       ...tableExtensions,
       SlashMenu,

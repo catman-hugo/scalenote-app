@@ -492,6 +492,26 @@ body.tree-dragging .tree-button { cursor: grabbing; }
   padding: var(--space-5) var(--space-4) var(--space-6) calc(var(--space-4) + 36px);
 }
 
+/* A box that scrolls is drawn as a layer of its own by the web engine on Linux, and text on a
+   layer with a see-through background is smoothed differently there: every letter looks bold as
+   soon as the page is long enough to scroll. A solid background, the same colour as what is
+   behind the box, keeps the letters the same whether the box scrolls or not. */
+.editor,
+.raw-text,
+.dialog .notes,
+.dialog.palette .palette-list,
+.trash-dialog .trash-list,
+.tags-list-box,
+.history-dialog .history-list-box,
+.history-detail {
+  background-color: var(--bg);
+}
+
+.tree,
+.favorites {
+  background-color: var(--bg-side);
+}
+
 .note-body {
   max-width: var(--editor-width, 46rem);
   margin: 0 auto;
@@ -642,7 +662,6 @@ body.tree-dragging .tree-button { cursor: grabbing; }
   width: 100%;
   resize: none;
   border: none;
-  background: transparent;
   font-family: var(--mono);
   font-size: var(--text-s);
   line-height: 1.5;
@@ -939,15 +958,17 @@ body.block-dragging .float-bar { visibility: hidden; }
 .callout-body > * + *,
 .toggle-body > * + * { margin-top: var(--space-2); }
 
-/* A toggle is quiet until you work in it: only the arrow and the title show. The outline of
-   the block and of the title field appear while the focus is inside. */
+/* The outline of a toggle always shows, folded or open and whether or not the cursor is in
+   it, so it is clear where the block starts and ends. It is the quiet line colour; working
+   in the toggle makes it a little stronger. The title field still only gets its own box
+   while it is being typed in. */
 .toggle {
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
 }
 
-.toggle:focus-within { border-color: var(--line); }
+.toggle:focus-within { border-color: var(--text-soft); }
 
 .toggle-summary {
   background: transparent;

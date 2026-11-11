@@ -12,6 +12,7 @@ import { composeNote, loadNote } from "./compose.js";
 import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
+import { applyFolds, foldFlags } from "./togglefold.js";
 import { createBacklinks } from "./backlinks.js";
 import { createCover } from "./cover.js";
 import { readCover, withCover, withoutCover } from "./coverrules.js";
@@ -76,6 +77,11 @@ const app = {
   backlinkRun: 0,
   backlinkTimer: 0,
   following: false,
+  // Which toggles are folded, per page (path -> true or false for each toggle, top to bottom).
+  // Kept only while the app is open: a page seen for the first time has every toggle folded.
+  folds: new Map(),
+  placingPage: false,
+  pageInEditor: null,
 };
 
 // ---------- small helpers ----------
@@ -568,6 +574,7 @@ async function openVaultFrom(choice) {
   el("vaultName").textContent = opened.name || strings.appName;
   app.expanded = new Set();
   app.selectedFolder = "";
+  app.folds = new Map();
   await showNoNote();
   await refreshTree();
 }
@@ -1097,6 +1104,8 @@ function remapPaths(oldPath, newPath) {
   app.expanded = new Set([...app.expanded].map(fix));
   app.selectedFolder = fix(app.selectedFolder);
   if (app.current) app.current.path = fix(app.current.path);
+  app.folds = new Map([...app.folds].map(([path, flags]) => [fix(path), flags]));
+  if (app.pageInEditor) app.pageInEditor = fix(app.pageInEditor);
 }
 
 // ---------- trash ----------
@@ -1229,7 +1238,28 @@ async function openNote(path) {
 // did, pressing Undo straight after opening a page would go back to the empty editor, and
 // autosave would then write that empty page over the real one.
 function putInEditor(doc) {
-  app.editor.chain().setMeta("addToHistory", false).setContent(doc, { emitUpdate: false }).run();
+  // What was remembered is read first: putting the page in changes the editor, and that must
+  // not be taken for the person unfolding everything.
+  const remembered = app.current ? app.folds.get(app.current.path) : undefined;
+  app.placingPage = true;
+  try {
+    app.editor.chain().setMeta("addToHistory", false).setContent(doc, { emitUpdate: false }).run();
+    // Toggles are folded the first time a page is opened since the app started, and as they
+    // were left after that.
+    applyFolds(app.editor, remembered);
+    app.pageInEditor = app.current ? app.current.path : null;
+  } finally {
+    app.placingPage = false;
+  }
+  rememberFolds();
+}
+
+// Keeps which toggles of the open page are folded, for as long as the app is open. While a
+// page is being opened the editor still holds the page before it for a moment; what is seen
+// then says nothing about the new page.
+function rememberFolds() {
+  if (app.placingPage || !app.current || app.pageInEditor !== app.current.path) return;
+  app.folds.set(app.current.path, foldFlags(app.editor.state));
 }
 
 function showNote(path, note) {
@@ -1742,6 +1772,7 @@ async function start() {
     openTag: (name) => openTagsDialog(name),
     onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
   });
+  app.editor.on("transaction", rememberFolds);
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
     onAdd: chooseCover,

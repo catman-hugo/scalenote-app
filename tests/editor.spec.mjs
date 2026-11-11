@@ -64,6 +64,8 @@ async function start(page) {
   await page.click("#welcome button:last-of-type");
   await page.waitForSelector("#newNote");
 }
+// The text of a saved page without the id the app puts at the top.
+const bodyOfPage = (text) => text.replace(/^---\n(id: [^\n]*\n)?---\n\n/, "");
 const files = (page) => page.evaluate(() => Object.fromEntries(window.__mock.files));
 const seed = (page, name, text) => page.evaluate(([n, t]) => window.__mock.files.set(n, t), [name, text]);
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById("status").dataset.state === "saved", null, { timeout: 5000 }); }
@@ -1156,39 +1158,155 @@ await test("the sidebar says page, not note", async (page) => {
 
 const TOGGLE = ["Intro", "", "<details>", "<summary>Title</summary>", "", "Hello", "", "flip", "", "</details>", ""].join("\n");
 
+// A click puts the cursor in a line a moment later (the editor reads it after the mouse is let
+// go). Keys pressed sooner than a person could would land where the cursor was before.
+const clickLine = async (locator) => { await locator.click(); await locator.page().waitForTimeout(80); };
+const toggleStates = (page) => page.evaluate(() => [...document.querySelectorAll(".toggle")].map((t) => ({ folded: t.classList.contains("folded"), body: getComputedStyle(t.querySelector(".toggle-body")).display, expanded: t.querySelector(".toggle-fold").getAttribute("aria-expanded") })));
+const FOLDED = { folded: true, body: "none", expanded: "false" };
+const OPEN = { folded: false, body: "block", expanded: "true" };
+
 await test("a toggle folds and unfolds, and folding is not an edit", async (page) => {
   await openSeeded(page, "T.md", TOGGLE);
   await page.waitForSelector(".toggle");
-  const state = () => page.evaluate(() => ({ folded: document.querySelector(".toggle").classList.contains("folded"), body: getComputedStyle(document.querySelector(".toggle-body")).display, expanded: document.querySelector(".toggle-fold").getAttribute("aria-expanded") }));
-  assert.deepEqual(await state(), { folded: false, body: "block", expanded: "true" });
+  // A page opens with its toggles folded (0.4.8).
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
   await page.click(".toggle-fold");
-  assert.deepEqual(await state(), { folded: true, body: "none", expanded: "false" });
+  assert.deepEqual(await toggleStates(page), [OPEN]);
+  await page.click(".toggle-fold");
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
   // Typing in the title must not unfold it.
   await page.click(".toggle-summary");
   await page.keyboard.type("x");
-  assert.equal((await state()).folded, true);
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
   await page.click(".toggle-fold");
-  assert.deepEqual(await state(), { folded: false, body: "block", expanded: "true" });
+  assert.deepEqual(await toggleStates(page), [OPEN]);
   await page.waitForTimeout(700);
   await waitSaved(page).catch(() => {});
   const saved = (await files(page))["T.md"];
   assert.ok(saved.includes("<summary>Titlex</summary>"), saved);
   assert.ok(!/folded/.test(saved), "the fold state is never written to the page");
+  // Folding and unfolding is not something Undo steps through: one Undo takes the "x" back.
+  await page.click(".toggle-fold");
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("Control+z");
+  assert.equal(await page.inputValue(".toggle-summary"), "Title");
+  assert.deepEqual(await toggleStates(page), [FOLDED]);
 });
 
-await test("a toggle shows only its arrow and title until you work in it", async (page) => {
+const TWO_TOGGLES = ["Intro", "", "<details>", "<summary>First</summary>", "", "one", "", "</details>", "", "Between", "", "<details open>", "<summary>Second</summary>", "", "two", "", "</details>", ""].join("\n");
+
+await test("a page opens with every toggle folded the first time, and as it was left after that", async (page) => {
+  await start(page);
+  await seed(page, "T.md", TWO_TOGGLES);
+  await seed(page, "Other.md", "Other page\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="T.md"]');
+  await page.waitForSelector(".toggle");
+  // Folded the first time, also the one the file marks as open.
+  assert.deepEqual(await toggleStates(page), [FOLDED, FOLDED]);
+  await page.locator(".toggle-fold").nth(1).click();
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  // Typing above the toggles and in the open one does not change which are folded.
+  await clickLine(page.locator(".note-body > p").first());
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("new line");
+  await clickLine(page.locator(".toggle").nth(1).locator(".toggle-body p"));
+  await page.keyboard.type("!");
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  await waitSaved(page);
+  // Away and back: as it was left.
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelectorAll(".toggle").length === 0);
+  await page.click('.tree-button[data-path="T.md"]');
+  await page.waitForSelector(".toggle");
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  // The Markdown view and back keeps it too.
+  await page.click("#sourceToggle");
+  await page.click("#sourceToggle");
+  await page.waitForSelector(".toggle");
+  assert.deepEqual(await toggleStates(page), [FOLDED, OPEN]);
+  // Nothing about folding reached the file, and the file's own "open" word is untouched.
+  const saved = (await files(page))["T.md"];
+  assert.ok(saved.includes("<details>\n<summary>First</summary>") && saved.includes("<details open>\n<summary>Second</summary>"), saved);
+  // Opening the app again starts folded again.
+  await page.reload();
+  await start(page);
+  await seed(page, "T.md", TWO_TOGGLES);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="T.md"]');
+  await page.waitForSelector(".toggle");
+  assert.deepEqual(await toggleStates(page), [FOLDED, FOLDED]);
+});
+
+await test("a toggle made from the slash menu starts open, next to folded ones", async (page) => {
   await openSeeded(page, "T.md", TOGGLE);
   await page.waitForSelector(".toggle");
-  const edge = (selector) => page.evaluate((sel) => { const c = getComputedStyle(document.querySelector(sel)); return [c.borderTopColor, c.backgroundColor]; }, selector);
+  await clickLine(page.locator(".note-body > p").first());
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/toggle");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("typed inside");
+  assert.deepEqual(await toggleStates(page), [OPEN, FOLDED]);
+});
+
+await test("the outline of a toggle always shows, and the title field only while typing in it", async (page) => {
+  await openSeeded(page, "T.md", TOGGLE);
+  await page.waitForSelector(".toggle");
+  const edge = (selector) => page.evaluate((sel) => { const c = getComputedStyle(document.querySelector(sel)); return [c.borderTopColor, c.backgroundColor, c.borderTopWidth]; }, selector);
   const clear = (rgba) => /rgba\(0, 0, 0, 0\)|transparent/.test(rgba);
+  const line = await page.evaluate(() => { const probe = document.createElement("div"); probe.style.borderTop = "1px solid var(--line)"; document.body.append(probe); const c = getComputedStyle(probe).borderTopColor; probe.remove(); return c; });
   await page.locator(".note-body p").first().click(); // outside the toggle
-  assert.ok(clear((await edge(".toggle"))[0]), "no outline around the block");
+  // Folded, cursor elsewhere.
+  assert.deepEqual((await edge(".toggle")).filter((_, i) => i !== 1), [line, "1px"], "outline while folded and not in use");
   assert.ok(clear((await edge(".toggle-summary"))[0]) && clear((await edge(".toggle-summary"))[1]), "no field around the title");
+  // Open, cursor elsewhere.
+  await page.click(".toggle-fold");
+  await page.locator(".note-body p").first().click();
+  assert.equal((await edge(".toggle"))[0], line, "outline while open and not in use");
+  // In use.
   await page.click(".toggle-summary");
   assert.ok(!clear((await edge(".toggle"))[0]), "outline while working in the toggle");
   assert.ok(!clear((await edge(".toggle-summary"))[0]), "the title field shows when selected");
   await page.locator(".note-body p").first().click();
-  assert.ok(clear((await edge(".toggle"))[0]), "hidden again after leaving");
+  assert.equal((await edge(".toggle"))[0], line, "the quiet outline again after leaving");
+  assert.ok(clear((await edge(".toggle-summary"))[0]), "the title field is hidden again");
+});
+
+await test("empty lines on a page are still there after opening another page and coming back", async (page) => {
+  await start(page);
+  await seed(page, "E.md", "First\n\nSecond\n");
+  await seed(page, "Other.md", "Other page\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="E.md"]');
+  await page.waitForSelector("#editor .note-body p");
+  await clickLine(page.locator(".note-body p", { hasText: "First" }));
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await clickLine(page.locator(".note-body p", { hasText: "Second" }));
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await waitSaved(page);
+  const lines = () => page.$$eval(".note-body > p", (ps) => ps.map((p) => p.textContent));
+  assert.deepEqual(await lines(), ["First", "", "", "", "Second", "", ""]);
+  const saved = bodyOfPage((await files(page))["E.md"]);
+  assert.equal(saved, "First\n\n\n\n\nSecond\n\n\n", "each empty line is one more blank line in the file");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelector(".note-body").textContent.includes("Other page"));
+  await page.click('.tree-button[data-path="E.md"]');
+  await page.waitForFunction(() => document.querySelector(".note-body").textContent.includes("Second"));
+  assert.deepEqual(await lines(), ["First", "", "", "", "Second", "", ""]);
+  // Only opened: the file is as it was.
+  await page.waitForTimeout(900);
+  assert.equal(bodyOfPage((await files(page))["E.md"]), saved);
+  // The empty lines have height on screen.
+  const heights = await page.$$eval(".note-body > p", (ps) => ps.map((p) => Math.round(p.getBoundingClientRect().height)));
+  assert.ok(heights.every((h) => h >= 16), JSON.stringify(heights));
 });
 
 await test("on a phone the note list is open at the start", async (page) => {

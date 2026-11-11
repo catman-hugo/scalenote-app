@@ -6,6 +6,7 @@ import { liftEmptyBlock } from "@tiptap/pm/commands";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
+import { flipFold, isFoldedBy } from "./togglefold.js";
 
 function make(tag, className, text) {
   const node = document.createElement(tag);
@@ -143,11 +144,12 @@ export const Toggle = Node.create({
     return ["div", { "data-toggle": "", class: "toggle" }, 0];
   },
   addNodeView() {
-    return ({ node, getPos, editor }) => {
+    return ({ node, getPos, editor, decorations }) => {
       let current = node;
       const dom = make("div", "toggle");
       const head = make("div", "toggle-head");
-      // Folding is only a view: it is not saved in the note.
+      // Folding is only a view: it is not saved in the note. Which toggles are folded is kept
+      // by the editor (togglefold.js), which also puts the "folded" class on this block.
       const fold = make("button", "toggle-fold");
       fold.type = "button";
       fold.setAttribute("aria-expanded", "true");
@@ -159,9 +161,10 @@ export const Toggle = Node.create({
       summary.placeholder = strings.toggle.summaryPlaceholder;
       summary.setAttribute("aria-label", strings.toggle.summaryLabel);
       const body = make("div", "toggle-body");
+      const showFold = (deco) => fold.setAttribute("aria-expanded", String(!isFoldedBy(deco)));
       fold.addEventListener("click", () => {
-        const folded = dom.classList.toggle("folded");
-        fold.setAttribute("aria-expanded", String(!folded));
+        const position = getPos();
+        if (typeof position === "number") flipFold(editor.view, position);
       });
       // The summary line is plain text in the file, so characters that would start html are dropped.
       summary.addEventListener("input", () => {
@@ -172,13 +175,15 @@ export const Toggle = Node.create({
       head.append(fold, summary);
       dom.append(head, body);
       summary.value = current.attrs.summary;
+      showFold(decorations);
       return {
         dom,
         contentDOM: body,
-        update(updated) {
+        update(updated, deco) {
           if (updated.type !== current.type) return false;
           current = updated;
           if (summary.value !== current.attrs.summary) summary.value = current.attrs.summary;
+          showFold(deco);
           return true;
         },
         ...headerGuards(head, dom),
