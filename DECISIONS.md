@@ -520,3 +520,15 @@ Cost. 0.4.11 is large and touches the markdown format, the editor and the drawin
 Decision. A stroke drawn over the text belongs to the block of the text under its first point and its points are fractions of that block. The block is found again by its place and a fingerprint of its kind and first 40 characters; a stroke whose block cannot be found is kept in the file and not drawn. The ink is a separate `ink` list in format 5, written only when ink exists; older versions read such a file as read-only. The pen bar is a row above the text, using the canvas's colour menu and width slider.
 Alternatives. One transparent canvas over the whole editor in pixel positions, as ScaleNote v1 does (ink drifts off the words when the width changes); block ids written into the markdown (would change the page text, against the clean-markdown rule); putting anchored items in `items` (the canvas view would draw them at wrong places and the eraser and loop would touch them); a floating pen bar (covers the first lines of the page); v1's custom colour (needs a new colour format and does not follow the theme).
 Cost. Editing the first words of a block detaches its ink until the words come back; a stroke over several blocks belongs to the first one only, so it moves with that block alone; a block's height matters because vertical positions are fractions of it.
+
+## 2026-11-11: Columns are a callout holding column callouts
+
+Decision. The owner wants the same behaviour as Notion and left the format to me, asking only that it is stable, safe and simple. A columns block is `> [!columns]` (no title, no fold) holding 2 to 5 `> > [!column]` callouts. Obsidian opens the page and shows the text as nested callouts. Anything that does not have exactly that shape stays an ordinary callout, kept byte for byte, so no page can lose text. Columns do not nest; a column holds what a callout holds.
+Alternatives. An html table (rejected: Obsidian and other programs show it badly and the exact-text rule is harder to keep), a custom code fence (rejected: other programs show it as code).
+Cost. Ink over columns anchors to the whole columns block. Other programs show columns stacked, not side by side.
+
+## 2026-11-11: The Android installer lives in a small generated Kotlin class
+
+Decision. The owner chose "build it, you test the APK". The Rust core stays free of network code: a Kotlin class added at build time by `scripts/patch-android.mjs` downloads the file from this project's GitHub releases only, checks size and that it is a zip, and opens Android's installer through a FileProvider of its own. The user still confirms in Android's screen. Any failure falls back to the browser download.
+Alternatives. Network code in Rust (rejected before: new dependency and attack surface), silent install (not possible without system rights).
+Cost. The Kotlin has never been compiled or run by me; the CI build is the first compile and the owner's tablet the first real test. The permission "install unknown apps" must be allowed once by the user. The APK is still unsigned beyond the debug key, so Android updates over an installed build only if the signing key is the same.

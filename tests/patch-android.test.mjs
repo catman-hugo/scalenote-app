@@ -2,7 +2,7 @@
 // (the Tauri 2.12.4 template, with the example identifier used everywhere in this repository).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { patchManifest, patchActivity } from "../scripts/patch-android.mjs";
+import { patchManifest, patchActivity, apkInstallerSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
 
 const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -35,7 +35,35 @@ test("the manifest asks Android to shorten the window for the keyboard", () => {
   const out = patchManifest(MANIFEST);
   assert.match(out, /android:windowSoftInputMode="adjustResize"/);
   assert.match(out, /android:name="\.MainActivity"\s+android:windowSoftInputMode/);
-  assert.equal(out.replace(/\n\s+android:windowSoftInputMode="adjustResize"/, ""), MANIFEST, "nothing else changes");
+  assert.match(out, /<activity[\s\S]*<\/activity>\s*<provider/, "the provider sits inside the application, after the activity");
+});
+
+test("the manifest gets the install permission and a provider of its own, once", () => {
+  const out = patchManifest(MANIFEST);
+  assert.equal(out.split("REQUEST_INSTALL_PACKAGES").length, 2);
+  assert.match(out, /android:authorities="\$\{applicationId\}\.apkprovider"/);
+  assert.match(out, /android:exported="false"/);
+  assert.match(out, /@xml\/apk_paths/);
+});
+
+test("the shared folder is only the updates folder of the cache", () => {
+  assert.match(APK_PATHS_XML, /<cache-path name="updates" path="updates\/" \/>/);
+  assert.equal((APK_PATHS_XML.match(/-path /g) || []).length, 1);
+});
+
+test("the installer source checks the address, size and file type before installing", () => {
+  const out = apkInstallerSource("local.example.scalenote");
+  assert.match(out, /^package local\.example\.scalenote$/m);
+  assert.match(out, /releases\/download\//);
+  assert.match(out, /maxBytes/);
+  assert.match(out, /canRequestPackageInstalls/);
+  assert.match(out, /'P'\.code/);
+  assert.match(out, /ACTION_MANAGE_UNKNOWN_APP_SOURCES/);
+  assert.match(out, /apkprovider/);
+});
+
+test("a manifest missing the application entry is refused", () => {
+  assert.throws(() => patchManifest('<manifest><x android:name=".MainActivity"/></manifest>'), /application/);
 });
 
 test("patching the manifest twice changes nothing more", () => {
@@ -45,7 +73,9 @@ test("patching the manifest twice changes nothing more", () => {
 
 test("a manifest with an existing keyboard setting is left alone", () => {
   const own = MANIFEST.replace('android:exported="true"', 'android:exported="true" android:windowSoftInputMode="adjustPan"');
-  assert.equal(patchManifest(own), own);
+  const out = patchManifest(own);
+  assert.doesNotMatch(out, /adjustResize/);
+  assert.match(out, /adjustPan/);
 });
 
 test("a manifest without the main activity is refused", () => {
@@ -59,6 +89,7 @@ test("the activity keeps its package and pads the content for the keyboard", () 
   assert.match(out, /enableEdgeToEdge\(\)\n    super\.onCreate\(savedInstanceState\)\n    shortenForKeyboard\(\)/);
   assert.match(out, /Type\.ime\(\)\)\.bottom/);
   assert.match(out, /Build\.VERSION_CODES\.R/);
+  assert.match(out, /addJavascriptInterface\(ApkInstaller\(this, webView\), "ScaleNoteInstaller"\)/);
 });
 
 test("the activity patch is stable when run on its own output", () => {

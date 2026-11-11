@@ -10,7 +10,8 @@ import { strings } from "./strings.js";
 const DRAG_START_PX = 6;
 const EDGE_PX = 48;
 const HANDLE_SIZE = 32;
-// How close to the left or right edge of a block a drop makes columns, in pixels.
+// How far inside the left or right edge of a block a drop makes columns, in pixels. The gutter
+// outside the block is not part of it, so a plain drag from the handle only reorders.
 const SIDE_PX = 56;
 
 // Where the middle of a block's first line is, so the handle lines up with the first line of
@@ -383,8 +384,8 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
         if (unit.node.type.name === "columns") {
           const columns = columnsOf(unit);
           const full = columns.length >= 5;
-          if (!full && x >= rect.left - SIDE_PX && x < rect.left + SIDE_PX / 2) return { drop: { type: "edge", columnsFrom: unit.from, side: "left" }, line: { vertical: true, x: rect.left - 2, top: rect.top, height: rect.height } };
-          if (!full && x <= rect.right + SIDE_PX && x > rect.right - SIDE_PX / 2) return { drop: { type: "edge", columnsFrom: unit.from, side: "right" }, line: { vertical: true, x: rect.right, top: rect.top, height: rect.height } };
+          if (!full && x >= rect.left && x < rect.left + SIDE_PX) return { drop: { type: "edge", columnsFrom: unit.from, side: "left" }, line: { vertical: true, x: rect.left - 2, top: rect.top, height: rect.height } };
+          if (!full && x <= rect.right && x > rect.right - SIDE_PX) return { drop: { type: "edge", columnsFrom: unit.from, side: "right" }, line: { vertical: true, x: rect.right, top: rect.top, height: rect.height } };
           for (const column of columns) {
             if (!(column.dom instanceof HTMLElement)) continue;
             const box = column.dom.getBoundingClientRect();
@@ -400,8 +401,8 @@ export function attachGutter(editor, { scroller, noteTitle, notify }) {
           continue;
         }
         if (unit.count > 1 || overlaps(unit.from, unit.to) || !fitsInColumn(editor.state.schema, [unit.node])) continue;
-        if (x >= rect.left - SIDE_PX && x < rect.left + SIDE_PX / 2) return { drop: { type: "side", from: unit.from, to: unit.to, side: "left" }, line: { vertical: true, x: rect.left - 2, top: rect.top, height: rect.height } };
-        if (x <= rect.right + SIDE_PX && x > rect.right - SIDE_PX / 2) return { drop: { type: "side", from: unit.from, to: unit.to, side: "right" }, line: { vertical: true, x: rect.right, top: rect.top, height: rect.height } };
+        if (x >= rect.left && x < rect.left + SIDE_PX) return { drop: { type: "side", from: unit.from, to: unit.to, side: "left" }, line: { vertical: true, x: rect.left - 2, top: rect.top, height: rect.height } };
+        if (x <= rect.right && x > rect.right - SIDE_PX) return { drop: { type: "side", from: unit.from, to: unit.to, side: "right" }, line: { vertical: true, x: rect.right, top: rect.top, height: rect.height } };
       }
     }
     for (let i = 0; i < units.length; i++) {

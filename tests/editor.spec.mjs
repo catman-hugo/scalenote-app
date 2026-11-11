@@ -117,7 +117,7 @@ await test("slash menu offers every block and filters", async (page) => {
   await page.click("#editor .note-body");
   await page.keyboard.type("/");
   await page.waitForSelector(".slash-menu");
-  assert.equal(await page.locator(".slash-item").count(), 15);
+  assert.equal(await page.locator(".slash-item").count(), 17);
   await page.keyboard.type("to-do");
   assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["To-do list"]);
   await page.keyboard.press("Enter");

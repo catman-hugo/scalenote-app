@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appearance.js";
 import { openSettings } from "./settings.js";
 import { checkForUpdate, platformOf, shouldCheck } from "./updates.js";
+import { startInstall } from "./apkinstall.js";
 import { renderNotes } from "./whatsnew.js";
 import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanRecent, removeRecent } from "./recent.js";
@@ -457,6 +458,22 @@ async function openUrlOrWarn(url) {
 // it cannot be opened, the release page (which lists every file) is the fallback.
 async function openDownload() {
   if (!offered) return;
+  // Android app: download and install from inside the app. If that cannot start, or fails, the
+  // browser route below is used.
+  if (offered.downloadUrl && startInstall(window, offered.downloadUrl, onInstallStatus)) return;
+  if (offered.downloadUrl && (await tryOpen(offered.downloadUrl))) return;
+  await openUrlOrWarn(offered.url);
+}
+
+function onInstallStatus(status) {
+  const s = strings.update;
+  if (status === "error") {
+    showBanner(s.installFailed);
+    if (offered) openDownloadInBrowser();
+  } else showToast(status === "downloading" ? s.installDownloading : status === "installing" ? s.installReady : s.installAllow);
+}
+
+async function openDownloadInBrowser() {
   if (offered.downloadUrl && (await tryOpen(offered.downloadUrl))) return;
   await openUrlOrWarn(offered.url);
 }
