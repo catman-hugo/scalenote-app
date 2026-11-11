@@ -340,6 +340,13 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.11: built (small fix)
+Release notes: `docs/release-notes/0.4.11.md`. Built and tested in a browser here; not tried on a device.
+- A toggle holding a callout (very common in the owner's "by AI" pages) opened as one raw "Kept exactly as written" block. `web/richblocks.js` now reads every block inside a callout or toggle with the reader for its kind (`parseInner`, `readInnerBlock`) and writes nested callouts, toggles, tables and images (`serializeInner`); the node schema in `web/richnodes.js` allows them; nesting over 8 levels stays raw.
+- Raw text has no frame or label any more (`web/editor.js` raw block view, `web/style.css`): plain page text that wraps and grows to its text.
+- Tests: 212 unit tests and 269 browser tests pass, including a test with the owner's "Skin" toggle, and an edit inside its second callout.
+- Not tried on a device. Not done: loose lists are still raw; other causes of raw text will be fixed as they are found.
+
 ## 0.4.10: built (small fix)
 Release notes: `docs/release-notes/0.4.10.md`. Built and tested in a browser here; not tried on a device.
 - Lists of different kinds written one after another (bulleted, numbered, to-do) opened as one raw "Kept exactly as written" block. The list reader in `web/blocks.js` (`listKind`, `readList`) now starts a new list when the kind changes after a blank line.
@@ -412,10 +419,11 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.8 | Bold-text fix, empty lines kept, toggles folded with an always-visible outline, foldable subtags, History as the page looks, links updated on rename, View menu (see "0.4.8: built") | built, not tried on a device |
 | 0.4.9 | Linux text-weight fix: the faster web view drawing path is switched off at startup (see "0.4.9: built") | built, not tried on a device |
 | 0.4.10 | Lists of different kinds in a row open as lists, not one raw block (see "0.4.10: built") | built, not tried on a device |
-| 0.4.11 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
-| 0.4.12 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.13 | Image controls: eight resize handles as in v1, size saved as `![alt\|300x200](path)` (see DECISIONS.md) | not started |
-| 0.4.14 | PDF import as page images to draw on | not started |
+| 0.4.11 | Callouts and toggles inside toggles and callouts open as real blocks; raw text has no frame (see "0.4.11: built") | built, not tried on a device |
+| 0.4.12 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
+| 0.4.13 | The `/canvas` block: a region of the page's canvas inside the text | not started |
+| 0.4.14 | Image controls: eight resize handles as in v1, size saved as `![alt\|300x200](path)` (see DECISIONS.md) | not started |
+| 0.4.15 | PDF import as page images to draw on | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

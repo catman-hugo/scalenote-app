@@ -133,23 +133,32 @@ const RawBlock = Node.create({
       let current = node;
       const dom = document.createElement("div");
       dom.className = "raw-block";
-      const label = document.createElement("div");
-      label.className = "raw-label";
-      label.textContent = strings.editor.rawLabel;
+      // Text the editor cannot show as a block is shown as plain text that looks like the rest
+      // of the page, with no frame or label. It is still kept exactly as written, and it is
+      // named for a screen reader only.
       const box = document.createElement("textarea");
       box.className = "raw-text";
       box.spellcheck = false;
+      box.setAttribute("aria-label", strings.editor.rawLabel);
       box.value = node.attrs.src;
+      // The box grows to fit its text, so there is no inner scrollbar and long lines wrap.
+      const fit = () => {
+        box.style.height = "auto";
+        box.style.height = `${box.scrollHeight}px`;
+      };
       box.rows = Math.max(1, node.attrs.src.split("\n").length);
       box.addEventListener("input", () => {
-        box.rows = Math.max(1, box.value.split("\n").length);
+        fit();
         const position = getPos();
         if (typeof position !== "number") return;
         editor.view.dispatch(
           editor.view.state.tr.setNodeMarkup(position, undefined, { ...current.attrs, src: box.value }),
         );
       });
-      dom.append(label, box);
+      // Fitting needs the box to be on the page, and again whenever the page gets wider or narrower.
+      if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(box);
+      requestAnimationFrame(fit);
+      dom.append(box);
       return {
         dom,
         update(updated) {

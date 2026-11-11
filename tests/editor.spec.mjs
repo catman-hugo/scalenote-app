@@ -5909,6 +5909,46 @@ await test("a bulleted, a numbered and a to-do list in a row open as three lists
   assert.equal((await files(page))["Lists.md"].replace(/^---\nid: [^\n]+\n---\n\n/, ""), text.replace("2. two", "2. two!"));
 }, ctxOpts);
 
+const SKIN = [
+  "<details>", "<summary>Skin</summary>", "",
+  "> [!note] Drawing", "> The junction and epidermis drawings are on this note's canvas (View toggle).", "",
+  "## Epidermis layers (top to bottom)", "",
+  "1. Stratum corneum: dead cells", "2. Stratum lucidum: thick skin only", "",
+  "Mnemonic: **Come, Let's Get Sun Burned**", "",
+  "## Three cells to know", "",
+  '- <span class="sn-text-red">Langerhans cell</span> (spinosum): presents antigens (see [[Immunology/Lesson 2]])',
+  '- <span class="sn-text-green">Merkel cell</span> (basale): light touch', "",
+  "> [!note] Exam tip", "> Be able to draw the skin with its layers and the three cells.", "",
+  "</details>", "",
+].join("\n");
+
+await test("a toggle with callouts inside opens as a toggle with the callouts in it, and editing keeps the layout", async (page) => {
+  await page.waitForSelector("#newNote");
+  await seed(page, "Skin.md", SKIN);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Skin.md"]');
+  await page.waitForSelector("#editor .note-body");
+  assert.equal(await page.locator(".raw-block").count(), 0, "no kept-as-written block");
+  assert.equal(await page.locator("#editor .toggle").count(), 1);
+  assert.equal(await page.locator("#editor .toggle .callout").count(), 2, "both callouts are inside the toggle");
+  // Opening it and leaving does not touch the file.
+  await page.waitForTimeout(900);
+  assert.equal((await files(page))["Skin.md"], SKIN);
+  // Typing in the second callout rewrites the toggle, and both callouts stay callouts.
+  await page.click("#editor .toggle-head [aria-expanded]");
+  await page.waitForTimeout(80);
+  await page.click('#editor .callout:has-text("Be able to draw") p');
+  await page.waitForTimeout(80);
+  await page.keyboard.press("End");
+  await page.keyboard.type(" Twice.");
+  await page.waitForTimeout(900);
+  const saved = (await files(page))["Skin.md"].replace(/^---\nid: [^\n]+\n---\n\n/, "");
+  assert.match(saved, /^<details>\n<summary>Skin<\/summary>\n\n> \[!note\] Drawing\n/);
+  assert.match(saved, /> \[!note\] Exam tip\n> Be able to draw the skin with its layers and the three cells\. Twice\.\n\n<\/details>\n$/);
+  assert.match(saved, /<span class="sn-text-red">Langerhans cell<\/span>/, "the colours are kept");
+  assert.match(saved, /\[\[Immunology\/Lesson 2\]\]/, "the link is kept");
+}, ctxOpts);
+
 // Screenshots of the screens changed in 0.4.8 (only when SHOTS_DIR is set), in light and dark: the Tags
 // box folded and open, History shown as the page looks, and a page with toggles.
 if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {
@@ -5935,6 +5975,35 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "048")) {
       await page.click("#openTags");
       await page.waitForSelector("#tags[open]");
       await page.screenshot({ path: `${shots}/v048-${label}-${scheme}-4-tags-folded.png` });
+    }
+    await context.close();
+  }
+}
+
+// Screenshots for 0.4.10 (only when SHOTS_DIR is set): a toggle with callouts inside, and text the
+// editor cannot show as a block, which now looks like the rest of the page.
+if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "0410")) {
+  for (const [label, viewport, scheme] of [["desktop", { width: 1100, height: 760 }, "light"], ["desktop", { width: 1100, height: 760 }, "dark"], ["phone", { width: 390, height: 800 }, "light"]]) {
+    const context = await browser.newContext({ viewport, colorScheme: scheme });
+    await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false }));
+    await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const page = await context.newPage();
+    await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+    await page.goto(url);
+    await page.waitForSelector("#newNote");
+    await seed(page, "Skin.md", SKIN);
+    await seed(page, "Odd.md", "Plain text\n\n- a\n\n- b loose list item that is quite long so that it has to wrap onto a second line when the window is narrow\n\n<div>html the editor does not know</div>\n");
+    await page.click("#newFolder");
+    await page.click('.tree-button[data-path="Skin.md"]');
+    await page.waitForSelector("#editor .note-body");
+    await page.click("#editor .toggle-head [aria-expanded]");
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-1-toggle-callouts.png` });
+    if (label === "desktop") {
+      await page.click('.tree-button[data-path="Odd.md"]');
+      await page.waitForSelector("#editor .raw-block");
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `${shots}/v0410-${label}-${scheme}-2-raw-text.png` });
     }
     await context.close();
   }

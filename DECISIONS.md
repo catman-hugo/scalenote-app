@@ -496,3 +496,11 @@ Decision. When images can be resized, the size is written inside the picture's d
 Scope. The same eight handles as ScaleNote v1: corners scale and keep the proportions, edges stretch or thin; a 50 px minimum; mouse and touch; plus Reset to original size. No rotate, flip, crop or colour controls (v1 had none).
 Also. The version plan moves up: 0.4.10 is this list fix, draw over text, columns and the Android installer are 0.4.11, the `/canvas` block 0.4.12, image controls 0.4.13 and PDF import 0.4.14.
 
+## 2026-11-11: Callouts, toggles, tables and images may sit inside a toggle or a callout; raw text has no frame
+
+Decision. This replaces the earlier rule that a callout inside a toggle or callout stays raw. Each block inside a toggle or callout is read with the reader for its kind, the same ones as at the top of a page, so a callout, a toggle, a table or an image inside one is a real block. Nesting deeper than eight levels stays raw. A block that is not changed is still written back byte for byte; a changed one is written in the one fixed layout.
+Also. Text the editor cannot show as a block is shown as plain page text: no dashed frame, no "Kept exactly as written" label (the label is now only the name read out by a screen reader), wrapped like the rest of the page. The owner never wants the labelled block seen. The safety net itself stays, because unknown markdown must be kept byte for byte.
+Alternatives. Dropping the unknown text from the page (loses content, not allowed); making every unknown syntax a real block (not possible now).
+Version numbers named in earlier entries have since moved up by one or two; the table in PROGRESS.md is the current plan.
+Cost. A raw piece now shows its markdown signs in page text, without a warning that it is a raw piece. Common causes should be fixed one by one as they are found: this release fixes callouts in toggles; loose lists are the next likely one.
+
