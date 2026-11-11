@@ -101,7 +101,7 @@ export const strings = {
     showBacklinks: "Show the “Linked from” list under pages",
     showBacklinksHint: "Pages are only searched for links when this is on.",
     updates: "Look for new versions",
-    updatesHint: "ScaleNote only reads the public list of releases on GitHub. Nothing from your pages is sent. When a new version is found, Download opens the file for your system in your browser and you install it from there, because the installers are not signed yet.",
+    updatesHint: "ScaleNote only reads the public list of releases on GitHub. Nothing from your pages is sent. When a new version is found, Download opens the file for your system in your browser and you install it from there, because the installers are not signed yet. In the Android app, Download installs it from inside the app and Android asks you to confirm.",
     checkNow: "Check now",
     checking: "Checking",
     upToDate: "You have the latest version.",
@@ -203,6 +203,19 @@ export const strings = {
     },
   },
 
+  // Drawing over the text of a page (the pen button on the top bar).
+  ink: {
+    button: "Draw on the text",
+    buttonLabel: "Draw on the text of this page",
+    command: "Draw on the text of this page",
+    toolbar: "Pen for the text",
+    surface: "Ink over the text",
+    done: "Done",
+    doneLabel: "Stop drawing on the text",
+    noText: "There is no text here to draw on yet.",
+    saveFailed: "The ink could not be saved.",
+  },
+
   exportPage: {
     done: "Exported to {path}. The folder holds the page and {pictures} pictures.",
     missing: " {missing} pictures could not be copied.",
@@ -252,6 +265,10 @@ export const strings = {
     openPage: "Open release page",
     details: "What's new",
     later: "Not now",
+    installDownloading: "Downloading the update.",
+    installReady: "Downloaded. Android asks you to confirm the install.",
+    installAllow: "Allow ScaleNote to install apps in the settings that just opened, then press Download again.",
+    installFailed: "The update could not be installed from here. Your browser will download it instead.",
     openFailed: "The download page could not be opened. You can find the new version on the ScaleNote releases page on GitHub.",
     whatsNewTitle: "What's new in ScaleNote {version}",
     whatsNewTitleUpdated: "ScaleNote was updated to {version}",
@@ -264,6 +281,8 @@ export const strings = {
     plusLabel: "Add a block below",
     addBelow: "Add block below",
     moveUp: "Move up",
+    moveOut: "Move out of the columns",
+    unwrapColumns: "Turn columns into blocks",
     moveDown: "Move down",
     duplicate: "Duplicate",
     delete: "Delete",
@@ -299,6 +318,8 @@ export const strings = {
     toggle: "Toggle",
     table: "Table",
     image: "Image",
+    columns2: "2 columns",
+    columns3: "3 columns",
     noResults: "No matching block",
   },
 

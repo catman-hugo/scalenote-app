@@ -26,7 +26,12 @@
 // stroke was cut to when it was drawn. It is only written when a clip exists; an older ScaleNote
 // shows it read-only, because opening and saving it there would drop the cut and show the overshoot.
 
-export const FORMAT = 4;
+// Format 5 (0.4.10) is a drawing that also has `ink`: strokes drawn over the text of the page. Each
+// one belongs to a block of the text and its points are fractions of that block, so it stays on its
+// words at any window width. It is only written when there is such ink; an older ScaleNote shows it
+// read-only, because opening and saving it there would drop the ink.
+
+export const FORMAT = 5;
 // The pen colours, in the order of the picker: three rows of six, six, and four. The first
 // version had only ink, red, blue, green, orange and purple; those names still mean the same
 // colour family, so older drawings open as before (a little brighter than they were).
@@ -138,7 +143,7 @@ export function paperInks(fill) {
   return isLightBackground(fill) ? { line: "#c9e0f0", margin: "#e0605a" } : { line: "#1f4a75", margin: "#8a2a2a" };
 }
 
-export const emptyCanvas = () => ({ items: [], paper: "none", page: "none" });
+export const emptyCanvas = () => ({ items: [], paper: "none", page: "none", ink: [] });
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -176,6 +181,33 @@ function validItem(item, tools, format) {
   return validStroke(item, tools, format);
 }
 
+// Ink drawn over the text. Points are [x, y, pressure] where x and y are fractions of the block the
+// stroke belongs to (a little outside 0..1 is fine: a pen goes past the edge of a line of text).
+const INK_REACH = 20;
+const inkNumber = (value) => isNumber(value) && Math.abs(value) <= INK_REACH;
+
+function validAnchor(anchor) {
+  return isObject(anchor) && Number.isInteger(anchor.block) && anchor.block >= 0 && anchor.block < 100_000 && typeof anchor.tag === "string" && anchor.tag.length <= 80;
+}
+
+function validInk(item) {
+  if (!isObject(item) || !["pen", "highlighter"].includes(item.tool)) return false;
+  if (!PEN_COLOURS.includes(item.color) || !validWidth(item.width) || !validAnchor(item.anchor)) return false;
+  const points = item.points;
+  if (!Array.isArray(points) || points.length === 0 || points.length > LIMITS.pointsPerStroke) return false;
+  return points.every((point) => Array.isArray(point) && point.length === 3 && inkNumber(point[0]) && inkNumber(point[1]) && isNumber(point[2]) && point[2] >= 0 && point[2] <= 1);
+}
+
+function cleanInk(item) {
+  return {
+    tool: item.tool,
+    color: item.color,
+    width: item.width,
+    anchor: { block: item.anchor.block, tag: item.anchor.tag },
+    points: item.points.map((p) => [p[0], p[1], p[2]]),
+  };
+}
+
 // Builds a clean copy that holds only the fields the format knows, so nothing else in the file
 // (an unknown key, a `__proto__`) is carried into the program.
 function cleanItem(item) {
@@ -207,6 +239,9 @@ export function parseCanvas(text) {
   const tools = old ? ["pen"] : ["pen", "highlighter", "shape", "note"];
   // The paper and page colour exist from format 3 on. A value this version does not know makes
   // the whole drawing read-only, like a bad item, so it is never saved over.
+  // Ink exists from format 5 on. Anything wrong in it makes the whole drawing read-only.
+  const inkList = data.format >= 5 && data.ink !== undefined ? data.ink : [];
+  if (!Array.isArray(inkList) || inkList.length > LIMITS.items || !inkList.every(validInk)) return { problem: "broken" };
   const paper = data.format >= 3 && data.paper !== undefined ? data.paper : "none";
   const page = data.format >= 3 && data.page !== undefined ? data.page : "none";
   if (!PAPERS.includes(paper) || !PAGE_COLOURS.includes(page)) return { problem: "broken" };
@@ -215,12 +250,18 @@ export function parseCanvas(text) {
     if (!validItem(item, tools, data.format)) return { problem: "broken" };
     if (item.points) total += item.points.length;
   }
+  for (const item of inkList) total += item.points.length;
   if (total > LIMITS.totalPoints) return { problem: "too-big" };
-  return { canvas: { items: list.map(cleanItem), paper, page } };
+  return { canvas: { items: list.map(cleanItem), paper, page, ink: inkList.map(cleanInk) } };
 }
 
 const round = (value, places) => Number(value.toFixed(places));
 const corner = ([x, y]) => [round(x, 1), round(y, 1)];
+
+function inkLine(item) {
+  const points = item.points.map(([x, y, p]) => [round(x, 4), round(y, 4), round(p, 2)]);
+  return JSON.stringify({ tool: item.tool, color: item.color, width: item.width, anchor: { block: item.anchor.block, tag: item.anchor.tag }, points });
+}
 
 function itemLine(item) {
   if (item.tool === "shape") return JSON.stringify({ tool: "shape", kind: item.kind, color: item.color, width: item.width, a: corner(item.a), b: corner(item.b) });
@@ -237,6 +278,12 @@ export function serializeCanvas(canvas) {
   const paper = canvas.paper && canvas.paper !== "none" ? canvas.paper : null;
   const page = canvas.page && canvas.page !== "none" ? canvas.page : null;
   const clipped = canvas.items.some((item) => item.clip);
+  const ink = canvas.ink || [];
+  if (ink.length) {
+    const inkBody = "\n" + ink.map(inkLine).join(",\n") + "\n";
+    const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
+    return `{"format":5,"items":[${body}],"ink":[${inkBody}]${extra}}\n`;
+  }
   if (paper || page || clipped) {
     const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
     // Format 3 unless a clip needs 4, so a drawing without clips stays readable by 0.4.5 and 0.4.6.
@@ -248,12 +295,13 @@ export function serializeCanvas(canvas) {
 
 /** The number of stroke points in the whole drawing, to stop a drawing from growing without limit. */
 export function totalPoints(canvas) {
-  return canvas.items.reduce((sum, item) => sum + (item.points ? item.points.length : 0), 0);
+  const count = (list) => list.reduce((sum, item) => sum + (item.points ? item.points.length : 0), 0);
+  return count(canvas.items) + count(canvas.ink || []);
 }
 
 /** True when one more item with `points` stroke points (0 for a shape or note) still fits the limits. */
 export function canAddItem(canvas, points = 0) {
-  return canvas.items.length < LIMITS.items && points <= LIMITS.pointsPerStroke && totalPoints(canvas) + points <= LIMITS.totalPoints;
+  return canvas.items.length + (canvas.ink || []).length < LIMITS.items && points <= LIMITS.pointsPerStroke && totalPoints(canvas) + points <= LIMITS.totalPoints;
 }
 
 // ---- geometry ----

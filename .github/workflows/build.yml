@@ -40,7 +40,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      # "--with-deps" fetches system packages with apt, and the runner's package mirror sometimes does
+      # not answer (it failed this way repeatedly). The runner image already carries what Chromium
+      # needs, so if apt fails the browser is installed on its own and the tests decide.
+      - run: npx playwright install --with-deps chromium || npx playwright install chromium
       - run: node tests/editor.spec.mjs
 
   desktop:

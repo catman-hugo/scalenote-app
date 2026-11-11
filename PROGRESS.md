@@ -340,6 +340,24 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.10: columns built
+- Format: top-level callout `> [!columns]` (no title, no fold) holding 2 to 5 callouts `> > [!column]`. Anything else stays an ordinary callout, byte for byte (`web/richblocks.js`, `readColumns`/`writeColumns`). Columns do not nest. Nodes `Columns`/`Column` in `web/richnodes.js`; slash items "2 columns" and "3 columns"; read-only renderers in `web/pagetext.js`.
+- Drag: `web/gutter.js` and `web/columnops.js`. Drop on the side of a block (56 px zone) wraps it into two columns, on the left or right end of a columns block adds a column, between blocks inside a column moves it. New content is inserted first and the source removed after; an emptied column is removed and a one-column set is unwrapped. Inner blocks have their own handle and menu; the columns block has "Turn columns into blocks".
+- Tests: 5 new unit tests (`tests/richblocks.test.mjs`) and 7 browser tests ("0.4.10: columns"). Screenshots of 4 columns and a drag to columns, desktop, in the design check.
+- NOT tried on a device: dragging with finger or pen. Ink over columns anchors to the whole columns block.
+
+## 0.4.10: Android in-app installer written, NOT tested
+- Flow: Download on Android calls `ScaleNoteInstaller.install(url)` (`web/apkinstall.js`). The Kotlin class `ApkInstaller` checks the address again (only `https://github.com/catman-hugo/scalenote-app/releases/download/.../*.apk`), opens the "install unknown apps" settings if not yet allowed, downloads to the cache (15 s connect and 30 s read timeouts, 200 MB limit, temporary name renamed when complete, must start with `PK`), and opens Android's installer through its own FileProvider (`<applicationId>.apkprovider`, only the cache `updates/` folder). Status words (`downloading`, `needs-permission`, `installing`, `error`) go back to the page; `error` falls back to the browser download.
+- Build: `scripts/patch-android.mjs` adds the `REQUEST_INSTALL_PACKAGES` permission, the provider, `res/xml/apk_paths.xml`, `ApkInstaller.kt`, and `onWebViewCreate` in the generated activity. Tested here: the patch text (`tests/patch-android.test.mjs`) and the JS (`tests/apkinstall.test.mjs`). The Kotlin was written against the Android and wry documentation but has NEVER been compiled or run here: the CI Android build is the first compile, and only the owner's tablet can show whether it works. If `onWebViewCreate` is not open in the wry version used, the CI build fails and says so.
+
+## 0.4.10: draw over text built
+Release notes: `docs/release-notes/0.4.10.md`. Built and tested in a browser here; NOT tried on a device (pen pressure, finger scrolling, Android and Windows touch screens are untested). Columns and the Android in-app installer are built too (next two sections).
+- A pen button on the top bar (`#inkButton`) and the command "Draw on the text of this page" start drawing; a pen bar (`.ink-bar`) sits above the text: pen, highlighter, eraser, the sixteen colours, five widths, Undo, Redo, Finger draws, Done. Design notes and the reasons for the placement are in `docs/v0.4-plan.md`.
+- Ink is stored in `Name.canvas.json` format 5 as a separate `ink` list; each stroke has `anchor: { block, tag }` and points as fractions of that block (`web/textink.js`, `web/canvasrules.js`). Older versions open it read-only. A page with ink shows it over the text when opened (one small read of the drawing file per page; a page without ink loads nothing).
+- Screen code: `web/inklayer.js` (sticky zero-height layer in the scroll box, a viewport-sized canvas redrawn on scroll and resize); wiring in `web/main.js` (`loadInk`, `startInk`, `stopInk`, `leaveInk`; the canvas view object holds the drawing for both).
+- Tests: 223 unit tests (11 new in `tests/textink.test.mjs` and the format tests in `tests/canvas.test.mjs`) and the browser tests (10 new: save with anchor, narrower window, finger scroll and Finger draws, eraser/undo/redo, colour and width, shown on open, orphaned ink kept, canvas keeps ink, newer file read-only, odd input). Screenshots checked in light, dark and phone width.
+- Not done / known: ink is not in print or export; a stroke is not split when it crosses blocks (it belongs to the block it starts in); the bar wraps to two lines on a phone; the theme change does not repaint the ink until the next scroll or stroke.
+
 ## 0.4.9: built
 Release notes: `docs/release-notes/0.4.9.md`. The owner deleted the earlier 0.4.9 and 0.4.10 releases, so everything since 0.4.8 is one release, 0.4.9. Built and tested in a browser here; not tried on a device.
 - Linux text turning bold on long pages: the 0.4.8 change did not work. The owner found that `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `WEBKIT_DISABLE_COMPOSITING_MODE=1` each fix it. The app now sets the first at startup on Linux unless it is already set (`apply_webview_defaults` in `src-tauri/src/lib.rs`). NOT tried on a device. The Rust tests run in the GitHub checks (this workspace has no GTK libraries).
@@ -407,10 +425,8 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.7 | Cuts saved in strokes, pen cut too, only stray parts left uncut, recolour the selection (owner request, see "0.4.7: built") | built, not tried on a device |
 | 0.4.8 | Bold-text fix, empty lines kept, toggles folded with an always-visible outline, foldable subtags, History as the page looks, links updated on rename, View menu (see "0.4.8: built") | built, not tried on a device |
 | 0.4.9 | Linux text-weight fix, lists of different kinds in a row, callouts and toggles inside toggles and callouts, raw text without a frame (see "0.4.9: built") | built, not tried on a device |
-| 0.4.10 | Draw over text: ink anchored to blocks; columns; the Android in-app installer | not started |
-| 0.4.11 | The `/canvas` block: a region of the page's canvas inside the text | not started |
-| 0.4.12 | Image controls: eight resize handles as in v1, size saved as `![alt\|300x200](path)` (see DECISIONS.md) | not started |
-| 0.4.13 | PDF import as page images to draw on | not started |
+| 0.4.10 | Draw over text: ink anchored to blocks (see "0.4.10: draw over text built"), columns, Android in-app installer | draw over text, columns and installer built; none tried on a device (installer never even compiled here, CI builds it) |
+| 0.4.11 | One big release (owner request, 2026-11-11): the `/canvas` block, image controls (eight resize handles as in v1, size saved as `![alt\|300x200](path)`, see DECISIONS.md) and PDF import as page images to draw on. Evaluation of v1's `/canvas` is in `docs/v0.4-plan.md`; the markdown storage must be decided with the owner first | not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
@@ -438,7 +454,7 @@ Not planned: voice calls, and Apple hardware.
 
 Nothing has been reviewed by a human yet.
 
-## Block layout: columns (waiting for a decision)
+## Block layout: columns (built in 0.4.10; this section is the original request)
 Owner request (2026-11-04): drag a block next to another one to make columns. Markdown has no columns, and the notes must stay plain markdown that Obsidian can open. A format has to be chosen first, for example an Obsidian-style callout block holding the columns, or a small html table. The choice affects what other programs show, so it needs the owner's decision before anything is built. Proposed home: after 0.3, as its own slice, once 0.2.3 has the drag preview and multi-select in place.
 
 The owner's Notion screenshots (drop on the left or right edge of a block makes columns, vertical and horizontal drop lines, a half see-through drag preview) are written up in `docs/notion-reference-notes.md`. The format has to hold two or more columns of several blocks each.

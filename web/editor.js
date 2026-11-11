@@ -7,7 +7,7 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Placeholder } from "@tiptap/extensions";
 import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
-import { Callout, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
+import { Callout, Column, Columns, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
 import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
@@ -97,7 +97,7 @@ const SourceKeeper = Extension.create({
     const keep = { default: null, rendered: false };
     return [
       {
-        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "toggle", "table", "imageBlock"],
+        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock"],
         attributes: { src: keep, base: keep, gap: keep, idx: keep },
       },
       // Only paragraphs can carry a block link id on their last line.
@@ -174,6 +174,9 @@ const RawBlock = Node.create({
   },
 });
 
+// A columns block with `count` columns, each holding one empty paragraph.
+const columnsContent = (count) => ({ type: "columns", content: Array.from({ length: count }, () => ({ type: "column", content: [{ type: "paragraph" }] })) });
+
 // The blocks offered by the slash menu. Each one replaces the "/query" text.
 function slashItems() {
   const s = strings.slash;
@@ -197,6 +200,18 @@ function slashItems() {
       run: (e, r) => clear(e, r).insertContent({ type: "callout", attrs: { kind: "note" }, content: [{ type: "paragraph" }] }).run(),
     },
     {
+      id: "columns",
+      title: s.columns2,
+      words: "columns two 2 side by side layout",
+      run: (e, r) => clear(e, r).insertContent(columnsContent(2)).run(),
+    },
+    {
+      id: "columns",
+      title: s.columns3,
+      words: "columns three 3 side by side layout",
+      run: (e, r) => clear(e, r).insertContent(columnsContent(3)).run(),
+    },
+    {
       id: "toggle",
       title: s.toggle,
       words: "toggle details collapse fold summary",
@@ -216,11 +231,11 @@ function slashItems() {
 }
 
 // Blocks that cannot sit inside a callout or a toggle (see richnodes.js).
-const TOP_LEVEL_ONLY = new Set(["callout", "toggle", "table", "image"]);
+const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image"]);
 
 function filterItems(query, editor) {
   const q = query.trim().toLowerCase();
-  const inside = editor && (editor.isActive("callout") || editor.isActive("toggle"));
+  const inside = editor && (editor.isActive("callout") || editor.isActive("toggle") || editor.isActive("column"));
   return slashItems().filter((item) => (!inside || !TOP_LEVEL_ONLY.has(item.id)) && (!q || `${item.title} ${item.words}`.toLowerCase().includes(q)));
 }
 
@@ -359,6 +374,8 @@ export function createEditor(element, onChange, options = {}) {
       SourceKeeper,
       RawBlock,
       Callout,
+      Columns,
+      Column,
       Toggle,
       ToggleFold,
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),

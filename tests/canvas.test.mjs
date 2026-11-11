@@ -18,7 +18,7 @@ test("a pen-only drawing is written and read back exactly, apart from rounding, 
   assert.deepEqual(back.canvas.items[0].points, [[1, 2.1, 0.5], [10, 20, 0.12]]);
   assert.equal(back.canvas.items[1].color, "red");
   assert.equal(serializeCanvas(back.canvas), text, "writing what was read changes nothing");
-  assert.deepEqual(parseCanvas(serializeCanvas(emptyCanvas())), { canvas: { items: [], paper: "none", page: "none" } });
+  assert.deepEqual(parseCanvas(serializeCanvas(emptyCanvas())), { canvas: { items: [], paper: "none", page: "none", ink: [] } });
 });
 
 test("a drawing with highlighter, shapes and notes round-trips in the new format", () => {
@@ -73,7 +73,7 @@ test("anything not understood is refused as a whole, never partly kept", () => {
     '{"format":2,"items":[{"tool":"eraser"}]}',
   ];
   for (const text of bad) assert.ok(parseCanvas(text).problem, `refused: ${text}`);
-  assert.equal(parseCanvas('{"format":5,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
+  assert.equal(parseCanvas('{"format":6,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
   const mixed = '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":"ok"},{"tool":"pen","color":"x","width":4,"points":[[0,0,0.5]]}]}';
   assert.ok(parseCanvas(mixed).problem, "one bad item among good ones refuses the whole drawing");
 });
@@ -481,7 +481,7 @@ test("a bad cut, or a cut in a file that is too old for it, makes the drawing re
     assert.equal(parseCanvas(line(bad, 4)).problem, "broken", JSON.stringify(bad));
   }
   assert.equal(parseCanvas(line({ kind: "rect", x: 0, y: 0, w: 10, h: 10 }, 3)).problem, "broken");
-  assert.equal(parseCanvas('{"format":5,"items":[]}').problem, "newer");
+  assert.equal(parseCanvas('{"format":6,"items":[]}').problem, "newer");
 });
 
 test("moving a cut stroke moves its cut with it", () => {

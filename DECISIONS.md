@@ -508,3 +508,32 @@ Cost. A raw piece now shows its markdown signs in page text, without a warning t
 
 Decision. The owner deleted the first 0.4.9 and 0.4.10 releases. The Linux text fix, the list fix and the toggle and raw-text fix are released together as 0.4.9. The plan goes back down: draw over text, columns and the Android in-app installer are 0.4.10, the `/canvas` block 0.4.11, image controls 0.4.12 and PDF import 0.4.13. Version numbers named in earlier entries of this file are older; the table in PROGRESS.md is the current plan.
 
+
+## 2026-11-11: Release plan: 0.4.10 draw over text, 0.4.11 one big release (canvas block, image controls, PDF)
+
+Decision. The owner asked to merge the former 0.4.11 (`/canvas`), 0.4.12 (image controls) and 0.4.13 (PDF import) into one release, 0.4.11, accepting that it is big. 0.4.10 is draw over text (built), with columns and the Android in-app installer still to come in it. Version numbers named in earlier entries are older; the table in PROGRESS.md is the current plan.
+Alternatives. Keeping three small releases (smaller steps to test on a device, rejected by the owner).
+Cost. 0.4.11 is large and touches the markdown format, the editor and the drawing format together; it should be built in short slices on separate branches and only released at the end.
+
+## 2026-11-11: Ink over text is anchored to blocks and lives in format 5 of the drawing file
+
+Decision. A stroke drawn over the text belongs to the block of the text under its first point and its points are fractions of that block. The block is found again by its place and a fingerprint of its kind and first 40 characters; a stroke whose block cannot be found is kept in the file and not drawn. The ink is a separate `ink` list in format 5, written only when ink exists; older versions read such a file as read-only. The pen bar is a row above the text, using the canvas's colour menu and width slider.
+Alternatives. One transparent canvas over the whole editor in pixel positions, as ScaleNote v1 does (ink drifts off the words when the width changes); block ids written into the markdown (would change the page text, against the clean-markdown rule); putting anchored items in `items` (the canvas view would draw them at wrong places and the eraser and loop would touch them); a floating pen bar (covers the first lines of the page); v1's custom colour (needs a new colour format and does not follow the theme).
+Cost. Editing the first words of a block detaches its ink until the words come back; a stroke over several blocks belongs to the first one only, so it moves with that block alone; a block's height matters because vertical positions are fractions of it.
+
+## 2026-11-11: Columns are a callout holding column callouts
+
+Decision. The owner wants the same behaviour as Notion and left the format to me, asking only that it is stable, safe and simple. A columns block is `> [!columns]` (no title, no fold) holding 2 to 5 `> > [!column]` callouts. Obsidian opens the page and shows the text as nested callouts. Anything that does not have exactly that shape stays an ordinary callout, kept byte for byte, so no page can lose text. Columns do not nest; a column holds what a callout holds.
+Alternatives. An html table (rejected: Obsidian and other programs show it badly and the exact-text rule is harder to keep), a custom code fence (rejected: other programs show it as code).
+Cost. Ink over columns anchors to the whole columns block. Other programs show columns stacked, not side by side.
+
+## 2026-11-11: The Android installer lives in a small generated Kotlin class
+
+Decision. The owner chose "build it, you test the APK". The Rust core stays free of network code: a Kotlin class added at build time by `scripts/patch-android.mjs` downloads the file from this project's GitHub releases only, checks size and that it is a zip, and opens Android's installer through a FileProvider of its own. The user still confirms in Android's screen. Any failure falls back to the browser download.
+Alternatives. Network code in Rust (rejected before: new dependency and attack surface), silent install (not possible without system rights).
+Cost. The Kotlin has never been compiled or run by me; the CI build is the first compile and the owner's tablet the first real test. The permission "install unknown apps" must be allowed once by the user. The APK is still unsigned beyond the debug key, so Android updates over an installed build only if the signing key is the same.
+
+## 2026-11-11: Android distribution through F-Droid and Google Play comes later
+
+Decision. The owner wants to distribute through F-Droid later and maybe Google Play once the app is fully finished, not now. Until then the in-app installer stays as built in 0.4.10, next to the browser download. Android has no way to give an app "install unknown apps" for itself only, so the in-app installer needs that permission for any file; with F-Droid or Google Play the store does the updates and ScaleNote needs no such permission.
+Open, not decided. Check that a downloaded apk is signed with the app's own key before opening the installer, make the in-app install opt-in, and sign release builds with a real key (CI builds a debug apk now, so updates over an installed build may fail on a key mismatch).

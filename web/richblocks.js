@@ -13,6 +13,9 @@ import { splitBlocks } from "./blocks.js";
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"];
 export const MAX_TABLE_ROWS = 200;
 export const MAX_TABLE_COLUMNS = 30;
+// Side-by-side columns (see below): at least two, never more than this many.
+export const MIN_COLUMNS = 2;
+export const MAX_COLUMNS = 5;
 
 // Inline syntax the editor cannot hold. A cell or title with any of it keeps the whole block raw.
 const UNSAFE_TEXT = /\[\[|\]\]|==[^=\s]|\$[^$\s]|<[^>\n]+>|!\[|\[\^|%%|(^|\s)#[^\s#]|(^|\s)\^[\w-]+\s*$|~~~/;
@@ -113,7 +116,34 @@ export function readCallout(src, io, depth = 0) {
   }
   const content = parseInner(inner.join("\n"), io, depth);
   if (!content) return null;
-  return { type: "callout", attrs: { kind: first[1].toLowerCase(), fold: first[2], title }, content };
+  const kind = first[1].toLowerCase();
+  // Columns are only recognised at the top of a page, where the editor can hold them.
+  if (depth === 0 && kind === "columns") {
+    const columns = readColumns(first[2], title, content);
+    if (columns) return columns;
+  }
+  return { type: "callout", attrs: { kind, fold: first[2], title }, content };
+}
+
+// ---------- columns:  > [!columns] holding one > [!column] callout per column ----------
+//
+// Markdown has no columns, so they are written as a callout that holds one callout per column.
+// Any program that knows callouts (Obsidian included) shows it as a plain callout with the
+// columns one under the other, and the text stays readable. A callout named "columns" that
+// does not have exactly this shape is an ordinary callout.
+
+const isPlainCallout = (node, kind) => node.type === "callout" && node.attrs.kind === kind && node.attrs.fold === "" && node.attrs.title === "";
+
+function readColumns(fold, title, content) {
+  if (fold !== "" || title !== "") return null;
+  if (content.length < MIN_COLUMNS || content.length > MAX_COLUMNS) return null;
+  if (!content.every((node) => isPlainCallout(node, "column"))) return null;
+  return { type: "columns", content: content.map((node) => ({ type: "column", content: node.content })) };
+}
+
+export function writeColumns(node, serialize) {
+  const columns = (node.content || []).map((column) => ({ type: "callout", attrs: { kind: "column", fold: "", title: "" }, content: column.content }));
+  return writeCallout({ attrs: { kind: "columns", fold: "", title: "" }, content: columns }, serialize);
 }
 
 export function writeCallout(node, serialize) {
@@ -285,6 +315,8 @@ export function writeBlock(node, serialize) {
   switch (node.type) {
     case "callout":
       return writeCallout(node, serialize);
+    case "columns":
+      return writeColumns(node, serialize);
     case "toggle":
       return writeDetails(node, serialize);
     case "table":
