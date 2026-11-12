@@ -547,3 +547,11 @@ Cost. One stroke can now be several saved pieces, so the eraser removes it piece
 ## 2026-11-11: The installer's file provider is its own class (fix for an apk that could not be installed)
 
 The 0.4.10 apk declared the class `androidx.core.content.FileProvider` twice (the Tauri template's provider and ours). Android refuses to install an app with a component name declared twice, with "There was a problem while parsing the package". The build did not notice. Now our provider is the small subclass `ApkFileProvider`, a unit test checks that no component name appears twice, and the Android build job inspects the finished apk with `aapt2` and fails if any name is declared twice. Every 0.4.10 apk (and the release built from it) cannot be installed; a new release is needed.
+
+## 2026-11-12: Ink reach raised from 20 to 300 block heights; logo recentred by three centres
+
+Decision. Strokes drawn in the empty space under the last block are stored as fractions of that block, so they are many block heights away. The 19-block clamp added a day earlier flattened them into a horizontal line, which the owner saw on his phone. Fractions may now reach 299 and the reader accepts 300. A drawing file written by this version can hold points beyond 20 block heights, so an older 0.4.10 reader would refuse such a file (it would open the page read-only for ink; nothing is lost on disk).
+Alternatives. Anchoring strokes below the last block to the page bottom in pixels (rejected for now: a new anchor kind and a file format change).
+Cost. Ink far below the last block moves if that block's height changes.
+
+Decision. The logo mark is a three-lobed shape with a long lower lobe, so bounding box, enclosing circle and centre of mass disagree by up to 5 percent. Every icon is shifted by the mean of the three, which looked centred in a circular mask in renders. Alpha masks were left in place.
