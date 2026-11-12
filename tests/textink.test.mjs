@@ -120,7 +120,17 @@ test("a stroke inside one block stays one piece, and no blocks gives nothing", (
   assert.deepEqual(splitByBlock([[1, 5, 1]], []), []);
 });
 
-test("a stroke far below the last block is pulled in so the saved file is still accepted", () => {
+test("a stroke in the space below a one-line block keeps its shape and is saved", () => {
+  const stroke = { tool: "pen", color: "ink", width: 8, points: [[5, 130, 0.5], [60, 900, 0.5], [5, 1700, 0.5], [60, 2400, 0.5]] };
+  const piece = ink2(stroke, { left: 0, top: 100, width: 400, height: 30 }, { block: 2, tag: "p:x" });
+  const back = inkToScreen(piece, { left: 0, top: 100, width: 400, height: 30 });
+  assert.deepEqual(back.map((p) => Math.round(p[1])), [130, 900, 1700, 2400], "nothing is flattened");
+  const canvas = empty2();
+  canvas.ink.push(piece);
+  assert.equal(parse2(serialize2(canvas)).problem, undefined);
+});
+
+test("a stroke absurdly far below a block is pulled in so the saved file is still accepted", () => {
   const stroke = { tool: "pen", color: "ink", width: 8, points: [[5, 120, 0.5], [5, 9000, 0.5]] };
   const piece = ink2(stroke, { left: 0, top: 100, width: 400, height: 30 }, { block: 2, tag: "p:x" });
   assert.ok(piece.points.every(([, fy]) => Math.abs(fy) <= FRACTION_LIMIT));

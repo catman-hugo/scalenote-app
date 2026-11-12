@@ -182,8 +182,10 @@ function validItem(item, tools, format) {
 }
 
 // Ink drawn over the text. Points are [x, y, pressure] where x and y are fractions of the block the
-// stroke belongs to (a little outside 0..1 is fine: a pen goes past the edge of a line of text).
-const INK_REACH = 20;
+// stroke belongs to. A pen goes past the edge of a line of text, and a stroke in the empty space
+// below the last block is measured from that block, so a short line can have points hundreds of
+// its own heights away. The limit is only there to refuse absurd numbers.
+const INK_REACH = 300;
 const inkNumber = (value) => isNumber(value) && Math.abs(value) <= INK_REACH;
 
 function validAnchor(anchor) {

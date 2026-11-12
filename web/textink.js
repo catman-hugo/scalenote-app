@@ -77,8 +77,9 @@ export function splitByBlock(points, rects) {
 }
 
 // How far outside its block a point may be, in block sizes. The drawing file refuses more than
-// 20, so a point far away (a stroke below the last block) is pulled in to this.
-export const FRACTION_LIMIT = 19;
+// 300. A limit of 20 flattened strokes drawn in the empty space below the last block into a
+// horizontal line, so it is set high enough for a whole screen below a one-line block.
+export const FRACTION_LIMIT = 299;
 const keep = (value) => Math.max(-FRACTION_LIMIT, Math.min(FRACTION_LIMIT, value));
 
 // A block that is empty or has no height would divide by nothing.
