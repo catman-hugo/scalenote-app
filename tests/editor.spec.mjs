@@ -6364,6 +6364,8 @@ await test("odd input does not break the ink: a dot, a stroke off the page, rapi
 await test("a pen that starts in the margin around the text draws, it does not scroll the page", async (page) => {
   await inkVault(page);
   await startInk(page);
+  // The sheet starts as a small default canvas and is sized when it is first drawn.
+  await page.waitForFunction(() => document.querySelector(".ink-surface").getBoundingClientRect().width > 310);
   const box = await page.evaluate(() => { const r = document.querySelector("#editor").parentElement.getBoundingClientRect(); const n = document.querySelector(".ink-surface").getBoundingClientRect(); return { left: n.left, top: n.top, width: n.width, height: n.height, scroller: document.querySelector(".ink-layer").parentElement.getBoundingClientRect().toJSON() }; });
   assert.ok(Math.abs(box.left - box.scroller.left) < 1.5 && Math.abs(box.top - box.scroller.top) < 1.5, "the sheet starts at the corner of the text box, padding included: " + JSON.stringify(box));
   const first = await blockBox(page, 0);

@@ -561,6 +561,9 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
       state.tagsDirty = true;
       state.history = new DrawingHistory();
       applyVisibility();
+      // Placed and sized right now, not on the next frame, so the very first touch already
+      // lands on a sheet that covers the whole text box.
+      draw();
       surface.focus({ preventScroll: true });
     },
     /** Stops drawing; the ink stays on the text. */
