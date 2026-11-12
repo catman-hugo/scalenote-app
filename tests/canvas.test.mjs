@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, tidyStroke, HIGHLIGHT_SLACK } from "../web/canvasrules.js";
+  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, tidyStroke, HIGHLIGHT_SLACK, makeFrameId, nextFrameRect } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -18,7 +18,7 @@ test("a pen-only drawing is written and read back exactly, apart from rounding, 
   assert.deepEqual(back.canvas.items[0].points, [[1, 2.1, 0.5], [10, 20, 0.12]]);
   assert.equal(back.canvas.items[1].color, "red");
   assert.equal(serializeCanvas(back.canvas), text, "writing what was read changes nothing");
-  assert.deepEqual(parseCanvas(serializeCanvas(emptyCanvas())), { canvas: { items: [], paper: "none", page: "none", ink: [] } });
+  assert.deepEqual(parseCanvas(serializeCanvas(emptyCanvas())), { canvas: { items: [], paper: "none", page: "none", ink: [], frames: [] } });
 });
 
 test("a drawing with highlighter, shapes and notes round-trips in the new format", () => {
@@ -73,7 +73,7 @@ test("anything not understood is refused as a whole, never partly kept", () => {
     '{"format":2,"items":[{"tool":"eraser"}]}',
   ];
   for (const text of bad) assert.ok(parseCanvas(text).problem, `refused: ${text}`);
-  assert.equal(parseCanvas('{"format":6,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
+  assert.equal(parseCanvas('{"format":7,"items":[]}').problem, "newer", "a newer file is told apart, so it is not called broken");
   const mixed = '{"format":2,"items":[{"tool":"note","color":"ink","x":0,"y":0,"w":180,"h":60,"text":"ok"},{"tool":"pen","color":"x","width":4,"points":[[0,0,0.5]]}]}';
   assert.ok(parseCanvas(mixed).problem, "one bad item among good ones refuses the whole drawing");
 });
@@ -481,7 +481,7 @@ test("a bad cut, or a cut in a file that is too old for it, makes the drawing re
     assert.equal(parseCanvas(line(bad, 4)).problem, "broken", JSON.stringify(bad));
   }
   assert.equal(parseCanvas(line({ kind: "rect", x: 0, y: 0, w: 10, h: 10 }, 3)).problem, "broken");
-  assert.equal(parseCanvas('{"format":6,"items":[]}').problem, "newer");
+  assert.equal(parseCanvas('{"format":7,"items":[]}').problem, "newer");
 });
 
 test("moving a cut stroke moves its cut with it", () => {
@@ -517,4 +517,57 @@ test("several recolours in one step undo and redo together", () => {
   assert.deepEqual([a.color, b.color], ["yellow", b.color === "red" ? "ink" : b.color]);
   history.redo(canvas);
   assert.deepEqual([a.color, b.color], ["red", "red"]);
+});
+
+// ---- frames (format 6) ----
+const FRAME = { id: "abc123xy", x: 10, y: 20, w: 480, h: 320, label: "" };
+
+test("a drawing with frames is written as format 6 and read back the same", () => {
+  const canvas = { ...emptyCanvas(), frames: [FRAME, { ...FRAME, id: "second01", x: 0, y: 400, label: "Cell" }] };
+  const text = serializeCanvas(canvas);
+  assert.match(text, /^\{"format":6,/);
+  assert.deepEqual(parseCanvas(text), { canvas });
+  assert.equal(serializeCanvas(parseCanvas(text).canvas), text);
+});
+
+test("frames, ink, paper and a page colour can be in one file", () => {
+  const ink = [{ tool: "pen", color: "ink", width: 4, anchor: { block: 0, tag: "paragraph:a" }, points: [[0.1, 0.2, 0.5]] }];
+  const canvas = { ...emptyCanvas(), paper: "grid-2", page: "none", ink, frames: [FRAME] };
+  assert.deepEqual(parseCanvas(serializeCanvas(canvas)), { canvas });
+});
+
+test("a drawing without frames is written exactly as before", () => {
+  assert.equal(serializeCanvas(emptyCanvas()), '{"format":1,"strokes":[]}\n');
+  assert.doesNotMatch(serializeCanvas({ ...emptyCanvas(), paper: "grid-2" }), /format":6/);
+});
+
+test("a bad, repeated or too many frames make the drawing unreadable, never half read", () => {
+  const file = (frames, format = 6) => JSON.stringify({ format, items: [], frames });
+  assert.deepEqual(parseCanvas(file([{ ...FRAME, id: "BAD ID" }])), { problem: "broken" });
+  assert.deepEqual(parseCanvas(file([{ ...FRAME, w: 5 }])), { problem: "broken" });
+  assert.deepEqual(parseCanvas(file([{ ...FRAME, h: 99999 }])), { problem: "broken" });
+  assert.deepEqual(parseCanvas(file([{ ...FRAME, label: "x".repeat(81) }])), { problem: "broken" });
+  assert.deepEqual(parseCanvas(file([{ ...FRAME, x: "1" }])), { problem: "broken" });
+  assert.deepEqual(parseCanvas(file([FRAME, FRAME])), { problem: "broken" });
+  assert.deepEqual(parseCanvas(file("nope")), { problem: "broken" });
+  const many = Array.from({ length: 201 }, (_, i) => ({ ...FRAME, id: `frame${String(i).padStart(4, "0")}` }));
+  assert.deepEqual(parseCanvas(file(many)), { problem: "broken" });
+  // Frames in a file that says it is older are not something that version wrote: they are ignored.
+  assert.deepEqual(parseCanvas(file([FRAME], 5)).canvas.frames, []);
+  // A newer format than this version knows stays read-only.
+  assert.deepEqual(parseCanvas(JSON.stringify({ format: 7, items: [] })), { problem: "newer" });
+});
+
+test("a frame id is random, never one already taken, and the next frame starts below the drawing", () => {
+  const id = makeFrameId([]);
+  assert.match(id, /^[a-z0-9]{8}$/);
+  let calls = 0;
+  const fixed = () => (calls++ < 1 ? new Uint8Array(8) : new Uint8Array(8).fill(1));
+  assert.equal(makeFrameId(["aaaaaaaa"], fixed), "bbbbbbbb");
+  assert.throws(() => makeFrameId(["aaaaaaaa"], () => new Uint8Array(8)));
+  assert.deepEqual(nextFrameRect(emptyCanvas()), { x: 0, y: 0, w: 480, h: 320 });
+  const drawn = { ...emptyCanvas(), items: [{ tool: "shape", kind: "rect", color: "ink", width: 4, a: [10, 10], b: [110, 210] }], frames: [{ ...FRAME, x: 10, y: 300, h: 320 }] };
+  const next = nextFrameRect(drawn);
+  assert.deepEqual([next.y, next.w, next.h], [660, 480, 320]);
+  assert.ok(next.x <= 10 && next.x >= 0, "it starts at the left edge of the drawing");
 });

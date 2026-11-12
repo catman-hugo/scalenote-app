@@ -86,7 +86,7 @@ test("bad ink makes the whole drawing read-only, never half kept", () => {
   }
   assert.equal(parseCanvas('{"format":5,"items":[],"ink":{}}').problem, "broken");
   assert.equal(parseCanvas('{"format":4,"items":[],"ink":[]}').canvas.ink.length, 0, "ink in a file too old to have it is not read");
-  assert.equal(parseCanvas('{"format":6,"items":[]}').problem, "newer");
+  assert.equal(parseCanvas('{"format":7,"items":[]}').problem, "newer");
 });
 
 test("an unknown key on a piece of ink is dropped, not carried into the program", () => {

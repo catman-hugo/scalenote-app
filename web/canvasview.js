@@ -16,6 +16,7 @@ import {
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, tidyStroke,
   itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
 } from "./canvasrules.js";
+import { createPainter, readEnv } from "./canvaspaint.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -33,8 +34,6 @@ const NOTE_MIN_PIXELS = 24;
 const GRAB_PIXELS = 8;
 // How close to the resize handle counts as holding it. Bigger than it looks, for a finger or a pen.
 const HANDLE_PIXELS = 16;
-const HIGHLIGHT_ALPHA = 0.35;
-const NOTE_FILL_ALPHA = 0.22;
 // Tools that choose how the next thing is drawn, so picking a colour or width switches to the pen
 // only when the current tool has no colour of its own.
 const COLOURLESS_TOOLS = ["eraser", "hand", "select"];
@@ -487,51 +486,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
 
   // ---- drawing on the screen ----
   function readColours() {
-    const style = getComputedStyle(document.documentElement);
-    for (const name of PEN_COLOURS) {
-      // Ink follows the theme (black on light, white on dark); the others are fixed colours.
-      state.colours[name] = style.getPropertyValue(name === "ink" ? "--text" : `--pen-${name}`).trim() || "#000";
-    }
-    state.background = style.getPropertyValue("--bg").trim() || "#fff";
-    state.accent = style.getPropertyValue("--accent").trim() || "#06c";
-    state.font = getComputedStyle(document.body).fontFamily || "sans-serif";
-  }
-
-  function paintStroke(stroke) {
-    const colour = state.colours[stroke.color] || "#000";
-    const points = stroke.points;
-    context.strokeStyle = colour;
-    context.fillStyle = colour;
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    if (stroke.tool === "highlighter") {
-      // One path with one width: drawn in pieces, the see-through ends of each piece would
-      // overlap and show as dark dots along the line.
-      context.save();
-      context.globalAlpha = HIGHLIGHT_ALPHA;
-      context.lineWidth = drawnWidth(stroke);
-      context.beginPath();
-      context.moveTo(points[0][0], points[0][1]);
-      if (points.length === 1) context.lineTo(points[0][0], points[0][1]);
-      for (let i = 1; i < points.length; i++) context.lineTo(points[i][0], points[i][1]);
-      context.stroke();
-      context.restore();
-      return;
-    }
-    if (points.length === 1) {
-      context.beginPath();
-      context.arc(points[0][0], points[0][1], widthAt(stroke.width, points[0][2]) / 2, 0, Math.PI * 2);
-      context.fill();
-      return;
-    }
-    // One short line per piece, because the width changes with the pressure along the way.
-    for (let i = 1; i < points.length; i++) {
-      context.lineWidth = widthAt(stroke.width, (points[i - 1][2] + points[i][2]) / 2);
-      context.beginPath();
-      context.moveTo(points[i - 1][0], points[i - 1][1]);
-      context.lineTo(points[i][0], points[i][1]);
-      context.stroke();
-    }
+    readEnv(state);
   }
 
   // Where a shape corner goes: on the grid when snapping is on, otherwise exactly where the pointer is.
@@ -539,143 +494,18 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     return snapShapes() ? [snapToGrid(world.x), snapToGrid(world.y)] : [world.x, world.y];
   }
 
-  function paintShape(shape) {
-    context.strokeStyle = state.colours[shape.color] || "#000";
-    context.lineWidth = shape.width;
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    const [ax, ay] = shape.a;
-    const [bx, by] = shape.b;
-    context.beginPath();
-    if (shape.kind === "rect") {
-      const box = boxOf(shape.a, shape.b);
-      context.rect(box.x, box.y, box.w, box.h);
-    } else if (shape.kind === "ellipse") {
-      const outline = ellipseOutline(shape.a, shape.b, 64);
-      outline.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
-      context.closePath();
-    } else {
-      context.moveTo(ax, ay);
-      context.lineTo(bx, by);
-      if (shape.kind === "arrow") {
-        const head = arrowHead(shape.a, shape.b, Math.max(10, shape.width * 4));
-        context.moveTo(head[0][0], head[0][1]);
-        context.lineTo(bx, by);
-        context.lineTo(head[1][0], head[1][1]);
-      }
-    }
-    context.stroke();
-  }
 
-  // The lines of a note, cut to fit its width. Cached, because redrawing happens on every frame.
-  function linesOf(note) {
-    const cached = state.wrapped.get(note);
-    if (cached && cached.text === note.text && cached.w === note.w) return cached.lines;
-    context.font = `${NOTE.fontSize}px ${state.font}`;
-    const lines = wrapText(note.text, note.w - 2 * NOTE.padding, (text) => context.measureText(text).width);
-    state.wrapped.set(note, { text: note.text, w: note.w, lines });
-    return lines;
-  }
-
-  // The box of a note (its fill and edge). The text is painted later, on top of everything else.
-  function paintNote(note, box) {
-    const colour = state.colours[note.color] || "#000";
-    context.fillStyle = state.pageFill;
-    context.fillRect(box.x, box.y, box.w, box.h);
-    context.save();
-    context.globalAlpha = NOTE_FILL_ALPHA;
-    context.fillStyle = colour;
-    context.fillRect(box.x, box.y, box.w, box.h);
-    context.restore();
-    context.strokeStyle = colour;
-    context.lineWidth = 1.5;
-    context.strokeRect(box.x, box.y, box.w, box.h);
-  }
-
-  function paintNoteText(note, box) {
-    context.save();
-    context.beginPath();
-    context.rect(box.x, box.y, box.w, box.h);
-    context.clip();
-    context.fillStyle = state.colours.ink;
-    context.font = `${NOTE.fontSize}px ${state.font}`;
-    context.textBaseline = "top";
-    linesOf(note).forEach((line, i) => context.fillText(line, box.x + NOTE.padding, box.y + NOTE.padding + i * NOTE.lineHeight));
-    context.restore();
-  }
-
-  // A stroke with a clip (saved when it was drawn) only shows inside its figure.
-  function paintClipped(stroke) {
-    const figure = stroke.clip;
-    if (!figure) return paintStroke(stroke);
-    context.save();
-    context.beginPath();
-    if (figure.kind === "rect") context.rect(figure.x, figure.y, figure.w, figure.h);
-    else {
-      ellipseOutline([figure.x, figure.y], [figure.x + figure.w, figure.y + figure.h], 64).forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
-      context.closePath();
-    }
-    context.clip();
-    paintStroke(stroke);
-    context.restore();
-  }
-
+  const painter = createPainter(context, state);
   const noteBox = (note) => ({ x: note.x, y: note.y, w: note.w, h: state.editing && state.editing.item === note ? state.editing.height : note.h });
-
-  // The layers, back to front: sticky note boxes, highlights (also over a note), then shapes and
-  // pen lines, then the text of notes. So ink and text are never hidden by a highlight.
-  function paintItems(items) {
+  const paintStroke = (stroke) => painter.stroke(stroke);
+  const paintShape = (shape) => painter.shape(shape);
+  const paintNote = (note, box) => painter.note(note, box);
+  function paintItems(list) {
     const g = state.gesture;
     const live = g && g.kind === "pen" && g.stroke.tool === "highlighter" ? g.stroke : null;
-    const notes = items.filter((item) => item.tool === "note");
-    for (const note of notes) paintNote(note, noteBox(note));
-    for (const item of items) if (item.tool === "highlighter") paintClipped(item);
-    // The stroke being drawn is shown as it will look once the pen is lifted.
-    if (live) for (const part of tidyStroke(live, items)) paintClipped(part);
-    for (const item of items) {
-      if (item.tool === "shape") paintShape(item);
-      else if (item.tool !== "note" && item.tool !== "highlighter") paintClipped(item);
-    }
-    for (const note of notes) if (!(state.editing && state.editing.item === note)) paintNoteText(note, noteBox(note));
+    painter.items(list, { live, noteBox, hideText: (note) => Boolean(state.editing && state.editing.item === note) });
   }
-
-  // The lines of the paper, in drawing space, only the part that is on the screen. Lines closer
-  // together than a few pixels would only turn the sheet into a smear, so they are left out when
-  // zoomed far out. A line is one screen pixel wide at any zoom.
-  const MIN_PAPER_PIXELS = 6;
-  function paintPaper(screen) {
-    const layout = paperLayout(state.canvas.paper);
-    const { x, y, scale } = state.view;
-    if (!layout || layout.step * scale < MIN_PAPER_PIXELS) return;
-    const left = -x / scale;
-    const right = (screen.width - x) / scale;
-    const top = -y / scale;
-    const bottom = (screen.height - y) / scale;
-    const inks = paperInks(state.pageFill);
-    context.save();
-    context.lineWidth = 1 / scale;
-    context.strokeStyle = inks.line;
-    context.beginPath();
-    for (let at = Math.ceil(top / layout.step) * layout.step; at <= bottom; at += layout.step) {
-      context.moveTo(left, at);
-      context.lineTo(right, at);
-    }
-    if (layout.kind === "grid") {
-      for (let at = Math.ceil(left / layout.step) * layout.step; at <= right; at += layout.step) {
-        context.moveTo(at, top);
-        context.lineTo(at, bottom);
-      }
-    }
-    context.stroke();
-    if (layout.kind === "rule" && MARGIN_X >= left && MARGIN_X <= right) {
-      context.strokeStyle = inks.margin;
-      context.beginPath();
-      context.moveTo(MARGIN_X, top);
-      context.lineTo(MARGIN_X, bottom);
-      context.stroke();
-    }
-    context.restore();
-  }
+  const paintPaper = (screen) => painter.paper(state.canvas.paper, state.view, screen);
 
   function paintSelection() {
     const around = boundsOf(state.selection);
@@ -716,6 +546,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
     paintPaper(box);
     paintItems(state.canvas.items);
+    painter.frames(state.canvas.frames, scale);
     const g = state.gesture;
     if (g && g.kind === "pen" && g.stroke.tool !== "highlighter") paintStroke(g.stroke);
     if (g && g.kind === "shape") paintShape(g.shape);

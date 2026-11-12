@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { splitBlocks, splitFrontmatter } from "../web/blocks.js";
 import { loadNote, composeNote } from "../web/compose.js";
-import { readCallout, writeCallout, readDetails, writeDetails, readTable, writeTable, readImage, writeImage, writeBlock, readRichBlock, MAX_COLUMNS } from "../web/richblocks.js";
+import { readCallout, writeCallout, readDetails, writeDetails, readTable, writeTable, readImage, writeImage, readCanvasBlock, writeCanvasBlock, writeBlock, readRichBlock, MAX_COLUMNS } from "../web/richblocks.js";
 
 const TYPE = { paragraph: "paragraph", heading: "heading", list: "bulletList", quote: "blockquote", code: "codeBlock", rule: "horizontalRule" };
 const text = (t) => ({ type: "text", text: t });
@@ -319,4 +319,16 @@ test("a page with columns opens with the columns block and an untouched page is 
   const { parts, doc } = loadNote(page, io);
   assert.ok(doc.content.some((n) => n.type === "columns"));
   assert.equal(composeNote(parts, doc, { ...io, assignId: false }), page);
+});
+
+test("a canvas block is read and written back exactly", () => {
+  const text = "```scalenote-canvas\nid: abc123xy\n```";
+  const node = readCanvasBlock(text);
+  assert.deepEqual(node, { type: "canvasBlock", attrs: { id: "abc123xy" } });
+  assert.equal(writeCanvasBlock(node), text);
+  assert.equal(writeBlock(node, () => ""), text);
+  assert.deepEqual(readRichBlock("canvasblock", text, {}), node);
+  for (const bad of ["```scalenote-canvas\nid: ../etc\n```", "```scalenote-canvas\nid: abc\n```", "```scalenote-canvas\nid: abc123xy\n```\n", "text"]) {
+    assert.equal(readCanvasBlock(bad), null, bad);
+  }
 });

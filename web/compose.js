@@ -72,7 +72,7 @@ function loadSplit(text, front, body, { parse, serialize }) {
   const { lead, blocks } = splitBlocks(body);
   const content = blocks.map(({ src, gap, kind }, idx) => {
     if (kind === "raw") return rawNode(src, gap, idx);
-    const isRich = ["callout", "details", "table", "image"].includes(kind);
+    const isRich = ["callout", "details", "table", "image", "canvasblock"].includes(kind);
     // A closing " ^id" on a paragraph is kept as the paragraph's block id, apart from its text.
     const idMatch = kind === "paragraph" ? BLOCK_ID.exec(src) : null;
     const node = isRich ? richNode(kind, src, { parse, serialize }) : oneEditableNode(idMatch ? src.slice(0, idMatch.index) : src, parse);

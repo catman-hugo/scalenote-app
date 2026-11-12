@@ -1824,3 +1824,12 @@ button.danger:hover { background: var(--bg-hover); }
 }
 
 .drop-line.drop-line-vertical { width: 3px; }
+
+/* ---------- canvas block ---------- */
+.canvas-block { margin: var(--space-3) 0; }
+.canvas-block-title { margin-bottom: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.canvas-block-surface { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); }
+.canvas-block-surface[hidden],
+.canvas-block-missing[hidden] { display: none; }
+.canvas-block-missing { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
+.canvas-block.ProseMirror-selectednode .canvas-block-surface { outline: 2px solid var(--accent); }

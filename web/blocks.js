@@ -30,6 +30,9 @@ const RULE = /^ {0,3}([-*_])([ \t]*\1){2,}[ \t]*$/;
 const FENCE_OPEN = /^```[\w+-]*[ \t]*\r?$/;
 const FENCE_ANY = /^ {0,3}(```|~~~)/;
 const FENCE_CLOSE = /^```[ \t]*\r?$/;
+// A canvas block (a window onto one region of the page's drawing): exactly three lines, with
+// \n line ends. Anything else with this label stays an ordinary code block.
+const CANVAS_FENCE = /^```scalenote-canvas\nid: [a-z0-9]{6,16}\n```$/;
 const QUOTE = /^ {0,3}>/;
 const LIST_MARKER = /^ {0,3}([-*+]|\d{1,9}[.)])([ \t]+|\r?$)/;
 const SETEXT = /^ {0,3}(=+|-+)[ \t]*\r?$/;
@@ -101,7 +104,7 @@ function readBlock(lines, i) {
   if (FENCE_ANY.test(first)) {
     if (!FENCE_OPEN.test(first)) return [skipToBlank(lines, i), "raw"];
     for (let j = i + 1; j < lines.length; j++) {
-      if (FENCE_CLOSE.test(lines[j].text)) return [j, "code"];
+      if (FENCE_CLOSE.test(lines[j].text)) return [j, j === i + 2 && CANVAS_FENCE.test(lines.slice(i, j + 1).map((l) => l.text).join("\n")) ? "canvasblock" : "code"];
     }
     return [lines.length - 1, "raw"]; // never closed: keep everything as written
   }

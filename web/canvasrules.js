@@ -31,7 +31,7 @@
 // words at any window width. It is only written when there is such ink; an older ScaleNote shows it
 // read-only, because opening and saving it there would drop the ink.
 
-export const FORMAT = 5;
+export const FORMAT = 6;
 // The pen colours, in the order of the picker: three rows of six, six, and four. The first
 // version had only ink, red, blue, green, orange and purple; those names still mean the same
 // colour family, so older drawings open as before (a little brighter than they were).
@@ -143,7 +143,37 @@ export function paperInks(fill) {
   return isLightBackground(fill) ? { line: "#c9e0f0", margin: "#e0605a" } : { line: "#1f4a75", margin: "#8a2a2a" };
 }
 
-export const emptyCanvas = () => ({ items: [], paper: "none", page: "none", ink: [] });
+export const emptyCanvas = () => ({ items: [], paper: "none", page: "none", ink: [], frames: [] });
+
+// ---- frames (format 6) ----
+// A frame is a rectangle of the sheet that a canvas block in the text shows, named by an id the
+// block's markdown holds. It is not drawn on, it only says which part of the sheet to show.
+export const FRAME_LIMITS = { count: 200, min: 40, max: 4_000, label: 80 };
+const FRAME_ID = /^[a-z0-9]{6,16}$/;
+
+function validFrame(frame) {
+  const size = (value) => isNumber(value) && value >= FRAME_LIMITS.min && value <= FRAME_LIMITS.max;
+  return isObject(frame) && typeof frame.id === "string" && FRAME_ID.test(frame.id) && inRange(frame.x) && inRange(frame.y) && size(frame.w) && size(frame.h) && typeof frame.label === "string" && frame.label.length <= FRAME_LIMITS.label;
+}
+
+/** A new random id for a frame that is not in `taken`. `random(n)` gives n random bytes. */
+export function makeFrameId(taken, random = (n) => crypto.getRandomValues(new Uint8Array(n))) {
+  const letters = "abcdefghijklmnopqrstuvwxyz0123456789";
+  for (let tries = 0; tries < 20; tries++) {
+    const id = Array.from(random(8), (byte) => letters[byte % letters.length]).join("");
+    if (!taken.includes(id)) return id;
+  }
+  throw new Error("no free frame id");
+}
+
+/** Where a new frame goes: below everything already on the sheet, so it starts on empty paper. */
+export function nextFrameRect(canvas) {
+  const around = boundsOf([...canvas.items, ...(canvas.frames || []).map((f) => ({ tool: "note", x: f.x, y: f.y, w: f.w, h: f.h, color: "ink", text: "" }))]);
+  return { x: around ? Math.round(around.minX) : 0, y: around ? Math.round(around.maxY + 40) : 0, w: 480, h: 320 };
+}
+
+const cleanFrame = (frame) => ({ id: frame.id, x: frame.x, y: frame.y, w: frame.w, h: frame.h, label: frame.label });
+const frameLine = (frame) => JSON.stringify({ id: frame.id, x: round(frame.x, 1), y: round(frame.y, 1), w: round(frame.w, 1), h: round(frame.h, 1), label: frame.label });
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -244,6 +274,10 @@ export function parseCanvas(text) {
   // Ink exists from format 5 on. Anything wrong in it makes the whole drawing read-only.
   const inkList = data.format >= 5 && data.ink !== undefined ? data.ink : [];
   if (!Array.isArray(inkList) || inkList.length > LIMITS.items || !inkList.every(validInk)) return { problem: "broken" };
+  // Frames exist from format 6 on. A bad or repeated frame makes the whole drawing read-only.
+  const frameList = data.format >= 6 && data.frames !== undefined ? data.frames : [];
+  if (!Array.isArray(frameList) || frameList.length > FRAME_LIMITS.count || !frameList.every(validFrame)) return { problem: "broken" };
+  if (new Set(frameList.map((frame) => frame.id)).size !== frameList.length) return { problem: "broken" };
   const paper = data.format >= 3 && data.paper !== undefined ? data.paper : "none";
   const page = data.format >= 3 && data.page !== undefined ? data.page : "none";
   if (!PAPERS.includes(paper) || !PAGE_COLOURS.includes(page)) return { problem: "broken" };
@@ -254,7 +288,7 @@ export function parseCanvas(text) {
   }
   for (const item of inkList) total += item.points.length;
   if (total > LIMITS.totalPoints) return { problem: "too-big" };
-  return { canvas: { items: list.map(cleanItem), paper, page, ink: inkList.map(cleanInk) } };
+  return { canvas: { items: list.map(cleanItem), paper, page, ink: inkList.map(cleanInk), frames: frameList.map(cleanFrame) } };
 }
 
 const round = (value, places) => Number(value.toFixed(places));
@@ -281,6 +315,12 @@ export function serializeCanvas(canvas) {
   const page = canvas.page && canvas.page !== "none" ? canvas.page : null;
   const clipped = canvas.items.some((item) => item.clip);
   const ink = canvas.ink || [];
+  const frames = canvas.frames || [];
+  if (frames.length) {
+    const inkPart = ink.length ? `,"ink":[${"\n" + ink.map(inkLine).join(",\n") + "\n"}]` : "";
+    const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
+    return `{"format":6,"items":[${body}]${inkPart},"frames":[${"\n" + frames.map(frameLine).join(",\n") + "\n"}]${extra}}\n`;
+  }
   if (ink.length) {
     const inkBody = "\n" + ink.map(inkLine).join(",\n") + "\n";
     const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");

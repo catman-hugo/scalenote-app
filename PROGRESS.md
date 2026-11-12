@@ -340,6 +340,14 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.12, canvas block (slice 2; branch `feature/v0.4.12-canvas-block`; not yet released)
+- Typing `/canvas` puts a block in the text that shows one region of the page's drawing, and adds the region (a "frame": id, place, size, label) to the drawing file. The block is a window: it paints the same drawing as the Canvas view, cut to the region, with the paper and page colour. The full Canvas view outlines each region with a dashed line and its name.
+- Markdown: a fenced block of exactly three lines, `scalenote-canvas`, `id: abc123xy`, closing fence (owner delegated the choice, option B in `docs/v0.4-plan.md`). Anything else with that label stays an ordinary code block. Obsidian shows it as a small code block.
+- File: format 6 adds `frames` (written only when a frame exists; 200 at most; sides 40 to 4000; unique ids). Older versions open such a drawing read-only. Code: `web/canvasblock.js`, `web/canvaspaint.js` (the painting moved out of `web/canvasview.js` so both use it), frames in `web/canvasrules.js`.
+- Built and tested here: 6 unit tests for frames, 2 for the block text, 9 new browser tests (region painted and cut, region gone, nothing written on opening, `/canvas`, two blocks, unreadable drawing, full canvas keeps frames); full suites pass; screenshots in light and dark checked. NOT tried on a device.
+- Not built yet: drawing inside the block (the block only shows), moving or resizing a region on the full canvas or by the block's bottom edge, editing a region's name, a block that is deleted keeps its region on the canvas (the safe default). The `/canvas` block is not offered inside callouts, toggles or columns.
+- Known limit: the drawing is loaded when a page has ink or regions; a page opened in Canvas first and then switched to text shows its blocks once the text view is back (not specifically tested).
+
 ## Known break in the 0.4.10 apk (fixed after 0.4.10, needs a new release)
 The Android apk of 0.4.10 cannot be installed: it declared the same file provider twice. Fixed by `ApkFileProvider` in `scripts/patch-android.mjs`; the Android job now checks the finished apk for duplicate components. Not yet tried on a device: install the apk built after this fix.
 

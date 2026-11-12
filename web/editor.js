@@ -8,6 +8,7 @@ import { Placeholder } from "@tiptap/extensions";
 import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
 import { Callout, Column, Columns, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
+import { CanvasBlock } from "./canvasblock.js";
 import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
@@ -19,6 +20,8 @@ import { ToggleFold } from "./togglefold.js";
 
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
 // vault first, and only then an image block is placed in the note.
+// `create()` makes a region in the page's drawing and resolves to its id, or null when it cannot.
+let canvasOptions = { create: async () => null };
 let pictureOptions = { onProblem: () => {}, noteKey: () => null };
 
 async function insertPictures(editor, files, position) {
@@ -97,7 +100,7 @@ const SourceKeeper = Extension.create({
     const keep = { default: null, rendered: false };
     return [
       {
-        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock"],
+        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock", "canvasBlock"],
         attributes: { src: keep, base: keep, gap: keep, idx: keep },
       },
       // Only paragraphs can carry a block link id on their last line.
@@ -226,12 +229,21 @@ function slashItems() {
         choosePicture().then((file) => file && insertPictures(e, [file]));
       },
     },
+    {
+      id: "canvas",
+      title: s.canvas,
+      words: "canvas drawing draw sketch region frame",
+      run: (e, r) => {
+        clear(e, r).run();
+        canvasOptions.create().then((id) => id && e.chain().focus().insertContent([{ type: "canvasBlock", attrs: { id } }, { type: "paragraph" }]).run());
+      },
+    },
     { id: "table", title: s.table, words: "table grid rows columns", run: (e, r) => clear(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   ];
 }
 
 // Blocks that cannot sit inside a callout or a toggle (see richnodes.js).
-const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image"]);
+const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image", "canvas"]);
 
 function filterItems(query, editor) {
   const q = query.trim().toLowerCase();
@@ -345,6 +357,7 @@ const SlashMenu = Extension.create({
 
 // `options.loadImage(path)` gives the picture for an image block as a data: address.
 export function createEditor(element, onChange, options = {}) {
+  canvasOptions = { create: options.createCanvasRegion || (async () => null) };
   pictureOptions = { onProblem: options.onProblem || (() => {}), noteKey: options.noteKey || (() => null) };
   const editor = new Editor({
     element,
@@ -379,6 +392,7 @@ export function createEditor(element, onChange, options = {}) {
       Toggle,
       ToggleFold,
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
+      CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),
       ...tableExtensions,
       SlashMenu,
       LinkShortcut,

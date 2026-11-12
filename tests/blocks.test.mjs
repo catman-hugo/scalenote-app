@@ -316,3 +316,19 @@ test("a loose list of one kind, and an indented item after a blank line, are sti
   assert.deepEqual(kinds("1. a\n\n2. b\n"), ["raw"]);
   assert.deepEqual(kinds("- a\n\n  more of a\n- b\n"), ["raw"]);
 });
+
+test("a canvas block is exactly three lines; anything else with that label stays a code block", () => {
+  assert.deepEqual(kinds("```scalenote-canvas\nid: abc123xy\n```"), ["canvasblock"]);
+  assert.deepEqual(kinds("before\n\n```scalenote-canvas\nid: abc123xy\n```\n\nafter"), ["paragraph", "canvasblock", "paragraph"]);
+  for (const odd of [
+    "```scalenote-canvas\nid: abc123xy\nmore\n```",
+    "```scalenote-canvas\nid: ABC\n```",
+    "```scalenote-canvas\nid: abc123xy \n```",
+    "```scalenote-canvas\r\nid: abc123xy\r\n```",
+    "```scalenote-canvas\n```",
+    "```canvas\nid: abc123xy\n```",
+    "```scalenote-canvas\nid: abc123xy",
+  ]) {
+    assert.ok(!kinds(odd).includes("canvasblock"), JSON.stringify(odd));
+  }
+});

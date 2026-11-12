@@ -318,6 +318,19 @@ export function writeImage(node) {
   return `![${text}](${path})`;
 }
 
+// ---------- canvas block:  a fenced block that names a region of the page's drawing ----------
+
+const CANVAS_BLOCK = /^```scalenote-canvas\nid: ([a-z0-9]{6,16})\n```$/;
+
+export function readCanvasBlock(src) {
+  const match = CANVAS_BLOCK.exec(src);
+  return match ? { type: "canvasBlock", attrs: { id: match[1] } } : null;
+}
+
+export function writeCanvasBlock(node) {
+  return "```scalenote-canvas\nid: " + String((node.attrs || {}).id || "") + "\n```";
+}
+
 // ---------- the two entry points used by compose.js ----------
 
 export function readRichBlock(kind, src, io) {
@@ -330,6 +343,8 @@ export function readRichBlock(kind, src, io) {
       return readTable(src, io);
     case "image":
       return readImage(src);
+    case "canvasblock":
+      return readCanvasBlock(src);
     default:
       return null;
   }
@@ -348,6 +363,8 @@ export function writeBlock(node, serialize) {
       return writeTable(node, serialize);
     case "imageBlock":
       return writeImage(node);
+    case "canvasBlock":
+      return writeCanvasBlock(node);
     default: {
       const text = trimEnd(serialize({ type: "doc", content: [node] }));
       // A paragraph can carry a block link id at the end of its last line.
