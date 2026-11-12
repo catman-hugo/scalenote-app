@@ -1,6 +1,7 @@
 // Drives the real built interface (dist/) in Chromium, with the in-memory backend from
 // mock-backend.js. Run with: npm run build && node tests/editor.spec.mjs
 
+import zlib from "node:zlib";
 import { createRequire } from "node:module";
 import http from "node:http";
 import fs from "node:fs";
@@ -6479,6 +6480,185 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "0410")) {
     }
     }
     await context.close();
+  }
+}
+
+// ---------- 0.4.12: picture size handles ----------
+// A real 200x100 picture, so sizes can be checked against something with a shape.
+function solidPng(width, height) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const head = Buffer.alloc(4); head.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type), data]); const tail = Buffer.alloc(4); tail.writeUInt32BE(crc(body)); return Buffer.concat([head, body, tail]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x9a)]);
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]).toString("base64");
+}
+const PIC_200x100 = solidPng(200, 100);
+async function picVault(page, line = "![leaf](attachments/leaf.png)") {
+  await start(page);
+  await page.evaluate(([picture]) => window.__mock.attachments.set("attachments/leaf.png", picture), [PIC_200x100]);
+  await seed(page, "Pic.md", `before\n\n${line}\n\nafter\n`);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Pic.md"]');
+  await page.waitForSelector(".image-img[src]");
+  await page.waitForFunction(() => document.querySelector(".image-img").naturalWidth === 200);
+}
+const picBox = (page) => page.evaluate(() => { const r = document.querySelector(".image-img").getBoundingClientRect(); return { width: Math.round(r.width), height: Math.round(r.height), x: r.x, y: r.y }; });
+const picLine = async (page) => { await waitSaved(page); return /!\[[^\n]*\]\(attachments\/leaf\.png\)/.exec(bodyOfPage((await files(page))["Pic.md"]))?.[0]; };
+async function selectPic(page) { await page.click(".image-img"); await page.waitForSelector(".image-block.ProseMirror-selectednode"); }
+async function clickText(page, text) {
+  const box = await page.locator(`.note-body p >> text=${text}`).boundingBox();
+  await page.mouse.click(box.x + 8, box.y + box.height / 2);
+}
+const handleAt = async (page, place) => { const box = await page.locator(`.image-handle-${place}`).boundingBox(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; };
+async function dragPicHandle(page, place, dx, dy) {
+  const at = await handleAt(page, place);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + dx / 2, at.y + dy / 2, { steps: 4 });
+  await page.mouse.move(at.x + dx, at.y + dy, { steps: 4 });
+  await page.mouse.up();
+}
+
+await test("a picture shows eight handles only while it is selected, and has none until then", async (page) => {
+  await picVault(page);
+  assert.equal(await page.locator(".image-handle:visible").count(), 0);
+  await selectPic(page);
+  assert.equal(await page.locator(".image-handle:visible").count(), 8);
+  await clickText(page, "after");
+  assert.equal(await page.locator(".image-handle:visible").count(), 0);
+  assert.equal(await page.locator(".image-reset:visible").count(), 0, "no reset button for a picture that has no size");
+});
+
+await test("a corner scales the picture with its proportions and writes only the width", async (page) => {
+  await picVault(page);
+  await selectPic(page);
+  await dragPicHandle(page, "se", 60, 0);
+  assert.equal(await picLine(page), "![leaf|320](attachments/leaf.png)");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [320, 160]);
+  // The size comes back when the page is opened again.
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Pic.md"]');
+  await page.waitForSelector(".image-img[src]");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [320, 160]);
+});
+
+await test("an edge stretches one side, writes both sizes, and a corner then keeps that shape", async (page) => {
+  await picVault(page);
+  await selectPic(page);
+  await dragPicHandle(page, "s", 0, 50);
+  assert.equal(await picLine(page), "![leaf|200x150](attachments/leaf.png)");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [200, 150]);
+  await dragPicHandle(page, "e", 40, 0);
+  assert.equal(await picLine(page), "![leaf|280x150](attachments/leaf.png)");
+  await dragPicHandle(page, "nw", -10, 0);
+  // 20 px wider at both sides of a 280x150 picture: factor 300/280.
+  assert.equal(await picLine(page), "![leaf|300x161](attachments/leaf.png)");
+});
+
+await test("a picture cannot be made smaller than 50 px or wider than the page", async (page) => {
+  await picVault(page);
+  await selectPic(page);
+  await dragPicHandle(page, "e", -400, 0);
+  assert.equal(await picLine(page), "![leaf|50x100](attachments/leaf.png)");
+  await dragPicHandle(page, "s", 0, -400);
+  assert.equal(await picLine(page), "![leaf|50x50](attachments/leaf.png)");
+  await page.click(".image-reset");
+  await selectPic(page);
+  await dragPicHandle(page, "e", 3000, 0);
+  const room = await page.evaluate(() => document.querySelector(".image-frame").clientWidth);
+  const written = /\|(\d+)x/.exec(await picLine(page));
+  assert.equal(Number(written[1]), room);
+});
+
+await test("the original size button clears the size, and undo brings the size back in one step", async (page) => {
+  await picVault(page, "![leaf|320x160](attachments/leaf.png)");
+  await selectPic(page);
+  await page.click(".image-reset");
+  assert.equal(await picLine(page), "![leaf](attachments/leaf.png)");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [200, 100]);
+  assert.equal(await page.locator(".image-reset:visible").count(), 0);
+  await page.keyboard.press("Control+z");
+  assert.equal(await picLine(page), "![leaf|320x160](attachments/leaf.png)");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [320, 160]);
+  // One whole drag is one undo step.
+  await dragPicHandle(page, "se", 30, 0);
+  assert.equal(await picLine(page), "![leaf|380x190](attachments/leaf.png)");
+  await page.keyboard.press("Control+z");
+  assert.equal(await picLine(page), "![leaf|320x160](attachments/leaf.png)");
+});
+
+await test("a handle moves with the arrow keys, and a pointer that is taken away leaves the size alone", async (page) => {
+  await picVault(page);
+  await selectPic(page);
+  await page.locator(".image-handle-e").focus();
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await picLine(page), "![leaf|220x100](attachments/leaf.png)");
+  // The edge moves 10 px, and the picture is centred, so the width changes by 20.
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await picLine(page), "![leaf|200x100](attachments/leaf.png)");
+  // A drag that is cancelled half way is not saved and the picture goes back to what it was.
+  const at = await handleAt(page, "se");
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 80, at.y, { steps: 4 });
+  assert.ok((await picBox(page)).width > 250, "the picture follows the pointer while dragging");
+  await page.evaluate(() => document.querySelector(".image-handle-se").dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: 1 })));
+  await page.mouse.up();
+  assert.equal((await picBox(page)).width, 200);
+  assert.equal(await picLine(page), "![leaf|200x100](attachments/leaf.png)");
+});
+
+await test("a finger can drag a handle", async (page) => {
+  await picVault(page);
+  await selectPic(page);
+  const at = await handleAt(page, "se");
+  const client = await page.context().newCDPSession(page);
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+  for (let i = 1; i <= 6; i++) await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: at.x + i * 10, y: at.y, id: 1 }] });
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  assert.equal(await picLine(page), "![leaf|320](attachments/leaf.png)");
+}, { hasTouch: true });
+
+await test("a size that is not a plain number is left in the description and never rewritten", async (page) => {
+  await picVault(page, "![a|0 and |300x](attachments/leaf.png)");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [200, 100]);
+  await clickText(page, "after");
+  await page.keyboard.type(" more");
+  assert.equal(await picLine(page), "![a|0 and |300x](attachments/leaf.png)");
+});
+
+await test("a size larger than the window is shown at the window's width with the same proportions", async (page) => {
+  await picVault(page, "![x|800x400](attachments/leaf.png)");
+  const box = await picBox(page);
+  const room = await page.evaluate(() => document.querySelector(".image-frame").clientWidth);
+  assert.ok(box.width <= room, `${box.width} fits ${room}`);
+  assert.ok(Math.abs(box.height * 2 - box.width) <= 2, "the proportions stay 2 to 1");
+}, { viewport: { width: 390, height: 800 } });
+
+await test("typing a size into the description does not make a size", async (page) => {
+  await picVault(page);
+  await selectPic(page);
+  await page.fill(".image-alt", "chart|300");
+  assert.equal(await picLine(page), "![chart 300](attachments/leaf.png)");
+  assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [200, 100]);
+});
+
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await picVault(page, "![a leaf|240x120](attachments/leaf.png)");
+      await selectPic(page);
+      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-1-picture-selected.png` });
+      await context.close();
+    }
   }
 }
 

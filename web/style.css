@@ -1011,11 +1011,57 @@ body.block-dragging .float-bar { visibility: hidden; }
 
 .image-block { margin: var(--space-3) 0; }
 .image-frame { display: flex; justify-content: center; }
-.image-img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.image-sizer { position: relative; display: block; max-width: 100%; }
+.image-sizer.is-sized .image-img { width: 100%; }
+.image-img { display: block; max-width: 100%; height: auto; border-radius: var(--radius); }
 .image-img:not([src]) { display: none; }
+.image-sizer:has(.image-img:not([src])) { display: none; }
 .image-missing { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
-.image-alt { display: block; width: 100%; margin-top: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.image-caption { display: flex; gap: var(--space-2); align-items: center; margin-top: var(--space-1); }
+.image-alt { display: block; flex: 1; min-width: 0; font-size: var(--text-s); color: var(--text-soft); }
 .image-block.ProseMirror-selectednode .image-img { outline: 2px solid var(--accent); }
+
+/* The handles show while the picture is selected or one of them has the focus. A square of
+   10 px is drawn; the invisible area around it is the target for a finger. */
+.image-handle,
+.image-reset { display: none; }
+.image-block.ProseMirror-selectednode .image-handle,
+.image-block:focus-within .image-handle {
+  display: block;
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  box-sizing: border-box;
+  touch-action: none;
+}
+.image-handle::before { content: ""; position: absolute; inset: -11px; }
+.image-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
+.image-handle-n { left: 50%; top: 0; cursor: ns-resize; }
+.image-handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.image-handle-e { left: 100%; top: 50%; cursor: ew-resize; }
+.image-handle-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.image-handle-s { left: 50%; top: 100%; cursor: ns-resize; }
+.image-handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.image-handle-w { left: 0; top: 50%; cursor: ew-resize; }
+.image-block.ProseMirror-selectednode .image-reset:not([hidden]),
+.image-block:focus-within .image-reset:not([hidden]) {
+  display: block;
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: var(--text-s);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.ProseMirror[contenteditable="false"] .image-handle,
+.ProseMirror[contenteditable="false"] .image-reset { display: none !important; }
 
 /* ---------- floating toolbars ---------- */
 

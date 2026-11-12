@@ -280,17 +280,42 @@ export function writeTable(node, serialize) {
 
 const IMAGE = /^!\[([^\[\]\n]*)\]\((attachments\/[^\s()<>"\\]+\.(?:png|jpe?g|gif|webp))\)$/i;
 
+// A size is written Obsidian-style at the very end of the description: `alt|300` (width) or
+// `alt|300x200` (width and height). Anything else after a `|` is just part of the description,
+// so an odd or out-of-range size means "natural size" and the text is kept as it was.
+export const MIN_IMAGE_SIDE = 1;
+export const MAX_IMAGE_SIDE = 10000;
+const SIZE_AT_END = /\|(\d{1,5})(?:x(\d{1,5}))?$/;
+
+function sizeOf(text) {
+  const match = SIZE_AT_END.exec(text);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = match[2] === undefined ? null : Number(match[2]);
+  const fits = (n) => n >= MIN_IMAGE_SIDE && n <= MAX_IMAGE_SIDE;
+  if (!fits(width) || (height !== null && !fits(height))) return null;
+  return { cut: match.index, width, height };
+}
+
 export function readImage(src) {
   const match = IMAGE.exec(src);
   if (!match) return null;
   const path = match[2];
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return null;
-  return { type: "imageBlock", attrs: { alt: match[1], path } };
+  const size = sizeOf(match[1]);
+  if (!size) return { type: "imageBlock", attrs: { alt: match[1], path } };
+  const attrs = { alt: match[1].slice(0, size.cut), path, width: size.width };
+  if (size.height !== null) attrs.height = size.height;
+  return { type: "imageBlock", attrs };
 }
 
 export function writeImage(node) {
-  const { alt = "", path = "" } = node.attrs || {};
-  return `![${alt.replace(/[\[\]\n]/g, " ")}](${path})`;
+  const { alt = "", path = "", width = null, height = null } = node.attrs || {};
+  let text = alt.replace(/[\[\]\n]/g, " ");
+  if (width) return `![${text}|${Math.round(width)}${height ? `x${Math.round(height)}` : ""}](${path})`;
+  // With no size, a description that happens to end in a size would be read back as one.
+  if (sizeOf(text)) text = text.replace(/\|(?=\d{1,5}(?:x\d{1,5})?$)/, " ");
+  return `![${text}](${path})`;
 }
 
 // ---------- the two entry points used by compose.js ----------

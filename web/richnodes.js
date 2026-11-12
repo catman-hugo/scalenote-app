@@ -1,6 +1,7 @@
 // Editor nodes for callouts, toggles, images and tables. How they are read from and written
 // to markdown lives in richblocks.js; this file is only how they look and behave on screen.
 
+import { HANDLES, keyDelta, resizeBy } from "./imagesize.js";
 import { Node } from "@tiptap/core";
 import { liftEmptyBlock } from "@tiptap/pm/commands";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -237,6 +238,9 @@ export const ImageBlock = Node.create({
     return {
       alt: { default: "", rendered: false },
       path: { default: "", rendered: false },
+      // A size in pixels, or null for the natural size. Written as `alt|width` or `alt|widthxheight`.
+      width: { default: null, rendered: false },
+      height: { default: null, rendered: false },
     };
   },
   parseHTML() {
@@ -251,21 +255,54 @@ export const ImageBlock = Node.create({
       let current = node;
       const dom = make("figure", "image-block");
       const frame = make("div", "image-frame");
+      // The sizer is exactly as big as the picture, so the handles sit on its edges.
+      const sizer = make("div", "image-sizer");
       const img = make("img", "image-img");
       const missing = make("p", "image-missing", strings.image.missing);
       missing.hidden = true;
+      const reset = make("button", "image-reset", strings.image.resetSize);
+      reset.type = "button";
+      reset.setAttribute("aria-label", strings.image.resetSizeLabel);
+      const handles = HANDLES.map((place) => {
+        const handle = make("span", `image-handle image-handle-${place}`);
+        handle.dataset.handle = place;
+        handle.tabIndex = 0;
+        handle.setAttribute("role", "button");
+        handle.setAttribute("aria-label", strings.image.handleLabel.replace("{place}", strings.image.places[place]));
+        return handle;
+      });
       const alt = make("input", "image-alt");
       alt.type = "text";
       alt.maxLength = 300;
       alt.placeholder = strings.image.altPlaceholder;
       alt.setAttribute("aria-label", strings.image.altLabel);
-      frame.append(img, missing);
-      dom.append(frame, alt);
+      sizer.append(img, ...handles);
+      frame.append(sizer, missing);
+      // The reset button sits next to the description, not on the picture, so it never covers a handle.
+      const caption = make("div", "image-caption");
+      caption.append(alt, reset);
+      dom.append(frame, caption);
+
+      // Shows a size without saving it; null sides mean the natural size.
+      const paint = (width, height) => {
+        sizer.classList.toggle("is-sized", Boolean(width));
+        sizer.style.width = width ? `${width}px` : "";
+        img.style.aspectRatio = width && height ? `${width} / ${height}` : "";
+      };
+      const paintSaved = () => {
+        paint(current.attrs.width, current.attrs.height);
+        reset.hidden = !current.attrs.width;
+      };
+      const commit = (width, height) => {
+        setAttrs(editor, getPos, current, { width, height });
+      };
+      const loaded = () => img.naturalWidth > 0 && Boolean(img.getAttribute("src"));
 
       let shownPath = null;
       const show = () => {
         img.alt = current.attrs.alt;
         if (alt.value !== current.attrs.alt) alt.value = current.attrs.alt;
+        paintSaved();
         if (shownPath === current.attrs.path) return;
         shownPath = current.attrs.path;
         const wanted = shownPath;
@@ -282,6 +319,68 @@ export const ImageBlock = Node.create({
           },
         );
       };
+
+      // What the picture measures now, in page pixels (a zoomed page scales what the screen shows).
+      const measure = () => {
+        const box = img.getBoundingClientRect();
+        const scale = img.offsetWidth > 0 ? box.width / img.offsetWidth : 1;
+        return {
+          scale: scale > 0 ? scale : 1,
+          start: { width: img.offsetWidth, height: img.offsetHeight, explicitHeight: Boolean(current.attrs.height) },
+          room: frame.clientWidth,
+        };
+      };
+
+      let drag = null;
+      const endDrag = (save) => {
+        if (!drag) return;
+        const finished = drag;
+        drag = null;
+        if (save && finished.result) commit(finished.result.width, finished.result.height);
+        else paintSaved();
+      };
+      handles.forEach((handle) => {
+        const place = handle.dataset.handle;
+        handle.addEventListener("pointerdown", (event) => {
+          if (!editor.isEditable || !loaded() || event.button > 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          handle.setPointerCapture?.(event.pointerId);
+          drag = { place, x: event.clientX, y: event.clientY, id: event.pointerId, ...measure(), result: null };
+        });
+        handle.addEventListener("pointermove", (event) => {
+          if (!drag || event.pointerId !== drag.id) return;
+          const dx = (event.clientX - drag.x) / drag.scale;
+          const dy = (event.clientY - drag.y) / drag.scale;
+          drag.result = resizeBy(place, drag.start, dx, dy, drag.room);
+          paint(drag.result.width, drag.result.height);
+        });
+        handle.addEventListener("pointerup", (event) => {
+          if (drag && event.pointerId === drag.id) endDrag(true);
+        });
+        // A pointer taken away (a call, a palm) leaves the picture as it was.
+        handle.addEventListener("pointercancel", () => endDrag(false));
+        handle.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && drag) {
+            event.preventDefault();
+            endDrag(false);
+            return;
+          }
+          const delta = keyDelta(event.key);
+          if (!delta || !editor.isEditable || !loaded()) return;
+          event.preventDefault();
+          const { start, room } = measure();
+          const next = resizeBy(place, start, delta[0], delta[1], room);
+          commit(next.width, next.height);
+        });
+      });
+      reset.addEventListener("click", () => {
+        if (!editor.isEditable) return;
+        commit(null, null);
+        // Keep the editor in charge of the keyboard, so Ctrl+Z undoes this.
+        editor.commands.focus();
+      });
+
       alt.addEventListener("input", () => setAttrs(editor, getPos, current, { alt: alt.value.replace(/[\[\]\n]/g, " ") }));
       show();
       return {
@@ -292,7 +391,7 @@ export const ImageBlock = Node.create({
           show();
           return true;
         },
-        stopEvent: (event) => alt.contains(event.target),
+        stopEvent: (event) => alt.contains(event.target) || handles.some((h) => h.contains(event.target)) || reset.contains(event.target),
         ignoreMutation: () => true,
       };
     };

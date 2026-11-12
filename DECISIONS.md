@@ -555,3 +555,10 @@ Alternatives. Anchoring strokes below the last block to the page bottom in pixel
 Cost. Ink far below the last block moves if that block's height changes.
 
 Decision. The logo mark is a three-lobed shape with a long lower lobe, so bounding box, enclosing circle and centre of mass disagree by up to 5 percent. Every icon is shifted by the mean of the three, which looked centred in a circular mask in renders. Alpha masks were left in place.
+
+## 2026-11-12: Version plan after 0.4.11; how the picture handles resize
+
+Decision. 0.4.11 is the fix release that is out. The big release (canvas block, image controls, PDF import) is now 0.4.12 and is built in slices; the first slice is image controls, because its format was already decided (`![alt|300x200](path)`) and it needs no new library. The `/canvas` block waits for the owner's choice of markdown storage (A, B or C in `docs/v0.4-plan.md`), PDF import for a choice of PDF library.
+Decision. Pictures are centred in the page, so a handle on the left or right edge moves both sides (the held edge follows the pointer). A page flows downwards, so the top edge cannot move the top of the picture: dragging up on the top edge, like pulling down on the bottom edge, makes it taller. Corners follow the larger of the two movements and keep the proportions; a corner on a picture with no height of its own writes only the width. Sizes are whole numbers from 1 to 10000 in the file; the handles keep 50 to the width of the page. A `|number` in a description that is not a size (0, more than 10000, `300x`) is just text and is written back as it was. A description typed with a trailing `|300` and no size has the bar turned into a space when written, so it is not read back as a size.
+Alternatives. Left aligned pictures (rejected: changes how every existing picture looks), a fixed-height frame with an anchored top (not possible in markdown).
+Cost. The top handle feels different from the others. Owner to try it on a device.
