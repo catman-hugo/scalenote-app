@@ -537,3 +537,13 @@ Cost. The Kotlin has never been compiled or run by me; the CI build is the first
 
 Decision. The owner wants to distribute through F-Droid later and maybe Google Play once the app is fully finished, not now. Until then the in-app installer stays as built in 0.4.10, next to the browser download. Android has no way to give an app "install unknown apps" for itself only, so the in-app installer needs that permission for any file; with F-Droid or Google Play the store does the updates and ScaleNote needs no such permission.
 Open, not decided. Check that a downloaded apk is signed with the app's own key before opening the installer, make the in-app install opt-in, and sign release builds with a real key (CI builds a debug apk now, so updates over an installed build may fail on a key mismatch).
+
+## 2026-11-11: The pen bar has no Done button, the sheet covers the whole text box, strokes are cut per block
+
+Decision. After trying 0.4.10 on his phone the owner asked to remove Done (the pen button on the top bar starts and stops drawing) and the strips left and above the text where a pen scrolled the page instead of drawing. The cause of the strips: the sheet was placed inside the text box's padding, so it started below and right of the box's corner; it is now moved back by the measured offset and covers the whole visible box. Found while testing: a long stroke from a short block (a scribble down the page) gave points so far from their block that the saved file was refused on the next opening (the drawing became read-only). A stroke is now cut into one piece per block it crosses, joined at the cuts, and fractions are limited to 19 block sizes.
+Alternatives. Only clamping the fractions (rejected: a long stroke would collapse onto one line after saving).
+Cost. One stroke can now be several saved pieces, so the eraser removes it piece by piece; undo removes the whole stroke in one step.
+
+## 2026-11-11: The installer's file provider is its own class (fix for an apk that could not be installed)
+
+The 0.4.10 apk declared the class `androidx.core.content.FileProvider` twice (the Tauri template's provider and ours). Android refuses to install an app with a component name declared twice, with "There was a problem while parsing the package". The build did not notice. Now our provider is the small subclass `ApkFileProvider`, a unit test checks that no component name appears twice, and the Android build job inspects the finished apk with `aapt2` and fails if any name is declared twice. Every 0.4.10 apk (and the release built from it) cannot be installed; a new release is needed.

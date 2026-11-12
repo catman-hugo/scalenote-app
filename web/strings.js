@@ -210,8 +210,6 @@ export const strings = {
     command: "Draw on the text of this page",
     toolbar: "Pen for the text",
     surface: "Ink over the text",
-    done: "Done",
-    doneLabel: "Stop drawing on the text",
     noText: "There is no text here to draw on yet.",
     saveFailed: "The ink could not be saved.",
   },

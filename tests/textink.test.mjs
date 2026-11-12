@@ -99,3 +99,32 @@ test("ink counts towards the limits of the drawing", () => {
   assert.equal(totalPoints(canvas), 4);
   assert.ok(canAddItem(canvas, 10));
 });
+
+// ---- long strokes ----
+import { splitByBlock, inkFromScreen as ink2, FRACTION_LIMIT } from "../web/textink.js";
+import { parseCanvas as parse2, serializeCanvas as serialize2, emptyCanvas as empty2 } from "../web/canvasrules.js";
+
+const THREE = [{ top: 0, bottom: 30 }, { top: 50, bottom: 80 }, { top: 100, bottom: 130 }];
+
+test("a stroke across three blocks is cut into one piece per block, joined at the cuts", () => {
+  const points = [[5, 10, 0.5], [5, 20, 0.5], [5, 60, 0.5], [5, 70, 0.5], [5, 120, 0.5]];
+  const pieces = splitByBlock(points, THREE);
+  assert.deepEqual(pieces.map((p) => p.block), [0, 1, 2]);
+  assert.deepEqual(pieces[0].points, [[5, 10, 0.5], [5, 20, 0.5], [5, 60, 0.5]]);
+  assert.deepEqual(pieces[1].points, [[5, 60, 0.5], [5, 70, 0.5], [5, 120, 0.5]]);
+  assert.deepEqual(pieces[2].points, [[5, 120, 0.5]]);
+});
+
+test("a stroke inside one block stays one piece, and no blocks gives nothing", () => {
+  assert.equal(splitByBlock([[1, 5, 1], [2, 6, 1]], THREE).length, 1);
+  assert.deepEqual(splitByBlock([[1, 5, 1]], []), []);
+});
+
+test("a stroke far below the last block is pulled in so the saved file is still accepted", () => {
+  const stroke = { tool: "pen", color: "ink", width: 8, points: [[5, 120, 0.5], [5, 9000, 0.5]] };
+  const piece = ink2(stroke, { left: 0, top: 100, width: 400, height: 30 }, { block: 2, tag: "p:x" });
+  assert.ok(piece.points.every(([, fy]) => Math.abs(fy) <= FRACTION_LIMIT));
+  const canvas = empty2();
+  canvas.ink.push(piece);
+  assert.equal(parse2(serialize2(canvas)).problem, undefined);
+});

@@ -1951,7 +1951,6 @@ async function start() {
     drawing: inkDrawing,
     onChange: () => app.canvasSave.touch(),
     onNotice: (text) => showToast(text),
-    onDone: stopInk,
   });
   app.editor.on("update", () => app.ink.refresh());
   app.pageText = createPageText(app.editor);

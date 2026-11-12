@@ -2,7 +2,7 @@
 // (the Tauri 2.12.4 template, with the example identifier used everywhere in this repository).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { patchManifest, patchActivity, apkInstallerSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
+import { patchManifest, patchActivity, apkInstallerSource, apkFileProviderSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
 
 const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -143,4 +143,14 @@ test("missing icons stop the build instead of shipping the default logo", async 
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "noicons-"));
   await assert.rejects(installIcons(empty, path.join(empty, "res")), /no launcher icons/);
   await assert.rejects(installIcons(path.join(empty, "nope"), path.join(empty, "res")), /no launcher icons/);
+});
+
+test("our provider has a name of its own, so no component name appears twice", () => {
+  // The Tauri template declares androidx.core.content.FileProvider itself.
+  const template = MANIFEST.replace("</application>", '<provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true" /></application>');
+  const out = patchManifest(template);
+  const names = [...out.matchAll(/<(?:activity|provider|service|receiver)[^>]*?android:name="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), [], "no component is declared twice: " + names.join(", "));
+  assert.ok(names.includes(".ApkFileProvider"));
+  assert.match(apkFileProviderSource("local.example.scalenote"), /class ApkFileProvider : FileProvider\(\)/);
 });
