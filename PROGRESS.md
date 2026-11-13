@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-04, 0.2.1 released and first tried on Linux; 0.2.2 planned.
+Last updated: 2026-11-13, 0.4.12 version bumped (image controls, canvas block with regions, PDF import); built and tested in a browser and by CI builds, NOT tried on a device.
 
 ## 0.2.2 plan (built, see "0.2.2: built"; from the owner's test of 0.2.1 on Linux, 2026-11-04)
 
@@ -340,7 +340,7 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
-## 0.4.12, canvas block (slice 2; branch `feature/v0.4.12-canvas-block`; not yet released)
+## 0.4.12, canvas block (slice 2; PR #56; released in 0.4.12)
 - Typing `/canvas` puts a block in the text that shows one region of the page's drawing, and adds the region (a "frame": id, place, size, label) to the drawing file. The block is a window: it paints the same drawing as the Canvas view, cut to the region, with the paper and page colour. The full Canvas view outlines each region with a dashed line and its name.
 - Markdown: a fenced block of exactly three lines, `scalenote-canvas`, `id: abc123xy`, closing fence (owner delegated the choice, option B in `docs/v0.4-plan.md`). Anything else with that label stays an ordinary code block. Obsidian shows it as a small code block.
 - File: format 6 adds `frames` (written only when a frame exists; 200 at most; sides 40 to 4000; unique ids). Older versions open such a drawing read-only. Code: `web/canvasblock.js`, `web/canvaspaint.js` (the painting moved out of `web/canvasview.js` so both use it), frames in `web/canvasrules.js`.
@@ -348,7 +348,7 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Not built yet: drawing inside the block (the block only shows), moving or resizing a region on the full canvas or by the block's bottom edge, editing a region's name, a block that is deleted keeps its region on the canvas (the safe default). The `/canvas` block is not offered inside callouts, toggles or columns.
 - Known limit: the drawing is loaded when a page has ink or regions; a page opened in Canvas first and then switched to text shows its blocks once the text view is back (not specifically tested).
 
-## 0.4.12, regions on the canvas (slice 3; branch `feature/v0.4.12-canvas-regions`; not yet released)
+## 0.4.12, regions on the canvas (slice 3; PR #58; released in 0.4.12)
 - Owner decision (2026-11-13): the canvas block behaves exactly like ScaleNote v1's. The text side is only a window onto part of the canvas: nothing in it can be drawn on or clicked, and it has no drawing bar. All drawing happens in the Canvas view. The earlier idea of drawing inside the block (PR #57) is dropped.
 - v1's block, as read from its code: `/canvas` makes a frame on the canvas and puts a block in the text; the block is a read-only snapshot of that frame at the frame's size under a small title; a missing frame says "Canvas region not found"; on the canvas the frame is a dashed outline with a name that can be selected, moved by its edge and resized by its corners, and the block follows live.
 - Added here to match: with the Loop tool, a press on a region's dashed border selects and moves it; the four corners of a selected region resize it (the opposite corner stays; 40 to 4000 per side); the bin button deletes it (the drawing inside stays on the sheet, and its block says the region is gone). Each of these is one Undo step. A press inside a region still draws the loop. Back in the text, blocks show the new place and size.
@@ -356,7 +356,7 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Built and tested here: 3 unit tests (hit rules, drag rules, undo/redo) and 5 browser tests; full suites pass (259 unit tests, browser suite with 0 failures); screenshots light and dark. NOT tried on a device (dragging with a finger or pen on the tablet).
 - Known limit: the Canvas view fits the drawing, not the regions, so a region far from the drawing can start off-screen (zoom out to find it). Not built: naming a region, a block inside callouts or columns.
 
-## 0.4.12, PDF import (slice 4; branch `feature/v0.4.12-pdf-import`; not yet released)
+## 0.4.12, PDF import (slice 4; PR #59; released in 0.4.12)
 - Typing `/pdf` (or dropping a PDF on the page) asks how to add the file, as ScaleNote v1 did:
   - **Scroll through** (v1's Embed): the PDF is copied into `attachments/` and shown in the page as a box of fixed height (drag its lower edge to change it) that scrolls through the pages. Pages are drawn by pdf.js only while near the view and freed again when far away. In the file it is `![Name](attachments/Name.pdf)`, which Obsidian also shows as a PDF. It is for looking: no editing, no text selection, no links.
   - **Pages as images** (v1's Import): every page becomes a JPEG in `attachments/` (1.5 times the paper size, quality 0.8, as v1; at most 4 million pixels), placed one after another with an empty line after each, so you can type next to a page and draw on it with the pen over the text. Up to 100 pages. A Stop button ends it; nothing is put in the page until every picture is stored.
@@ -376,7 +376,7 @@ The Android apk of 0.4.10 cannot be installed: it declared the same file provide
 - Fix: ink drawn below the last block flattened into a horizontal line. The 0.4.11 clamp (19 block sizes) was too small for the empty space under the last block; the limit is now 299 (`FRACTION_LIMIT` in `web/textink.js`, `INK_REACH` 300 in `web/canvasrules.js`). Unit-tested and browser-tested here; NOT tried on a device. Known limit: ink far below the last block is stored relative to that block's height, so it moves if that block's height changes.
 - Logo recentred: every PNG under `src-tauri/icons`, `icon.ico`, `icon.icns` and `web/logo.png` was shifted so the mark's centre (mean of bounding box, enclosing circle and centre of mass) sits in the middle. Checked in renders with a circular mask here only; the owner must look at the launcher on the device. The macOS `.icns` was rewritten by Pillow and lacks the 32x32 1x size (macOS is not a target).
 
-## 0.4.12 so far (not yet released; its notes are written when the release is made)
+## 0.4.12, image controls (slice 1; PR #55; released in 0.4.12). Release notes: `docs/release-notes/0.4.12.md`; checks: `docs/security-checklist-0.4.12.md`
 - Image controls (branch `feature/v0.4.12-image-controls`). A picture in the page shows eight handles when it is selected (click it): the four corners scale it with its proportions, the four edges stretch one side. Minimum 50 px, never wider than the page. The size is written as `![alt|300](path)` (width) or `![alt|300x200](path)` and read back the same way; any other text after a `|` stays in the description. An "Original size" button next to the description clears the size. Handles work with a mouse, a finger and the arrow keys (10 px a press). Code: `web/imagesize.js` (the arithmetic), the `imageBlock` view in `web/richnodes.js`, reading and writing in `web/richblocks.js`. 8 unit tests for sizes, 7 for the arithmetic, 9 browser tests (one with a touch drag by the browser's touch events); screenshots in light and dark at desktop and phone width taken here. NOT tried on a device.
 - Known limits: left and right edges move both sides (the picture stays centred, so the held edge follows the pointer); the top edge cannot move the top of the picture, so dragging it up makes the picture taller downwards. Ctrl+Z only works from the page, not while a handle itself has the keyboard focus. Clicking in the empty space to the right of a line of text under a selected picture does not unselect it (seen in the test browser; not changed here).
 
