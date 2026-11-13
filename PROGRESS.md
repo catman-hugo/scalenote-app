@@ -340,6 +340,13 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Tested here: browser tests for the menu (contents in each view, keyboard open and Escape), the old tests changed to use the menu, screenshots light and dark on desktop and phone. Needs the tablet and phone: touch feel of the menu, and the single row on a real phone.
 - No release notes yet: they go into the next version's notes.
 
+## 0.4.14 (built 2026-11-13; waiting for the owner's device test and release)
+- `/canvas` is offered inside callouts, toggles and columns. The canvas block is read inside them like images and PDFs (`web/richblocks.js` `readInnerBlock`, `web/richnodes.js` `INNER_BLOCKS`), and written back with the container's own `> ` marks. A page that is opened and not edited keeps its bytes.
+- Tested here: unit tests for callout, toggle, column, mixed nesting and a malformed fence; two browser tests (a page with all three opens with no raw block and keeps its text after an edit; `/canvas` inside a callout writes the block inside it).
+- Not tried on a device: dragging columns or toggles that hold a canvas block; a block in a narrow column on a phone.
+- Settings in tabs (owner request): Look, Pages, Drawing, Updates, Files. Wide box (up to 56 rem) with the tab list on the left on a computer; a row on top on a phone (the tabs wrap onto a second row so none is cut off). The box opens on the tab that was open last. Up/Down (Left/Right) move between tabs. Existing settings tests now pick their tab with `openSettingsTab`. Tested here with browser tests and light/dark screenshots on desktop and phone width; not tried on a device. No settings search yet.
+- Version number is 0.4.14 everywhere; `docs/release-notes/0.4.14.md` and `docs/security-checklist-0.4.14.md` are written.
+
 ## 0.4.13 (built 2026-11-13; waiting for the owner's device test and release)
 - What's new box: the notes are now shown with sub-points, continued lines, and no stray `*` or link marks (`web/whatsnew.js`). The box is a column: title and Close button stay in view, only the notes between them scroll, with a line above and below; its height follows the real screen (`dvh`) (`web/style.css`). Checked in tests at 390x640 and 640x320 and in screenshots (phone, light and dark).
 - Setting "Show what's new after an update" (Settings, under Look for new versions), on by default. Off: the box never opens after an update, but the version is still remembered; the What's new button in the update notice still works. Saved as `showWhatsNew` in the settings file.
@@ -480,7 +487,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.11 | Fixes after trying 0.4.10 on a phone: the Android file that could not be installed, no Done button in the pen bar, drawing in the margin, long strokes, ink below the last block, logo centred (see "0.4.11") | released (tag moved to the merged main); not tried on a device |
 | 0.4.12 | One big release (owner request, 2026-11-11): the `/canvas` block, image controls (eight resize handles as in v1, size saved as `![alt\|300x200](path)`, see DECISIONS.md) and PDF import as page images to draw on. Built in slices on separate branches: image controls first. Evaluation of v1's `/canvas` is in `docs/v0.4-plan.md`; the markdown storage of the `/canvas` block must be decided with the owner first; PDF import needs a decision on the library | in progress: image controls built, not tried on a device; `/canvas` block and PDF import not started |
 | 0.4.13 | Planned (owner, 2026-11-13): fixes from the device test of 0.4.12, then page icon colours (the same sixteen colours as folders, no other icon styles), and names for canvas regions | planned |
-| 0.4.14 | Planned: the `/canvas` block inside callouts, toggles and columns (changes the nesting rules of the markdown, so it comes before export) | planned |
+| 0.4.14 | The `/canvas` block inside callouts, toggles and columns (see "0.4.14") | built, not tried on a device |
 | 0.4.15 | Planned: ink and canvas drawings in print and export; text selection and find inside a PDF block | planned |
 | 0.5 | Sync between your own devices: LocalSend-style direct sync, home server as an always-on device, browser client. Slices 0.5.0 to 0.5.7, see `docs/v0.5-plan.md` | planned, not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |

@@ -60,6 +60,8 @@ function readInnerBlock(kind, src, io, depth) {
       return readTable(src, io);
     case "image":
       return readImage(src);
+    case "canvasblock":
+      return readCanvasBlock(src);
     default:
       break;
   }

@@ -332,3 +332,47 @@ test("a canvas block is read and written back exactly", () => {
     assert.equal(readCanvasBlock(bad), null, bad);
   }
 });
+
+// ---------- canvas blocks inside callouts, toggles and columns ----------
+
+const FENCE = "```scalenote-canvas\nid: abc123xy\n```";
+const FENCE_B = "```scalenote-canvas\nid: zzz999qq\n```";
+
+test("a canvas block inside a callout is read as a canvas block and written back to the byte", () => {
+  const src = "> [!note] Cell\n> before\n>\n> ```scalenote-canvas\n> id: abc123xy\n> ```\n>\n> after";
+  const node = readRichBlock("callout", src, io);
+  assert.equal(node.type, "callout");
+  assert.deepEqual(node.content.map((n) => n.type), ["paragraph", "canvasBlock", "paragraph"]);
+  assert.deepEqual(node.content[1].attrs, { id: "abc123xy" });
+  assert.equal(writeBlock(node, serialize), src);
+});
+
+test("a canvas block inside a toggle is read and written back to the byte", () => {
+  const src = `<details>\n<summary>Drawing</summary>\n\n${FENCE}\n\n</details>`;
+  const node = readRichBlock("details", src, io);
+  assert.equal(node.type, "toggle");
+  assert.deepEqual(node.content.map((n) => n.type), ["canvasBlock"]);
+  assert.equal(writeBlock(node, serialize), src);
+});
+
+test("a canvas block inside a column is read and written back to the byte", () => {
+  const src = "> [!columns]\n> > [!column]\n> > ```scalenote-canvas\n> > id: abc123xy\n> > ```\n>\n> > [!column]\n> > ```scalenote-canvas\n> > id: zzz999qq\n> > ```";
+  const node = readRichBlock("callout", src, io);
+  assert.equal(node.type, "columns");
+  assert.deepEqual(node.content.map((c) => c.content.map((n) => n.type)), [["canvasBlock"], ["canvasBlock"]]);
+  assert.equal(writeBlock(node, serialize), src);
+});
+
+test("a canvas block in a callout inside a toggle, and a page holding all of them, keep their bytes", () => {
+  const page = `<details>\n<summary>Skin</summary>\n\n> [!tip] Look\n> ${FENCE.replace(/\n/g, "\n> ")}\n\n</details>\n\n> [!note] Two\n> ${FENCE_B.replace(/\n/g, "\n> ")}\n`;
+  const { doc, parts } = loadNote(page, io);
+  assert.deepEqual(doc.content.map((n) => n.type), ["toggle", "callout"]);
+  assert.equal(composeNote(parts, doc, { ...io, assignId: false }), page);
+});
+
+test("a malformed canvas fence inside a callout makes the callout stay raw, so nothing is lost", () => {
+  const src = "> [!note] Cell\n> ```scalenote-canvas\n> id: ../etc\n> ```";
+  // The fence is an ordinary code block here, which a callout can hold; the text is unchanged.
+  const node = readRichBlock("callout", src, io);
+  assert.equal(writeBlock(node, serialize), src);
+});

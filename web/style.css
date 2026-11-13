@@ -1226,6 +1226,30 @@ body.block-dragging .float-bar { visibility: hidden; }
 .setting-actions:empty { display: none; }
 .setting-heading { margin: var(--space-3) 0 0; font-size: var(--text-m); font-weight: 600; }
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
+
+/* The settings box is wide on a computer: the tabs are a list on the left and the settings of the open
+   tab fill the rest. On a phone the tabs become a row on top. Flat colours only. */
+#settings.settings-dialog { max-width: 56rem; width: min(56rem, calc(100% - 2 * var(--space-4))); height: min(40rem, 88vh); padding: 0; overflow: hidden; }
+#settings[open].settings-dialog { display: block; }
+.settings-layout { display: flex; height: 100%; }
+.settings-tabs { display: flex; flex-direction: column; gap: var(--space-1); flex: 0 0 12rem; padding: var(--space-4) var(--space-3); border-right: 1px solid var(--line); background: var(--bg-side); overflow-y: auto; }
+.settings-tab { text-align: left; padding: var(--space-2) var(--space-3); border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; border-radius: var(--radius); cursor: pointer; }
+.settings-tab:hover { background: var(--bg-hover); }
+.settings-tab[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--space-4) var(--space-5); }
+.settings-main h2 { margin: 0 0 var(--space-3); }
+.settings-main .settings-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 0 var(--space-3); padding-right: var(--space-2); }
+.settings-main .settings-body[hidden] { display: none; }
+.settings-main > .primary { align-self: flex-end; }
+.settings-body .setting-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 640px) {
+  #settings.settings-dialog { height: min(40rem, 92vh); }
+  .settings-layout { flex-direction: column; }
+  /* The tabs wrap onto a second row instead of scrolling sideways, so every tab is always in view. */
+  .settings-tabs { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: var(--space-2); overflow: visible; }
+  .settings-tab { white-space: nowrap; }
+  .settings-main { padding: var(--space-3); }
+}
 /* The What's new box is a column: the title and the Close button stay in view, and only the notes
    between them scroll. The height follows the real screen (dvh, with vh for older webviews), so the
    box never runs off a phone. A line above and below the notes shows where the scrolling part is. */

@@ -72,6 +72,12 @@ const files = (page) => page.evaluate(() => Object.fromEntries(window.__mock.fil
 const seed = (page, name, text) => page.evaluate(([n, t]) => window.__mock.files.set(n, t), [name, text]);
 async function waitSaved(page) { await page.waitForFunction(() => document.getElementById("status").dataset.state === "saved", null, { timeout: 5000 }); }
 
+// Opens Settings and picks one of its tabs (Look is the one that opens first).
+async function openSettingsTab(page, tab) {
+  await page.click("#openSettings");
+  await page.click(`#settings [role="tab"][id="settingsTab-${tab}"]`);
+}
+
 await test("first run shows the disclosure, then the folder choice, then an empty list", async (page) => {
   await page.waitForSelector("#disclosure[open]");
   assert.match(await page.textContent("#disclosure"), /side project/);
@@ -907,7 +913,7 @@ await test("with Show what's new off, an update shows no box but is still rememb
   await page.waitForSelector("#newNote");
   assert.equal(await page.isVisible("#whatsnew"), false);
   assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).lastSeenVersion, VERSION);
-  await page.click("#openSettings");
+  await openSettingsTab(page, "updates");
   const box = page.locator('#settings label.setting-row:has-text("Show what\'s new after an update") input');
   assert.equal(await box.isChecked(), false);
   await box.check();
@@ -918,7 +924,7 @@ await test("Show what's new is on unless turned off, and turning it off is saved
   await page.waitForSelector("#whatsnew[open]");
   await page.click("#whatsnew button");
   await page.waitForSelector("#newNote");
-  await page.click("#openSettings");
+  await openSettingsTab(page, "updates");
   const box = page.locator('#settings label.setting-row:has-text("Show what\'s new after an update") input');
   assert.equal(await box.isChecked(), true);
   await box.uncheck();
@@ -1065,7 +1071,7 @@ await test("a file address from another site is not offered; the release page is
 
 await test("Check now shows Download and the release page inside Settings, where the banner is hidden", async (page) => {
   await page.waitForSelector("#newNote");
-  await page.click("#openSettings");
+  await openSettingsTab(page, "updates");
   await page.click('#settings button:has-text("Check now")');
   await page.waitForSelector('#settings .setting-actions button:has-text("Download")');
   assert.match(await page.textContent("#settings"), /Version 9\.9\.9 is available/);
@@ -1077,7 +1083,7 @@ await test("Check now shows Download and the release page inside Settings, where
 
 await test("in Settings with no matching file there is one button, for the release page", async (page) => {
   await page.waitForSelector("#newNote");
-  await page.click("#openSettings");
+  await openSettingsTab(page, "updates");
   await page.click('#settings button:has-text("Check now")');
   await page.waitForSelector('#settings .setting-actions button');
   assert.equal(await page.locator("#settings .setting-actions button").count(), 1);
@@ -1121,7 +1127,7 @@ await test("with the update setting off, nothing is requested and no notice appe
 
 await test("the update setting is one switch in Settings and is saved", async (page) => {
   await page.waitForSelector("#newNote");
-  await page.click("#openSettings");
+  await openSettingsTab(page, "updates");
   const box = page.locator('#settings .setting-row:has-text("new versions") input');
   assert.equal(await box.isChecked(), true);
   await box.uncheck();
@@ -1131,7 +1137,7 @@ await test("the update setting is one switch in Settings and is saved", async (p
 
 await test("Check now says when the version is current, and a failed check is calm", async (page) => {
   await page.waitForSelector("#newNote");
-  await page.click("#openSettings");
+  await openSettingsTab(page, "updates");
   await page.click('#settings button:has-text("Check now")');
   await page.waitForFunction(() => /latest version/.test(document.querySelector("#settings").textContent));
   await page.unroute(GITHUB);
@@ -2005,7 +2011,7 @@ for (const [label, scheme, theme, bg, text] of [
 
 await test("Settings can make a copy for Obsidian, shows where it is, and reports a problem calmly", async (page) => {
   await openSeeded(page, "O.md", "plain\n");
-  await page.click("#openSettings");
+  await openSettingsTab(page, "files");
   const button = page.locator('#settings button:has-text("Make a copy for Obsidian")');
   await button.waitFor();
   assert.match(await page.textContent("#settings"), /background colours become a plain highlight/);
@@ -2913,7 +2919,7 @@ await test("the Linked from list can be hidden, stays hidden without searching, 
   await page.waitForTimeout(600);
   assert.equal(await page.evaluate(() => window.__backlinkCalls), 0, "no search while it is off");
   assert.equal(await page.isVisible(".backlinks"), false);
-  await page.click("#openSettings");
+  await openSettingsTab(page, "pages");
   await page.waitForSelector("#settings[open]");
   const box = page.locator('#settings .setting-row:has-text("Linked from") input');
   assert.equal(await box.isChecked(), false);
@@ -3261,7 +3267,7 @@ if (shots && !process.env.SHOTS_ONLY) {
       await prepare(page, { releases: WITH_FILES });
       await page.goto(url);
       await page.waitForSelector("#newNote");
-      await page.click("#openSettings");
+      await openSettingsTab(page, "updates");
       await page.click('#settings button:has-text("Check now")');
       await page.waitForSelector("#settings .setting-actions button");
       await page.screenshot({ path: `${shots}/v027-${label}-${scheme}-settings-update.png` });
@@ -3445,7 +3451,7 @@ await test("covers are off by default: no picture, no Add cover button, and a sw
   await openCover(page, "Has cover.md");
   assert.equal(await page.locator(".cover, .cover-image, .cover-actions").count(), 0, "no cover element exists at all");
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Add cover|Change cover|Remove cover/);
-  await page.click("#openSettings");
+  await openSettingsTab(page, "pages");
   await page.waitForSelector("#settings[open]");
   const box = page.locator('#settings .setting-row:has-text("covers") input');
   assert.equal(await box.isChecked(), false);
@@ -4101,7 +4107,7 @@ await test("a link update that cannot be written is reported, and the rename sta
 
 await test("deleting all history asks twice", async (page) => {
   await historyVault(page);
-  await page.click("#openSettings");
+  await openSettingsTab(page, "files");
   const button = page.locator("button", { hasText: "Delete all history" });
   await button.click();
   assert.equal(await page.evaluate(() => window.__mock.history.size), 1, "one click only asks");
@@ -4180,6 +4186,7 @@ if (shots && !process.env.SHOTS_ONLY) {
       await page.screenshot({ path: name("4-history-whole-text") });
       await page.keyboard.press("Escape");
       await page.evaluate(() => document.getElementById("openSettings").click()); // hidden with the page list on a phone
+      await page.click("#settingsTab-files");
       await page.locator("h3", { hasText: "Page history" }).scrollIntoViewIfNeeded();
       await page.screenshot({ path: name("5-settings-history") });
       await context.close();
@@ -4715,7 +4722,7 @@ await test("the pen button erases by default, can select with a loop, or can be 
   await drawLine(page, [60, 80], [260, 80]);
   await waitSaved(page);
   const setting = async (value) => {
-    await page.click("#openSettings");
+    await openSettingsTab(page, "drawing");
     await page.selectOption('select[aria-label="Pen button"]', value);
     await page.keyboard.press("Escape");
     await page.waitForSelector("#settings", { state: "hidden" });
@@ -4814,7 +4821,7 @@ await test("shapes snap to a grid by default, so shapes drawn at different times
   assert.equal(saved[0].b[0], saved[1].a[0], "the right edge of the first is the left edge of the second");
   assert.equal(saved[0].a[1], saved[1].a[1], "and their tops match");
 
-  await page.click("#openSettings");
+  await openSettingsTab(page, "drawing");
   const box = page.locator('#settings label:has-text("Snap shapes to a grid") input');
   assert.equal(await box.isChecked(), true, "on by default");
   await box.uncheck();
@@ -5370,7 +5377,7 @@ if (shots && !process.env.SHOTS_ONLY) {
       await page.screenshot({ path: name("4-selection") });
       // On a phone the settings button is in the sidebar, which was closed to give the sheet room.
       await page.evaluate(() => document.body.classList.add("sidebar-open"));
-      await page.click("#openSettings");
+      await openSettingsTab(page, "drawing");
       await page.waitForSelector('select[aria-label="Pen button"]');
       await page.screenshot({ path: name("5-settings-pen-button") });
       await context.close();
@@ -5872,7 +5879,7 @@ await test("opening another page from Split shows that page's own drawing, and t
 
 await test("the Open pages in setting makes pages open as a drawing or as Split, and is saved", async (page) => {
   await canvasVault(page);
-  await page.click("#openSettings");
+  await openSettingsTab(page, "drawing");
   await page.waitForSelector("#settings[open]");
   assert.deepEqual(await page.locator('#settings select[aria-label="Open pages in"] option').allTextContents(), ["Text", "Canvas", "Split"]);
   await page.selectOption('#settings select[aria-label="Open pages in"]', "split");
@@ -7128,6 +7135,132 @@ await test("a PDF can sit inside a callout, and is written back as it was", asyn
   assert.equal(bodyOfPage((await files(page))["In.md"]), note.replace("after", "after!"));
 });
 
+// ---------- 0.4.14: canvas blocks inside callouts, toggles and columns ----------
+const NESTED_PAGE = [
+  "> [!note] Cell",
+  "> ```scalenote-canvas",
+  "> id: abc123xy",
+  "> ```",
+  "",
+  "<details>",
+  "<summary>Drawing</summary>",
+  "",
+  "```scalenote-canvas",
+  "id: abc123xy",
+  "```",
+  "",
+  "</details>",
+  "",
+  "> [!columns]",
+  "> > [!column]",
+  "> > ```scalenote-canvas",
+  "> > id: abc123xy",
+  "> > ```",
+  ">",
+  "> > [!column]",
+  "> > right",
+  "",
+  "after",
+  "",
+].join("\n");
+
+await test("canvas blocks inside a callout, a toggle and a column show the drawing and are written back as they were", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]), NESTED_PAGE);
+  await page.waitForFunction(() => document.querySelectorAll(".canvas-block").length === 3);
+  assert.equal(await page.locator(".callout .canvas-block, .toggle .canvas-block, .column .canvas-block").count(), 3, "all three are inside a callout, toggle or column");
+  assert.equal(await page.locator(".raw-block").count(), 0, "nothing fell back to raw text");
+  await page.waitForFunction(() => [...document.querySelectorAll(".canvas-block-surface")].every((c) => c.width > 0));
+  await page.click(".note-body > p:last-of-type");
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await waitSaved(page);
+  assert.equal(bodyOfPage((await files(page))["Sketch.md"]), NESTED_PAGE.replace("after", "after!"));
+});
+
+await test("/canvas is offered inside a callout and makes a region whose block is written inside it", async (page) => {
+  await start(page);
+  await seed(page, "In.md", "> [!note] Cell\n> text\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="In.md"]');
+  await page.waitForSelector(".callout");
+  await page.click(".callout p");
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/canvas");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".callout .canvas-block-surface:not([hidden])");
+  await waitSaved(page);
+  const body = bodyOfPage((await files(page))["In.md"]);
+  assert.match(body, /^> \[!note\] Cell\n> text\n>\n> ```scalenote-canvas\n> id: [a-z0-9]{8}\n> ```/, JSON.stringify(body));
+  const drawing = await page.evaluate(() => JSON.parse(window.__mock.canvases.get("In.md")));
+  assert.equal(drawing.frames.length, 1);
+});
+
+// ---------- 0.4.14: Settings in tabs ----------
+await test("Settings has tabs: Look first, one tab shown at a time, arrow keys move between them, and the last tab is remembered", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  const names = await page.locator('#settings [role="tab"]').allTextContents();
+  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Files"]);
+  assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
+  assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
+  assert.equal(await page.locator("#settings h2").textContent(), "Look");
+  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 3, "theme, text size and page width are on Look");
+  await page.focus("#settingsTab-look");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator("#settings h2").textContent(), "Pages");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-pages");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  assert.equal(await page.locator("#settings h2").textContent(), "Files", "it wraps round");
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await page.click("#openSettings");
+  assert.equal(await page.locator("#settings h2").textContent(), "Files", "it opens where it was left");
+}, { settings: existingUser({ updates: false }) });
+
+await test("on a computer Settings is wide with the tabs on the left; on a phone the tabs are a row on top and nothing overflows", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  const wide = await page.evaluate(() => {
+    const d = document.querySelector("#settings").getBoundingClientRect();
+    const tab = document.querySelector("#settingsTab-look").getBoundingClientRect();
+    const main = document.querySelector(".settings-main").getBoundingClientRect();
+    return { width: d.width, tabRight: tab.right, mainLeft: main.left };
+  });
+  assert.ok(wide.width > 800, `wide: ${wide.width}`);
+  assert.ok(wide.tabRight <= wide.mainLeft, "the tabs are left of the settings");
+}, { viewport: { width: 1300, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("on a phone the Settings tabs sit in a row on top and the box does not overflow the screen", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  const r = await page.evaluate(() => {
+    const d = document.querySelector("#settings").getBoundingClientRect();
+    const a = document.querySelector("#settingsTab-look").getBoundingClientRect();
+    const b = document.querySelector("#settingsTab-pages").getBoundingClientRect();
+    const main = document.querySelector(".settings-main").getBoundingClientRect();
+    return { left: d.left, right: d.right, bottom: d.bottom, sameRow: Math.abs(a.top - b.top) < 2, tabsAbove: a.bottom <= main.top + 1, vw: innerWidth, vh: innerHeight };
+  });
+  assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh, JSON.stringify(r));
+  assert.ok(r.tabsAbove, JSON.stringify(r));
+  const r0 = r;
+  if (shots) await page.screenshot({ path: `${shots}/v0414-phone-settings-tabs-wrapped.png` });
+  // Every tab is on the screen, none is cut off at the edge.
+  const edges = await page.evaluate(() => [...document.querySelectorAll('#settings [role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return [b.left, b.right]; }));
+  assert.equal(edges.length, 5);
+  assert.ok(edges.every(([l, r]) => l >= 0 && r <= r0.vw), JSON.stringify(edges));
+  await page.click("#settingsTab-files");
+  assert.equal(await page.locator("#settings h2").textContent(), "Files");
+  await page.click("#settingsTab-updates");
+  assert.equal(await page.isVisible('#settings .setting-row:has-text("new versions") input'), true);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
 await test("a PDF dropped on the page asks how to add it, like the slash menu", async (page) => {
   await start(page);
   await page.click("#newNote");
@@ -7392,6 +7525,33 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.click('.context-menu .menu-item:has-text("Colour")');
       await page.waitForSelector(".icon-menu");
       await page.screenshot({ path: `${shots}/v0413-${label}-${scheme}-1-page-colour.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots for the design check of 0.4.14 (only when SHOTS_DIR is set): canvas blocks in a
+// callout, a toggle and a column, light and dark, desktop and phone.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]), NESTED_PAGE);
+      await page.waitForFunction(() => document.querySelectorAll(".canvas-block").length === 3);
+      await page.waitForTimeout(300);
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: `${shots}/v0414-${label}-${scheme}-1-canvas-in-blocks.png`, fullPage: false });
+      await page.evaluate(() => document.getElementById("openSettings").click()); // hidden with the page list on a phone
+      await page.waitForSelector("#settings[open]");
+      await page.screenshot({ path: `${shots}/v0414-${label}-${scheme}-2-settings-look.png` });
+      await page.click("#settingsTab-updates");
+      await page.screenshot({ path: `${shots}/v0414-${label}-${scheme}-3-settings-updates.png` });
       await context.close();
     }
   }
