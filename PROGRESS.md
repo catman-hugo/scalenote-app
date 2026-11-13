@@ -348,15 +348,6 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Not built yet: drawing inside the block (the block only shows), moving or resizing a region on the full canvas or by the block's bottom edge, editing a region's name, a block that is deleted keeps its region on the canvas (the safe default). The `/canvas` block is not offered inside callouts, toggles or columns.
 - Known limit: the drawing is loaded when a page has ink or regions; a page opened in Canvas first and then switched to text shows its blocks once the text view is back (not specifically tested).
 
-## 0.4.12, drawing inside the canvas block (slice 3; branch `feature/v0.4.12-canvas-block-drawing`; not yet released)
-- A canvas block has a Draw button. It puts the real drawing toolbar and a second drawing view inside the block, locked to the block's region: points are kept inside the region and the region cannot be moved about (no hand tool). It draws on the same drawing and shares the same undo list as the page's drawing, and saves the same way. Pressing outside the block, or Draw again, ends it; only one block is drawn in at a time.
-- A pen or mouse draws; a finger scrolls the page (so a finger over the block does not draw). No Draw button when the drawing cannot be changed (newer format, read-only).
-- The full Canvas view starts a new undo list when it opens (it reloads the saved file), so Undo there does not go back through lines drawn in a block; the lines themselves are shared.
-- Known quirk: a stroke over a drawn figure is cut to it (existing behaviour), so a long line across a rectangle is saved as more than one item; one Undo takes all of it back.
-- Code: `web/canvasblock.js` (Draw button, one active block, ProseMirror `stopEvent` so the editor leaves presses in the block alone), region mode in `web/canvasview.js` (`setRegion`, `adopt`, clamped points), `editCanvasRegion` in `web/main.js`.
-- Built and tested here: 8 new browser tests; full browser suite (316 tests) and 256 unit tests pass; screenshots light and dark, desktop and phone checked. NOT tried on a device: pen and finger on a real tablet or phone (touch scrolling over the block is the main thing to try).
-- Not built yet: moving or resizing a region, naming a region, a block inside callouts or columns.
-
 ## Known break in the 0.4.10 apk (fixed after 0.4.10, needs a new release)
 The Android apk of 0.4.10 cannot be installed: it declared the same file provider twice. Fixed by `ApkFileProvider` in `scripts/patch-android.mjs`; the Android job now checks the finished apk for duplicate components. Not yet tried on a device: install the apk built after this fix.
 
@@ -457,7 +448,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.9 | Linux text-weight fix, lists of different kinds in a row, callouts and toggles inside toggles and callouts, raw text without a frame (see "0.4.9: built") | built, not tried on a device |
 | 0.4.10 | Draw over text: ink anchored to blocks (see "0.4.10: draw over text built"), columns, Android in-app installer | draw over text, columns and installer built; none tried on a device (installer never even compiled here, CI builds it) |
 | 0.4.11 | Fixes after trying 0.4.10 on a phone: the Android file that could not be installed, no Done button in the pen bar, drawing in the margin, long strokes, ink below the last block, logo centred (see "0.4.11") | released (tag moved to the merged main); not tried on a device |
-| 0.4.12 | One big release (owner request, 2026-11-11): the `/canvas` block, image controls (eight resize handles as in v1, size saved as `![alt\|300x200](path)`, see DECISIONS.md) and PDF import as page images to draw on. Built in slices on separate branches: image controls first. Evaluation of v1's `/canvas` is in `docs/v0.4-plan.md`; the markdown storage of the `/canvas` block must be decided with the owner first; PDF import needs a decision on the library | in progress: image controls, `/canvas` block and drawing in the block built, not tried on a device; PDF import not started |
+| 0.4.12 | One big release (owner request, 2026-11-11): the `/canvas` block, image controls (eight resize handles as in v1, size saved as `![alt\|300x200](path)`, see DECISIONS.md) and PDF import as page images to draw on. Built in slices on separate branches: image controls first. Evaluation of v1's `/canvas` is in `docs/v0.4-plan.md`; the markdown storage of the `/canvas` block must be decided with the owner first; PDF import needs a decision on the library | in progress: image controls built, not tried on a device; `/canvas` block and PDF import not started |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |

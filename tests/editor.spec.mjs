@@ -6777,125 +6777,6 @@ await test("drawing on the full canvas keeps the regions, and shows the block's 
   assert.equal(saved.frames[0].id, "abc123xy");
 });
 
-const REGION = { id: "abc123xy", x: 100, y: 50, w: 480, h: 320, label: "" };
-const editSurface = (page) => page.locator(".canvas-block-edit .canvas-surface");
-async function startDrawingInBlock(page, items = [], frame = REGION) {
-  await blockVault(page, drawingWith(items, frame));
-  await page.waitForSelector(".canvas-block-surface:not([hidden])");
-  await page.click(".canvas-block-draw");
-  await page.waitForSelector(".canvas-block-edit:not([hidden]) .canvas-surface");
-  await page.waitForTimeout(100);
-}
-async function dragInBlock(page, from, to, steps = 8) {
-  const box = await editSurface(page).boundingBox();
-  await page.mouse.move(box.x + from[0], box.y + from[1]);
-  await page.mouse.down();
-  await page.mouse.move(box.x + to[0], box.y + to[1], { steps });
-  await page.mouse.up();
-}
-
-await test("the Draw button puts the real drawing tools into the block, and the page text stays as it was", async (page) => {
-  await start(page);
-  await startDrawingInBlock(page);
-  assert.equal(await page.locator(".canvas-block-draw").getAttribute("aria-pressed"), "true");
-  assert.ok(await page.locator(".canvas-block-edit .canvas-toolbar").isVisible());
-  assert.equal(await page.locator(".canvas-block-edit [data-tool=hand]").isVisible(), false, "the region cannot be moved about");
-  const box = await editSurface(page).boundingBox();
-  assert.deepEqual([Math.round(box.width), Math.round(box.height)], [480, 320]);
-  assert.equal(bodyOfPage((await files(page))["Sketch.md"]), BLOCK_PAGE);
-});
-
-await test("a line drawn in the block lands at the right place of the page's drawing", async (page) => {
-  await start(page);
-  await startDrawingInBlock(page);
-  await dragInBlock(page, [50, 60], [250, 160]);
-  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md") || "{\"items\":[]}").items.length === 1);
-  await waitSaved(page);
-  const saved = await savedDrawing(page);
-  assert.equal(saved.format, 6);
-  assert.equal(saved.frames.length, 1, "the region is kept");
-  const points = saved.items[0].points;
-  // The surface's corner is the region's corner (100, 50) on the sheet.
-  assert.ok(Math.abs(points[0][0] - 150) < 3 && Math.abs(points[0][1] - 110) < 3, JSON.stringify(points[0]));
-  const last = points[points.length - 1];
-  assert.ok(Math.abs(last[0] - 350) < 3 && Math.abs(last[1] - 210) < 3, JSON.stringify(last));
-});
-
-await test("a pen that leaves the block cannot draw outside the region", async (page) => {
-  await start(page);
-  await startDrawingInBlock(page);
-  const box = await editSurface(page).boundingBox();
-  await page.mouse.move(box.x + 100, box.y + 100);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 700, box.y + 600, { steps: 8 });
-  await page.mouse.up();
-  await waitSaved(page);
-  const saved = await savedDrawing(page);
-  for (const [x, y] of saved.items[0].points) {
-    assert.ok(x >= 100 && x <= 580 && y >= 50 && y <= 370, `${x},${y} is inside the region`);
-  }
-});
-
-await test("clicking outside ends drawing in the block, and the block then shows the new line", async (page) => {
-  await start(page);
-  await startDrawingInBlock(page);
-  await dragInBlock(page, [50, 60], [250, 160]);
-  await clickText(page, "after");
-  await page.waitForSelector(".canvas-block-edit", { state: "hidden" });
-  assert.equal(await page.locator(".canvas-block-draw").getAttribute("aria-pressed"), "false");
-  assert.ok(await blockInk(page) > 100, "the line is in the picture of the region");
-  assert.equal(await page.locator(".canvas-block-edit .canvas-toolbar").count(), 0, "the drawing view is taken away");
-});
-
-await test("undo in the block takes back the last line, and the full canvas opens with the same drawing", async (page) => {
-  await start(page);
-  await startDrawingInBlock(page, [rectItem([420, 300], [560, 350])]);
-  await dragInBlock(page, [50, 60], [250, 160]);
-  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 2);
-  await page.keyboard.press("Control+z");
-  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 1);
-  await dragInBlock(page, [60, 70], [260, 170]);
-  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 2);
-  await clickText(page, "after");
-  await openCanvas(page);
-  // The full canvas opens on the saved file, so it holds the same two items (its own undo list starts empty).
-  await page.waitForSelector(".canvas-surface");
-  assert.equal(await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length), 2);
-});
-
-await test("a finger over the block scrolls the page and draws nothing", async (page) => {
-  await start(page);
-  await startDrawingInBlock(page);
-  const box = await editSurface(page).boundingBox();
-  const client = await page.context().newCDPSession(page);
-  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 100, y: box.y + 100, id: 1 }] });
-  for (let i = 1; i <= 5; i++) await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x + 100 + i * 20, y: box.y + 100, id: 1 }] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await page.waitForTimeout(600);
-  assert.equal(await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length), 0);
-}, { hasTouch: true });
-
-await test("only one block is drawn in at a time", async (page) => {
-  await start(page);
-  const two = "```scalenote-canvas\nid: abc123xy\n```\n\n```scalenote-canvas\nid: second01\n```\n";
-  const drawing = JSON.stringify({ format: 6, items: [], frames: [REGION, { ...REGION, id: "second01", y: 500 }] }) + "\n";
-  await blockVault(page, drawing, two);
-  await page.waitForFunction(() => document.querySelectorAll(".canvas-block-draw:not([hidden])").length === 2);
-  await page.locator(".canvas-block-draw").nth(0).click();
-  await page.waitForSelector(".canvas-block-edit:not([hidden])");
-  await page.locator(".canvas-block-draw").nth(1).click();
-  await page.waitForFunction(() => document.querySelectorAll(".canvas-block-edit:not([hidden])").length === 1);
-  assert.equal(await page.locator(".canvas-block").nth(0).locator(".canvas-block-edit:not([hidden])").count(), 0);
-  assert.equal(await page.locator(".canvas-block").nth(1).locator(".canvas-block-edit:not([hidden])").count(), 1);
-});
-
-await test("a drawing that cannot be changed has no Draw button in the block", async (page) => {
-  await start(page);
-  await blockVault(page, '{"format":7,"items":[]}');
-  await page.waitForSelector(".canvas-block-missing:not([hidden])");
-  assert.equal(await page.locator(".canvas-block-draw:visible").count(), 0);
-});
-
 if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   const shots = process.env.SHOTS_DIR;
   for (const scheme of ["light", "dark"]) {
@@ -6926,9 +6807,6 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await blockVault(page, drawingWith([rectItem([40, 40], [240, 140]), { tool: "pen", color: "ink", width: 4, points: [[60, 220, 0.5], [180, 260, 0.5], [320, 210, 0.5]] }]));
       await page.waitForSelector(".canvas-block-surface:not([hidden])");
       await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-2-canvas-block.png` });
-      await page.click(".canvas-block-draw");
-      await page.waitForSelector(".canvas-block-edit:not([hidden]) .canvas-surface");
-      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-3-canvas-block-drawing.png` });
       await context.close();
     }
   }

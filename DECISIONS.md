@@ -574,9 +574,3 @@ Cost. Older versions read a drawing with frames as "from a newer version" and op
 Decision. PDF import (not started) will use Mozilla's pdf.js (the `pdfjs-dist` package), pinned to an exact version (6.5.438 was the newest on 2026-11-12), because it is Apache-2.0, widely used, has no known open vulnerabilities in the newest version, and runs in every webview ScaleNote targets, so no native PDF library has to be built for Android. Older versions had a code-execution flaw fixed in 4.2.67, so it is pinned at or above that and used with `isEvalSupported: false`. A PDF is an untrusted file: it gets a size limit and a page limit, the worker file is shipped with the app (no network), and only page images are taken from it.
 Alternatives. A native library such as pdfium (hard to build for Android here), MuPDF (AGPL licence).
 Cost. About 1 to 2 MB more in the app.
-
-## 2026-11-13: Drawing in a canvas block uses a second, locked drawing view
-
-Decision. The Draw button in a canvas block opens a second instance of the Canvas view inside the block, locked to the block's region and sharing the page's drawing and its undo list, instead of a separate small editor. This keeps one set of tools and one saving path. Points are clamped to the region and the hand tool is hidden. A finger scrolls the page; a pen or mouse draws. Only one block is drawn in at a time, and a press outside ends it. A press on another block's Draw button is left to that button, because ending the first drawing on pointer-down moves the page and the click then misses.
-Alternatives. A separate mini editor with its own tools (more code, two places to fix), drawing only on the full canvas (the block would stay a picture).
-Cost. The full Canvas view starts a new undo list when it opens, so Undo there does not go back through lines drawn in a block.

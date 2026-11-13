@@ -124,8 +124,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     pinch: null,
     spaceDown: false,
     frame: 0,
-    // A view inside the text shows one region of the drawing and cannot be panned or zoomed.
-    region: null,
     colours: {},
     pageFill: "#fff",
     wrapped: new WeakMap(),
@@ -193,10 +191,13 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     openMenu = menu;
   }
   // A press anywhere outside the open menu closes it.
-  const closeOnOutsidePress = (event) => {
-    if (openMenu && !openMenu.panel.contains(event.target) && !openMenu.button.contains(event.target)) closeMenu();
-  };
-  document.addEventListener("pointerdown", closeOnOutsidePress, true);
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (openMenu && !openMenu.panel.contains(event.target) && !openMenu.button.contains(event.target)) closeMenu();
+    },
+    true,
+  );
   host.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && openMenu) {
       const button = openMenu.button;
@@ -458,16 +459,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   // ---- coordinates ----
-  const toWorld = (sx, sy) => {
-    const point = { x: (sx - state.view.x) / state.view.scale, y: (sy - state.view.y) / state.view.scale };
-    // A pen held down can leave the surface; nothing it draws may land outside the region.
-    const r = state.region;
-    if (r) {
-      point.x = Math.min(r.x + r.w, Math.max(r.x, point.x));
-      point.y = Math.min(r.y + r.h, Math.max(r.y, point.y));
-    }
-    return point;
-  };
+  const toWorld = (sx, sy) => ({ x: (sx - state.view.x) / state.view.scale, y: (sy - state.view.y) / state.view.scale });
   function localPoint(event) {
     const box = surface.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
@@ -481,7 +473,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
 
   // Puts the whole drawing in view (never bigger than life size), or the sheet's corner when empty.
   function fitView() {
-    if (state.region) return;
     const box = surface.getBoundingClientRect();
     const around = boundsOf(state.canvas.items);
     if (!around || !box.width || !box.height) {
@@ -551,11 +542,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = state.pageFill;
     context.fillRect(0, 0, surface.width, surface.height);
-    // The region fills the whole surface: its corner is the surface's corner.
-    if (state.region && box.width > 0) {
-      const fit = box.width / state.region.w;
-      state.view = { scale: fit, x: -state.region.x * fit, y: -state.region.y * fit };
-    }
     const { x, y, scale } = state.view;
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
     paintPaper(box);
@@ -907,8 +893,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   function onDown(event) {
-    // In the text a finger scrolls the page; only a pen or a mouse draws (or a finger, if it is set to).
-    if (state.region && event.pointerType === "touch" && !state.fingerDraws) return;
     surface.focus({ preventScroll: true });
     // Capture keeps the stroke going when the pen leaves the sheet. It can refuse (the pointer
     // may already be gone), and drawing must not stop because of that.
@@ -924,7 +908,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
     if (state.gesture) return;
     if (!wantsToDraw(event)) {
-      if (state.region) return;
       if (event.pointerType === "mouse" || event.pointerType === "pen" || event.pointerType === "touch") {
         // Any pointer can move the sheet: the hand tool, the middle button or space with a mouse.
         state.gesture = { kind: "pan", id: event.pointerId, last: localPoint(event) };
@@ -1020,7 +1003,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   surface.addEventListener(
     "wheel",
     (event) => {
-      if (state.region) return;
       event.preventDefault();
       const point = localPoint(event);
       // A pinch on a trackpad arrives as a wheel with the control key down.
@@ -1072,36 +1054,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       drawToolbar();
       fitView();
       scheduleDraw();
-    },
-    /**
-     * Shows a drawing that another view already holds (the same object and the same undo list), so
-     * what is drawn here and there is one drawing. Used by the canvas block in the text.
-     */
-    adopt(canvas, history, readOnly) {
-      commitNote();
-      state.canvas = canvas;
-      state.history = history;
-      state.readOnly = readOnly;
-      state.gesture = null;
-      state.selection = [];
-      state.touches.clear();
-      drawToolbar();
-      scheduleDraw();
-    },
-    /** Takes the view away again: the listener on the page is removed and the host is emptied. */
-    destroy() {
-      commitNote();
-      document.removeEventListener("pointerdown", closeOnOutsidePress, true);
-      host.replaceChildren();
-    },
-    /** Limits the view to the part of the drawing inside `frame` ({x, y, w, h}), or lifts the limit. */
-    setRegion(frame) {
-      state.region = frame ? { x: frame.x, y: frame.y, w: frame.w, h: frame.h } : null;
-      if (frame && state.tool === "hand") setTool("pen");
-      scheduleDraw();
-    },
-    get history() {
-      return state.history;
     },
     /** Makes the drawing read-only after the file was changed by something else. */
     lock(text) {
