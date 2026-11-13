@@ -1920,6 +1920,43 @@ button.danger:hover { background: var(--bg-hover); }
 .pdf-page { position: relative; margin: 0 auto var(--space-2); background: #ffffff; border: 1px solid var(--line); }
 .pdf-page:last-child { margin-bottom: 0; }
 .pdf-page-canvas { display: block; width: 100%; height: 100%; }
+/* The words of a page, laid over its picture so they can be selected and copied. pdf.js puts
+   one span per piece of text and sets its size, place and stretch itself (the --font-height,
+   --scale-x and --rotate variables); the spans stay see-through so only the picture shows. */
+.pdf-text {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+  user-select: text;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-text .markedContent { display: contents; }
+.pdf-text ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
+.pdf-hit { background: var(--find-hit, rgba(255, 200, 0, 0.45)); }
+.pdf-hit-current { background: var(--find-current, rgba(255, 140, 0, 0.6)); outline: 1px solid var(--accent); }
+.pdf-block-find { display: flex; align-items: center; gap: var(--space-1); flex: none; }
+.pdf-block-find input { width: 9rem; font-size: var(--text-s); padding: 0 var(--space-1); }
+.pdf-block-find button { padding: 0 var(--space-1); min-width: 1.75rem; }
+.pdf-block-find-status { min-width: 4rem; }
 .pdf-page-failed { background: var(--bg-side); border-style: dashed; }
 .pdf-block-message { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
 .pdf-block.ProseMirror-selectednode .pdf-block-scroll { outline: 2px solid var(--accent); }

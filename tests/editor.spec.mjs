@@ -7118,6 +7118,62 @@ await test("a file called .pdf that is not a PDF says so and changes nothing", a
   await slashPdf(page, { name: "Fake2.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 but nothing else") }).catch(() => {});
 });
 
+await test("the words of a PDF page can be selected, and stay see-through", async (page) => {
+  await slashPdf(page, pdfFile(2));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-text span");
+  const word = await page.evaluate(() => {
+    const span = [...document.querySelectorAll(".pdf-page")[0].querySelectorAll(".pdf-text span")].find((el) => el.textContent.includes("Page 1"));
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return { selected: selection.toString(), colour: getComputedStyle(span).color, userSelect: getComputedStyle(span).userSelect };
+  });
+  assert.equal(word.selected, "Page 1");
+  assert.match(word.colour, /rgba\(0, 0, 0, 0\)|transparent/, "the words are see-through: only the picture shows");
+  assert.equal(word.userSelect, "text");
+  // The words belong to a page that is drawn, and go again when it is freed.
+  assert.equal(await page.locator(".pdf-page").nth(0).locator(".pdf-text").getAttribute("aria-hidden"), "true");
+});
+
+await test("Find in a PDF counts the matches, marks them and moves from one to the next", async (page) => {
+  await slashPdf(page, pdfFile(5));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-text span");
+  const find = page.locator(".pdf-block-find input");
+  const status = page.locator(".pdf-block-find-status");
+  await find.fill("page 3");
+  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "1 of 1");
+  await page.waitForSelector(".pdf-hit-current");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 3");
+  const inView = await page.evaluate(() => {
+    const box = document.querySelector(".pdf-block-scroll").getBoundingClientRect();
+    const hit = document.querySelector(".pdf-hit-current").getBoundingClientRect();
+    return hit.top >= box.top && hit.bottom <= box.bottom;
+  });
+  assert.ok(inView, "the match is scrolled into the box");
+  await find.fill("page");
+  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "1 of 5");
+  await page.click('.pdf-block-find button[aria-label="Next match"]');
+  assert.equal(await status.textContent(), "2 of 5");
+  await page.click('.pdf-block-find button[aria-label="Previous match"]');
+  await page.click('.pdf-block-find button[aria-label="Previous match"]');
+  assert.equal(await status.textContent(), "5 of 5", "going back from the first match wraps to the last");
+  // Enter on the same word is "next".
+  await find.press("Enter");
+  assert.equal(await status.textContent(), "1 of 5");
+  await find.fill("zzzz");
+  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "No matches");
+  assert.equal(await page.locator(".pdf-hit").count(), 0);
+  await find.fill("");
+  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "");
+  // Typing in the find box is not typing in the note.
+  await waitSaved(page);
+  assert.match((await files(page))["Untitled.md"], /before\n\n!\[Lecture 1\]\(attachments\/Lecture-1\.pdf\)\n$/);
+});
+
 await test("a PDF can sit inside a callout, and is written back as it was", async (page) => {
   await start(page);
   const note = "> [!note] Slides\n> ![Notes](attachments/n.pdf)\n\nafter\n";

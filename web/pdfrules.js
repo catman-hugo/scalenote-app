@@ -15,6 +15,38 @@ export const PDF_LIMITS = {
   viewPixels: 8_000_000,
 };
 
+// How much text of a page is read for selecting and searching, so a page crammed with millions
+// of tiny words (or a hostile file) cannot use all the memory.
+export const TEXT_LIMITS = { itemsPerPage: 20_000, itemChars: 500, pageChars: 200_000, hits: 2_000 };
+
+/**
+ * Finds `query` in the words of each page. `pages` is a list of pages, each a list of the text
+ * pieces pdf.js reports (a word, a line); resolves to `[{ page, piece, offset }]` in reading
+ * order, one entry per hit, never more than TEXT_LIMITS.hits. Case is ignored. A hit that is
+ * split over two pieces is not found; that is rare for ordinary text and keeps the marked
+ * words on screen exactly the ones that were counted.
+ */
+export function findInPages(pages, query) {
+  const needle = String(query || "").trim().toLowerCase();
+  const hits = [];
+  if (!needle) return hits;
+  for (let i = 0; i < pages.length; i++) {
+    const pieces = pages[i] || [];
+    for (let j = 0; j < pieces.length; j++) {
+      const hay = String(pieces[j]).toLowerCase();
+      let from = 0;
+      for (;;) {
+        const at = hay.indexOf(needle, from);
+        if (at === -1) break;
+        hits.push({ page: i + 1, piece: j, offset: at });
+        if (hits.length >= TEXT_LIMITS.hits) return hits;
+        from = at + needle.length;
+      }
+    }
+  }
+  return hits;
+}
+
 /** The file name's extension in lower case, or "". */
 function extensionOf(name) {
   const dot = String(name || "").lastIndexOf(".");
