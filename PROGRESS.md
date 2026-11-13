@@ -468,6 +468,9 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.10 | Draw over text: ink anchored to blocks (see "0.4.10: draw over text built"), columns, Android in-app installer | draw over text, columns and installer built; none tried on a device (installer never even compiled here, CI builds it) |
 | 0.4.11 | Fixes after trying 0.4.10 on a phone: the Android file that could not be installed, no Done button in the pen bar, drawing in the margin, long strokes, ink below the last block, logo centred (see "0.4.11") | released (tag moved to the merged main); not tried on a device |
 | 0.4.12 | One big release (owner request, 2026-11-11): the `/canvas` block, image controls (eight resize handles as in v1, size saved as `![alt\|300x200](path)`, see DECISIONS.md) and PDF import as page images to draw on. Built in slices on separate branches: image controls first. Evaluation of v1's `/canvas` is in `docs/v0.4-plan.md`; the markdown storage of the `/canvas` block must be decided with the owner first; PDF import needs a decision on the library | in progress: image controls built, not tried on a device; `/canvas` block and PDF import not started |
+| 0.4.13 | Planned (owner, 2026-11-13): fixes from the device test of 0.4.12, then page icon colours (the same sixteen colours as folders, no other icon styles), and names for canvas regions | planned |
+| 0.4.14 | Planned: the `/canvas` block inside callouts, toggles and columns (changes the nesting rules of the markdown, so it comes before export) | planned |
+| 0.4.15 | Planned: ink and canvas drawings in print and export; text selection and find inside a PDF block | planned |
 | 0.5 | Home server, sync, browser client | not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
