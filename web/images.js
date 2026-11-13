@@ -30,7 +30,7 @@ export function checkPicture(file) {
   return null;
 }
 
-function readAsBase64(file) {
+export function readAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("read failed"));

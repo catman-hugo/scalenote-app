@@ -1,8 +1,10 @@
-//! Pictures that belong to notes. They are copied into the `attachments` folder of the
-//! vault and referenced from a note as plain markdown: `![](attachments/name.png)`.
+//! Pictures and PDF documents that belong to notes. They are copied into the `attachments`
+//! folder of the vault and referenced from a note as plain markdown:
+//! `![](attachments/name.png)`, `![](attachments/name.pdf)`.
 //!
 //! What a file *is* is decided by its first bytes, never by its name or by what the
-//! interface claims. SVG is refused because it can carry scripts.
+//! interface claims. SVG is refused because it can carry scripts. A PDF is stored and handed
+//! back as bytes only; it is never opened or run here, the interface draws its pages.
 
 use crate::atomic::write_atomic;
 use crate::base64;
@@ -15,8 +17,13 @@ use std::path::Path;
 pub const ATTACHMENT_DIR: &str = "attachments";
 /// Largest picture accepted. Bigger files make the app slow and fill the disk.
 pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
-/// The same limit as seen in base64 text (four characters for every three bytes).
-pub const MAX_ATTACHMENT_BASE64: usize = MAX_ATTACHMENT_BYTES.div_ceil(3) * 4;
+/// Largest PDF accepted. Lecture slides and scanned chapters are bigger than pictures, but the
+/// whole file travels to the interface as one text, so it still has a limit.
+pub const MAX_PDF_BYTES: usize = 25 * 1024 * 1024;
+/// The largest attachment of any kind as base64 text (four characters for every three bytes).
+/// Checked before decoding, so a huge text is never turned into bytes. The limit of the actual
+/// kind is checked after the content has been recognised.
+pub const MAX_ATTACHMENT_BASE64: usize = MAX_PDF_BYTES.div_ceil(3) * 4;
 const MAX_STEM_CHARS: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +69,23 @@ pub fn detect_image(bytes: &[u8]) -> Option<ImageKind> {
     }
 }
 
+/// Recognises a PDF from its first bytes. Only the real header counts (a PDF may legally have
+/// junk before it, but a file like that is refused rather than guessed at).
+pub fn detect_pdf(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"%PDF-")
+}
+
+/// The largest size allowed for what `bytes` is, or `None` when it is not an allowed kind.
+pub fn limit_for(bytes: &[u8]) -> Option<usize> {
+    if detect_image(bytes).is_some() {
+        Some(MAX_ATTACHMENT_BYTES)
+    } else if detect_pdf(bytes) {
+        Some(MAX_PDF_BYTES)
+    } else {
+        None
+    }
+}
+
 /// A file name stem that is safe on every system and in a markdown link: only letters,
 /// digits, `_` and `-`. Spaces, brackets and parentheses would break the markdown link, and a
 /// dot in the middle would look like a second file extension, so they all become `-`.
@@ -95,10 +119,17 @@ impl Vault {
     /// The same picture added twice under the same name is stored once. A different
     /// picture with a taken name gets a number. The write is atomic like a note's.
     pub fn write_attachment(&self, suggested_name: &str, bytes: &[u8]) -> Result<String> {
-        if bytes.len() > MAX_ATTACHMENT_BYTES {
+        if bytes.len() > MAX_PDF_BYTES {
             return Err(VaultError::TooLarge);
         }
-        let kind = detect_image(bytes).ok_or(VaultError::UnsupportedType)?;
+        let extension = match detect_image(bytes) {
+            Some(kind) => kind.extension(),
+            None if detect_pdf(bytes) => "pdf",
+            None => return Err(VaultError::UnsupportedType),
+        };
+        if limit_for(bytes).is_some_and(|limit| bytes.len() > limit) {
+            return Err(VaultError::TooLarge);
+        }
         let dir = self.resolve(ATTACHMENT_DIR)?;
         fs::create_dir_all(&dir)?;
         // Check again now that the folder exists: it could have been a link out of the vault.
@@ -106,7 +137,7 @@ impl Vault {
         let stem = attachment_stem(suggested_name);
         for attempt in 1..=1000 {
             let name = if attempt == 1 { stem.clone() } else { format!("{stem}-{attempt}") };
-            let file_name = format!("{name}.{}", kind.extension());
+            let file_name = format!("{name}.{extension}");
             let path = dir.join(&file_name);
             match fs::symlink_metadata(&path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -125,17 +156,17 @@ impl Vault {
         Err(VaultError::AlreadyExists)
     }
 
-    /// Reads a picture for display and returns it as a `data:` address.
+    /// Reads a picture or PDF for display and returns it as a `data:` address.
     ///
     /// Only files directly inside `attachments/` are served, and only when their content
-    /// really is one of the allowed picture types.
+    /// really is one of the allowed types.
     pub fn read_attachment_data_url(&self, relative: &str) -> Result<String> {
         let name = relative
             .strip_prefix(ATTACHMENT_DIR)
             .and_then(|rest| rest.strip_prefix('/'))
             .ok_or(VaultError::InvalidPath)?;
         let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-        if name.contains('/') || !["png", "jpg", "jpeg", "gif", "webp"].contains(&extension.as_str()) {
+        if name.contains('/') || !["png", "jpg", "jpeg", "gif", "webp", "pdf"].contains(&extension.as_str()) {
             return Err(VaultError::UnsupportedType);
         }
         let path = self.resolve(relative)?;
@@ -143,12 +174,16 @@ impl Vault {
         if !meta.is_file() {
             return Err(VaultError::NotFound);
         }
-        if meta.len() > MAX_ATTACHMENT_BYTES as u64 {
+        if meta.len() > MAX_PDF_BYTES as u64 {
             return Err(VaultError::TooLarge);
         }
         let bytes = fs::read(&path)?;
-        let kind = detect_image(&bytes).ok_or(VaultError::UnsupportedType)?;
-        Ok(format!("data:{};base64,{}", kind.mime(), base64::encode(&bytes)))
+        let limit = limit_for(&bytes).ok_or(VaultError::UnsupportedType)?;
+        if bytes.len() > limit {
+            return Err(VaultError::TooLarge);
+        }
+        let mime = detect_image(&bytes).map_or("application/pdf", ImageKind::mime);
+        Ok(format!("data:{mime};base64,{}", base64::encode(&bytes)))
     }
 }
 
@@ -181,6 +216,55 @@ mod tests {
         assert_eq!(detect_image(b"<?xml version=\"1.0\"?><svg/>"), None);
         assert_eq!(detect_image(b"#!/bin/sh\necho hi"), None);
         assert_eq!(detect_image(b""), None);
+    }
+
+    #[test]
+    fn a_pdf_is_recognised_by_its_header_only() {
+        assert!(detect_pdf(b"%PDF-1.7\n%\xE2\xE3"));
+        assert!(!detect_pdf(b" %PDF-1.7"));
+        assert!(!detect_pdf(b"%PD"));
+        assert!(!detect_pdf(b"<html>%PDF-"));
+        assert!(!detect_pdf(&png(0)));
+        assert_eq!(limit_for(&png(0)), Some(MAX_ATTACHMENT_BYTES));
+        assert_eq!(limit_for(b"%PDF-1.4"), Some(MAX_PDF_BYTES));
+        assert_eq!(limit_for(b"plain"), None);
+    }
+
+    #[test]
+    fn a_pdf_is_stored_with_a_pdf_extension_whatever_its_name_says() {
+        let dir = scratch("pdf-store");
+        let vault = Vault::open(&dir).expect("open");
+        let pdf = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF".to_vec();
+        let path = vault.write_attachment("Lecture 1 (slides).png", &pdf).expect("write");
+        assert_eq!(path, "attachments/Lecture-1-slides.pdf");
+        assert_eq!(fs::read(dir.join(&path)).expect("read back"), pdf);
+        assert_eq!(vault.write_attachment("Lecture 1 (slides).png", &pdf).expect("again"), path);
+        let url = vault.read_attachment_data_url(&path).expect("read");
+        assert!(url.starts_with("data:application/pdf;base64,"));
+        assert_eq!(base64::decode(url.trim_start_matches("data:application/pdf;base64,")), Some(pdf));
+    }
+
+    #[test]
+    fn a_pdf_has_its_own_larger_limit_and_a_picture_keeps_the_old_one() {
+        let dir = scratch("pdf-big");
+        let vault = Vault::open(&dir).expect("open");
+        let mut big = b"%PDF-1.4\n".to_vec();
+        big.resize(MAX_ATTACHMENT_BYTES + 1, b' ');
+        assert!(vault.write_attachment("big.pdf", &big).is_ok(), "a PDF may be larger than a picture");
+        big.resize(MAX_PDF_BYTES + 1, b' ');
+        assert_eq!(vault.write_attachment("huge.pdf", &big), Err(VaultError::TooLarge));
+        let mut picture = png(0);
+        picture.resize(MAX_ATTACHMENT_BYTES + 1, 0);
+        assert_eq!(vault.write_attachment("big.png", &picture), Err(VaultError::TooLarge));
+    }
+
+    #[test]
+    fn a_file_called_pdf_that_is_not_one_is_not_served() {
+        let dir = scratch("pdf-fake");
+        let vault = Vault::open(&dir).expect("open");
+        fs::create_dir_all(dir.join("attachments")).expect("folder");
+        fs::write(dir.join("attachments").join("fake.pdf"), b"<script>alert(1)</script>").expect("fake");
+        assert!(vault.read_attachment_data_url("attachments/fake.pdf").is_err());
     }
 
     #[test]

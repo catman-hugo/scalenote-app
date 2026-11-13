@@ -7,7 +7,7 @@
 //! nothing that exists there is ever replaced.
 
 use crate::atomic::write_atomic;
-use crate::attachments::{detect_image, ATTACHMENT_DIR, MAX_ATTACHMENT_BYTES};
+use crate::attachments::{limit_for, ATTACHMENT_DIR, MAX_PDF_BYTES};
 use crate::names::sanitize_name;
 use crate::obsidian::{reserve_folder, to_obsidian};
 use crate::vault::{Result, Vault, VaultError};
@@ -48,15 +48,18 @@ fn picture_names(text: &str) -> Vec<String> {
     names
 }
 
-/// Reads one picture from the vault, only if it is a real file (not a link) of a picture type.
+/// Reads one picture or PDF from the vault, only if it is a real file (not a link) of an allowed type.
 fn read_picture(vault: &Vault, name: &str) -> Option<Vec<u8>> {
     let path = vault.resolve(&format!("{ATTACHMENT_DIR}/{name}")).ok()?;
     let meta = fs::symlink_metadata(&path).ok()?;
-    if !meta.is_file() || meta.len() > MAX_ATTACHMENT_BYTES as u64 {
+    if !meta.is_file() || meta.len() > MAX_PDF_BYTES as u64 {
         return None;
     }
     let bytes = fs::read(&path).ok()?;
-    detect_image(&bytes)?;
+    // A picture or a PDF, each within its own size limit.
+    if bytes.len() > limit_for(&bytes)? {
+        return None;
+    }
     Some(bytes)
 }
 

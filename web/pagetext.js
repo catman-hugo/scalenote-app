@@ -25,6 +25,7 @@ function readOnlyNodes(schema) {
     ],
     columns: () => ["div", { class: "columns" }, 0],
     column: () => ["div", { class: "column" }, 0],
+    pdfBlock: (node) => ["p", { class: "page-text-picture" }, strings.pageText.pdf.replace("{name}", node.attrs.alt || node.attrs.path)],
     imageBlock: (node) => ["p", { class: "page-text-picture" }, strings.pageText.picture.replace("{name}", node.attrs.alt || node.attrs.path)],
     rawBlock: (node) => ["pre", { class: "raw-block page-text-raw" }, node.attrs.src],
     // The editor's own table carries a width as a style attribute, which the page's security

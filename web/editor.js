@@ -8,6 +8,9 @@ import { Placeholder } from "@tiptap/extensions";
 import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
 import { Callout, Column, Columns, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
+import { PdfBlock } from "./pdfblock.js";
+import { askPdfMode, choosePdf, importPages, looksLikePdf, showProgress, storePdf } from "./pdfimport.js";
+import { pdfTitle } from "./pdfrules.js";
 import { CanvasBlock } from "./canvasblock.js";
 import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
@@ -22,7 +25,7 @@ import { ToggleFold } from "./togglefold.js";
 // vault first, and only then an image block is placed in the note.
 // `create()` makes a region in the page's drawing and resolves to its id, or null when it cannot.
 let canvasOptions = { create: async () => null };
-let pictureOptions = { onProblem: () => {}, noteKey: () => null };
+let pictureOptions = { onProblem: () => {}, noteKey: () => null, pdfDialog: () => null };
 
 async function insertPictures(editor, files, position) {
   const key = pictureOptions.noteKey();
@@ -37,6 +40,36 @@ async function insertPictures(editor, files, position) {
     } catch (error) {
       pictureOptions.onProblem(error && error.code ? error.code : "unknown");
     }
+  }
+}
+
+// A PDF: asks how to add it, stores what is needed in the vault, and only then changes the page.
+async function insertPdf(editor, file, position) {
+  const dialog = pictureOptions.pdfDialog();
+  const key = pictureOptions.noteKey();
+  if (!dialog) return;
+  const mode = await askPdfMode(dialog, file.name);
+  if (!mode) return;
+  const progress = showProgress(dialog, file.name);
+  try {
+    let content;
+    if (mode === "scroll") {
+      progress.update(1, 1);
+      const path = await storePdf(file);
+      content = [{ type: "pdfBlock", attrs: { alt: pdfTitle(file.name), path } }, { type: "paragraph" }];
+    } else {
+      const pages = await importPages(file, { progress: progress.update, stopped: progress.stopped });
+      if (!pages) return;
+      content = pages.flatMap((page) => [{ type: "imageBlock", attrs: { alt: page.alt, path: page.path } }, { type: "paragraph" }]);
+    }
+    // The person may have opened another page while this was working.
+    if (pictureOptions.noteKey() !== key) return;
+    if (typeof position === "number") editor.commands.setTextSelection(Math.min(position, editor.state.doc.content.size));
+    editor.chain().focus().insertContent(content).run();
+  } catch (error) {
+    pictureOptions.onProblem(error && error.code ? error.code : "unknown");
+  } finally {
+    progress.finish();
   }
 }
 
@@ -61,9 +94,12 @@ const PictureInput = Extension.create({
             // Always stop the browser from opening a dropped file in the window.
             event.preventDefault();
             const spot = view.posAtCoords({ left: event.clientX, top: event.clientY });
-            const pictures = picturesIn(all);
-            if (pictures.length < all.length) pictureOptions.onProblem("unsupported_type");
+            const pdf = all.find(looksLikePdf);
+            const pictures = picturesIn(all.filter((file) => file !== pdf));
+            if (pictures.length + (pdf ? 1 : 0) < all.length) pictureOptions.onProblem("unsupported_type");
             if (pictures.length) insertPictures(editor, pictures, spot ? spot.pos : undefined);
+            // One PDF at a time: it asks a question, and several boxes would pile up.
+            if (pdf) insertPdf(editor, pdf, pictures.length ? undefined : spot ? spot.pos : undefined);
             return true;
           },
         },
@@ -100,7 +136,7 @@ const SourceKeeper = Extension.create({
     const keep = { default: null, rendered: false };
     return [
       {
-        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock", "canvasBlock"],
+        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock", "pdfBlock", "canvasBlock"],
         attributes: { src: keep, base: keep, gap: keep, idx: keep },
       },
       // Only paragraphs can carry a block link id on their last line.
@@ -230,6 +266,15 @@ function slashItems() {
       },
     },
     {
+      id: "pdf",
+      title: s.pdf,
+      words: "pdf document slides lecture pages import attachment",
+      run: (e, r) => {
+        clear(e, r).run();
+        choosePdf().then((file) => file && insertPdf(e, file));
+      },
+    },
+    {
       id: "canvas",
       title: s.canvas,
       words: "canvas drawing draw sketch region frame",
@@ -243,7 +288,7 @@ function slashItems() {
 }
 
 // Blocks that cannot sit inside a callout or a toggle (see richnodes.js).
-const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image", "canvas"]);
+const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image", "pdf", "canvas"]);
 
 function filterItems(query, editor) {
   const q = query.trim().toLowerCase();
@@ -358,7 +403,7 @@ const SlashMenu = Extension.create({
 // `options.loadImage(path)` gives the picture for an image block as a data: address.
 export function createEditor(element, onChange, options = {}) {
   canvasOptions = { create: options.createCanvasRegion || (async () => null) };
-  pictureOptions = { onProblem: options.onProblem || (() => {}), noteKey: options.noteKey || (() => null) };
+  pictureOptions = { onProblem: options.onProblem || (() => {}), noteKey: options.noteKey || (() => null), pdfDialog: options.pdfDialog || (() => null) };
   const editor = new Editor({
     element,
     // The page has a strict content security policy that forbids injected styles, so the
@@ -392,6 +437,7 @@ export function createEditor(element, onChange, options = {}) {
       Toggle,
       ToggleFold,
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
+      PdfBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),
       ...tableExtensions,
       SlashMenu,

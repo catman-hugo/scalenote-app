@@ -39,6 +39,7 @@ import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
+import { PDF_LIMITS } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
@@ -1971,7 +1972,8 @@ async function start() {
     notify: showToast,
     followLink,
     openTag: (name) => openTagsDialog(name),
-    onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
+    onProblem: (code) => showBanner((strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown).replace("{limit}", String(PDF_LIMITS.importPages))),
+    pdfDialog: () => el("pdfBox"),
   });
   app.editor.on("transaction", rememberFolds);
   app.ink = createInkLayer({

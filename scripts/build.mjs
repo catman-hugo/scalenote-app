@@ -24,6 +24,9 @@ await build({
   outdir: dist,
   bundle: true,
   format: "esm",
+  // pdf.js is loaded with import() the first time a PDF is used, so it becomes its own file
+  // and a vault without PDFs never loads it.
+  splitting: true,
   target: ["es2022", "chrome105", "safari15"],
   minify: true,
   sourcemap: false,
@@ -37,3 +40,20 @@ for (const file of ["index.html", "pentest.html", "style.css", "themes.css", "pe
 }
 // A small copy of the logo (128px) for the screens; the full-size one stays in assets/.
 await cp(path.join(web, "logo.png"), path.join(dist, "logo.png"));
+
+// The worker is a module but is named .js: a webview that does not know ".mjs" would serve it
+// as a plain download and the worker would not start.
+// What pdf.js needs next to the app (nothing is fetched from the network): its worker, the
+// standard fonts for PDFs that do not carry theirs, and the image decoders (wasm).
+// The legacy build is used because it also runs in older Android webviews.
+const pdfjs = path.join(root, "node_modules", "pdfjs-dist");
+await mkdir(path.join(dist, "pdf"), { recursive: true });
+await cp(path.join(pdfjs, "legacy", "build", "pdf.worker.min.mjs"), path.join(dist, "pdf", "pdf.worker.min.js"));
+await cp(path.join(pdfjs, "standard_fonts"), path.join(dist, "pdf", "standard_fonts"), { recursive: true });
+// Only the script versions of the image decoders are shipped (the app runs pdf.js with
+// WebAssembly off), not the .wasm files and not QuickJS, which is for scripts inside PDFs.
+await cp(path.join(pdfjs, "wasm"), path.join(dist, "pdf", "wasm"), {
+  recursive: true,
+  filter: (from) => from === path.join(pdfjs, "wasm") || /nowasm_fallback\.js$|^LICENSE/.test(path.basename(from)),
+});
+await cp(path.join(pdfjs, "LICENSE"), path.join(dist, "pdf", "LICENSE.txt"));
