@@ -49,10 +49,12 @@ export const strings = {
     renameFolderLabel: "Folder name",
     renamePageLabel: "Page name",
     icon: "Icon",
+    colour: "Colour",
   },
 
   folderIcon: {
     label: "Folder icon",
+    pageLabel: "Page colour",
     style: "Icon",
     colour: "Colour",
     styles: { folder: "Folder", notebook: "Notebook", line: "Line" },
