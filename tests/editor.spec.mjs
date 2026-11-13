@@ -7151,6 +7151,39 @@ await test("the loop tool moves a region by its dashed border, and the block in 
   assert.deepEqual([frame.x, frame.y, frame.w, frame.h], [360, 240, 200, 150]);
 });
 
+await test("a selected region can be named, the name is saved, shown on the canvas and undone with Undo", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  assert.equal(await page.locator(".canvas-region-name").evaluate((e) => getComputedStyle(e).visibility), "hidden", "no field while no region is selected");
+  await page.mouse.click(box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y); // the top border
+  await page.waitForSelector(".canvas-region-name:visible");
+  assert.equal(await page.locator(".canvas-region-name").inputValue(), "Cell");
+  await page.locator(".canvas-region-name").fill("  Cell diagram  ");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].label === "Cell diagram");
+  // A click on empty paper clears the selection and hides the field; the name stays.
+  await page.mouse.click(box.x + 20, box.y + 20);
+  assert.equal(await page.locator(".canvas-region-name").evaluate((e) => getComputedStyle(e).visibility), "hidden");
+  assert.equal((await savedFrame(page)).label, "Cell diagram");
+  await page.click('.canvas-toolbar [aria-label="Undo"]');
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].label === "Cell");
+});
+
+await test("a region name is cut at 80 characters and may be emptied", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  await page.mouse.click(box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y);
+  await page.waitForSelector(".canvas-region-name:visible");
+  await page.locator(".canvas-region-name").fill("x".repeat(200));
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].label.length === 80);
+  await page.locator(".canvas-region-name").fill("");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].label === "");
+});
+
 await test("a corner of a selected region resizes it, the opposite corner stays", async (page) => {
   await start(page);
   await regionCanvas(page);

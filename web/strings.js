@@ -146,6 +146,8 @@ export const strings = {
     splitCommand: "Show the text and the drawing of this page side by side",
     command: "Switch between the text and the canvas of this page",
     toolbar: "Drawing tools",
+    regionName: "Region name",
+    regionNamePlaceholder: "Region name",
     surface: "Drawing sheet",
     tools: {
       select: "Select with a loop",

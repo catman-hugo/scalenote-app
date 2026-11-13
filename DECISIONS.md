@@ -603,3 +603,9 @@ Cost. The Kotlin change cannot be compiled here; CI does it and only a device sh
 Decision. Every file in `docs/release-notes/` has the same shape: one line saying this is an early test version with a backup reminder, then short bullets under New, Changed and Fixed (only the sections that apply). No title line (the box already shows the version), no "Good to know" or "Known limits" sections, no remarks about what is untested (the owner tests every build at once), no downloads section, and no wording that talks to one person ("please", "I could not"). Each bullet is one line about what was added or changed. The notes of all 34 earlier versions were rewritten to this shape. Longer reasoning stays in `PROGRESS.md` and this file.
 Alternatives. Detailed notes with limits and compatibility remarks (rejected: they were too long to read in the What's new box).
 Cost. Some details that only mattered to a single release (for example, an older version opening a newer drawing read-only) are no longer in the notes. They remain in `PROGRESS.md` and the git history.
+
+## 2026-11-13: A region is named in the toolbar
+
+Decision. The name of a canvas region is typed in a field in the canvas toolbar while the region is picked with the Loop tool. The field always keeps its space in the toolbar, shown only when a region is picked.
+Alternatives. A field that appears only on selection (rejected: the toolbar changed height and the sheet jumped under the pen during the first drag); a name typed on the sheet itself (rejected: more code for the same result).
+Cost. The toolbar is a little wider than before, so on a narrow phone it may use one more row.
