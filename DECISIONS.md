@@ -604,13 +604,8 @@ Decision. Every file in `docs/release-notes/` has the same shape: one line sayin
 Alternatives. Detailed notes with limits and compatibility remarks (rejected: they were too long to read in the What's new box).
 Cost. Some details that only mattered to a single release (for example, an older version opening a newer drawing read-only) are no longer in the notes. They remain in `PROGRESS.md` and the git history.
 
-## 2026-11-13: A region is named in the toolbar
+## 2026-11-13: A region is named in a field under the canvas toolbar
 
-Decision. The name of a canvas region is typed in a field in the canvas toolbar while the region is picked with the Loop tool. The field always keeps its space in the toolbar, shown only when a region is picked.
-Alternatives. A field that appears only on selection (rejected: the toolbar changed height and the sheet jumped under the pen during the first drag); a name typed on the sheet itself (rejected: more code for the same result).
-Cost. The toolbar is a little wider than before, so on a narrow phone it may use one more row.
-## 2026-11-13: Page colours share the folder icon file
-
-Decision. A page's colour is stored in `.scalenote/folder-icons.json` under the page's own path, in the same format 1, so no new file or format version is needed. Pages get colour only; the icon style choice stays for folders.
-Alternatives. A separate file for pages (rejected: two files to keep in sync and to carry on rename); a colour line inside the page (rejected: it would change the markdown, and the owner wants plain notes).
-Cost. Entries for deleted pages remain in the file until the file is cleaned up; they are small and harmless.
+Decision. The name of a canvas region is typed in a small field that floats under the canvas toolbar while the region is picked with the Loop tool. It adds nothing to the toolbar.
+Alternatives. A field inside the toolbar (rejected twice: when shown only on selection the sheet jumped under the pen during the first drag; when it kept its room, the phone toolbar grew to three rows); a name typed on the sheet itself (rejected: more code for the same result).
+Cost. While a region is picked, the field covers a strip of the sheet's top left corner; the sheet can be moved to see what is under it.

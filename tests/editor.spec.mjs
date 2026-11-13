@@ -2472,7 +2472,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Colour", "Move to", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
@@ -7194,7 +7194,7 @@ await test("a selected region can be named, the name is saved, shown on the canv
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].label === "Cell diagram");
   // A click on empty paper clears the selection and hides the field; the name stays.
-  await page.mouse.click(box.x + 20, box.y + 20);
+  await page.mouse.click(box.x + box.width - 30, box.y + box.height - 30);
   assert.equal(await page.locator(".canvas-region-name").evaluate((e) => getComputedStyle(e).visibility), "hidden");
   assert.equal((await savedFrame(page)).label, "Cell diagram");
   await page.click('.canvas-toolbar [aria-label="Undo"]');
@@ -7309,7 +7309,7 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await start(page);
       await regionCanvas(page);
       const box = await sheetBox(page);
-      await page.mouse.click(box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y);
+      await page.mouse.click(box.x + 300 + SHEET_X, box.y + 275 + SHEET_Y); // the left border, which is on screen on a phone too
       await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-4-region-selected.png` });
       await context.close();
     }
@@ -7366,6 +7366,32 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await blockVault(page, drawingWith([rectItem([40, 40], [240, 140]), { tool: "pen", color: "ink", width: 4, points: [[60, 220, 0.5], [180, 260, 0.5], [320, 210, 0.5]] }]));
       await page.waitForSelector(".canvas-block-surface:not([hidden])");
       await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-2-canvas-block.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots for the design check of 0.4.13 (only when SHOTS_DIR is set): coloured pages in the
+// list with the colour menu open, in light and dark, on desktop and phone.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await withFolderAndPage(page);
+      await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Biology: { style: "notebook", colour: "green" }, "Plan.md": { colour: "red" } } }); });
+      await page.click("#newFolder");
+      await page.waitForSelector('.tree-button[data-path="Plan.md"]');
+      if (label === "phone") await page.evaluate(() => document.body.classList.add("sidebar-open"));
+      await rightClick(page, "Plan.md");
+      await page.click('.context-menu .menu-item:has-text("Colour")');
+      await page.waitForSelector(".icon-menu");
+      await page.screenshot({ path: `${shots}/v0413-${label}-${scheme}-1-page-colour.png` });
       await context.close();
     }
   }
