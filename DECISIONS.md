@@ -577,7 +577,7 @@ Cost. About 1 to 2 MB more in the app.
 
 ## 2026-11-13: The canvas block is a window only; regions are moved and resized on the canvas
 
-Decision. The owner asked for the same behaviour as ScaleNote v1: the block in the text is only a window onto part of the canvas, with no drawing bar and nothing to click in it. Drawing inside the block (tried in an unmerged branch) is dropped. A region is selected with the Loop tool by its dashed border, moved by the border, resized by its four corners and deleted with the bin button; every change is one Undo step and the blocks follow. v1 does the same with its frame object.
+Decision. The owner asked for the same behaviour as ScaleNote v1: the block in the text is only a window onto part of the canvas, with no drawing bar and nothing to click in it. Drawing inside the block (it was merged in #57, then removed again) is dropped. A region is selected with the Loop tool by its dashed border, moved by the border, resized by its four corners and deleted with the bin button; every change is one Undo step and the blocks follow. v1 does the same with its frame object.
 Alternatives. A Draw button in the block (rejected by the owner), a handle bar above the region like v1's drag handle (the border does the same job and needs no extra shape).
 Cost. A press on the border of a region moves the region instead of starting a loop, so a loop cannot start exactly on a border line.
 
