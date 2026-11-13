@@ -575,8 +575,9 @@ Decision. PDF import (not started) will use Mozilla's pdf.js (the `pdfjs-dist` p
 Alternatives. A native library such as pdfium (hard to build for Android here), MuPDF (AGPL licence).
 Cost. About 1 to 2 MB more in the app.
 
-## 2026-11-13: Drawing in a canvas block uses a second, locked drawing view
+## 2026-11-13: The canvas block is a window only; regions are moved and resized on the canvas
 
-Decision. The Draw button in a canvas block opens a second instance of the Canvas view inside the block, locked to the block's region and sharing the page's drawing and its undo list, instead of a separate small editor. This keeps one set of tools and one saving path. Points are clamped to the region and the hand tool is hidden. A finger scrolls the page; a pen or mouse draws. Only one block is drawn in at a time, and a press outside ends it. A press on another block's Draw button is left to that button, because ending the first drawing on pointer-down moves the page and the click then misses.
-Alternatives. A separate mini editor with its own tools (more code, two places to fix), drawing only on the full canvas (the block would stay a picture).
-Cost. The full Canvas view starts a new undo list when it opens, so Undo there does not go back through lines drawn in a block.
+Decision. The owner asked for the same behaviour as ScaleNote v1: the block in the text is only a window onto part of the canvas, with no drawing bar and nothing to click in it. Drawing inside the block (it was merged in #57, then removed again) is dropped. A region is selected with the Loop tool by its dashed border, moved by the border, resized by its four corners and deleted with the bin button; every change is one Undo step and the blocks follow. v1 does the same with its frame object.
+Alternatives. A Draw button in the block (rejected by the owner), a handle bar above the region like v1's drag handle (the border does the same job and needs no extra shape).
+Cost. A press on the border of a region moves the region instead of starting a loop, so a loop cannot start exactly on a border line.
+

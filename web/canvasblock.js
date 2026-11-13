@@ -16,9 +16,6 @@ function make(tag, className, text) {
   return node;
 }
 
-// Only one block is drawn in at a time; starting another (or leaving the page) ends the first.
-let stopActive = null;
-
 // Every block on screen, so main.js can ask them all to paint again when the drawing is loaded,
 // changed, or the theme switches.
 const views = new Set();
@@ -63,9 +60,7 @@ export const CanvasBlock = Node.create({
   atom: true,
   draggable: false,
   addOptions() {
-    // `drawing()` gives { canvas, readOnly } or null. `edit(host, frame)` puts a drawing view into
-    // `host` for the region and gives back { destroy() }, or null when it cannot.
-    return { drawing: () => null, edit: () => null };
+    return { drawing: () => null };
   },
   addAttributes() {
     return { id: { default: "", rendered: false } };
@@ -77,77 +72,25 @@ export const CanvasBlock = Node.create({
     return ["figure", { "data-canvas-block": "" }, node.attrs.id];
   },
   addNodeView() {
-    const { drawing, edit } = this.options;
+    const { drawing } = this.options;
     return ({ node }) => {
       let current = node;
       const dom = make("figure", "canvas-block");
-      const head = make("figcaption", "canvas-block-head");
-      const title = make("span", "canvas-block-title");
-      const drawButton = make("button", "canvas-block-draw", strings.canvasBlock.draw);
-      drawButton.type = "button";
-      drawButton.setAttribute("aria-pressed", "false");
-      drawButton.setAttribute("aria-label", strings.canvasBlock.drawLabel);
-      head.append(title, drawButton);
+      const title = make("figcaption", "canvas-block-title");
       const surface = make("canvas", "canvas-block-surface");
       surface.setAttribute("role", "img");
-      const editHost = make("div", "canvas-block-edit");
-      editHost.hidden = true;
       const missing = make("p", "canvas-block-missing", strings.canvasBlock.missing);
-      dom.append(head, surface, editHost, missing);
-      editHost.addEventListener("dragstart", (event) => event.preventDefault());
-
-      let editing = null;
-      const leaveOnOutsidePress = (event) => {
-        // A press on another block's head is left to that block's Draw button: ending this drawing
-        // here would move the page under the finger before the click lands.
-        if (dom.contains(event.target)) return;
-        if (event.target.closest && event.target.closest(".canvas-block-head")) return;
-        stop();
-      };
-      function stop() {
-        if (!editing) return;
-        const finished = editing;
-        editing = null;
-        document.removeEventListener("pointerdown", leaveOnOutsidePress, true);
-        if (stopActive === stop) stopActive = null;
-        finished.destroy();
-        editHost.hidden = true;
-        drawButton.setAttribute("aria-pressed", "false");
-        view.paint();
-      }
-      function begin() {
-        const d = drawing();
-        const frame = d && d.canvas ? d.canvas.frames.find((f) => f.id === current.attrs.id) : null;
-        if (!frame || editing) return;
-        if (stopActive) stopActive();
-        const size = paintRegion(surface, d.canvas, frame, Math.max(50, dom.clientWidth));
-        editHost.style.width = `${size.width}px`;
-        editHost.style.setProperty("--region-ratio", `${frame.w} / ${frame.h}`);
-        editHost.hidden = false;
-        editing = edit(editHost, frame);
-        if (!editing) {
-          editHost.hidden = true;
-          return;
-        }
-        surface.hidden = true;
-        drawButton.setAttribute("aria-pressed", "true");
-        stopActive = stop;
-        document.addEventListener("pointerdown", leaveOnOutsidePress, true);
-      }
-      drawButton.addEventListener("click", () => (editing ? stop() : begin()));
+      dom.append(title, surface, missing);
 
       const view = {
         paint() {
           const d = drawing();
           const frame = d && d.canvas ? d.canvas.frames.find((f) => f.id === current.attrs.id) : null;
-          if (editing && !frame) stop();
-          surface.hidden = !frame || Boolean(editing);
+          surface.hidden = !frame;
           missing.hidden = Boolean(frame);
-          drawButton.hidden = !frame || Boolean(d && d.readOnly);
           title.textContent = frame && frame.label ? frame.label : strings.canvasBlock.title;
           if (!frame) return;
           surface.setAttribute("aria-label", strings.canvasBlock.surface);
-          // While drawing, the live view shows the region; this picture is painted for when it ends.
           paintRegion(surface, d.canvas, frame, Math.max(50, dom.clientWidth));
         },
       };
@@ -164,12 +107,9 @@ export const CanvasBlock = Node.create({
           view.paint();
           return true;
         },
-        // The editor must not act on a press inside the drawing view or on the Draw button: it would
-        // select the block and start dragging it, which cancels the pen's stroke.
-        stopEvent: (event) => editHost.contains(event.target) || head.contains(event.target),
+        stopEvent: () => false,
         ignoreMutation: () => true,
         destroy() {
-          stop();
           views.delete(view);
           if (resize) resize.disconnect();
         },

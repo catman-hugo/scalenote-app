@@ -15,6 +15,8 @@ import {
   DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, tidyStroke,
   itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
+  frameHit,
+  draggedFrame,
 } from "./canvasrules.js";
 import { createPainter, readEnv } from "./canvaspaint.js";
 import { icon } from "./icons.js";
@@ -119,13 +121,13 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     view: { x: 0, y: 0, scale: 1 },
     gesture: null,
     selection: [],
+    // The frame (a region a canvas block shows) picked with the loop tool, to move, resize or delete.
+    frameSel: null,
     editing: null,
     touches: new Map(),
     pinch: null,
     spaceDown: false,
     frame: 0,
-    // A view inside the text shows one region of the drawing and cannot be panned or zoomed.
-    region: null,
     colours: {},
     pageFill: "#fff",
     wrapped: new WeakMap(),
@@ -193,10 +195,13 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     openMenu = menu;
   }
   // A press anywhere outside the open menu closes it.
-  const closeOnOutsidePress = (event) => {
-    if (openMenu && !openMenu.panel.contains(event.target) && !openMenu.button.contains(event.target)) closeMenu();
-  };
-  document.addEventListener("pointerdown", closeOnOutsidePress, true);
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (openMenu && !openMenu.panel.contains(event.target) && !openMenu.button.contains(event.target)) closeMenu();
+    },
+    true,
+  );
   host.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && openMenu) {
       const button = openMenu.button;
@@ -350,7 +355,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     fingerButton.disabled = state.readOnly;
     undoButton.disabled = state.readOnly || !state.history.canUndo;
     redoButton.disabled = state.readOnly || !state.history.canRedo;
-    deleteButton.disabled = state.readOnly || state.selection.length === 0;
+    deleteButton.disabled = state.readOnly || (state.selection.length === 0 && !state.frameSel);
     if (state.readOnly) closeMenu();
   }
 
@@ -359,7 +364,10 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     commitNote();
     state.tool = name;
     if (SHAPES.includes(name)) state.shape = name;
-    if (name !== "select") state.selection = [];
+    if (name !== "select") {
+      state.selection = [];
+      state.frameSel = null;
+    }
     drawToolbar();
     scheduleDraw();
   }
@@ -430,20 +438,35 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     // An undo or an erase may have removed selected items; the selection only keeps what is left.
     const present = new Set(state.canvas.items);
     state.selection = state.selection.filter((item) => present.has(item));
+    if (state.frameSel && !state.canvas.frames.includes(state.frameSel)) state.frameSel = null;
     drawToolbar();
     scheduleDraw();
     onChange();
   }
 
   function clearSelection() {
-    if (!state.selection.length) return;
+    if (!state.selection.length && !state.frameSel) return;
     state.selection = [];
+    state.frameSel = null;
     drawToolbar();
     scheduleDraw();
   }
 
   function deleteSelection() {
-    if (state.readOnly || state.gesture || !state.selection.length) return;
+    if (state.readOnly || state.gesture) return;
+    if (state.frameSel) {
+      // The region goes; what is drawn inside it stays on the sheet, and a block that showed it says so.
+      const index = state.canvas.frames.indexOf(state.frameSel);
+      const frame = state.frameSel;
+      state.frameSel = null;
+      if (index >= 0) {
+        state.canvas.frames.splice(index, 1);
+        state.history.record({ frameRemove: { index, frame } });
+        changed();
+      }
+      return;
+    }
+    if (!state.selection.length) return;
     const chosen = new Set(state.selection);
     const remove = [];
     state.canvas.items.forEach((item, index) => {
@@ -458,16 +481,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   // ---- coordinates ----
-  const toWorld = (sx, sy) => {
-    const point = { x: (sx - state.view.x) / state.view.scale, y: (sy - state.view.y) / state.view.scale };
-    // A pen held down can leave the surface; nothing it draws may land outside the region.
-    const r = state.region;
-    if (r) {
-      point.x = Math.min(r.x + r.w, Math.max(r.x, point.x));
-      point.y = Math.min(r.y + r.h, Math.max(r.y, point.y));
-    }
-    return point;
-  };
+  const toWorld = (sx, sy) => ({ x: (sx - state.view.x) / state.view.scale, y: (sy - state.view.y) / state.view.scale });
   function localPoint(event) {
     const box = surface.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
@@ -481,7 +495,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
 
   // Puts the whole drawing in view (never bigger than life size), or the sheet's corner when empty.
   function fitView() {
-    if (state.region) return;
     const box = surface.getBoundingClientRect();
     const around = boundsOf(state.canvas.items);
     if (!around || !box.width || !box.height) {
@@ -536,6 +549,20 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.restore();
   }
 
+  function paintFrameSelection(scale) {
+    const f = state.frameSel;
+    if (!f) return;
+    context.save();
+    context.strokeStyle = state.accent;
+    context.fillStyle = state.accent;
+    context.lineWidth = 2.5 / scale;
+    context.setLineDash([]);
+    context.strokeRect(f.x, f.y, f.w, f.h);
+    const size = 10 / scale;
+    for (const [x, y] of [[f.x, f.y], [f.x + f.w, f.y], [f.x, f.y + f.h], [f.x + f.w, f.y + f.h]]) context.fillRect(x - size / 2, y - size / 2, size, size);
+    context.restore();
+  }
+
   function draw() {
     state.frame = 0;
     const ratio = window.devicePixelRatio || 1;
@@ -551,16 +578,12 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = state.pageFill;
     context.fillRect(0, 0, surface.width, surface.height);
-    // The region fills the whole surface: its corner is the surface's corner.
-    if (state.region && box.width > 0) {
-      const fit = box.width / state.region.w;
-      state.view = { scale: fit, x: -state.region.x * fit, y: -state.region.y * fit };
-    }
     const { x, y, scale } = state.view;
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
     paintPaper(box);
     paintItems(state.canvas.items);
     painter.frames(state.canvas.frames, scale);
+    paintFrameSelection(scale);
     const g = state.gesture;
     if (g && g.kind === "pen" && g.stroke.tool !== "highlighter") paintStroke(g.stroke);
     if (g && g.kind === "shape") paintShape(g.shape);
@@ -742,6 +765,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   function startSelect(id, screen, world) {
+    const hit = frameHit(state.canvas.frames, state.frameSel, world, state.view.scale, HANDLE_PIXELS);
+    if (hit) {
+      state.selection = [];
+      state.frameSel = hit.frame;
+      const { x, y, w, h } = hit.frame;
+      state.gesture = { kind: "frame", id, part: hit.part, frame: hit.frame, start: world, before: { x, y, w, h } };
+      drawToolbar();
+      return;
+    }
     const handle = resizeHandle();
     if (handle && Math.hypot(world.x - handle.x, world.y - handle.y) * state.view.scale <= HANDLE_PIXELS) {
       state.gesture = { kind: "resize", id, item: handle.item, before: { w: handle.item.w, h: handle.item.h } };
@@ -753,6 +785,10 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       const items = state.selection.slice();
       state.gesture = { kind: "move", id, items, start: world, anchor: moveAnchor(items), dx: 0, dy: 0 };
     } else {
+      if (state.frameSel) {
+        state.frameSel = null;
+        drawToolbar();
+      }
       state.gesture = { kind: "lasso", id, loop: [[world.x, world.y]], last: screen, length: 0 };
     }
   }
@@ -862,6 +898,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       drawToolbar();
       return scheduleDraw();
     }
+    if (g.kind === "frame") {
+      const after = { x: g.frame.x, y: g.frame.y, w: g.frame.w, h: g.frame.h };
+      if (cancelled) Object.assign(g.frame, g.before);
+      else if (Object.keys(after).some((key) => after[key] !== g.before[key])) {
+        state.history.record({ frames: [{ frame: g.frame, before: g.before, after }] });
+        return changed();
+      }
+      return scheduleDraw();
+    }
     if (g.kind === "move") {
       if (cancelled) for (const item of g.items) moveItem(item, -g.dx, -g.dy);
       else if (g.dx !== 0 || g.dy !== 0) {
@@ -907,8 +952,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   function onDown(event) {
-    // In the text a finger scrolls the page; only a pen or a mouse draws (or a finger, if it is set to).
-    if (state.region && event.pointerType === "touch" && !state.fingerDraws) return;
     surface.focus({ preventScroll: true });
     // Capture keeps the stroke going when the pen leaves the sheet. It can refuse (the pointer
     // may already be gone), and drawing must not stop because of that.
@@ -924,7 +967,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
     if (state.gesture) return;
     if (!wantsToDraw(event)) {
-      if (state.region) return;
       if (event.pointerType === "mouse" || event.pointerType === "pen" || event.pointerType === "touch") {
         // Any pointer can move the sheet: the hand tool, the middle button or space with a mouse.
         state.gesture = { kind: "pan", id: event.pointerId, last: localPoint(event) };
@@ -989,6 +1031,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       g.length += Math.hypot(now.x - g.last.x, now.y - g.last.y);
       g.last = now;
       if (g.loop.length < LIMITS.pointsPerStroke) g.loop.push([world.x, world.y]);
+    } else if (g.kind === "frame") {
+      const world = toWorld(now.x, now.y);
+      Object.assign(g.frame, draggedFrame(g.before, g.part, world.x - g.start.x, world.y - g.start.y));
     } else if (g.kind === "move") {
       moveGesture(g, toWorld(now.x, now.y));
     } else {
@@ -1020,7 +1065,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   surface.addEventListener(
     "wheel",
     (event) => {
-      if (state.region) return;
       event.preventDefault();
       const point = localPoint(event);
       // A pinch on a trackpad arrives as a wheel with the control key down.
@@ -1072,36 +1116,6 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       drawToolbar();
       fitView();
       scheduleDraw();
-    },
-    /**
-     * Shows a drawing that another view already holds (the same object and the same undo list), so
-     * what is drawn here and there is one drawing. Used by the canvas block in the text.
-     */
-    adopt(canvas, history, readOnly) {
-      commitNote();
-      state.canvas = canvas;
-      state.history = history;
-      state.readOnly = readOnly;
-      state.gesture = null;
-      state.selection = [];
-      state.touches.clear();
-      drawToolbar();
-      scheduleDraw();
-    },
-    /** Takes the view away again: the listener on the page is removed and the host is emptied. */
-    destroy() {
-      commitNote();
-      document.removeEventListener("pointerdown", closeOnOutsidePress, true);
-      host.replaceChildren();
-    },
-    /** Limits the view to the part of the drawing inside `frame` ({x, y, w, h}), or lifts the limit. */
-    setRegion(frame) {
-      state.region = frame ? { x: frame.x, y: frame.y, w: frame.w, h: frame.h } : null;
-      if (frame && state.tool === "hand") setTool("pen");
-      scheduleDraw();
-    },
-    get history() {
-      return state.history;
     },
     /** Makes the drawing read-only after the file was changed by something else. */
     lock(text) {

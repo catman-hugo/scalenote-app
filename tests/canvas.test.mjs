@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DrawingHistory, LIMITS, NOTE, arrowHead, boundsOf, canAddItem, canMove, emptyCanvas, itemTouched, itemsInLoop, itemsTouched,
-  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, tidyStroke, HIGHLIGHT_SLACK, makeFrameId, nextFrameRect } from "../web/canvasrules.js";
+  MARGIN_X, PAGE_COLOURS, PAPERS, isLightBackground, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, parseCanvas, pointInLoop, serializeCanvas, snappedShift, strokeTouched, widthAt, wrapText, SHAPE_GRID, snapToGrid, figureOf, tidyStroke, HIGHLIGHT_SLACK, makeFrameId, nextFrameRect, frameHit, draggedFrame, FRAME_LIMITS } from "../web/canvasrules.js";
 
 const stroke = (points, color = "ink", width = 4, tool = "pen") => ({ tool, color, width, points });
 const shape = (kind, a, b, color = "ink", width = 4) => ({ tool: "shape", kind, color, width, a, b });
@@ -570,4 +570,53 @@ test("a frame id is random, never one already taken, and the next frame starts b
   const next = nextFrameRect(drawn);
   assert.deepEqual([next.y, next.w, next.h], [660, 480, 320]);
   assert.ok(next.x <= 10 && next.x >= 0, "it starts at the left edge of the drawing");
+});
+
+test("a press on a frame's border or a corner of the selected frame hits it, the inside does not", () => {
+  const a = { ...FRAME, id: "aaaaaa01", x: 0, y: 0, w: 200, h: 100 };
+  const b = { ...FRAME, id: "bbbbbb01", x: 100, y: 50, w: 200, h: 100 };
+  assert.equal(frameHit([a], null, { x: 100, y: 0 }, 1).part, "move", "the top border");
+  assert.equal(frameHit([a], null, { x: 100, y: 50 }, 1), null, "the inside is left to the loop");
+  assert.equal(frameHit([a], null, { x: 500, y: 500 }, 1), null);
+  assert.equal(frameHit([a], null, { x: 205, y: 50 }, 1).part, "move", "a little outside still counts");
+  assert.equal(frameHit([a], null, { x: 200, y: 50 }, 0.25, 12).part, "move");
+  // A corner only resizes once the frame is selected; before that it moves.
+  assert.equal(frameHit([a], null, { x: 200, y: 100 }, 1).part, "move");
+  assert.deepEqual(frameHit([a], a, { x: 200, y: 100 }, 1), { frame: a, part: "se" });
+  assert.equal(frameHit([a], a, { x: 0, y: 0 }, 1).part, "nw");
+  // Where two frames cross, the one drawn last is on top.
+  assert.equal(frameHit([a, b], null, { x: 100, y: 50 }, 1).frame, b);
+});
+
+test("dragging a corner keeps the opposite corner, sizes stay within the limits, a move stays on the sheet", () => {
+  const start = { x: 100, y: 100, w: 200, h: 100 };
+  assert.deepEqual(draggedFrame(start, "move", 10, -20), { x: 110, y: 80, w: 200, h: 100 });
+  assert.deepEqual(draggedFrame(start, "se", 50, 30), { x: 100, y: 100, w: 250, h: 130 });
+  assert.deepEqual(draggedFrame(start, "nw", 20, 10), { x: 120, y: 110, w: 180, h: 90 });
+  assert.deepEqual(draggedFrame(start, "ne", 20, 10), { x: 100, y: 110, w: 220, h: 90 });
+  assert.deepEqual(draggedFrame(start, "sw", 20, 10), { x: 120, y: 100, w: 180, h: 110 });
+  // Too small: the least size, with the opposite corner still where it was.
+  assert.deepEqual(draggedFrame(start, "nw", 500, 500), { x: 260, y: 160, w: FRAME_LIMITS.min, h: FRAME_LIMITS.min });
+  assert.equal(draggedFrame(start, "se", 1e9, 1e9).w, FRAME_LIMITS.max);
+  assert.equal(draggedFrame(start, "move", 1e12, 0).x, LIMITS.coordinate);
+  assert.deepEqual(draggedFrame(start, "se", NaN, Infinity), start);
+});
+
+test("moving, resizing and deleting a frame can be undone and redone", () => {
+  const frame = { ...FRAME };
+  const canvas = { ...emptyCanvas(), frames: [frame] };
+  const history = new DrawingHistory();
+  const before = { x: frame.x, y: frame.y, w: frame.w, h: frame.h };
+  Object.assign(frame, { x: 50, w: 300 });
+  history.record({ frames: [{ frame, before, after: { x: 50, y: frame.y, w: 300, h: frame.h } }] });
+  assert.ok(history.undo(canvas));
+  assert.deepEqual([frame.x, frame.w], [before.x, before.w]);
+  assert.ok(history.redo(canvas));
+  assert.deepEqual([frame.x, frame.w], [50, 300]);
+  canvas.frames.splice(0, 1);
+  history.record({ frameRemove: { index: 0, frame } });
+  assert.ok(history.undo(canvas));
+  assert.equal(canvas.frames[0], frame);
+  assert.ok(history.redo(canvas));
+  assert.equal(canvas.frames.length, 0);
 });
