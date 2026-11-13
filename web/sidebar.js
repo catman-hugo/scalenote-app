@@ -77,7 +77,11 @@ function renderNode(node, state, actions) {
     item.append(row);
     if (open && node.children.length) item.append(renderList(node.children, state, actions));
   } else {
-    button.append(icon("note"), label(node.name.replace(/\.md$/i, "")));
+    // A page can have a colour in the same icon file as the folders, keyed by its path.
+    const noteIcon = icon("note");
+    const look = state.icons && has(state.icons, node.path) ? state.icons[node.path] : null;
+    if (look && look.colour !== "none") noteIcon.style.color = COLOUR_HEX[look.colour];
+    button.append(noteIcon, label(node.name.replace(/\.md$/i, "")));
     if (state.currentPath === node.path) {
       row.classList.add("current");
       button.setAttribute("aria-current", "page");

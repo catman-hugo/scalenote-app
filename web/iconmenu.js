@@ -18,13 +18,13 @@ function heading(text) {
  * `choose(style, colour)` saves a choice and returns the look that is now in effect (or the old
  * one when saving failed). `close` is called with no argument when the menu is closed.
  */
-export function openIconMenu(x, y, look, { choose, onClose, returnFocus }) {
+export function openIconMenu(x, y, look, { choose, onClose, returnFocus, colourOnly = false }) {
   const t = strings.folderIcon;
   let current = { ...look };
   const menu = document.createElement("div");
   menu.className = "gutter-menu icon-menu";
   menu.setAttribute("role", "dialog");
-  menu.setAttribute("aria-label", t.label);
+  menu.setAttribute("aria-label", colourOnly ? t.pageLabel : t.label);
 
   const styleButtons = new Map();
   const colourButtons = new Map();
@@ -78,7 +78,9 @@ export function openIconMenu(x, y, look, { choose, onClose, returnFocus }) {
   for (const [style, button] of styleButtons) button.addEventListener("click", () => pick(style, current.colour));
   for (const [name, button] of colourButtons) button.addEventListener("click", () => pick(current.style, name));
 
-  menu.append(heading(t.style), styleRow, heading(t.colour), colourGrid, none);
+  // A page has one icon only; the menu offers just its colour.
+  if (colourOnly) menu.append(heading(t.colour), colourGrid, none);
+  else menu.append(heading(t.style), styleRow, heading(t.colour), colourGrid, none);
   refresh();
 
   let closed = false;
@@ -105,6 +107,6 @@ export function openIconMenu(x, y, look, { choose, onClose, returnFocus }) {
   menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", keys, true);
-  styleButtons.get(current.style).focus();
+  (colourOnly ? colourButtons.get(current.colour) : styleButtons.get(current.style)).focus();
   return close;
 }

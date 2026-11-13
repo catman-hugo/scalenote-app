@@ -17,6 +17,7 @@ import {
   itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
   frameHit,
   draggedFrame,
+  FRAME_LIMITS,
 } from "./canvasrules.js";
 import { createPainter, readEnv } from "./canvaspaint.js";
 import { icon } from "./icons.js";
@@ -326,8 +327,37 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   });
   const moreButton = plainButton(t.more, "more", () => toggleMenu("more"));
   makeMenu("more", t.more, moreButton, [fingerButton, resetButton]);
+  // The name of the selected region. It is shown on the canvas and at the top of the block in the
+  // text. The field belongs to the frame that was selected when it was filled in, so a click
+  // elsewhere on the sheet (which clears the selection first) still saves the name.
+  const regionName = make("input", "canvas-region-name");
+  regionName.type = "text";
+  regionName.maxLength = FRAME_LIMITS.label;
+  regionName.placeholder = t.regionNamePlaceholder;
+  regionName.setAttribute("aria-label", t.regionName);
+  regionName.style.visibility = "hidden";
+  let regionNamed = null;
+  regionName.addEventListener("change", () => {
+    const frame = regionNamed;
+    if (!frame || state.readOnly || !state.canvas.frames.includes(frame)) return;
+    const value = regionName.value.trim().slice(0, FRAME_LIMITS.label);
+    if (value === frame.label) return;
+    const before = { label: frame.label };
+    frame.label = value;
+    state.history.record({ frames: [{ frame, before, after: { label: value } }] });
+    changed();
+  });
+  regionName.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") regionName.blur();
+    if (event.key === "Escape") {
+      regionName.value = regionNamed ? regionNamed.label : "";
+      regionName.blur();
+    }
+    event.stopPropagation(); // typing a name must not trigger tool shortcuts
+  });
   toolbar.append(undoButton, redoButton, deleteButton, moreButton);
   host.prepend(toolbar, notice, stage);
+  host.append(regionName);
 
   function drawToolbar() {
     for (const [name, button] of Object.entries(toolButtons)) {
@@ -356,6 +386,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     undoButton.disabled = state.readOnly || !state.history.canUndo;
     redoButton.disabled = state.readOnly || !state.history.canRedo;
     deleteButton.disabled = state.readOnly || (state.selection.length === 0 && !state.frameSel);
+    // The name field follows the selected region; while it is being typed in, it is left alone.
+    if (document.activeElement !== regionName) {
+      regionNamed = state.frameSel;
+      // The field floats under the toolbar, so it never moves the sheet or adds a toolbar row.
+      regionName.style.visibility = state.frameSel ? "visible" : "hidden";
+      regionName.style.top = `${toolbar.offsetHeight + 4}px`;
+      regionName.value = state.frameSel ? state.frameSel.label : "";
+    }
+    regionName.disabled = state.readOnly;
     if (state.readOnly) closeMenu();
   }
 

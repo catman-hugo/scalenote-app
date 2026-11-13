@@ -832,6 +832,7 @@ body.block-dragging .float-bar { visibility: hidden; }
   border-bottom: 1px solid var(--line);
 }
 .canvas-gap { width: var(--space-3); }
+.canvas-region-name { position: absolute; left: var(--space-3); z-index: 5; width: min(16rem, calc(100% - 2 * var(--space-3))); height: 2rem; box-sizing: border-box; padding: 0 var(--space-2); border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
 .canvas-tool { display: inline-flex; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; padding: var(--space-1) var(--space-2); }
 .canvas-tool[aria-pressed="true"], .canvas-menu-row[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 .canvas-tool:disabled, .canvas-menu-row:disabled { opacity: 0.4; }

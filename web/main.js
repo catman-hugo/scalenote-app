@@ -766,10 +766,12 @@ async function carryFolderIcons(oldPath, newPath) {
 
 function openFolderIconMenu(node, x, y, button) {
   const look = has(app.folderIcons.icons, node.path) ? app.folderIcons.icons[node.path] : { style: "folder", colour: "none" };
+  const isPage = node.kind !== "folder";
   openIconMenu(x, y, look, {
     returnFocus: button,
+    colourOnly: isPage,
     async choose(style, colour) {
-      await changeFolderIcons((parsed) => withIcon(parsed, node.path, style, colour));
+      await changeFolderIcons((parsed) => withIcon(parsed, node.path, isPage ? "folder" : style, colour));
       drawTree();
       const now = app.folderIcons.icons;
       return has(now, node.path) ? now[node.path] : { style: "folder", colour: "none" };
@@ -1077,7 +1079,7 @@ function drawTree() {
 function openEntryMenu(node, x, y, button) {
   const c = strings.contextMenu;
   const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
-  if (node.kind === "folder") items.push({ label: c.icon, run: () => openFolderIconMenu(node, x, y, button) });
+  items.push({ label: node.kind === "folder" ? c.icon : c.colour, run: () => openFolderIconMenu(node, x, y, button) });
   const targets = moveTargets(node.path);
   if (targets.length) {
     const choose = () =>
