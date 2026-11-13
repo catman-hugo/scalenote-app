@@ -603,3 +603,9 @@ Cost. The Kotlin change cannot be compiled here; CI does it and only a device sh
 Decision. Every file in `docs/release-notes/` has the same shape: one line saying this is an early test version with a backup reminder, then short bullets under New, Changed and Fixed (only the sections that apply). No title line (the box already shows the version), no "Good to know" or "Known limits" sections, no remarks about what is untested (the owner tests every build at once), no downloads section, and no wording that talks to one person ("please", "I could not"). Each bullet is one line about what was added or changed. The notes of all 34 earlier versions were rewritten to this shape. Longer reasoning stays in `PROGRESS.md` and this file.
 Alternatives. Detailed notes with limits and compatibility remarks (rejected: they were too long to read in the What's new box).
 Cost. Some details that only mattered to a single release (for example, an older version opening a newer drawing read-only) are no longer in the notes. They remain in `PROGRESS.md` and the git history.
+
+## 2026-11-13: Page colours share the folder icon file
+
+Decision. A page's colour is stored in `.scalenote/folder-icons.json` under the page's own path, in the same format 1, so no new file or format version is needed. Pages get colour only; the icon style choice stays for folders.
+Alternatives. A separate file for pages (rejected: two files to keep in sync and to carry on rename); a colour line inside the page (rejected: it would change the markdown, and the owner wants plain notes).
+Cost. Entries for deleted pages remain in the file until the file is cleaned up; they are small and harmless.

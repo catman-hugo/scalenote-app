@@ -5461,6 +5461,7 @@ if (shots && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "043")) {
 // ---------- 0.4.5: folder icons ----------
 
 const iconFile = (page) => page.evaluate(() => window.__mock.folderIcons.text);
+const pageGlyphColour = (page, p) => page.evaluate((path) => getComputedStyle(document.querySelector(`.tree-button[data-path="${path}"] svg`)).color, p);
 const glyphColour = (page, p) => page.evaluate((path) => {
   const svg = document.querySelector(`.tree-button[data-path="${path}"] svg:nth-of-type(2)`);
   return { colour: getComputedStyle(svg).color, filled: svg.querySelector("path").getAttribute("fill"), d: svg.querySelector("path").getAttribute("d") };
@@ -5471,11 +5472,11 @@ async function openIconMenuFor(page, p) {
   await page.waitForSelector(".icon-menu");
 }
 
-await test("a folder starts with the plain folder icon, and a page has no Icon entry", async (page) => {
+await test("a folder starts with the plain folder icon, and a page offers Colour only", async (page) => {
   await withFolderAndPage(page);
   assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
   await rightClick(page, "Plan.md");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Colour", "Move to", "Delete"]);
 }, ctxOpts);
 
 await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
@@ -5529,6 +5530,36 @@ await test("the icon is kept after the list is drawn again, and follows a rename
   await page.waitForSelector('.tree-button[data-path="Plants"]');
   assert.deepEqual(JSON.parse(await iconFile(page)).icons, { Plants: { style: "notebook", colour: "green" } });
   assert.equal((await glyphColour(page, "Plants")).colour, "rgb(47, 158, 68)");
+}, ctxOpts);
+
+await test("a page can be given a colour, offers no icon styles, keeps it when renamed, and a folder entry is untouched", async (page) => {
+  await withFolderAndPage(page);
+  await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Biology: { style: "notebook", colour: "green" } } }); });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Plan.md"]');
+  await rightClick(page, "Plan.md");
+  await page.click('.context-menu .menu-item:has-text("Colour")');
+  await page.waitForSelector(".icon-menu");
+  assert.equal(await page.locator(".icon-menu [data-icon-style]").count(), 0, "no icon styles for a page");
+  assert.equal(await page.locator(".icon-menu [data-icon-colour]").count(), 17);
+  await page.click('.icon-menu [data-icon-colour="red"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons, {
+    Biology: { style: "notebook", colour: "green" },
+    "Plan.md": { style: "folder", colour: "red" },
+  });
+  await page.keyboard.press("Escape");
+  assert.equal(await pageGlyphColour(page, "Plan.md"), "rgb(217, 69, 59)");
+  await rightClick(page, "Plan.md");
+  await page.click('.context-menu .menu-item:has-text("Rename")');
+  await page.locator(".inline-rename").fill("Outline");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('.tree-button[data-path="Outline.md"]');
+  assert.deepEqual(Object.keys(JSON.parse(await iconFile(page)).icons).sort(), ["Biology", "Outline.md"]);
+  assert.equal(await pageGlyphColour(page, "Outline.md"), "rgb(217, 69, 59)");
+  await rightClick(page, "Outline.md");
+  await page.click('.context-menu .menu-item:has-text("Colour")');
+  await page.click('.icon-menu [data-icon-colour="none"]');
+  assert.deepEqual(Object.keys(JSON.parse(await iconFile(page)).icons), ["Biology"], "no colour removes the entry");
 }, ctxOpts);
 
 await test("a damaged icon file shows plain folders, is left alone and says so when a change is tried", async (page) => {
