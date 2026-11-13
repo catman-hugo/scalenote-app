@@ -2472,7 +2472,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Colour", "Move to", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
