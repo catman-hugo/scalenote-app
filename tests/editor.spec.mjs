@@ -7163,7 +7163,7 @@ await test("a selected region can be named, the name is saved, shown on the canv
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].label === "Cell diagram");
   // A click on empty paper clears the selection and hides the field; the name stays.
-  await page.mouse.click(box.x + 20, box.y + 20);
+  await page.mouse.click(box.x + box.width - 30, box.y + box.height - 30);
   assert.equal(await page.locator(".canvas-region-name").evaluate((e) => getComputedStyle(e).visibility), "hidden");
   assert.equal((await savedFrame(page)).label, "Cell diagram");
   await page.click('.canvas-toolbar [aria-label="Undo"]');

@@ -355,8 +355,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
     event.stopPropagation(); // typing a name must not trigger tool shortcuts
   });
-  toolbar.append(regionName, undoButton, redoButton, deleteButton, moreButton);
+  toolbar.append(undoButton, redoButton, deleteButton, moreButton);
   host.prepend(toolbar, notice, stage);
+  host.append(regionName);
 
   function drawToolbar() {
     for (const [name, button] of Object.entries(toolButtons)) {
@@ -388,8 +389,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     // The name field follows the selected region; while it is being typed in, it is left alone.
     if (document.activeElement !== regionName) {
       regionNamed = state.frameSel;
-      // Hidden but still taking its room, so the sheet does not jump when a region is picked.
+      // The field floats under the toolbar, so it never moves the sheet or adds a toolbar row.
       regionName.style.visibility = state.frameSel ? "visible" : "hidden";
+      regionName.style.top = `${toolbar.offsetHeight + 4}px`;
       regionName.value = state.frameSel ? state.frameSel.label : "";
     }
     regionName.disabled = state.readOnly;

@@ -604,8 +604,8 @@ Decision. Every file in `docs/release-notes/` has the same shape: one line sayin
 Alternatives. Detailed notes with limits and compatibility remarks (rejected: they were too long to read in the What's new box).
 Cost. Some details that only mattered to a single release (for example, an older version opening a newer drawing read-only) are no longer in the notes. They remain in `PROGRESS.md` and the git history.
 
-## 2026-11-13: A region is named in the toolbar
+## 2026-11-13: A region is named in a field under the canvas toolbar
 
-Decision. The name of a canvas region is typed in a field in the canvas toolbar while the region is picked with the Loop tool. The field always keeps its space in the toolbar, shown only when a region is picked.
-Alternatives. A field that appears only on selection (rejected: the toolbar changed height and the sheet jumped under the pen during the first drag); a name typed on the sheet itself (rejected: more code for the same result).
-Cost. The toolbar is a little wider than before, so on a narrow phone it may use one more row.
+Decision. The name of a canvas region is typed in a small field that floats under the canvas toolbar while the region is picked with the Loop tool. It adds nothing to the toolbar.
+Alternatives. A field inside the toolbar (rejected twice: when shown only on selection the sheet jumped under the pen during the first drag; when it kept its room, the phone toolbar grew to three rows); a name typed on the sheet itself (rejected: more code for the same result).
+Cost. While a region is picked, the field covers a strip of the sheet's top left corner; the sheet can be moved to see what is under it.
