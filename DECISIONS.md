@@ -615,3 +615,8 @@ Cost. While a region is picked, the field covers a strip of the sheet's top left
 Decision. Settings has five tabs (Look, Pages, Drawing, Updates, Files). The settings are grouped by what they change, not by when they were added. The box is wide on a computer and the tabs are a row on a phone. It opens on the tab used last.
 Alternatives. One long list (the old way; rejected by the owner as messy); a separate screen per group like Windows Settings (rejected: more steps to change two things); a search box (not now; the list is short enough, and it can be added when there are many more settings).
 Cost. A setting is one click further away than before. Tests that touch Settings must pick a tab first.
+## 2026-11-13: Sync between a person's own devices is one engine, direct first
+
+Decision. Version 0.5 builds one sync engine that works between two devices that are both on, found on the same network the way LocalSend does it, or reached by a typed address. The home server is the same engine as a program with no window that never sleeps, so there is no second sync system. The browser client talks only to a server. This brings the "same person, two devices" part forward from the peer-to-peer work planned for 1.6; sharing with other people stays in 1.6 and 1.7.
+Alternatives. A server-only design (rejected by the owner as a first choice: it needs a machine that is always on); building direct sync in 1.6 as first planned (rejected: the owner wants two devices connected in 0.5).
+Cost. Android cannot sync while the app is asleep, and some Wi-Fi networks hide devices from each other, so a typed address is needed as a fallback. The Android multicast code can only be compiled by CI and tried on real devices.

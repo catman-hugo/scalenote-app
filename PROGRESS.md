@@ -489,7 +489,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.13 | Planned (owner, 2026-11-13): fixes from the device test of 0.4.12, then page icon colours (the same sixteen colours as folders, no other icon styles), and names for canvas regions | planned |
 | 0.4.14 | The `/canvas` block inside callouts, toggles and columns (see "0.4.14") | built, not tried on a device |
 | 0.4.15 | Planned: ink and canvas drawings in print and export; text selection and find inside a PDF block | planned |
-| 0.5 | Home server, sync, browser client | not started |
+| 0.5 | Sync between your own devices: LocalSend-style direct sync, home server as an always-on device, browser client. Slices 0.5.0 to 0.5.7, see `docs/v0.5-plan.md` | planned, not started |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
 | 1.1 | Planning and calendar, templates, daily notes | not started |
