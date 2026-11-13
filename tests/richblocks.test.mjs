@@ -98,6 +98,28 @@ test("images: only standard markdown into attachments, only safe types", () => {
   assert.equal(readImage("![a]b](attachments/a.png)"), null);
 });
 
+test("an image size at the end of the description is read and written back unchanged", () => {
+  const path = "attachments/a.png";
+  const sized = readImage("![a cell|300x200](attachments/a.png)");
+  assert.deepEqual(sized.attrs, { alt: "a cell", path, width: 300, height: 200 });
+  assert.equal(writeImage(sized), "![a cell|300x200](attachments/a.png)");
+  const widthOnly = readImage("![|300](attachments/a.png)");
+  assert.deepEqual(widthOnly.attrs, { alt: "", path, width: 300 });
+  assert.equal(writeImage(widthOnly), "![|300](attachments/a.png)");
+  // Only the last number counts; an earlier pipe stays in the description.
+  assert.deepEqual(readImage("![a|5|300](attachments/a.png)").attrs, { alt: "a|5", path, width: 300 });
+  // Odd sizes mean the natural size and the text stays exactly as it was.
+  for (const odd of ["a|0", "a|99999", "a|10001", "a|300x", "a|x200", "a|-5", "a|1e3", "a|3 00", "a|300x200x1"]) {
+    const read = readImage(`![${odd}](attachments/a.png)`);
+    assert.deepEqual(read.attrs, { alt: odd, path }, odd);
+    assert.equal(writeImage(read), `![${odd}](attachments/a.png)`, odd);
+  }
+  // A description that only looks like a size is not turned into one when written.
+  assert.equal(writeImage({ attrs: { alt: "a|300", path } }), "![a 300](attachments/a.png)");
+  // Sizes round to whole numbers.
+  assert.equal(writeImage({ attrs: { alt: "x", path, width: 120.6, height: 80.2 } }), "![x|121x80](attachments/a.png)");
+});
+
 const NOTE = [
   "---\nid: 1\n---\n\n# Title\n\n",
   "> [!note] Cells\n> The cell is small.\n\n",
