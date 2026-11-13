@@ -1245,7 +1245,8 @@ body.block-dragging .float-bar { visibility: hidden; }
 @media (max-width: 640px) {
   #settings.settings-dialog { height: min(40rem, 92vh); }
   .settings-layout { flex-direction: column; }
-  .settings-tabs { flex: 0 0 auto; flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line); padding: var(--space-2); overflow-x: auto; overflow-y: hidden; }
+  /* The tabs wrap onto a second row instead of scrolling sideways, so every tab is always in view. */
+  .settings-tabs { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: var(--space-2); overflow: visible; }
   .settings-tab { white-space: nowrap; }
   .settings-main { padding: var(--space-3); }
 }

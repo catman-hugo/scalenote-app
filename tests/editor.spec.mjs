@@ -7248,7 +7248,15 @@ await test("on a phone the Settings tabs sit in a row on top and the box does no
     return { left: d.left, right: d.right, bottom: d.bottom, sameRow: Math.abs(a.top - b.top) < 2, tabsAbove: a.bottom <= main.top + 1, vw: innerWidth, vh: innerHeight };
   });
   assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh, JSON.stringify(r));
-  assert.ok(r.sameRow && r.tabsAbove, JSON.stringify(r));
+  assert.ok(r.tabsAbove, JSON.stringify(r));
+  const r0 = r;
+  if (shots) await page.screenshot({ path: `${shots}/v0414-phone-settings-tabs-wrapped.png` });
+  // Every tab is on the screen, none is cut off at the edge.
+  const edges = await page.evaluate(() => [...document.querySelectorAll('#settings [role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return [b.left, b.right]; }));
+  assert.equal(edges.length, 5);
+  assert.ok(edges.every(([l, r]) => l >= 0 && r <= r0.vw), JSON.stringify(edges));
+  await page.click("#settingsTab-files");
+  assert.equal(await page.locator("#settings h2").textContent(), "Files");
   await page.click("#settingsTab-updates");
   assert.equal(await page.isVisible('#settings .setting-row:has-text("new versions") input'), true);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
