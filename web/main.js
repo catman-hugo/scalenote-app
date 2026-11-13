@@ -1466,6 +1466,8 @@ async function leaveCanvas() {
   if (app.canvasSave) app.canvasSave.cancel();
   app.mode = "editor";
   applyMode();
+  // The text shows the drawing again (its regions in canvas blocks, and ink) as it was just saved.
+  if (app.current) await loadInk(app.current.path, false);
 }
 
 async function toggleCanvas() {

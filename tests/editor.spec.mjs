@@ -6777,6 +6777,135 @@ await test("drawing on the full canvas keeps the regions, and shows the block's 
   assert.equal(saved.frames[0].id, "abc123xy");
 });
 
+// A region is moved, resized and deleted on the full canvas with the loop tool, like v1's frame.
+const REGION_AT = { id: "abc123xy", x: 300, y: 200, w: 200, h: 150, label: "Cell" };
+// The drawing is fitted to the sheet with a 32 px margin, so the rectangle at (20, 20) with a 6 px
+// line puts the drawing's (0, 0) at (SHEET_X, SHEET_Y) on the sheet.
+const SHEET_X = 15;
+const SHEET_Y = 15;
+async function regionCanvas(page) {
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])], REGION_AT));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await openCanvas(page);
+  await page.click('.canvas-toolbar button[data-tool="select"]');
+}
+const savedFrame = async (page) => (await savedDrawing(page)).frames[0];
+
+await test("the loop tool moves a region by its dashed border, and the block in the text follows", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  const [fromX, fromY] = [box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y];
+  await page.mouse.move(fromX, fromY);
+  await page.mouse.down();
+  await page.mouse.move(fromX + 60, fromY + 40, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].x === 360);
+  const frame = await savedFrame(page);
+  assert.deepEqual([frame.x, frame.y, frame.w, frame.h], [360, 240, 200, 150]);
+});
+
+await test("a corner of a selected region resizes it, the opposite corner stays", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  const at = (x, y) => [box.x + x + SHEET_X, box.y + y + SHEET_Y];
+  const [bx, by] = at(300 + 100, 200);
+  await page.mouse.click(bx, by); // selects it
+  const [cx, cy] = at(500, 350);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 50, cy + 30, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].w === 250);
+  const frame = await savedFrame(page);
+  assert.deepEqual([frame.x, frame.y, frame.w, frame.h], [300, 200, 250, 180]);
+  // The top left corner moves the other way: the bottom right stays.
+  const [nx, ny] = at(300, 200);
+  await page.mouse.move(nx, ny);
+  await page.mouse.down();
+  await page.mouse.move(nx + 20, ny + 10, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].x === 320);
+  const moved = await savedFrame(page);
+  assert.deepEqual([moved.x, moved.y, moved.w, moved.h], [320, 210, 230, 170]);
+});
+
+await test("moving a region is one Undo, and Delete removes it so the block says it is gone", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  const [fromX, fromY] = [box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y];
+  await page.mouse.move(fromX, fromY);
+  await page.mouse.down();
+  await page.mouse.move(fromX + 60, fromY + 40, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].x === 360);
+  await page.click('.canvas-toolbar button[aria-label="Undo"]');
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].x === 300);
+  await page.mouse.click(fromX, fromY);
+  await page.click('.canvas-toolbar [data-action="delete-selection"]');
+  await page.waitForFunction(() => (JSON.parse(window.__mock.canvases.get("Sketch.md")).frames || []).length === 0);
+  // What was drawn inside stays on the sheet.
+  assert.equal((await savedDrawing(page)).items.length, 1);
+  await page.click('.canvas-toolbar button[aria-label="Undo"]');
+  await page.waitForFunction(() => (JSON.parse(window.__mock.canvases.get("Sketch.md")).frames || []).length === 1);
+  await page.mouse.click(fromX, fromY);
+  await page.click('.canvas-toolbar [data-action="delete-selection"]');
+  // Back in the text, the block says its region is gone.
+  await view(page, "Text");
+  await page.waitForSelector(".canvas-block-missing:not([hidden])");
+});
+
+await test("the block in the text takes the new size of its region", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  const [cx, cy] = [box.x + 500 + SHEET_X, box.y + 350 + SHEET_Y];
+  await page.mouse.click(box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y);
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 100, cy + 50, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].w === 300);
+  await view(page, "Text");
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  const size = await page.locator(".canvas-block-surface").boundingBox();
+  assert.deepEqual([Math.round(size.width), Math.round(size.height)], [300, 200]);
+});
+
+await test("a press inside a region (not on its border) still draws the loop, it does not move the region", async (page) => {
+  await start(page);
+  await regionCanvas(page);
+  const box = await sheetBox(page);
+  const [cx, cy] = [box.x + 400 + SHEET_X, box.y + 275 + SHEET_Y];
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 30, cy + 20, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  assert.equal((await savedFrame(page)).x, 300);
+});
+
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await regionCanvas(page);
+      const box = await sheetBox(page);
+      await page.mouse.click(box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y);
+      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-4-region-selected.png` });
+      await context.close();
+    }
+  }
+}
+
 if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   const shots = process.env.SHOTS_DIR;
   for (const scheme of ["light", "dark"]) {

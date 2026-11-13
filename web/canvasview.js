@@ -15,6 +15,8 @@ import {
   DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, tidyStroke,
   itemsInLoop, itemsTouched, moveAnchor, moveItem, noteTextHeight, pageFill, paperInks, paperLayout, snappedShift, widthAt, wrapText,
+  frameHit,
+  draggedFrame,
 } from "./canvasrules.js";
 import { createPainter, readEnv } from "./canvaspaint.js";
 import { icon } from "./icons.js";
@@ -119,6 +121,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     view: { x: 0, y: 0, scale: 1 },
     gesture: null,
     selection: [],
+    // The frame (a region a canvas block shows) picked with the loop tool, to move, resize or delete.
+    frameSel: null,
     editing: null,
     touches: new Map(),
     pinch: null,
@@ -351,7 +355,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     fingerButton.disabled = state.readOnly;
     undoButton.disabled = state.readOnly || !state.history.canUndo;
     redoButton.disabled = state.readOnly || !state.history.canRedo;
-    deleteButton.disabled = state.readOnly || state.selection.length === 0;
+    deleteButton.disabled = state.readOnly || (state.selection.length === 0 && !state.frameSel);
     if (state.readOnly) closeMenu();
   }
 
@@ -360,7 +364,10 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     commitNote();
     state.tool = name;
     if (SHAPES.includes(name)) state.shape = name;
-    if (name !== "select") state.selection = [];
+    if (name !== "select") {
+      state.selection = [];
+      state.frameSel = null;
+    }
     drawToolbar();
     scheduleDraw();
   }
@@ -431,20 +438,35 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     // An undo or an erase may have removed selected items; the selection only keeps what is left.
     const present = new Set(state.canvas.items);
     state.selection = state.selection.filter((item) => present.has(item));
+    if (state.frameSel && !state.canvas.frames.includes(state.frameSel)) state.frameSel = null;
     drawToolbar();
     scheduleDraw();
     onChange();
   }
 
   function clearSelection() {
-    if (!state.selection.length) return;
+    if (!state.selection.length && !state.frameSel) return;
     state.selection = [];
+    state.frameSel = null;
     drawToolbar();
     scheduleDraw();
   }
 
   function deleteSelection() {
-    if (state.readOnly || state.gesture || !state.selection.length) return;
+    if (state.readOnly || state.gesture) return;
+    if (state.frameSel) {
+      // The region goes; what is drawn inside it stays on the sheet, and a block that showed it says so.
+      const index = state.canvas.frames.indexOf(state.frameSel);
+      const frame = state.frameSel;
+      state.frameSel = null;
+      if (index >= 0) {
+        state.canvas.frames.splice(index, 1);
+        state.history.record({ frameRemove: { index, frame } });
+        changed();
+      }
+      return;
+    }
+    if (!state.selection.length) return;
     const chosen = new Set(state.selection);
     const remove = [];
     state.canvas.items.forEach((item, index) => {
@@ -527,6 +549,20 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.restore();
   }
 
+  function paintFrameSelection(scale) {
+    const f = state.frameSel;
+    if (!f) return;
+    context.save();
+    context.strokeStyle = state.accent;
+    context.fillStyle = state.accent;
+    context.lineWidth = 2.5 / scale;
+    context.setLineDash([]);
+    context.strokeRect(f.x, f.y, f.w, f.h);
+    const size = 10 / scale;
+    for (const [x, y] of [[f.x, f.y], [f.x + f.w, f.y], [f.x, f.y + f.h], [f.x + f.w, f.y + f.h]]) context.fillRect(x - size / 2, y - size / 2, size, size);
+    context.restore();
+  }
+
   function draw() {
     state.frame = 0;
     const ratio = window.devicePixelRatio || 1;
@@ -547,6 +583,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     paintPaper(box);
     paintItems(state.canvas.items);
     painter.frames(state.canvas.frames, scale);
+    paintFrameSelection(scale);
     const g = state.gesture;
     if (g && g.kind === "pen" && g.stroke.tool !== "highlighter") paintStroke(g.stroke);
     if (g && g.kind === "shape") paintShape(g.shape);
@@ -728,6 +765,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   function startSelect(id, screen, world) {
+    const hit = frameHit(state.canvas.frames, state.frameSel, world, state.view.scale, HANDLE_PIXELS);
+    if (hit) {
+      state.selection = [];
+      state.frameSel = hit.frame;
+      const { x, y, w, h } = hit.frame;
+      state.gesture = { kind: "frame", id, part: hit.part, frame: hit.frame, start: world, before: { x, y, w, h } };
+      drawToolbar();
+      return;
+    }
     const handle = resizeHandle();
     if (handle && Math.hypot(world.x - handle.x, world.y - handle.y) * state.view.scale <= HANDLE_PIXELS) {
       state.gesture = { kind: "resize", id, item: handle.item, before: { w: handle.item.w, h: handle.item.h } };
@@ -739,6 +785,10 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       const items = state.selection.slice();
       state.gesture = { kind: "move", id, items, start: world, anchor: moveAnchor(items), dx: 0, dy: 0 };
     } else {
+      if (state.frameSel) {
+        state.frameSel = null;
+        drawToolbar();
+      }
       state.gesture = { kind: "lasso", id, loop: [[world.x, world.y]], last: screen, length: 0 };
     }
   }
@@ -846,6 +896,15 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       }
       state.selection = itemsInLoop(state.canvas, g.loop).map((index) => state.canvas.items[index]);
       drawToolbar();
+      return scheduleDraw();
+    }
+    if (g.kind === "frame") {
+      const after = { x: g.frame.x, y: g.frame.y, w: g.frame.w, h: g.frame.h };
+      if (cancelled) Object.assign(g.frame, g.before);
+      else if (Object.keys(after).some((key) => after[key] !== g.before[key])) {
+        state.history.record({ frames: [{ frame: g.frame, before: g.before, after }] });
+        return changed();
+      }
       return scheduleDraw();
     }
     if (g.kind === "move") {
@@ -972,6 +1031,9 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       g.length += Math.hypot(now.x - g.last.x, now.y - g.last.y);
       g.last = now;
       if (g.loop.length < LIMITS.pointsPerStroke) g.loop.push([world.x, world.y]);
+    } else if (g.kind === "frame") {
+      const world = toWorld(now.x, now.y);
+      Object.assign(g.frame, draggedFrame(g.before, g.part, world.x - g.start.x, world.y - g.start.y));
     } else if (g.kind === "move") {
       moveGesture(g, toWorld(now.x, now.y));
     } else {

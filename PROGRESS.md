@@ -348,6 +348,14 @@ Owner request (2026-11-08): the Text/Canvas/Split buttons and the Markdown butto
 - Not built yet: drawing inside the block (the block only shows), moving or resizing a region on the full canvas or by the block's bottom edge, editing a region's name, a block that is deleted keeps its region on the canvas (the safe default). The `/canvas` block is not offered inside callouts, toggles or columns.
 - Known limit: the drawing is loaded when a page has ink or regions; a page opened in Canvas first and then switched to text shows its blocks once the text view is back (not specifically tested).
 
+## 0.4.12, regions on the canvas (slice 3; branch `feature/v0.4.12-canvas-regions`; not yet released)
+- Owner decision (2026-11-13): the canvas block behaves exactly like ScaleNote v1's. The text side is only a window onto part of the canvas: nothing in it can be drawn on or clicked, and it has no drawing bar. All drawing happens in the Canvas view. The earlier idea of drawing inside the block (PR #57) is dropped.
+- v1's block, as read from its code: `/canvas` makes a frame on the canvas and puts a block in the text; the block is a read-only snapshot of that frame at the frame's size under a small title; a missing frame says "Canvas region not found"; on the canvas the frame is a dashed outline with a name that can be selected, moved by its edge and resized by its corners, and the block follows live.
+- Added here to match: with the Loop tool, a press on a region's dashed border selects and moves it; the four corners of a selected region resize it (the opposite corner stays; 40 to 4000 per side); the bin button deletes it (the drawing inside stays on the sheet, and its block says the region is gone). Each of these is one Undo step. A press inside a region still draws the loop. Back in the text, blocks show the new place and size.
+- Fix: coming back from the Canvas view to the text now reloads the saved drawing for the text, so blocks and ink show without reopening the page (before, blocks said the region was gone).
+- Built and tested here: 3 unit tests (hit rules, drag rules, undo/redo) and 5 browser tests; full suites pass (259 unit tests, browser suite with 0 failures); screenshots light and dark. NOT tried on a device (dragging with a finger or pen on the tablet).
+- Known limit: the Canvas view fits the drawing, not the regions, so a region far from the drawing can start off-screen (zoom out to find it). Not built: naming a region, a block inside callouts or columns.
+
 ## Known break in the 0.4.10 apk (fixed after 0.4.10, needs a new release)
 The Android apk of 0.4.10 cannot be installed: it declared the same file provider twice. Fixed by `ApkFileProvider` in `scripts/patch-android.mjs`; the Android job now checks the finished apk for duplicate components. Not yet tried on a device: install the apk built after this fix.
 

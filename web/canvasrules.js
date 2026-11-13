@@ -156,6 +156,49 @@ function validFrame(frame) {
   return isObject(frame) && typeof frame.id === "string" && FRAME_ID.test(frame.id) && inRange(frame.x) && inRange(frame.y) && size(frame.w) && size(frame.h) && typeof frame.label === "string" && frame.label.length <= FRAME_LIMITS.label;
 }
 
+/**
+ * What a press at `point` (in drawing space) touches on the frames of a drawing: a corner of the
+ * selected frame (a resize), or the dashed border of any frame (a move). The inside of a frame is
+ * left alone so the loop can still be drawn there. The frame drawn last is on top. `grab` is in
+ * screen pixels, so a finger or pen can hit a thin line at any zoom.
+ */
+export function frameHit(frames, selected, point, scale, grab = 12) {
+  const slack = grab / scale;
+  if (selected) {
+    const corners = { nw: [selected.x, selected.y], ne: [selected.x + selected.w, selected.y], sw: [selected.x, selected.y + selected.h], se: [selected.x + selected.w, selected.y + selected.h] };
+    for (const [part, [x, y]] of Object.entries(corners)) {
+      if (Math.hypot(point.x - x, point.y - y) <= slack) return { frame: selected, part };
+    }
+  }
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const f = frames[i];
+    const near = point.x >= f.x - slack && point.x <= f.x + f.w + slack && point.y >= f.y - slack && point.y <= f.y + f.h + slack;
+    const deep = point.x > f.x + slack && point.x < f.x + f.w - slack && point.y > f.y + slack && point.y < f.y + f.h - slack;
+    if (near && !deep) return { frame: f, part: "move" };
+  }
+  return null;
+}
+
+/**
+ * The place and size a frame gets when it was `start` ({x, y, w, h}) and a corner (`nw`, `ne`,
+ * `sw`, `se`) or the whole frame (`move`) has been dragged by (dx, dy). The corner opposite to a
+ * dragged one stays where it is. Sides stay within the limits the file allows, and the frame
+ * stays on the sheet.
+ */
+export function draggedFrame(start, part, dx, dy) {
+  const keep = (value) => Math.min(LIMITS.coordinate, Math.max(-LIMITS.coordinate, value));
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return { x: start.x, y: start.y, w: start.w, h: start.h };
+  if (part === "move") return { x: keep(start.x + dx), y: keep(start.y + dy), w: start.w, h: start.h };
+  const side = (from, size, delta, fixedFirst) => {
+    // `fixedFirst`: the far end stays and the near end moves; otherwise the near end stays.
+    const length = Math.min(FRAME_LIMITS.max, Math.max(FRAME_LIMITS.min, fixedFirst ? size - delta : size + delta));
+    return fixedFirst ? [from + size - length, length] : [from, length];
+  };
+  const [x, w] = side(start.x, start.w, dx, part[1] === "w");
+  const [y, h] = side(start.y, start.h, dy, part[0] === "n");
+  return { x: keep(x), y: keep(y), w, h };
+}
+
 /** A new random id for a frame that is not in `taken`. `random(n)` gives n random bytes. */
 export function makeFrameId(taken, random = (n) => crypto.getRandomValues(new Uint8Array(n))) {
   const letters = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -687,6 +730,8 @@ function removeItem(canvas, item) {
  *   { remove: [{ index, item }] }          items erased or deleted, with their places
  *   { move: { items, dx, dy } }            items moved
  *   { edit: { item, before, after } }      some fields of one item changed (a note's text)
+ *   { frames: [{ frame, before, after }] } a frame moved or resized
+ *   { frameRemove: { index, frame } }      a frame deleted, with its place in the list
  */
 export class DrawingHistory {
   constructor(limit = 200) {
@@ -710,6 +755,8 @@ export class DrawingHistory {
     for (const { index, item } of [...(entry.remove || [])].sort((a, b) => a.index - b.index)) canvas.items.splice(index, 0, item);
     if (entry.move) for (const item of entry.move.items) moveItem(item, -entry.move.dx, -entry.move.dy);
     for (const edit of [].concat(entry.edit || [])) Object.assign(edit.item, edit.before);
+    for (const one of [].concat(entry.frames || [])) Object.assign(one.frame, one.before);
+    if (entry.frameRemove) canvas.frames.splice(entry.frameRemove.index, 0, entry.frameRemove.frame);
     if (entry.setting) canvas[entry.setting.key] = entry.setting.before;
     this.redoList.push(entry);
     return true;
@@ -722,6 +769,11 @@ export class DrawingHistory {
     for (const { item } of entry.remove || []) removeItem(canvas, item);
     if (entry.move) for (const item of entry.move.items) moveItem(item, entry.move.dx, entry.move.dy);
     for (const edit of [].concat(entry.edit || [])) Object.assign(edit.item, edit.after);
+    for (const one of [].concat(entry.frames || [])) Object.assign(one.frame, one.after);
+    if (entry.frameRemove) {
+      const at = canvas.frames.indexOf(entry.frameRemove.frame);
+      if (at >= 0) canvas.frames.splice(at, 1);
+    }
     if (entry.setting) canvas[entry.setting.key] = entry.setting.after;
     this.undoList.push(entry);
     return true;

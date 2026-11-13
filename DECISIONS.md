@@ -574,3 +574,10 @@ Cost. Older versions read a drawing with frames as "from a newer version" and op
 Decision. PDF import (not started) will use Mozilla's pdf.js (the `pdfjs-dist` package), pinned to an exact version (6.5.438 was the newest on 2026-11-12), because it is Apache-2.0, widely used, has no known open vulnerabilities in the newest version, and runs in every webview ScaleNote targets, so no native PDF library has to be built for Android. Older versions had a code-execution flaw fixed in 4.2.67, so it is pinned at or above that and used with `isEvalSupported: false`. A PDF is an untrusted file: it gets a size limit and a page limit, the worker file is shipped with the app (no network), and only page images are taken from it.
 Alternatives. A native library such as pdfium (hard to build for Android here), MuPDF (AGPL licence).
 Cost. About 1 to 2 MB more in the app.
+
+## 2026-11-13: The canvas block is a window only; regions are moved and resized on the canvas
+
+Decision. The owner asked for the same behaviour as ScaleNote v1: the block in the text is only a window onto part of the canvas, with no drawing bar and nothing to click in it. Drawing inside the block (tried in an unmerged branch) is dropped. A region is selected with the Loop tool by its dashed border, moved by the border, resized by its four corners and deleted with the bin button; every change is one Undo step and the blocks follow. v1 does the same with its frame object.
+Alternatives. A Draw button in the block (rejected by the owner), a handle bar above the region like v1's drag handle (the border does the same job and needs no extra shape).
+Cost. A press on the border of a region moves the region instead of starting a loop, so a loop cannot start exactly on a border line.
+
