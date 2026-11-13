@@ -591,3 +591,9 @@ Decision (page policy). `connect-src` gains `'self'` so the worker can read the 
 Alternatives. Native PDF libraries (hard to build for Android), the system viewer in an iframe (not on every platform), WebAssembly decoders with `'wasm-unsafe-eval'` in the policy (faster for scans, but a weaker policy).
 Cost. About 2.6 MB for pdf.js and its files in the app plus a 490 KB script loaded only when needed. Scanned pages decode slower. Character maps for Chinese, Japanese and Korean are not shipped (1.7 MB), so such text can be missing. The policy change and the PDF files on a real device are not tried here.
 
+
+## 2026-11-13: The What's new box can be turned off; download progress comes from the native side
+
+Decision. A setting "Show what's new after an update" (on by default) decides whether the notes box opens after an update. The new version is remembered either way, so switching it on later does not show old notes. The What's new button in the update notice is a choice by the user and stays. The download bar on Android is fed by two numbers from the native downloader, checked in the page; in the browser route there is no progress to show, so the Download button only rests for 6 seconds and says the browser has the download.
+Alternatives. Keeping the box always on (the owner asked for a switch); a progress bar in the browser route (a browser cannot report back); Android's own download manager, which would show its own notification (a larger change to the installer that already works).
+Cost. The Kotlin change cannot be compiled here; CI does it and only a device shows the real bar.

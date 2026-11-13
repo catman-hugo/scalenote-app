@@ -5,6 +5,7 @@ import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appe
 import { openSettings } from "./settings.js";
 import { checkForUpdate, platformOf, shouldCheck } from "./updates.js";
 import { startInstall } from "./apkinstall.js";
+import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
 import { renderNotes } from "./whatsnew.js";
 import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanRecent, removeRecent } from "./recent.js";
@@ -49,7 +50,7 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -170,6 +171,8 @@ async function loadSettings() {
       openIn: OPEN_IN.includes(parsed.openIn) ? parsed.openIn : "text",
       // Shapes snap to a grid unless turned off.
       snapShapes: parsed.snapShapes !== false,
+      // The notes box after an update is shown unless turned off.
+      showWhatsNew: parsed.showWhatsNew !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
@@ -369,7 +372,9 @@ function updateSettingsRows() {
   const showRelease = (release) => {
     actions.replaceChildren();
     if (!release) return;
-    actions.append(buttonElement(release.downloadUrl ? s.downloadNow : s.openPage, openDownload, true));
+    const download = buttonElement(release.downloadUrl ? s.downloadNow : s.openPage, openDownload, true);
+    paintInstallButton(download);
+    actions.append(download);
     if (release.downloadUrl) {
       actions.append(buttonElement(s.openPage, () => openUrlOrWarn(release.url)), textElement("p", s.downloadHint, "setting-hint"));
     }
@@ -391,7 +396,17 @@ function updateSettingsRows() {
     app.settings.updates = box.checked;
     saveSettings();
   });
-  return [row, textElement("p", s.updatesHint, "setting-hint"), check, result, actions];
+  const notes = document.createElement("input");
+  notes.type = "checkbox";
+  notes.checked = app.settings.showWhatsNew;
+  notes.addEventListener("change", () => {
+    app.settings.showWhatsNew = notes.checked;
+    saveSettings();
+  });
+  const notesRow = document.createElement("label");
+  notesRow.className = "setting-row";
+  notesRow.append(textElement("span", s.showWhatsNew, "setting-label"), notes);
+  return [row, textElement("p", s.updatesHint, "setting-hint"), notesRow, textElement("p", s.showWhatsNewHint, "setting-hint"), check, result, actions, createInstallBar()];
 }
 
 // The converted copy for Obsidian (see DECISIONS.md). Not offered on Android: the notes live in
@@ -459,20 +474,43 @@ async function openUrlOrWarn(url) {
 // The browser does the downloading. First choice is the file for this system; if there is none, or
 // it cannot be opened, the release page (which lists every file) is the fallback.
 async function openDownload() {
-  if (!offered) return;
-  // Android app: download and install from inside the app. If that cannot start, or fails, the
-  // browser route below is used.
-  if (offered.downloadUrl && startInstall(window, offered.downloadUrl, onInstallStatus)) return;
-  if (offered.downloadUrl && (await tryOpen(offered.downloadUrl))) return;
+  if (!offered || isInstallBusy()) return;
+  // Android app: download and install from inside the app, with a progress bar. If that cannot
+  // start, or fails, the browser route below is used.
+  if (offered.downloadUrl && startInstall(window, offered.downloadUrl, onInstallStatus, onInstallProgress)) {
+    setInstallState({ kind: "downloading", done: 0, total: 0 });
+    return;
+  }
+  if (offered.downloadUrl && (await tryOpen(offered.downloadUrl))) {
+    // The browser does the downloading and cannot report back, so the buttons rest for a moment:
+    // pressing them again would only open the same download again.
+    setInstallState({ kind: "browser" });
+    setTimeout(() => setInstallState(null), BROWSER_REST_MS);
+    return;
+  }
   await openUrlOrWarn(offered.url);
+}
+
+const BROWSER_REST_MS = 6000;
+
+function onInstallProgress({ done, total }) {
+  setInstallState({ kind: "downloading", done, total });
 }
 
 function onInstallStatus(status) {
   const s = strings.update;
-  if (status === "error") {
+  if (status === "downloading") setInstallState({ kind: "downloading", done: 0, total: 0 });
+  else if (status === "installing") {
+    setInstallState({ kind: "ready" });
+    showToast(s.installReady);
+  } else if (status === "needs-permission") {
+    setInstallState(null);
+    showToast(s.installAllow);
+  } else {
+    setInstallState(null);
     showBanner(s.installFailed);
     if (offered) openDownloadInBrowser();
-  } else showToast(status === "downloading" ? s.installDownloading : status === "installing" ? s.installReady : s.installAllow);
+  }
 }
 
 async function openDownloadInBrowser() {
@@ -483,7 +521,8 @@ async function openDownloadInBrowser() {
 // After an update the new version's notes are shown once. A fresh install sees nothing.
 async function showWhatsNewOnce(freshInstall) {
   if (app.settings.lastSeenVersion === APP_VERSION) return;
-  const show = !freshInstall && RELEASE_NOTES !== "";
+  // The version is remembered even when the box is off, so turning it on later does not show old notes.
+  const show = !freshInstall && RELEASE_NOTES !== "" && app.settings.showWhatsNew;
   app.settings.lastSeenVersion = APP_VERSION;
   await saveSettings();
   if (show) await showNotes(fill(strings.update.whatsNewTitleUpdated, { version: APP_VERSION }), RELEASE_NOTES);
@@ -1845,6 +1884,8 @@ function fillStaticText() {
   el("updateDetails").textContent = strings.update.details;
   el("updateLater").textContent = strings.update.later;
   el("updateDownload").addEventListener("click", openDownload);
+  paintInstallButton(el("updateDownload"));
+  el("updateNotice").append(createInstallBar());
   el("updateDetails").addEventListener("click", () => offered && showNotes(fill(strings.update.whatsNewTitle, { version: offered.version }), offered.notes));
   el("updateLater").addEventListener("click", () => {
     if (offered) app.settings.dismissedUpdate = offered.version;
