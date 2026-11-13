@@ -118,7 +118,7 @@ await test("slash menu offers every block and filters", async (page) => {
   await page.click("#editor .note-body");
   await page.keyboard.type("/");
   await page.waitForSelector(".slash-menu");
-  assert.equal(await page.locator(".slash-item").count(), 17);
+  assert.equal(await page.locator(".slash-item").count(), 18);
   await page.keyboard.type("to-do");
   assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["To-do list"]);
   await page.keyboard.press("Enter");
@@ -4222,7 +4222,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":6,"items":[]}');
+  await canvasVault(page, '{"format":7,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -6338,7 +6338,7 @@ await test("the sheet keeps the ink when something is drawn on the canvas, and t
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only for ink, and the file is left alone", async (page) => {
-  const saved = '{"format":6,"items":[],"ink":[]}\n';
+  const saved = '{"format":7,"items":[],"ink":[]}\n';
   await inkVault(page, saved);
   await startInk(page);
   assert.equal(await page.locator('.ink-bar button[aria-label="Pen"]').isDisabled(), true);
@@ -6645,6 +6645,257 @@ await test("typing a size into the description does not make a size", async (pag
   assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [200, 100]);
 });
 
+// ---------- 0.4.12: the canvas block ----------
+const BLOCK_PAGE = "before\n\n```scalenote-canvas\nid: abc123xy\n```\n\nafter\n";
+const rectItem = (a, b) => ({ tool: "shape", kind: "rect", color: "red", width: 6, a, b });
+const drawingWith = (items, frame = { id: "abc123xy", x: 0, y: 0, w: 480, h: 320, label: "" }) => JSON.stringify({ format: 6, items, frames: [frame] }) + "\n";
+async function blockVault(page, drawing, text = BLOCK_PAGE) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([note, canvas]) => {
+    window.__mock.files.set("Sketch.md", note);
+    if (canvas) window.__mock.canvases.set("Sketch.md", canvas);
+  }, [text, drawing]);
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Sketch.md"]');
+  await page.click('.tree-button[data-path="Sketch.md"]');
+  await page.waitForSelector(".note-body");
+}
+// How many pixels of the block differ from its page colour, to see that something is really drawn.
+const blockInk = (page) => page.evaluate(() => {
+  const surface = document.querySelector(".canvas-block-surface");
+  const data = surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 4) if (data[i] !== data[0] || data[i + 1] !== data[1] || data[i + 2] !== data[2]) n++;
+  return n;
+});
+
+await test("a canvas block shows its region of the page's drawing, and only that region", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  const box = await page.locator(".canvas-block-surface").boundingBox();
+  assert.deepEqual([Math.round(box.width), Math.round(box.height)], [480, 320]);
+  await page.waitForFunction(() => document.querySelector(".canvas-block-surface") && document.querySelector(".canvas-block-surface").width > 0);
+  assert.ok(await blockInk(page) > 500, "the rectangle is painted");
+  assert.equal(await page.locator(".canvas-block-missing:visible").count(), 0);
+});
+
+await test("a drawing made outside the frame is not shown in the block", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([rectItem([900, 900], [1100, 1000])]));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  assert.equal(await blockInk(page), 0);
+});
+
+await test("a block shows the part of the sheet its frame covers, shifted to its corner", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([rectItem([520, 520], [700, 640])], { id: "abc123xy", x: 500, y: 500, w: 300, h: 200, label: "Cell" }));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  assert.ok(await blockInk(page) > 300);
+  assert.equal(await page.locator(".canvas-block-title").textContent(), "Cell");
+});
+
+await test("a block whose region is gone says so, and opening the page changes nothing", async (page) => {
+  await start(page);
+  await blockVault(page, null);
+  await page.waitForSelector(".canvas-block-missing:not([hidden])");
+  await page.click(".note-body p >> text=after");
+  await page.waitForTimeout(900);
+  assert.equal(bodyOfPage((await files(page))["Sketch.md"]), BLOCK_PAGE);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.has("Sketch.md")), false);
+});
+
+await test("opening a page with a canvas block and leaving it untouched writes nothing", async (page) => {
+  await start(page);
+  const drawing = drawingWith([rectItem([20, 20], [200, 120])]);
+  await blockVault(page, drawing);
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await page.waitForTimeout(900);
+  assert.equal((await files(page))["Sketch.md"], BLOCK_PAGE);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), drawing);
+});
+
+await test("/canvas adds a region to the drawing and a block to the text", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  await page.keyboard.type("/canvas");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await page.waitForFunction(() => window.__mock.canvases.has("Untitled.md"));
+  await waitSaved(page);
+  const text = bodyOfPage((await files(page))["Untitled.md"]);
+  const id = /^```scalenote-canvas\nid: ([a-z0-9]{8})\n```\n/.exec(text);
+  assert.ok(id, JSON.stringify(text));
+  const drawing = await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Untitled.md")));
+  assert.equal(drawing.format, 6);
+  assert.deepEqual(drawing.frames.map((f) => [f.id, f.w, f.h]), [[id[1], 480, 320]]);
+});
+
+await test("two /canvas blocks on a page are two different regions", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  for (let i = 0; i < 2; i++) {
+    await page.keyboard.type("/canvas");
+    await page.waitForSelector(".slash-menu");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction((n) => document.querySelectorAll(".canvas-block").length === n, i + 1);
+  }
+  await waitSaved(page);
+  const drawing = await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Untitled.md")));
+  assert.equal(drawing.frames.length, 2);
+  assert.notEqual(drawing.frames[0].id, drawing.frames[1].id);
+  assert.ok(drawing.frames[1].y >= drawing.frames[0].y + drawing.frames[0].h, "the second region starts below the first");
+});
+
+await test("a drawing that cannot be changed gets no new region, and says so", async (page) => {
+  await start(page);
+  await blockVault(page, '{"format":7,"items":[]}', "text\n");
+  await page.click(".note-body p");
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/canvas");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".toast");
+  assert.equal(await page.locator(".canvas-block").count(), 0);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), '{"format":7,"items":[]}');
+});
+
+await test("drawing on the full canvas keeps the regions, and shows the block's new lines", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await openCanvas(page);
+  await drawLine(page, [100, 200], [260, 240]);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 2);
+  const saved = await savedDrawing(page);
+  assert.equal(saved.format, 6);
+  assert.equal(saved.frames.length, 1);
+  assert.equal(saved.frames[0].id, "abc123xy");
+});
+
+const REGION = { id: "abc123xy", x: 100, y: 50, w: 480, h: 320, label: "" };
+const editSurface = (page) => page.locator(".canvas-block-edit .canvas-surface");
+async function startDrawingInBlock(page, items = [], frame = REGION) {
+  await blockVault(page, drawingWith(items, frame));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await page.click(".canvas-block-draw");
+  await page.waitForSelector(".canvas-block-edit:not([hidden]) .canvas-surface");
+  await page.waitForTimeout(100);
+}
+async function dragInBlock(page, from, to, steps = 8) {
+  const box = await editSurface(page).boundingBox();
+  await page.mouse.move(box.x + from[0], box.y + from[1]);
+  await page.mouse.down();
+  await page.mouse.move(box.x + to[0], box.y + to[1], { steps });
+  await page.mouse.up();
+}
+
+await test("the Draw button puts the real drawing tools into the block, and the page text stays as it was", async (page) => {
+  await start(page);
+  await startDrawingInBlock(page);
+  assert.equal(await page.locator(".canvas-block-draw").getAttribute("aria-pressed"), "true");
+  assert.ok(await page.locator(".canvas-block-edit .canvas-toolbar").isVisible());
+  assert.equal(await page.locator(".canvas-block-edit [data-tool=hand]").isVisible(), false, "the region cannot be moved about");
+  const box = await editSurface(page).boundingBox();
+  assert.deepEqual([Math.round(box.width), Math.round(box.height)], [480, 320]);
+  assert.equal(bodyOfPage((await files(page))["Sketch.md"]), BLOCK_PAGE);
+});
+
+await test("a line drawn in the block lands at the right place of the page's drawing", async (page) => {
+  await start(page);
+  await startDrawingInBlock(page);
+  await dragInBlock(page, [50, 60], [250, 160]);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md") || "{\"items\":[]}").items.length === 1);
+  await waitSaved(page);
+  const saved = await savedDrawing(page);
+  assert.equal(saved.format, 6);
+  assert.equal(saved.frames.length, 1, "the region is kept");
+  const points = saved.items[0].points;
+  // The surface's corner is the region's corner (100, 50) on the sheet.
+  assert.ok(Math.abs(points[0][0] - 150) < 3 && Math.abs(points[0][1] - 110) < 3, JSON.stringify(points[0]));
+  const last = points[points.length - 1];
+  assert.ok(Math.abs(last[0] - 350) < 3 && Math.abs(last[1] - 210) < 3, JSON.stringify(last));
+});
+
+await test("a pen that leaves the block cannot draw outside the region", async (page) => {
+  await start(page);
+  await startDrawingInBlock(page);
+  const box = await editSurface(page).boundingBox();
+  await page.mouse.move(box.x + 100, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 700, box.y + 600, { steps: 8 });
+  await page.mouse.up();
+  await waitSaved(page);
+  const saved = await savedDrawing(page);
+  for (const [x, y] of saved.items[0].points) {
+    assert.ok(x >= 100 && x <= 580 && y >= 50 && y <= 370, `${x},${y} is inside the region`);
+  }
+});
+
+await test("clicking outside ends drawing in the block, and the block then shows the new line", async (page) => {
+  await start(page);
+  await startDrawingInBlock(page);
+  await dragInBlock(page, [50, 60], [250, 160]);
+  await clickText(page, "after");
+  await page.waitForSelector(".canvas-block-edit", { state: "hidden" });
+  assert.equal(await page.locator(".canvas-block-draw").getAttribute("aria-pressed"), "false");
+  assert.ok(await blockInk(page) > 100, "the line is in the picture of the region");
+  assert.equal(await page.locator(".canvas-block-edit .canvas-toolbar").count(), 0, "the drawing view is taken away");
+});
+
+await test("undo in the block takes back the last line, and the full canvas opens with the same drawing", async (page) => {
+  await start(page);
+  await startDrawingInBlock(page, [rectItem([420, 300], [560, 350])]);
+  await dragInBlock(page, [50, 60], [250, 160]);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 2);
+  await page.keyboard.press("Control+z");
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 1);
+  await dragInBlock(page, [60, 70], [260, 170]);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length === 2);
+  await clickText(page, "after");
+  await openCanvas(page);
+  // The full canvas opens on the saved file, so it holds the same two items (its own undo list starts empty).
+  await page.waitForSelector(".canvas-surface");
+  assert.equal(await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length), 2);
+});
+
+await test("a finger over the block scrolls the page and draws nothing", async (page) => {
+  await start(page);
+  await startDrawingInBlock(page);
+  const box = await editSurface(page).boundingBox();
+  const client = await page.context().newCDPSession(page);
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 100, y: box.y + 100, id: 1 }] });
+  for (let i = 1; i <= 5; i++) await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x + 100 + i * 20, y: box.y + 100, id: 1 }] });
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(600);
+  assert.equal(await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).items.length), 0);
+}, { hasTouch: true });
+
+await test("only one block is drawn in at a time", async (page) => {
+  await start(page);
+  const two = "```scalenote-canvas\nid: abc123xy\n```\n\n```scalenote-canvas\nid: second01\n```\n";
+  const drawing = JSON.stringify({ format: 6, items: [], frames: [REGION, { ...REGION, id: "second01", y: 500 }] }) + "\n";
+  await blockVault(page, drawing, two);
+  await page.waitForFunction(() => document.querySelectorAll(".canvas-block-draw:not([hidden])").length === 2);
+  await page.locator(".canvas-block-draw").nth(0).click();
+  await page.waitForSelector(".canvas-block-edit:not([hidden])");
+  await page.locator(".canvas-block-draw").nth(1).click();
+  await page.waitForFunction(() => document.querySelectorAll(".canvas-block-edit:not([hidden])").length === 1);
+  assert.equal(await page.locator(".canvas-block").nth(0).locator(".canvas-block-edit:not([hidden])").count(), 0);
+  assert.equal(await page.locator(".canvas-block").nth(1).locator(".canvas-block-edit:not([hidden])").count(), 1);
+});
+
+await test("a drawing that cannot be changed has no Draw button in the block", async (page) => {
+  await start(page);
+  await blockVault(page, '{"format":7,"items":[]}');
+  await page.waitForSelector(".canvas-block-missing:not([hidden])");
+  assert.equal(await page.locator(".canvas-block-draw:visible").count(), 0);
+});
+
 if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   const shots = process.env.SHOTS_DIR;
   for (const scheme of ["light", "dark"]) {
@@ -6657,6 +6908,27 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await picVault(page, "![a leaf|240x120](attachments/leaf.png)");
       await selectPic(page);
       await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-1-picture-selected.png` });
+      await context.close();
+    }
+  }
+}
+
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await blockVault(page, drawingWith([rectItem([40, 40], [240, 140]), { tool: "pen", color: "ink", width: 4, points: [[60, 220, 0.5], [180, 260, 0.5], [320, 210, 0.5]] }]));
+      await page.waitForSelector(".canvas-block-surface:not([hidden])");
+      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-2-canvas-block.png` });
+      await page.click(".canvas-block-draw");
+      await page.waitForSelector(".canvas-block-edit:not([hidden]) .canvas-surface");
+      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-3-canvas-block-drawing.png` });
       await context.close();
     }
   }

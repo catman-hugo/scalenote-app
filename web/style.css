@@ -1824,3 +1824,23 @@ button.danger:hover { background: var(--bg-hover); }
 }
 
 .drop-line.drop-line-vertical { width: 3px; }
+
+/* ---------- canvas block ---------- */
+.canvas-block { margin: var(--space-3) 0; }
+.canvas-block-title { margin-bottom: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.canvas-block-surface { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); }
+.canvas-block-surface[hidden],
+.canvas-block-missing[hidden] { display: none; }
+.canvas-block-missing { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
+.canvas-block.ProseMirror-selectednode .canvas-block-surface { outline: 2px solid var(--accent); }
+.canvas-block-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.canvas-block-draw { flex: none; padding: var(--space-1) var(--space-2); font: inherit; font-size: var(--text-s); color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.canvas-block-draw[hidden] { display: none; }
+.canvas-block-draw[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.canvas-block-edit { position: relative; max-width: 100%; outline: 1px solid var(--line); outline-offset: -1px; border-radius: var(--radius); user-select: none; -webkit-user-select: none; }
+.canvas-block-edit[hidden] { display: none; }
+/* The live view is exactly the region: the stage takes the region's proportions, and a finger scrolls
+   the page past it (a pen or a mouse draws). */
+.canvas-block-edit .canvas-stage { flex: none; width: 100%; aspect-ratio: var(--region-ratio); }
+.canvas-block-edit .canvas-surface { touch-action: pan-y; }
+.canvas-block-edit [data-tool="hand"] { display: none; }

@@ -32,7 +32,8 @@ import { openTags } from "./tagsdialog.js";
 import { openHistory } from "./historydialog.js";
 import { createCanvasView } from "./canvasview.js";
 import { createInkLayer } from "./inklayer.js";
-import { parseCanvas, serializeCanvas } from "./canvasrules.js";
+import { FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
+import { repaintCanvasBlocks } from "./canvasblock.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
@@ -1525,13 +1526,55 @@ async function loadInk(path, force) {
     canvas = read.canvas || null;
     problem = read.problem || "";
   }
-  if (!force && !(canvas && canvas.ink.length)) return false;
+  // A drawing is also needed for the text when it holds regions that canvas blocks show.
+  if (!force && !(canvas && (canvas.ink.length || canvas.frames.length))) return false;
   const view = ensureCanvasView();
   app.canvasVersion = file ? file.version : null;
   view.show(canvas, problem);
   app.inkPath = path;
   app.ink.show();
+  repaintCanvasBlocks();
   return true;
+}
+
+// A drawing view inside a canvas block: the page's own drawing and undo list, limited to one region.
+function editCanvasRegion(host, frame) {
+  const shared = app.canvasView;
+  if (!shared || !app.inkPath) return null;
+  const view = createCanvasView(host, {
+    onChange: () => {
+      app.canvasSave.touch();
+      repaintCanvasBlocks();
+    },
+    onNotice: (text) => showToast(text),
+    penButton: () => app.settings.penButton,
+    snapShapes: () => app.settings.snapShapes,
+  });
+  view.adopt(shared.canvas, shared.history, shared.readOnly);
+  view.setRegion(frame);
+  return { destroy: () => view.destroy() };
+}
+
+// Makes a new region in the page's drawing for a canvas block and gives its id, or null (with a
+// calm message) when the drawing cannot take one. The drawing is loaded first when it is not yet.
+async function createCanvasRegion() {
+  const path = app.current && app.current.path;
+  if (!path) return null;
+  if (app.inkPath !== path && !(await loadInk(path, true))) return null;
+  const d = inkDrawing();
+  if (!d || d.readOnly) {
+    showToast(strings.canvasBlock.readOnly);
+    return null;
+  }
+  const canvas = d.canvas;
+  if (canvas.frames.length >= FRAME_LIMITS.count) {
+    showToast(strings.canvasBlock.full);
+    return null;
+  }
+  canvas.frames.push({ id: makeFrameId(canvas.frames.map((frame) => frame.id)), ...nextFrameRect(canvas), label: "" });
+  app.canvasSave.touch();
+  repaintCanvasBlocks();
+  return canvas.frames[canvas.frames.length - 1].id;
 }
 
 async function startInk() {
@@ -1830,6 +1873,7 @@ function fillStaticText() {
       (next) => {
         Object.assign(app.settings, next);
         applyAppearance(document.documentElement, app.settings);
+        repaintCanvasBlocks();
         saveSettings();
       },
       [...coverSettingsRows(), ...backlinkSettingsRows(), ...canvasSettingsRows(), ...updateSettingsRows(), ...historySettingsRows(), ...obsidianRows()],
@@ -1936,6 +1980,9 @@ async function start() {
   app.autosave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCurrent, onStatus: setStatus });
   app.editor = createEditor(el("editor"), () => app.autosave.touch(), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
+    canvasDrawing: inkDrawing,
+    editCanvasRegion,
+    createCanvasRegion,
     noteKey: () => (app.current ? app.current.path : null),
     noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
     notify: showToast,
@@ -1966,6 +2013,7 @@ async function start() {
 
   await loadSettings();
   applyAppearance(document.documentElement, app.settings);
+  repaintCanvasBlocks();
   const freshInstall = !app.settings.disclosureAccepted;
   if (freshInstall) {
     await showDisclosure();

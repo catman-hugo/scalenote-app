@@ -316,6 +316,7 @@ export const strings = {
     toggle: "Toggle",
     table: "Table",
     image: "Image",
+    canvas: "Canvas",
     columns2: "2 columns",
     columns3: "3 columns",
     noResults: "No matching block",
@@ -440,6 +441,17 @@ export const strings = {
       sw: "bottom left corner",
       w: "left edge",
     },
+  },
+
+  canvasBlock: {
+    title: "Canvas",
+    draw: "Draw",
+    drawLabel: "Draw in this region",
+    surface: "A region of this page's canvas",
+    missing: "This canvas region could not be found. The drawing is kept in the page's canvas file; the region may have been removed there.",
+    readOnly: "This page's drawing cannot be changed here, so no canvas block was added.",
+    full: "This page's drawing is full, so no canvas block was added.",
+    failed: "The canvas block could not be added.",
   },
 
   newNoteTitle: "Untitled",
