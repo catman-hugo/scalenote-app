@@ -591,3 +591,15 @@ Decision (page policy). `connect-src` gains `'self'` so the worker can read the 
 Alternatives. Native PDF libraries (hard to build for Android), the system viewer in an iframe (not on every platform), WebAssembly decoders with `'wasm-unsafe-eval'` in the policy (faster for scans, but a weaker policy).
 Cost. About 2.6 MB for pdf.js and its files in the app plus a 490 KB script loaded only when needed. Scanned pages decode slower. Character maps for Chinese, Japanese and Korean are not shipped (1.7 MB), so such text can be missing. The policy change and the PDF files on a real device are not tried here.
 
+
+## 2026-11-13: The What's new box can be turned off; download progress comes from the native side
+
+Decision. A setting "Show what's new after an update" (on by default) decides whether the notes box opens after an update. The new version is remembered either way, so switching it on later does not show old notes. The What's new button in the update notice is a choice by the user and stays. The download bar on Android is fed by two numbers from the native downloader, checked in the page; in the browser route there is no progress to show, so the Download button only rests for 6 seconds and says the browser has the download.
+Alternatives. Keeping the box always on (the owner asked for a switch); a progress bar in the browser route (a browser cannot report back); Android's own download manager, which would show its own notification (a larger change to the installer that already works).
+Cost. The Kotlin change cannot be compiled here; CI does it and only a device shows the real bar.
+
+## 2026-11-13: Release notes are short and only say what was added
+
+Decision. Every file in `docs/release-notes/` has the same shape: one line saying this is an early test version with a backup reminder, then short bullets under New, Changed and Fixed (only the sections that apply). No title line (the box already shows the version), no "Good to know" or "Known limits" sections, no remarks about what is untested (the owner tests every build at once), no downloads section, and no wording that talks to one person ("please", "I could not"). Each bullet is one line about what was added or changed. The notes of all 34 earlier versions were rewritten to this shape. Longer reasoning stays in `PROGRESS.md` and this file.
+Alternatives. Detailed notes with limits and compatibility remarks (rejected: they were too long to read in the What's new box).
+Cost. Some details that only mattered to a single release (for example, an older version opening a newer drawing read-only) are no longer in the notes. They remain in `PROGRESS.md` and the git history.

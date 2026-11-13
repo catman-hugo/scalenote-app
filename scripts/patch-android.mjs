@@ -210,6 +210,8 @@ class ApkInstaller(private val context: Context, private val webView: WebView) {
       if (connection.responseCode != 200) throw IllegalStateException("download answered " + connection.responseCode)
       if (connection.contentLengthLong > maxBytes) throw IllegalStateException("file too large")
       var total = 0L
+      val length = connection.contentLengthLong
+      var lastReport = 0L
       connection.inputStream.use { input ->
         temporary.outputStream().use { output ->
           val buffer = ByteArray(64 * 1024)
@@ -219,9 +221,16 @@ class ApkInstaller(private val context: Context, private val webView: WebView) {
             total += read
             if (total > maxBytes) throw IllegalStateException("file too large")
             output.write(buffer, 0, read)
+            // At most four reports a second, so the page is not flooded.
+            val now = System.currentTimeMillis()
+            if (now - lastReport >= 250) {
+              lastReport = now
+              reportProgress(total, length)
+            }
           }
         }
       }
+      reportProgress(total, length)
     } finally {
       connection.disconnect()
     }
@@ -244,6 +253,14 @@ class ApkInstaller(private val context: Context, private val webView: WebView) {
     } catch (error: Exception) {
       android.util.Log.w("ScaleNote", "could not open the installer", error)
       report("error")
+    }
+  }
+
+  // Two plain numbers (bytes so far, bytes in all or -1 when the server did not say). Both are
+  // Long values made here, never text from the network, so nothing can be injected into the page.
+  private fun reportProgress(done: Long, length: Long) {
+    webView.post {
+      webView.evaluateJavascript("window.__scalenoteInstallProgress && window.__scalenoteInstallProgress(" + done + "," + length + ")", null)
     }
   }
 

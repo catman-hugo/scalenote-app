@@ -864,6 +864,67 @@ await test("the What's new box is wide and tall enough for a long list of notes"
 }, { settings: existingUser(), before: githubReturns([{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: Array.from({ length: 40 }, (_, i) => "- A fairly long line of release notes number " + i + " that takes some room on screen.").join("\n"), draft: false, prerelease: false }]) });
 
 
+const LONG_NOTES = ["# ScaleNote 9.9.9", "", "## New", "- **PDF import.** Type /pdf, then choose how to add it:", "  - *Scroll through*: the PDF is kept in the vault and shown in the page.", "  - *Pages as images*: every page becomes a picture.", "  A PDF can be up to 25 MB.", "- See [the guide](https://example.local/guide) for more.", "", ...Array.from({ length: 30 }, (_, i) => "- A fairly long line of release notes number " + i + " that takes some room on a phone screen.")].join("\n");
+
+await test("the What's new notes show sub-points, continued lines and no stray marks", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDetails");
+  await page.waitForSelector("#whatsnew[open]");
+  const out = await page.evaluate(() => ({
+    nested: document.querySelectorAll("#whatsnew .notes li > ul > li").length,
+    text: document.querySelector("#whatsnew .notes").textContent,
+    subText: document.querySelector("#whatsnew .notes li > ul > li").textContent,
+  }));
+  assert.equal(out.nested, 2, "two sub-points under the first bullet");
+  assert.ok(out.subText.startsWith("Scroll through: the PDF"), out.subText);
+  assert.ok(!out.text.includes("*"), "no asterisks are left in the notes");
+  assert.ok(out.text.includes("A PDF can be up to 25 MB."), "the continued line is kept");
+  assert.ok(out.text.includes("See the guide for more."), "a link keeps its words and drops its address");
+  assert.ok(!out.text.includes("example.local"));
+}, { settings: existingUser(), before: githubReturns([{ tag_name: "v9.9.9", html_url: RELEASE_URL, body: LONG_NOTES, draft: false, prerelease: false }]) });
+
+// The real notes of this version, shown the way they are after an update.
+for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640 }, false], ["phone held sideways", { width: 640, height: 280 }, true]]) await test(`the What's new box fits the screen with its Close button in view (${label})`, async (page) => {
+  await page.waitForSelector("#whatsnew[open]");
+  const m = await page.evaluate(() => {
+    const d = document.querySelector("#whatsnew").getBoundingClientRect();
+    const b = document.querySelector("#whatsnew > button").getBoundingClientRect();
+    const n = document.querySelector("#whatsnew .notes");
+    return { top: d.top, bottom: d.bottom, left: d.left, right: d.right, buttonBottom: b.bottom, scrolls: n.scrollHeight > n.clientHeight, notesHeight: n.clientHeight, view: [innerWidth, innerHeight] };
+  });
+  assert.ok(m.top >= 0 && m.bottom <= m.view[1], "the box is inside the screen: " + JSON.stringify(m));
+  assert.ok(m.left >= 0 && m.right <= m.view[0], "the box is inside the screen: " + JSON.stringify(m));
+  assert.ok(m.buttonBottom <= m.view[1], "the Close button is on screen: " + JSON.stringify(m));
+  assert.ok(m.notesHeight >= 80, "the notes have room: " + JSON.stringify(m));
+  if (mustScroll) assert.ok(m.scrolls, "on a short screen the notes scroll inside the box: " + JSON.stringify(m));
+  const atEnd = await page.evaluate(() => { const n = document.querySelector("#whatsnew .notes"); n.scrollTop = n.scrollHeight; return n.scrollTop + n.clientHeight >= n.scrollHeight - 1; });
+  assert.ok(atEnd, "the end of the notes can be reached");
+  await page.click("#whatsnew > button");
+  assert.equal(await page.isVisible("#whatsnew"), false);
+}, { viewport, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
+
+await test("with Show what's new off, an update shows no box but is still remembered; the switch is in Settings", async (page) => {
+  await page.waitForSelector("#newNote");
+  assert.equal(await page.isVisible("#whatsnew"), false);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).lastSeenVersion, VERSION);
+  await page.click("#openSettings");
+  const box = page.locator('#settings label.setting-row:has-text("Show what\'s new after an update") input');
+  assert.equal(await box.isChecked(), false);
+  await box.check();
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).showWhatsNew === true);
+}, { settings: existingUser({ lastSeenVersion: "0.0.1", updates: false, showWhatsNew: false }) });
+
+await test("Show what's new is on unless turned off, and turning it off is saved", async (page) => {
+  await page.waitForSelector("#whatsnew[open]");
+  await page.click("#whatsnew button");
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  const box = page.locator('#settings label.setting-row:has-text("Show what\'s new after an update") input');
+  assert.equal(await box.isChecked(), true);
+  await box.uncheck();
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).showWhatsNew === false);
+}, { settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
+
 await test("a newer release shows a notice with a download button and its notes as plain text", async (page) => {
   await page.waitForSelector("#updateNotice:not([hidden])");
   assert.match(await page.textContent("#updateText"), /ScaleNote 9\.9\.9 is available/);
@@ -895,6 +956,77 @@ await test("on Android the Download button opens the apk file straight away", as
   await page.click("#updateDownload");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_arm64-debug.apk`]);
 }, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: ANDROID_UA });
+
+// The Android app has a native installer object. This stands in for it: it records the address and
+// the test plays the part of the native side by calling the same two functions it calls.
+const withFakeInstaller = (page) => page.addInitScript(() => {
+  window.__installCalls = [];
+  window.ScaleNoteInstaller = { install: (url) => window.__installCalls.push(url) };
+});
+
+await test("in the Android app Download shows a progress bar and the buttons rest until the file is in", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  const bar = () => page.evaluate(() => {
+    const track = document.querySelector("#updateNotice .install-bar-track");
+    return {
+      hidden: document.querySelector("#updateNotice .install-bar").hidden,
+      trackHidden: track.hidden,
+      text: document.querySelector("#updateNotice .install-bar-text").textContent,
+      width: track.querySelector(".install-bar-fill").style.width,
+      now: track.getAttribute("aria-valuenow"),
+      disabled: document.querySelector("#updateDownload").disabled,
+    };
+  });
+  assert.equal((await bar()).hidden, true, "no bar before a download");
+  await page.click("#updateDownload");
+  assert.deepEqual(await page.evaluate(() => window.__installCalls), [`${FILES9}/ScaleNote_9.9.9_arm64-debug.apk`]);
+  let b = await bar();
+  assert.equal(b.disabled, true, "the button rests at once");
+  assert.match(b.text, /Starting the download/);
+  await page.evaluate(() => { window.__scalenoteInstallStatus("downloading"); window.__scalenoteInstallProgress(20 * 1048576, 100 * 1048576); });
+  b = await bar();
+  assert.equal(b.text, "Downloading… 20 of 100 MB (20%)");
+  assert.equal(b.width, "20%");
+  assert.equal(b.now, "20");
+  assert.equal(b.trackHidden, false);
+  // Pressing again does nothing: the installer is not asked a second time.
+  await page.evaluate(() => document.querySelector("#updateDownload").click());
+  assert.equal(await page.evaluate(() => window.__installCalls.length), 1);
+  // The same bar is in Settings, already showing where the download is.
+  await page.click("#openSettings");
+  assert.match(await page.textContent("#settings .install-bar-text"), /20 of 100 MB/);
+  await page.evaluate(() => window.__scalenoteInstallProgress(60 * 1048576, 100 * 1048576));
+  assert.match(await page.textContent("#settings .install-bar-text"), /60 of 100 MB \(60%\)/);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => window.__scalenoteInstallStatus("installing"));
+  b = await bar();
+  assert.match(b.text, /Android asks you to confirm/);
+  assert.equal(b.width, "100%");
+  assert.equal(b.disabled, false, "the button works again once the file is in");
+}, { settings: existingUser(), before: async (page) => { await withFakeInstaller(page); await githubReturns(WITH_FILES)(page); }, userAgent: ANDROID_UA });
+
+await test("in the Android app a failed download clears the bar and falls back to the browser", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDownload");
+  await page.evaluate(() => window.__scalenoteInstallProgress(5 * 1048576, 0));
+  assert.equal(await page.textContent("#updateNotice .install-bar-text"), "Downloading… 5 MB");
+  assert.equal(await page.isVisible("#updateNotice .install-bar-track"), false, "no bar when the size is not known");
+  await page.evaluate(() => window.__scalenoteInstallStatus("error"));
+  assert.equal(await page.isVisible("#updateNotice .install-bar"), false);
+  assert.equal(await page.evaluate(() => document.querySelector("#updateDownload").disabled), false);
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_arm64-debug.apk`]);
+}, { settings: existingUser(), before: async (page) => { await withFakeInstaller(page); await githubReturns(WITH_FILES)(page); }, userAgent: ANDROID_UA });
+
+await test("when the browser does the downloading the button rests for a moment and says so", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDownload");
+  assert.match(await page.textContent("#updateNotice .install-bar-text"), /browser is downloading/);
+  assert.equal(await page.evaluate(() => document.querySelector("#updateDownload").disabled), true);
+  await page.evaluate(() => document.querySelector("#updateDownload").click());
+  assert.equal((await page.evaluate(() => window.__mock.opened)).length, 1, "pressing again opens nothing more");
+  await page.waitForFunction(() => !document.querySelector("#updateDownload").disabled, null, { timeout: 12000 });
+  assert.equal(await page.isVisible("#updateNotice .install-bar"), false);
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: WINDOWS_UA });
 
 await test("on Windows the Download button opens the msi, not the other files", async (page) => {
   await page.waitForSelector("#updateNotice:not([hidden])");
@@ -2971,6 +3103,29 @@ if (shots && !process.env.SHOTS_ONLY) {
     await up.waitForSelector("#whatsnew[open]");
     await up.screenshot({ path: `${shots}/v021-desktop-${scheme}-4-whats-new.png` });
     await update.close();
+    // 0.4.12 fix: the same box with this version's real notes on a phone-sized screen.
+    const phoneUpdate = await browser.newContext({ viewport: { width: 393, height: 780 }, colorScheme: scheme });
+    await phoneUpdate.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, lastSeenVersion: "0.1.1", updates: false }));
+    await phoneUpdate.addInitScript({ path: path.join(here, "mock-backend.js") });
+    const pup = await phoneUpdate.newPage();
+    await prepare(pup, {});
+    await pup.goto(url);
+    await pup.waitForSelector("#whatsnew[open]");
+    await pup.screenshot({ path: `${shots}/v0412-phone-${scheme}-7-whats-new.png` });
+    await phoneUpdate.close();
+    // 0.4.12: the download progress in the update notice (the Android app's installer is stood in for).
+    const progressContext = await browser.newContext({ viewport: { width: 1100, height: 760 }, colorScheme: scheme, userAgent: ANDROID_UA });
+    await progressContext.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ ...baseSettings, lastSeenVersion: VERSION }));
+    await progressContext.addInitScript({ path: path.join(here, "mock-backend.js") });
+    await progressContext.addInitScript(() => { window.ScaleNoteInstaller = { install: () => {} }; });
+    const dl = await progressContext.newPage();
+    await prepare(dl, { releases: WITH_FILES });
+    await dl.goto(url);
+    await dl.waitForSelector("#updateNotice:not([hidden])");
+    await dl.click("#updateDownload");
+    await dl.evaluate(() => window.__scalenoteInstallProgress(42 * 1048576, 131 * 1048576));
+    await dl.screenshot({ path: `${shots}/v0412-desktop-${scheme}-8-download-progress.png` });
+    await progressContext.close();
   }
   // 0.2.5 screens: dragging in the page list, the block drag copy, the plus button and the
   // block type row of the selection bar.

@@ -62,6 +62,14 @@ test("the installer source checks the address, size and file type before install
   assert.match(out, /apkprovider/);
 });
 
+test("the installer reports how much of the file has come in, as plain numbers, at most four times a second", () => {
+  const out = apkInstallerSource("local.example.scalenote");
+  assert.match(out, /__scalenoteInstallProgress\(" \+ done \+ "," \+ length \+ "\)/);
+  assert.match(out, /fun reportProgress\(done: Long, length: Long\)/);
+  assert.match(out, /now - lastReport >= 250/);
+  assert.match(out, /val length = connection\.contentLengthLong/);
+});
+
 test("a manifest missing the application entry is refused", () => {
   assert.throws(() => patchManifest('<manifest><x android:name=".MainActivity"/></manifest>'), /application/);
 });

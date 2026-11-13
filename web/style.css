@@ -1225,14 +1225,51 @@ body.block-dragging .float-bar { visibility: hidden; }
 .setting-actions:empty { display: none; }
 .setting-heading { margin: var(--space-3) 0 0; font-size: var(--text-m); font-weight: 600; }
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
-#whatsnew { max-width: min(52rem, calc(100% - 2 * var(--space-4))); }
-#whatsnew .notes { max-height: calc(100dvh - 12rem); }
+/* The What's new box is a column: the title and the Close button stay in view, and only the notes
+   between them scroll. The height follows the real screen (dvh, with vh for older webviews), so the
+   box never runs off a phone. A line above and below the notes shows where the scrolling part is. */
+#whatsnew { max-width: min(52rem, calc(100% - 2 * var(--space-4))); box-sizing: border-box; }
+#whatsnew[open] {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
+}
+#whatsnew .notes {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+#whatsnew > button { flex: 0 0 auto; align-self: flex-start; }
+@media (max-width: 40rem) {
+  #whatsnew { padding: var(--space-4); }
+}
+/* A phone held sideways is short: less space around the title and the notes, so more notes show. */
+@media (max-height: 30rem) {
+  #whatsnew { padding: var(--space-3) var(--space-4); }
+  #whatsnew h2 { margin-bottom: var(--space-1); font-size: var(--text-m); }
+  #whatsnew .notes { margin: var(--space-1) 0; }
+}
 .notes { max-height: 50vh; overflow-y: auto; margin: var(--space-3) 0; overflow-wrap: anywhere; }
+.notes ul ul { margin: var(--space-1) 0; }
 .notes h3, .notes h4 { margin: var(--space-3) 0 var(--space-1); }
 .notes p, .notes ul { margin: var(--space-1) 0; }
 .update-notice { display: flex; align-items: center; justify-content: flex-start; gap: var(--space-3); flex-wrap: wrap; }
 .update-notice span { flex: 1; min-width: 12rem; }
 .update-notice[hidden] { display: none; }
+
+/* The download progress. Drawn in the colour of the text around it, so it fits the notice and
+   Settings in every theme: an outlined track with a solid fill, no gradient, no animation. */
+.install-bar { flex: 1 1 100%; display: flex; flex-direction: column; gap: var(--space-1); }
+.install-bar[hidden], .install-bar-track[hidden] { display: none; }
+.install-bar-track { height: 8px; border: 1px solid currentColor; border-radius: 2px; overflow: hidden; }
+.install-bar-fill { height: 100%; width: 0; background: currentColor; }
+.install-bar-text { margin: 0; font-size: var(--text-s); }
+[data-install-button]:disabled { opacity: 0.55; cursor: default; }
 
 /* The block type button at the start of the formatting bar: the name, then an arrow. */
 .type-button { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 5.5rem; justify-content: space-between; }
