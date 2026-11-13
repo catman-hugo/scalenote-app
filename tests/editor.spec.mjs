@@ -6824,6 +6824,15 @@ const pdfPageInk = (page, n) => page.evaluate((i) => {
   for (let p = 0; p < data.length; p += 4) if (data[p] < 100 && data[p + 3] > 0) dark++;
   return dark;
 }, n);
+// pdf.js sets the canvas size before it paints, so wait for the ink instead of reading it at once.
+const pdfPageInkSettled = async (page, n) => {
+  for (let tries = 0; tries < 50; tries++) {
+    const ink = await pdfPageInk(page, n);
+    if (ink > 200) return ink;
+    await page.waitForTimeout(100);
+  }
+  return pdfPageInk(page, n);
+};
 
 await test("/pdf asks how to add the file, and Cancel changes nothing", async (page) => {
   await slashPdf(page, pdfFile());
@@ -6843,7 +6852,7 @@ await test("Scroll through stores the PDF and shows it in the page, drawn by pdf
   assert.equal(await page.locator(".pdf-block-count").textContent(), "5 pages");
   assert.equal(await page.locator(".pdf-block-title").textContent(), "Lecture 1");
   await page.waitForFunction(() => document.querySelector(".pdf-page-canvas") && document.querySelector(".pdf-page-canvas").width > 0);
-  assert.ok(await pdfPageInk(page, 0) > 200, "page 1 shows its black box and text");
+  assert.ok(await pdfPageInkSettled(page, 0) > 200, "page 1 shows its black box and text");
   await waitSaved(page);
   assert.match((await files(page))["Untitled.md"], /before\n\n!\[Lecture 1\]\(attachments\/Lecture-1\.pdf\)\n$/);
   assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].join()), "attachments/Lecture-1.pdf");
@@ -6859,7 +6868,7 @@ await test("a PDF block draws only the pages near the view, and the rest when sc
   assert.ok(early >= 1 && early < 30, `only some pages are drawn (${early})`);
   await page.evaluate(() => { const box = document.querySelector(".pdf-block-scroll"); box.scrollTop = box.scrollHeight; });
   await page.waitForFunction(() => document.querySelectorAll(".pdf-page-canvas")[29].width > 0);
-  assert.ok(await pdfPageInk(page, 29) > 200, "the last page is drawn when scrolled to");
+  assert.ok(await pdfPageInkSettled(page, 29) > 200, "the last page is drawn when scrolled to");
   assert.equal(await page.evaluate(() => document.querySelectorAll(".pdf-page-canvas")[0].width), 0, "the first page is freed again");
 });
 
