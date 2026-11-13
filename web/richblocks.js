@@ -278,7 +278,7 @@ export function writeTable(node, serialize) {
 
 // ---------- images:  ![alt](attachments/name.png) ----------
 
-const IMAGE = /^!\[([^\[\]\n]*)\]\((attachments\/[^\s()<>"\\]+\.(?:png|jpe?g|gif|webp))\)$/i;
+const IMAGE = /^!\[([^\[\]\n]*)\]\((attachments\/[^\s()<>"\\]+\.(?:png|jpe?g|gif|webp|pdf))\)$/i;
 
 // A size is written Obsidian-style at the very end of the description: `alt|300` (width) or
 // `alt|300x200` (width and height). Anything else after a `|` is just part of the description,
@@ -302,11 +302,19 @@ export function readImage(src) {
   if (!match) return null;
   const path = match[2];
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return null;
+  // A link to a PDF is a PDF in the page, never a picture, and has no size of its own.
+  if (/\.pdf$/i.test(path)) return { type: "pdfBlock", attrs: { alt: match[1], path } };
   const size = sizeOf(match[1]);
   if (!size) return { type: "imageBlock", attrs: { alt: match[1], path } };
   const attrs = { alt: match[1].slice(0, size.cut), path, width: size.width };
   if (size.height !== null) attrs.height = size.height;
   return { type: "imageBlock", attrs };
+}
+
+/** A PDF is written like a picture without a size: `![name](attachments/name.pdf)`. */
+export function writePdf(node) {
+  const { alt = "", path = "" } = node.attrs || {};
+  return `![${alt.replace(/[\[\]\n]/g, " ")}](${path})`;
 }
 
 export function writeImage(node) {
@@ -363,6 +371,8 @@ export function writeBlock(node, serialize) {
       return writeTable(node, serialize);
     case "imageBlock":
       return writeImage(node);
+    case "pdfBlock":
+      return writePdf(node);
     case "canvasBlock":
       return writeCanvasBlock(node);
     default: {

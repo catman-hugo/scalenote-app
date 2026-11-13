@@ -222,6 +222,7 @@ export const strings = {
 
   pageText: {
     picture: "Picture: {name}",
+    pdf: "PDF: {name}",
   },
 
   history: {
@@ -317,6 +318,7 @@ export const strings = {
     table: "Table",
     image: "Image",
     canvas: "Canvas",
+    pdf: "PDF",
     columns2: "2 columns",
     columns3: "3 columns",
     noResults: "No matching block",
@@ -443,6 +445,28 @@ export const strings = {
     },
   },
 
+  pdf: {
+    askTitle: "Add a PDF",
+    askText: "How should {name} be added to this page?",
+    scroll: "Scroll through",
+    scrollHint: "Shows the PDF inside the page, where you can scroll through it.",
+    pages: "Pages as images",
+    pagesHint: "Makes one picture of each page, so you can draw and type next to it.",
+    cancel: "Cancel",
+    working: "Adding {name}",
+    progress: "Page {page} of {total}",
+    stop: "Stop",
+    pageAlt: "Page {page} of {name}",
+    block: {
+      surface: "PDF document",
+      pageCount: "{count} pages",
+      pageCountOne: "1 page",
+      pageLabel: "Page {page}",
+      missing: "This PDF could not be shown. The file is missing or is not a PDF.",
+      failed: "This PDF could not be read. It may be damaged or protected with a password.",
+    },
+  },
+
   canvasBlock: {
     title: "Canvas",
     surface: "A region of this page's canvas",
@@ -563,6 +587,10 @@ export const strings = {
     no_vault: "No folder is open.",
     unsupported_type: "That file is not a picture ScaleNote can use. Allowed types: png, jpg, gif and webp.",
     too_large_picture: "That picture is too large. The limit is 10 MB.",
+    unsupported_pdf: "That file is not a PDF ScaleNote can use.",
+    too_large_pdf: "That PDF is too large. The limit is 25 MB.",
+    pdf_failed: "That PDF could not be read. It may be damaged or protected with a password.",
+    pdf_too_many_pages: "That PDF has more than {limit} pages, which is too many to turn into pictures. Add it as a PDF to scroll through instead.",
     unknown: "Something went wrong.",
   },
 };

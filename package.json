@@ -24,7 +24,8 @@
     "@tiptap/markdown": "3.32.2",
     "@tiptap/pm": "3.32.2",
     "@tiptap/starter-kit": "3.32.2",
-    "@tiptap/suggestion": "3.32.2"
+    "@tiptap/suggestion": "3.32.2",
+    "pdfjs-dist": "6.5.438"
   },
   "type": "module"
 }

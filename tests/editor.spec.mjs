@@ -118,7 +118,7 @@ await test("slash menu offers every block and filters", async (page) => {
   await page.click("#editor .note-body");
   await page.keyboard.type("/");
   await page.waitForSelector(".slash-menu");
-  assert.equal(await page.locator(".slash-item").count(), 18);
+  assert.equal(await page.locator(".slash-item").count(), 19);
   await page.keyboard.type("to-do");
   assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["To-do list"]);
   await page.keyboard.press("Enter");
@@ -1029,7 +1029,8 @@ await test("a fresh install shows the disclosure with the update line and no wha
 
 await test("the content security policy lets the app talk to the app itself and to GitHub's release list only", async () => {
   const connect = CSP.split(";").map((p) => p.trim()).find((p) => p.startsWith("connect-src"));
-  assert.equal(connect, "connect-src ipc: http://ipc.localhost https://api.github.com");
+  // 'self' is the app's own files (pdf.js reads its fonts and decoders from them); no other address is added.
+  assert.equal(connect, "connect-src 'self' ipc: http://ipc.localhost https://api.github.com");
   assert.ok(!/unsafe/.test(CSP) && !/\*/.test(CSP));
 });
 
@@ -6777,6 +6778,187 @@ await test("drawing on the full canvas keeps the regions, and shows the block's 
   assert.equal(saved.frames[0].id, "abc123xy");
 });
 
+// ---------- 0.4.12: PDF import ----------
+
+// A small real PDF: `count` pages of 300 x 400 points, each with a black box and the words "Page N".
+function makePdf(count) {
+  const objects = [];
+  const add = (body) => objects.push(body);
+  add("<< /Type /Catalog /Pages 2 0 R >>");
+  add(`<< /Type /Pages /Kids [${Array.from({ length: count }, (_, i) => `${4 + i * 2} 0 R`).join(" ")}] /Count ${count} >>`);
+  add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  for (let i = 0; i < count; i++) {
+    const stream = `20 20 100 60 re f BT /F1 36 Tf 40 300 Td (Page ${i + 1}) Tj ET`;
+    add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`);
+    add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  }
+  let out = "%PDF-1.4\n";
+  const offsets = [];
+  objects.forEach((body, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join("")}`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+const pdfFile = (count = 3, name = "Lecture 1.pdf") => ({ name, mimeType: "application/pdf", buffer: makePdf(count) });
+async function slashPdf(page, file) {
+  await start(page);
+  const chooser = new Promise((resolve) => page.once("filechooser", resolve));
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  await page.keyboard.type("before");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/pdf");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await (await chooser).setFiles(file);
+  await page.waitForSelector("#pdfBox[open]");
+}
+const pdfChoice = (page, name) => page.locator("#pdfBox .pdf-option", { hasText: name }).click();
+// Dark pixels of one page of the scroll view, to see that it was really drawn.
+const pdfPageInk = (page, n) => page.evaluate((i) => {
+  const canvas = document.querySelectorAll(".pdf-page-canvas")[i];
+  if (!canvas || !canvas.width) return -1;
+  const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  let dark = 0;
+  for (let p = 0; p < data.length; p += 4) if (data[p] < 100 && data[p + 3] > 0) dark++;
+  return dark;
+}, n);
+
+await test("/pdf asks how to add the file, and Cancel changes nothing", async (page) => {
+  await slashPdf(page, pdfFile());
+  assert.match(await page.textContent("#pdfBox"), /How should Lecture 1 be added/);
+  assert.equal(await page.locator("#pdfBox .pdf-option").count(), 2);
+  await page.click('#pdfBox button:has-text("Cancel")');
+  await page.waitForFunction(() => !document.querySelector("#pdfBox").open);
+  assert.equal(await page.locator(".pdf-block, .image-block").count(), 0);
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].length), 0);
+});
+
+await test("Scroll through stores the PDF and shows it in the page, drawn by pdf.js, as a plain markdown link", async (page) => {
+  await slashPdf(page, pdfFile(5));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-block .pdf-page");
+  assert.equal(await page.locator(".pdf-page").count(), 5);
+  assert.equal(await page.locator(".pdf-block-count").textContent(), "5 pages");
+  assert.equal(await page.locator(".pdf-block-title").textContent(), "Lecture 1");
+  await page.waitForFunction(() => document.querySelector(".pdf-page-canvas") && document.querySelector(".pdf-page-canvas").width > 0);
+  assert.ok(await pdfPageInk(page, 0) > 200, "page 1 shows its black box and text");
+  await waitSaved(page);
+  assert.match((await files(page))["Untitled.md"], /before\n\n!\[Lecture 1\]\(attachments\/Lecture-1\.pdf\)\n$/);
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].join()), "attachments/Lecture-1.pdf");
+});
+
+await test("a PDF block draws only the pages near the view, and the rest when scrolled to", async (page) => {
+  await slashPdf(page, pdfFile(30));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-page");
+  await page.waitForFunction(() => document.querySelector(".pdf-page-canvas").width > 0);
+  const drawn = () => page.evaluate(() => [...document.querySelectorAll(".pdf-page-canvas")].filter((c) => c.width > 0).length);
+  const early = await drawn();
+  assert.ok(early >= 1 && early < 30, `only some pages are drawn (${early})`);
+  await page.evaluate(() => { const box = document.querySelector(".pdf-block-scroll"); box.scrollTop = box.scrollHeight; });
+  await page.waitForFunction(() => document.querySelectorAll(".pdf-page-canvas")[29].width > 0);
+  assert.ok(await pdfPageInk(page, 29) > 200, "the last page is drawn when scrolled to");
+  assert.equal(await page.evaluate(() => document.querySelectorAll(".pdf-page-canvas")[0].width), 0, "the first page is freed again");
+});
+
+await test("a page with a PDF in it comes back after reopening, byte for byte", async (page) => {
+  await slashPdf(page, pdfFile(2, "Notes.pdf"));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-page");
+  await waitSaved(page);
+  const saved = (await files(page))["Untitled.md"];
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Untitled.md"]');
+  await page.waitForSelector(".pdf-page");
+  await page.waitForFunction(() => document.querySelector(".pdf-page-canvas").width > 0);
+  await page.keyboard.press("Control+s");
+  await waitSaved(page);
+  assert.equal((await files(page))["Untitled.md"], saved);
+});
+
+await test("Pages as images makes one picture per page with an empty line after each, to draw and type next to", async (page) => {
+  await slashPdf(page, pdfFile(3));
+  await pdfChoice(page, "Pages as images");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 3);
+  await page.waitForFunction(() => !document.querySelector("#pdfBox").open);
+  await waitSaved(page);
+  const text = (await files(page))["Untitled.md"];
+  // Each picture is followed by an empty line of its own, which is where text goes.
+  assert.match(text, /before\n\n!\[Page 1 of Lecture 1\]\(attachments\/Lecture-1-p1\.jpg\)\n\n\n!\[Page 2 of Lecture 1\]\(attachments\/Lecture-1-p2\.jpg\)\n\n\n!\[Page 3 of Lecture 1\]\(attachments\/Lecture-1-p3\.jpg\)/);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Untitled.md"]');
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 3);
+  const stored = await page.evaluate(() => [...window.__mock.attachments.entries()].map(([k, v]) => [k, v.slice(0, 4)]));
+  assert.equal(stored.length, 3);
+  assert.ok(stored.every(([k, head]) => k.endsWith(".jpg") && head === "/9j/"), "each is a real JPEG");
+  // A page can be typed under: the line after a picture is an empty paragraph.
+  await page.click(".image-block:nth-of-type(1) .image-img");
+  assert.equal(await page.locator(".image-block").count(), 3);
+});
+
+await test("a PDF of more than 100 pages is refused as pictures with a clear message, and nothing is stored", async (page) => {
+  await slashPdf(page, pdfFile(101, "Big.pdf"));
+  await pdfChoice(page, "Pages as images");
+  await page.waitForSelector(".banner, .toast");
+  assert.match(await page.evaluate(() => document.body.innerText), /more than 100 pages/);
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].length), 0);
+  assert.equal(await page.locator(".image-block").count(), 0);
+});
+
+await test("a file called .pdf that is not a PDF says so and changes nothing", async (page) => {
+  await slashPdf(page, { name: "Fake.pdf", mimeType: "application/pdf", buffer: Buffer.from("<script>alert(1)</script>") });
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".banner, .toast");
+  assert.match(await page.evaluate(() => document.body.innerText), /not a PDF ScaleNote can use/);
+  assert.equal(await page.locator(".pdf-block").count(), 0);
+  await slashPdf(page, { name: "Fake2.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 but nothing else") }).catch(() => {});
+});
+
+await test("a PDF can sit inside a callout, and is written back as it was", async (page) => {
+  await start(page);
+  const note = "> [!note] Slides\n> ![Notes](attachments/n.pdf)\n\nafter\n";
+  await seed(page, "In.md", note);
+  await page.evaluate((b64) => window.__mock.attachments.set("attachments/n.pdf", b64), makePdf(2).toString("base64"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="In.md"]');
+  await page.waitForSelector(".callout .pdf-block .pdf-page");
+  await page.waitForFunction(() => document.querySelector(".pdf-page-canvas").width > 0);
+  // Editing the text below makes the page save; the PDF link inside the callout comes back as it was.
+  await page.click(".note-body > p");
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await waitSaved(page);
+  assert.equal(bodyOfPage((await files(page))["In.md"]), note.replace("after", "after!"));
+});
+
+await test("a PDF dropped on the page asks how to add it, like the slash menu", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  await page.keyboard.type("before");
+  assert.equal(await pasteFile(page, "Dropped.pdf", "application/pdf", makePdf(2).toString("base64"), "drop"), true);
+  await page.waitForSelector("#pdfBox[open]");
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-block .pdf-page");
+  await waitSaved(page);
+  assert.match((await files(page))["Untitled.md"], /!\[Dropped\]\(attachments\/Dropped\.pdf\)/);
+});
+
+await test("a PDF block whose file is missing or damaged says so instead of breaking the page", async (page) => {
+  await start(page);
+  await seed(page, "Pdf.md", "before\n\n![gone](attachments/gone.pdf)\n\n![bad](attachments/bad.pdf)\n\nafter\n");
+  await page.evaluate(() => window.__mock.attachments.set("attachments/bad.pdf", btoa("%PDF-1.4 damaged")));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Pdf.md"]');
+  await page.waitForFunction(() => [...document.querySelectorAll(".pdf-block-message")].filter((m) => !m.hidden).length === 2);
+  const messages = await page.evaluate(() => [...document.querySelectorAll(".pdf-block-message")].map((m) => m.textContent));
+  assert.match(messages[0], /missing or is not a PDF/);
+  assert.match(messages[1], /damaged or protected/);
+  assert.match(await page.textContent(".note-body"), /after/);
+});
+
 // A region is moved, resized and deleted on the full canvas with the loop tool, like v1's frame.
 const REGION_AT = { id: "abc123xy", x: 300, y: 200, w: 200, h: 150, label: "Cell" };
 // The drawing is fitted to the sheet with a 32 px margin, so the rectangle at (20, 20) with a 6 px
@@ -6901,6 +7083,26 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       const box = await sheetBox(page);
       await page.mouse.click(box.x + 400 + SHEET_X, box.y + 200 + SHEET_Y);
       await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-4-region-selected.png` });
+      await context.close();
+    }
+  }
+}
+
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await slashPdf(page, pdfFile(4, "Lecture 1.pdf"));
+      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-5-pdf-question.png` });
+      await pdfChoice(page, "Scroll through");
+      await page.waitForFunction(() => document.querySelector(".pdf-page-canvas") && document.querySelector(".pdf-page-canvas").width > 0);
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${shots}/v0412-${label}-${scheme}-6-pdf-scroll.png` });
       await context.close();
     }
   }

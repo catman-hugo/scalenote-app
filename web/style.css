@@ -1833,3 +1833,37 @@ button.danger:hover { background: var(--bg-hover); }
 .canvas-block-missing[hidden] { display: none; }
 .canvas-block-missing { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
 .canvas-block.ProseMirror-selectednode .canvas-block-surface { outline: 2px solid var(--accent); }
+
+/* ---------- a PDF in the page (pdfblock.js) and the question box (pdfimport.js) ---------- */
+.pdf-block { margin: var(--space-3) 0; }
+.pdf-block-head { display: flex; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.pdf-block-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-block-count { flex: none; }
+/* A fixed height that the person can drag taller; the pages scroll inside it. */
+.pdf-block-scroll {
+  height: 36rem;
+  min-height: 12rem;
+  max-height: 85vh;
+  resize: vertical;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-2);
+  background: var(--bg-side);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  touch-action: pan-y;
+}
+.pdf-block-scroll[hidden],
+.pdf-block-message[hidden] { display: none; }
+.pdf-page { position: relative; margin: 0 auto var(--space-2); background: #ffffff; border: 1px solid var(--line); }
+.pdf-page:last-child { margin-bottom: 0; }
+.pdf-page-canvas { display: block; width: 100%; height: 100%; }
+.pdf-page-failed { background: var(--bg-side); border-style: dashed; }
+.pdf-block-message { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
+.pdf-block.ProseMirror-selectednode .pdf-block-scroll { outline: 2px solid var(--accent); }
+
+.pdf-options { display: grid; gap: var(--space-2); margin: var(--space-3) 0; }
+.pdf-option { display: grid; gap: var(--space-1); text-align: left; padding: var(--space-3); }
+.pdf-option-title { font-weight: 600; }
+.pdf-option-hint { color: var(--text-soft); font-size: var(--text-s); }
+.pdf-progress { margin: var(--space-3) 0; }
