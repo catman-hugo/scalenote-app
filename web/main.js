@@ -1904,7 +1904,12 @@ function fillStaticText() {
         repaintCanvasBlocks();
         saveSettings();
       },
-      [...coverSettingsRows(), ...backlinkSettingsRows(), ...canvasSettingsRows(), ...updateSettingsRows(), ...historySettingsRows(), ...obsidianRows()],
+      {
+        pages: [...coverSettingsRows(), ...backlinkSettingsRows()],
+        drawing: canvasSettingsRows(),
+        updates: updateSettingsRows(),
+        files: [...historySettingsRows(), ...obsidianRows()],
+      },
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;

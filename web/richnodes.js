@@ -38,7 +38,7 @@ function headerGuards(head, dom) {
 // What a callout or toggle may hold. It has to match the block kinds that richblocks.js can
 // read back, or the block would turn into a raw block the next time the note is opened.
 // A callout, toggle, table or image inside one is allowed (a callout in a toggle is common).
-const INNER_BLOCKS = "(paragraph | heading | bulletList | orderedList | taskList | blockquote | codeBlock | horizontalRule | callout | toggle | table | imageBlock | pdfBlock)+";
+const INNER_BLOCKS = "(paragraph | heading | bulletList | orderedList | taskList | blockquote | codeBlock | horizontalRule | callout | toggle | table | imageBlock | pdfBlock | canvasBlock)+";
 
 // Enter on an empty last line of a callout or toggle leaves it, like leaving a list.
 function leaveOnEmptyEnter(name) {

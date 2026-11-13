@@ -288,7 +288,7 @@ function slashItems() {
 }
 
 // Blocks that cannot sit inside a callout or a toggle (see richnodes.js).
-const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image", "pdf", "canvas"]);
+const TOP_LEVEL_ONLY = new Set(["callout", "columns", "toggle", "table", "image", "pdf"]);
 
 function filterItems(query, editor) {
   const q = query.trim().toLowerCase();

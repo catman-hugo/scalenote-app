@@ -91,6 +91,7 @@ export const strings = {
   settings: {
     open: "Settings",
     title: "Settings",
+    tabs: { look: "Look", pages: "Pages", drawing: "Drawing", updates: "Updates", files: "Files" },
     theme: "Theme",
     themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
     fontSize: "Text size",
