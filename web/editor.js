@@ -392,7 +392,7 @@ export function createEditor(element, onChange, options = {}) {
       Toggle,
       ToggleFold,
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
-      CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),
+      CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null), edit: options.editCanvasRegion || (() => null) }),
       ...tableExtensions,
       SlashMenu,
       LinkShortcut,

@@ -445,6 +445,8 @@ export const strings = {
 
   canvasBlock: {
     title: "Canvas",
+    draw: "Draw",
+    drawLabel: "Draw in this region",
     surface: "A region of this page's canvas",
     missing: "This canvas region could not be found. The drawing is kept in the page's canvas file; the region may have been removed there.",
     readOnly: "This page's drawing cannot be changed here, so no canvas block was added.",

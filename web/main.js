@@ -1537,6 +1537,24 @@ async function loadInk(path, force) {
   return true;
 }
 
+// A drawing view inside a canvas block: the page's own drawing and undo list, limited to one region.
+function editCanvasRegion(host, frame) {
+  const shared = app.canvasView;
+  if (!shared || !app.inkPath) return null;
+  const view = createCanvasView(host, {
+    onChange: () => {
+      app.canvasSave.touch();
+      repaintCanvasBlocks();
+    },
+    onNotice: (text) => showToast(text),
+    penButton: () => app.settings.penButton,
+    snapShapes: () => app.settings.snapShapes,
+  });
+  view.adopt(shared.canvas, shared.history, shared.readOnly);
+  view.setRegion(frame);
+  return { destroy: () => view.destroy() };
+}
+
 // Makes a new region in the page's drawing for a canvas block and gives its id, or null (with a
 // calm message) when the drawing cannot take one. The drawing is loaded first when it is not yet.
 async function createCanvasRegion() {
@@ -1963,6 +1981,7 @@ async function start() {
   app.editor = createEditor(el("editor"), () => app.autosave.touch(), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
     canvasDrawing: inkDrawing,
+    editCanvasRegion,
     createCanvasRegion,
     noteKey: () => (app.current ? app.current.path : null),
     noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
