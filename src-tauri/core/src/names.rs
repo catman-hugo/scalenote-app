@@ -4,7 +4,7 @@
 /// under the 255-byte limit most file systems have.
 const MAX_STEM_CHARS: usize = 100;
 
-const RESERVED: [&str; 22] = [
+pub(crate) const RESERVED: [&str; 22] = [
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
