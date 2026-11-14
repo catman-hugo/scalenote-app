@@ -25,6 +25,8 @@ struct AppState {
     logger: Logger,
     settings_file: PathBuf,
     default_vault: PathBuf,
+    /// The app's own folder (outside any vault): settings, logs and this device's sync identity.
+    data_dir: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -513,6 +515,32 @@ fn set_settings(json: String, state: State<AppState>) -> Result<(), String> {
     })
 }
 
+#[derive(Serialize)]
+struct SyncSettingsReply {
+    name: String,
+    enabled: bool,
+}
+
+/// This device's sync name and on/off switch. They are kept in the app's own folder, never in a
+/// vault, so a copied vault does not carry them along. Nothing is sent anywhere yet (0.5.0).
+#[tauri::command]
+fn get_sync_settings(state: State<AppState>) -> Result<SyncSettingsReply, String> {
+    let loaded = scalenote_core::sync::device::load(&state.data_dir).map_err(|error| {
+        state.logger.log(Level::Warn, &format!("read sync settings failed: {error}"));
+        "io".to_string()
+    })?;
+    Ok(SyncSettingsReply { name: loaded.settings.name, enabled: loaded.settings.enabled })
+}
+
+#[tauri::command]
+fn set_sync_settings(name: Option<String>, enabled: Option<bool>, state: State<AppState>) -> Result<SyncSettingsReply, String> {
+    let saved = scalenote_core::sync::device::update(&state.data_dir, name.as_deref(), enabled).map_err(|error| {
+        state.logger.log(Level::Warn, &format!("save sync settings failed: {error}"));
+        "io".to_string()
+    })?;
+    Ok(SyncSettingsReply { name: saved.name, enabled: saved.enabled })
+}
+
 fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
@@ -533,6 +561,7 @@ fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>>
         logger,
         settings_file: data_dir.join("settings.json"),
         default_vault,
+        data_dir,
     })
 }
 
@@ -590,6 +619,8 @@ pub fn run() {
             read_attachment,
             export_obsidian_copy,
             export_page,
+            get_sync_settings,
+            set_sync_settings,
             trash_entry,
             trash_list,
             trash_restore,

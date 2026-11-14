@@ -2,7 +2,23 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-13, 0.4.12 version bumped (image controls, canvas block with regions, PDF import); built and tested in a browser and by CI builds, NOT tried on a device.
+Last updated: 2026-11-14, 0.5.0 built (sync foundations, no network); built and tested in a browser and with real folders in Rust, NOT tried on a device.
+
+## 0.5.0: built, not tried on a device
+
+Sync foundations, no network. Branch `feature/v0.5.0-sync-foundations`. Release notes: `docs/release-notes/0.5.0.md`; security checklist: `docs/security-checklist-0.5.0.md`.
+
+Done (tried here: 160 Rust tests in the core, 29 of them new and run on real folders; browser tests for the Sync tab; screenshots light and dark, desktop and phone):
+- `scalenote-core::sync::manifest`: the list of files (path, SHA-256, size, time) with a scan that ignores trash, history, hidden folders and half-written files, never follows links, reports skipped files, and has size and count limits; the list as text and read back with strict checks.
+- `sync::plan`: the planner (change on one side, both sides, delete against edit, first sync never deletes, skipped files never count as deleted, case clashes reported, conflict copy names).
+- `sync::device`: a random device id, a cleaned device name and the on/off switch (on by default), kept in the app's data folder outside the vault, written atomically.
+- Settings has a "Sync" tab with the switch and the device name. It says that nothing is sent yet.
+
+Not done / untried:
+- The Tauri commands `get_sync_settings` and `set_sync_settings` are in `src-tauri/src/lib.rs`, which cannot be compiled here (system libraries missing); CI compiles it.
+- The Sync tab has not been seen on a real phone or in the packaged app.
+- The planner and the list are not connected to any transfer yet (0.5.3). Nothing listens or sends.
+- Two dependencies were added with exact versions: sha2 0.10.9 and getrandom 0.3.4 (see DECISIONS.md).
 
 ## 0.2.2 plan (built, see "0.2.2: built"; from the owner's test of 0.2.1 on Linux, 2026-11-04)
 
