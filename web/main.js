@@ -33,6 +33,7 @@ import { openTags } from "./tagsdialog.js";
 import { openHistory } from "./historydialog.js";
 import { createCanvasView } from "./canvasview.js";
 import { createInkLayer } from "./inklayer.js";
+import { createPageFind } from "./pagefind.js";
 import { FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
 import { drawingPicture, paintForPaper, repaintCanvasBlocks } from "./canvasblock.js";
 import { keepPageId } from "./historyrules.js";
@@ -1337,6 +1338,22 @@ function searchShortcut(event) {
   else openSearch();
 }
 
+// Ctrl+F finds a word in the text of the open page and in the PDFs shown in it. It is only
+// there while the page is shown as text; in the markdown view and on the canvas the keys keep
+// their usual job. There is no button for it: the shortcut is the whole feature.
+function findShortcut(event) {
+  const wanted = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f";
+  if (!wanted || event.isComposing || !app.find) return;
+  if (!app.current || !app.editor || el("editor").hidden) return;
+  if (document.querySelector("dialog[open]")) return;
+  event.preventDefault();
+  // Text that is selected on one line is where the search starts. The browser's own selection is
+  // read (not the editor's copy of it, which can be a moment behind a double click).
+  const selection = window.getSelection();
+  const picked = selection && selection.anchorNode && el("editor").contains(selection.anchorNode) ? selection.toString().trim() : "";
+  app.find.open(picked && picked.length <= 100 && !picked.includes("\n") ? picked : "");
+}
+
 // ---------- the open note ----------
 
 async function showNoNote() {
@@ -1355,6 +1372,7 @@ async function showNoNote() {
 }
 
 async function closeCurrentNote() {
+  if (app.find) app.find.close({ quiet: true });
   await leaveInk();
   await leaveCanvas();
   if (app.autosave) await app.autosave.flush();
@@ -1692,6 +1710,8 @@ function applyMode() {
   el("source").hidden = !source;
   el("canvasHost").hidden = !canvas && !split;
   el("panes").classList.toggle("split", Boolean(split));
+  // The find bar goes when the text is not on show (markdown view, canvas).
+  if (app.find && (source || canvas)) app.find.close({ quiet: true });
   const view = el("viewButton");
   view.hidden = !app.current;
   const viewLabel = document.createElement("span");
@@ -1990,6 +2010,7 @@ function wireEvents() {
   el("historyButton").addEventListener("click", openHistoryDialog);
   el("inkButton").addEventListener("click", () => (app.ink && app.ink.active ? stopInk() : startInk()));
   document.addEventListener("keydown", searchShortcut, true);
+  document.addEventListener("keydown", findShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("vaultButton").addEventListener("click", showFolderMenu);
@@ -2052,6 +2073,8 @@ async function start() {
     onNotice: (text) => showToast(text),
   });
   app.editor.on("update", () => app.ink.refresh());
+  app.find = createPageFind({ editor: () => app.editor, after: document.querySelector(".topbar"), onClose: () => app.editor.commands.focus() });
+  app.editor.on("update", () => app.find.refresh());
   app.pageText = createPageText(app.editor);
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),

@@ -4,8 +4,9 @@ Checked by the builder by reading, searches and automatic tests. Not an outside 
 
 | Item | Result |
 |---|---|
-| The PDF text layer only receives text from pdf.js and puts it into the page as plain text through the library's own text layer (no markup is built from PDF text). The find box text is matched as plain text and never run as a pattern or code | Reading of the diff, browser tests |
-| Text read from a PDF is limited: 20,000 pieces per page, 500 characters per piece, 200,000 characters per page, 2,000 find hits | `web/pdfrules.js`, unit tests |
+| The PDF text layer only receives text from pdf.js and puts it into the page as plain text through the library's own text layer (no markup is built from PDF text). The Ctrl+F word is matched as plain text (never as a pattern or code), is limited to 200 characters, and is shown only through `textContent` and decorations | Reading of the diff, browser tests |
+| Find marks are decorations: they are not part of the page, are never saved and never undone; the browser tests check that a page that was searched is written back unchanged | Browser tests |
+| Text read from a PDF is limited: 20,000 pieces per page, 500 characters per piece, 200,000 characters per page, 2,000 find hits per source | `web/pdfrules.js`, unit tests |
 | The text layer sets sizes only through script styles, so the page policy (`style-src 'self'`, no `unsafe-inline`) is unchanged; the browser tests run under that policy and report any violation | Browser tests |
 | Print rules are added through the style sheet's own `insertRule`, not as a style element, and are removed after printing. The pictures in them are made by the app from the page's drawing, never from outside data | Browser tests |
 | Pictures made for printing are limited: 4 million pixels and 8,000 pixels on the longest side each, 40 million characters in all; what does not fit is left out with a message | Reading of the diff |

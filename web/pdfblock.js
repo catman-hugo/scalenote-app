@@ -9,8 +9,7 @@
 
 import { Node } from "@tiptap/core";
 import { bytesOfDataUrl, openPdf, wasCancelled } from "./pdfdoc.js";
-import { icon } from "./icons.js";
-import { TEXT_LIMITS, findInPages, pdfTitle } from "./pdfrules.js";
+import { findInPages, pdfTitle } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -19,6 +18,10 @@ function make(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+
+// Every PDF block on screen, so the page's find bar can ask each one for its hits.
+const finders = new Set();
+export const pdfFinders = () => [...finders];
 
 const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
 
@@ -49,33 +52,13 @@ export const PdfBlock = Node.create({
   addNodeView() {
     const { load } = this.options;
     const t = strings.pdf.block;
-    return ({ node }) => {
+    return ({ node, getPos }) => {
       let current = node;
       const dom = make("figure", "pdf-block");
       const head = make("figcaption", "pdf-block-head");
       const title = make("span", "pdf-block-title");
       const count = make("span", "pdf-block-count");
-      // Find: a small search box, previous / next and a "3 of 12" status.
-      const finder = make("form", "pdf-block-find");
-      const query = make("input");
-      query.type = "search";
-      query.placeholder = t.findPlaceholder;
-      query.setAttribute("aria-label", t.find);
-      query.maxLength = 200;
-      const previous = make("button");
-      previous.type = "button";
-      previous.setAttribute("aria-label", t.findPrevious);
-      previous.title = t.findPrevious;
-      previous.append(icon("chevronUp"));
-      const next = make("button");
-      next.type = "button";
-      next.setAttribute("aria-label", t.findNext);
-      next.title = t.findNext;
-      next.append(icon("chevronDown"));
-      const status = make("span", "pdf-block-find-status");
-      status.setAttribute("role", "status");
-      finder.append(query, previous, next, status);
-      head.append(title, finder, count);
+      head.append(title, count);
       const scroll = make("div", "pdf-block-scroll");
       scroll.tabIndex = 0;
       scroll.setAttribute("role", "group");
@@ -105,7 +88,6 @@ export const PdfBlock = Node.create({
           if (page.task.cancel) page.task.cancel();
           if (page.textTask.cancel) page.textTask.cancel();
         }
-        status.textContent = "";
         void old.pdf.destroy();
         scroll.replaceChildren();
       }
@@ -156,8 +138,9 @@ export const PdfBlock = Node.create({
       }
 
       // ---- find ----
-      // The hits are worked out from the text of every page (read once, then kept), and marked
-      // on the words of the pages that are drawn. Moving to a hit scrolls to its page first.
+      // The page's find bar (pagefind.js) drives this: it asks for the hits of a word, and then
+      // for one hit to be the current one. The hits are worked out from the text of every page
+      // (read once, then kept) and marked on the words of the pages that are drawn.
       function mark(s, page) {
         if (!page.textDivs) return;
         for (const div of page.textDivs) div.classList.remove("pdf-hit", "pdf-hit-current");
@@ -185,45 +168,30 @@ export const PdfBlock = Node.create({
         scroll.scrollTop += at.top - box.top - (box.height - at.height) / 2;
       }
 
-      function showStatus(s) {
+      // Makes hit `k` the current one (-1: none) and scrolls the box to it. A page whose words
+      // are not drawn yet is marked as soon as it has been drawn.
+      function reveal(s, k) {
         const find = s.find;
-        if (!find) status.textContent = "";
-        else if (find.searching) status.textContent = t.findSearching;
-        else if (!find.hits.length) status.textContent = t.findNone;
-        else {
-          const capped = find.hits.length >= TEXT_LIMITS.hits;
-          status.textContent = fill(capped ? t.findMany : t.findCount, { current: find.current + 1, total: find.hits.length });
-        }
-      }
-
-      function go(s, k) {
-        const find = s.find;
-        if (!find || !find.hits.length) return;
-        const total = find.hits.length;
+        if (!find) return;
         const old = find.hits[find.current];
-        find.current = ((k % total) + total) % total;
+        find.current = k >= 0 && k < find.hits.length ? k : -1;
         find.scrollTo = find.current;
         const hit = find.hits[find.current];
-        showStatus(s);
-        const page = s.pages[hit.page - 1];
-        // Scroll so the page is on screen; if its words are drawn already they are marked now,
-        // otherwise they are marked as soon as the page finishes drawing.
-        const boxTop = scroll.scrollTop + page.box.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
-        scroll.scrollTop = Math.max(0, boxTop - 8);
-        if (old && old.page !== hit.page) mark(s, s.pages[old.page - 1]);
-        mark(s, page);
+        if (hit) {
+          const page = s.pages[hit.page - 1];
+          const boxTop = scroll.scrollTop + page.box.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+          scroll.scrollTop = Math.max(0, boxTop - 8);
+          mark(s, page);
+        }
+        if (old && (!hit || old.page !== hit.page)) mark(s, s.pages[old.page - 1]);
       }
 
-      async function search(s) {
-        const text = query.value.trim();
+      // Resolves to the number of hits, or null when a newer search made this one out of date.
+      async function search(s, text) {
         const old = s.find;
-        const find = (s.find = text ? { text, hits: [], current: 0, scrollTo: -1, searching: true } : null);
+        const find = (s.find = text ? { text, hits: [], current: -1, scrollTo: -1 } : null);
         if (old) for (const page of s.pages) mark(s, page);
-        if (!find) {
-          showStatus(s);
-          return;
-        }
-        showStatus(s);
+        if (!find) return 0;
         // Page text is read once for the whole PDF; two searches in a row share it.
         if (!s.texts) {
           s.texts = (async () => {
@@ -240,39 +208,41 @@ export const PdfBlock = Node.create({
           })();
         }
         const pages = await s.texts;
-        if (s.dead || s.find !== find) return;
+        if (s.dead || s.find !== find) return null;
         find.hits = findInPages(pages, text);
-        find.searching = false;
         for (const page of s.pages) mark(s, page);
-        if (find.hits.length) go(s, 0);
-        else showStatus(s);
+        return find.hits.length;
       }
 
-      finder.addEventListener("submit", (event) => {
-        event.preventDefault();
-        if (!session) return;
-        // Enter on an unchanged word means "the next one".
-        if (session.find && session.find.text === query.value.trim() && !session.find.searching) go(session, session.find.current + 1);
-        else void search(session);
-      });
-      let typing = 0;
-      query.addEventListener("input", () => {
-        clearTimeout(typing);
-        typing = setTimeout(() => {
-          if (session) void search(session);
-        }, 300);
-      });
-      previous.addEventListener("click", () => session && go(session, session.find ? session.find.current - 1 : 0));
-      next.addEventListener("click", () => session && go(session, session.find ? session.find.current + 1 : 0));
+      const finder = {
+        dom,
+        pos: () => {
+          const at = typeof getPos === "function" ? getPos() : -1;
+          return typeof at === "number" ? at : -1;
+        },
+        search: async (text) => {
+          await ready;
+          return session ? search(session, text) : 0;
+        },
+        reveal: (k) => {
+          if (session) reveal(session, k);
+        },
+      };
+      finders.add(finder);
 
-      async function start() {
+      // Resolves when the PDF has been opened (or has failed), so a search started while it is
+      // still loading waits for it instead of finding nothing.
+      let ready = Promise.resolve();
+      function start() {
+        ready = begin();
+        return ready;
+      }
+      async function begin() {
         const mine = ++generation;
         stopSession();
         scroll.hidden = false;
         message.hidden = true;
         count.textContent = "";
-        status.textContent = "";
-        query.value = "";
         showTitle();
         let pdf;
         try {
@@ -364,10 +334,10 @@ export const PdfBlock = Node.create({
         },
         // Scrolling, dragging the scroll bar and pressing keys in the box belong to the box,
         // not to the editor.
-        stopEvent: (event) => scroll.contains(event.target) || finder.contains(event.target),
+        stopEvent: (event) => scroll.contains(event.target),
         ignoreMutation: () => true,
         destroy() {
-          clearTimeout(typing);
+          finders.delete(finder);
           generation++;
           stopSession();
         },

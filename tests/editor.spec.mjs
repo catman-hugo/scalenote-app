@@ -7138,42 +7138,6 @@ await test("the words of a PDF page can be selected, and stay see-through", asyn
   assert.equal(await page.locator(".pdf-page").nth(0).locator(".pdf-text").getAttribute("aria-hidden"), "true");
 });
 
-await test("Find in a PDF counts the matches, marks them and moves from one to the next", async (page) => {
-  await slashPdf(page, pdfFile(5));
-  await pdfChoice(page, "Scroll through");
-  await page.waitForSelector(".pdf-text span");
-  const find = page.locator(".pdf-block-find input");
-  const status = page.locator(".pdf-block-find-status");
-  await find.fill("page 3");
-  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "1 of 1");
-  await page.waitForSelector(".pdf-hit-current");
-  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 3");
-  const inView = await page.evaluate(() => {
-    const box = document.querySelector(".pdf-block-scroll").getBoundingClientRect();
-    const hit = document.querySelector(".pdf-hit-current").getBoundingClientRect();
-    return hit.top >= box.top && hit.bottom <= box.bottom;
-  });
-  assert.ok(inView, "the match is scrolled into the box");
-  await find.fill("page");
-  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "1 of 5");
-  await page.click('.pdf-block-find button[aria-label="Next match"]');
-  assert.equal(await status.textContent(), "2 of 5");
-  await page.click('.pdf-block-find button[aria-label="Previous match"]');
-  await page.click('.pdf-block-find button[aria-label="Previous match"]');
-  assert.equal(await status.textContent(), "5 of 5", "going back from the first match wraps to the last");
-  // Enter on the same word is "next".
-  await find.press("Enter");
-  assert.equal(await status.textContent(), "1 of 5");
-  await find.fill("zzzz");
-  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "No matches");
-  assert.equal(await page.locator(".pdf-hit").count(), 0);
-  await find.fill("");
-  await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "");
-  // Typing in the find box is not typing in the note.
-  await waitSaved(page);
-  assert.match((await files(page))["Untitled.md"], /before\n\n!\[Lecture 1\]\(attachments\/Lecture-1\.pdf\)\n$/);
-});
-
 await test("a PDF can sit inside a callout, and is written back as it was", async (page) => {
   await start(page);
   const note = "> [!note] Slides\n> ![Notes](attachments/n.pdf)\n\nafter\n";
@@ -7613,6 +7577,139 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   }
 }
 
+// ---------- 0.4.15: find in the page (Ctrl+F) ----------
+
+async function findOpen(page, text, extra = {}) {
+  await page.waitForSelector("#newNote");
+  await seed(page, "Find.md", text);
+  if (extra.pdf) await page.evaluate((b64) => window.__mock.attachments.set("attachments/n.pdf", b64), makePdf(3).toString("base64"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Find.md"]');
+  await page.waitForSelector(".note-body");
+  if (extra.pdf) await page.waitForSelector(".pdf-text span");
+}
+const findStatus = (page) => page.locator(".find-status").innerText();
+const waitFindStatus = (page, text) => page.waitForFunction((want) => document.querySelector(".find-status").textContent === want, text);
+const findKey = (page) => page.keyboard.press("Control+f");
+
+await test("Ctrl+F opens a find bar for the text of the page, counts hits and moves between them", async (page) => {
+  await findOpen(page, "The cat sat. Another Cat came.\n\nA third cat.\n");
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+  await findKey(page);
+  assert.equal(await page.locator(".find-bar").isVisible(), true);
+  assert.equal(await page.evaluate(() => document.activeElement.className), "find-input", "the cursor is in the bar");
+  await page.keyboard.type("cat");
+  await waitFindStatus(page, "1 of 3");
+  assert.equal(await page.locator(".find-hit").count(), 3, "every hit is marked, whatever its case");
+  assert.equal(await page.locator(".find-hit-current").count(), 1);
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "2 of 3");
+  assert.equal(await page.locator(".find-hit-current").innerText(), "Cat");
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.press("Shift+Enter");
+  assert.equal(await findStatus(page), "3 of 3", "going back from the first hit wraps to the last");
+  await page.fill(".find-input", "zebra");
+  await waitFindStatus(page, "No matches");
+  assert.equal(await page.locator(".find-hit").count(), 0);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+  assert.equal(await page.locator(".find-hit").count(), 0, "the marks go when the bar closes");
+  await page.waitForTimeout(800);
+  assert.equal((await files(page))["Find.md"], "The cat sat. Another Cat came.\n\nA third cat.\n", "finding never changes the page");
+}, ctxOpts);
+
+await test("there is no find button: Ctrl+F is the only way in", async (page) => {
+  await findOpen(page, "text\n");
+  assert.equal(await page.locator("#findButton, .find-button, button[aria-label*='Find']").count(), 0);
+  await openPaletteBox(page);
+  await page.fill(".palette-input", "Find in this page");
+  await page.fill(".palette-input", "Print");
+  await page.waitForFunction(() => document.querySelector(".palette-list").textContent.includes("Print this page"));
+  await page.fill(".palette-input", "Find in");
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator(".palette-list").innerText().then((t) => t.includes("Find in this page")), false, "not in the command list either");
+}, ctxOpts);
+
+await test("Ctrl+F finds in the text and in a PDF, in the order they appear on the page", async (page) => {
+  await findOpen(page, "Page one text\n\n![Lecture](attachments/n.pdf)\n\nThe last page text\n", { pdf: true });
+  await findKey(page);
+  await page.keyboard.type("page");
+  await waitFindStatus(page, "1 of 5");
+  assert.equal(await page.locator(".find-hit-current").innerText(), "Page");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "2 of 5");
+  await page.waitForSelector(".pdf-hit-current");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 1");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "4 of 5");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 3");
+  assert.equal(await page.locator(".find-hit-current").count(), 0, "only one hit stands out at a time");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "5 of 5");
+  assert.equal(await page.locator(".find-hit-current").innerText(), "page");
+  assert.equal(await page.locator(".pdf-hit-current").count(), 0);
+  // The PDF is on screen when its hit is the current one.
+  await page.keyboard.press("Enter");
+  const inView = await page.evaluate(() => {
+    const block = document.querySelector(".pdf-block").getBoundingClientRect();
+    return block.bottom > 0 && block.top < window.innerHeight;
+  });
+  assert.ok(inView);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".pdf-hit").count(), 0, "the PDF marks go too");
+}, ctxOpts);
+
+await test("a word split by bold text, and a link, are found, and a hit in a folded toggle opens it", async (page) => {
+  await findOpen(page, "say he**llo** world\n\nsee [[Other page]] now\n\n<details>\n<summary>Folded</summary>\n\nhidden needle inside\n\n</details>\n");
+  await findKey(page);
+  await page.keyboard.type("hello w");
+  await waitFindStatus(page, "1 of 1");
+  assert.equal((await page.locator(".find-hit").allInnerTexts()).join(""), "hello w");
+  await page.fill(".find-input", "other");
+  await page.waitForFunction(() => [...document.querySelectorAll(".find-hit")].map((n) => n.textContent).join("") === "Other page");
+  assert.deepEqual(await page.locator(".find-hit").allInnerTexts(), ["Other page"], "a link is found by the name it shows");
+  await page.fill(".find-input", "needle");
+  await page.waitForSelector(".find-hit-current");
+  await page.waitForFunction(() => document.querySelector(".find-hit-current").textContent === "needle");
+  assert.equal(await page.locator(".toggle.folded").count(), 0, "the toggle opened to show the hit");
+  assert.equal(await page.locator(".find-hit-current").isVisible(), true);
+}, ctxOpts);
+
+await test("typing in the page while the bar is open searches again and keeps the text", async (page) => {
+  await findOpen(page, "one cat\n");
+  await findKey(page);
+  await page.keyboard.type("cat");
+  await waitFindStatus(page, "1 of 1");
+  await page.click(".note-body p");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" and a cat");
+  await waitFindStatus(page, "1 of 2");
+  await waitSaved(page);
+  assert.equal(bodyOfPage((await files(page))["Find.md"]), "one cat and a cat\n");
+}, ctxOpts);
+
+await test("Ctrl+F is left alone in the markdown view", async (page) => {
+  await findOpen(page, "some text\n");
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#source:not([hidden])");
+  await findKey(page);
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+}, ctxOpts);
+
+await test("a selected word starts the search, and the bar closes when another page opens", async (page) => {
+  await findOpen(page, "alpha beta gamma\n");
+  await page.evaluate(() => window.__mock.files.set("Other.md", "beta again\n"));
+  await page.click("#newFolder");
+  await page.dblclick(".note-body p");
+  await findKey(page);
+  assert.equal(await page.locator(".find-input").inputValue().then((v) => v.trim()), await page.evaluate(() => window.getSelection().toString().trim()) || "alpha");
+  await waitFindStatus(page, "1 of 1");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "Other");
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+}, ctxOpts);
+
 // ---------- 0.4.15: drawings in export ----------
 
 const exportViaPalette = async (page) => {
@@ -7762,8 +7859,9 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.click("#newFolder");
       await page.click('.tree-button[data-path="Slides.md"]');
       await page.waitForSelector(".pdf-text span");
-      await page.fill(".pdf-block-find input", "page");
-      await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "1 of 3");
+      await page.keyboard.press("Control+f");
+      await page.keyboard.type("page");
+      await page.waitForFunction(() => document.querySelector(".find-status").textContent === "1 of 3");
       await page.waitForTimeout(300);
       if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
       await page.screenshot({ path: `${shots}/v0415-${label}-${scheme}-1-pdf-find.png` });

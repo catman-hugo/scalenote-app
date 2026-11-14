@@ -221,6 +221,17 @@ export const strings = {
     saveFailed: "The ink could not be saved.",
   },
 
+  find: {
+    placeholder: "Find in this page",
+    previous: "Previous match",
+    next: "Next match",
+    close: "Close find",
+    searching: "Searching…",
+    none: "No matches",
+    count: "{current} of {total}",
+    many: "{current} of more than {total}",
+  },
+
   printPage: {
     inkSkipped: "Some of the drawing over the text was too large to print and was left out.",
   },
@@ -479,14 +490,6 @@ export const strings = {
       pageCount: "{count} pages",
       pageCountOne: "1 page",
       pageLabel: "Page {page}",
-      find: "Find in PDF",
-      findPlaceholder: "Find",
-      findPrevious: "Previous match",
-      findNext: "Next match",
-      findSearching: "Searching…",
-      findNone: "No matches",
-      findCount: "{current} of {total}",
-      findMany: "{current} of more than {total}",
       missing: "This PDF could not be shown. The file is missing or is not a PDF.",
       failed: "This PDF could not be read. It may be damaged or protected with a password.",
     },

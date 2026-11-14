@@ -627,8 +627,8 @@ Decision. Ink drawn over the text of a page is part of print and save-as-PDF (as
 Alternatives. One picture per inked block placed under the block in the exported markdown (rejected for now: it would put pictures between the paragraphs of a page that other programs show as plain text, and the ink would no longer move with the words); a full-page picture of text and ink (rejected: the export would no longer be text).
 Cost. A person who exports a page loses the ink over the text. The toast after export says so. It can be added later as an option if it is missed.
 
-## 2026-11-14: PDF text is selected and searched in the block, not in the page search
+## 2026-11-14: One find for the whole page, opened with Ctrl+F only
 
-Decision. The PDF block lays a see-through text layer over each drawn page and has its own find box. Searching the PDF text from the global search is left to 1.12.
-Alternatives. Reading PDF text into the global index now (rejected: it needs a stored index and a size policy, planned for 1.12).
-Cost. A find hit split over two pieces of text in the PDF is not found, and a hit marks the whole piece of text.
+Decision. Finding a word is one feature for the whole page: Ctrl+F opens a find bar that searches the text and the PDFs shown in the page and visits the hits in page order. There is no PDF-only search. It has no button and no entry in the command list; the shortcut is the whole feature. Searching PDF text from the global search stays in 1.12.
+Alternatives. A find box in each PDF block (built first, then rejected by the owner: two kinds of search for one page); a find button in the top bar or the View menu (rejected by the owner).
+Cost. A phone or tablet without a keyboard has no way to open it. A hit split over two pieces of text in a PDF is not found, and a PDF hit marks the whole piece of text.
