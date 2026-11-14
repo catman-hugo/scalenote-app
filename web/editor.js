@@ -26,7 +26,7 @@ import { ToggleFold } from "./togglefold.js";
 // vault first, and only then an image block is placed in the note.
 // `create()` makes a region in the page's drawing and resolves to its id, or null when it cannot.
 let canvasOptions = { create: async () => null };
-let pictureOptions = { onProblem: () => {}, noteKey: () => null, pdfDialog: () => null };
+let pictureOptions = { onProblem: () => {}, noteKey: () => null, pdfDialog: () => null, jobCard: () => null, pageToken: () => null, addToPage: async () => {}, notify: () => {} };
 
 async function insertPictures(editor, files, position) {
   const key = pictureOptions.noteKey();
@@ -44,35 +44,74 @@ async function insertPictures(editor, files, position) {
   }
 }
 
+// Only one PDF is added at a time, so two imports never fight over the same page.
+let importing = false;
+
 // A PDF: asks how to add it, stores what is needed in the vault, and only then changes the page.
+// Adding pages as pictures can take minutes, so it runs in the background behind a small
+// progress card and the person can keep working, even on another page. When it is done the
+// pictures go where they were asked for: at the same spot if the page stayed open (the spot
+// moves along with the text typed meanwhile), otherwise at the end of that page.
 async function insertPdf(editor, file, position) {
   const dialog = pictureOptions.pdfDialog();
-  const key = pictureOptions.noteKey();
-  if (!dialog) return;
-  const mode = await askPdfMode(dialog, file.name);
-  if (!mode) return;
-  const progress = showProgress(dialog, file.name);
+  const card = pictureOptions.jobCard();
+  if (!dialog || !card) return;
+  if (importing) {
+    pictureOptions.onProblem("import_busy");
+    return;
+  }
+  importing = true;
+  let progress = null;
+  let follow = null;
   try {
+    const mode = await askPdfMode(dialog, file.name);
+    dialog.close();
+    if (!mode) return;
+    const key = pictureOptions.noteKey();
+    const token = pictureOptions.pageToken();
+    let at = typeof position === "number" ? position : editor.state.selection.to;
+    follow = ({ transaction }) => {
+      if (transaction.docChanged) at = transaction.mapping.map(at);
+    };
+    editor.on("transaction", follow);
+    progress = showProgress(card, file.name);
     let content;
+    let pages;
     if (mode === "scroll") {
-      progress.update(1, 1);
+      progress.update(0, 1);
       const path = await storePdf(file);
       content = [{ type: "pdfBlock", attrs: { alt: pdfTitle(file.name), path } }, { type: "paragraph" }];
     } else {
-      const pages = await importPages(file, { progress: progress.update, stopped: progress.stopped });
+      pages = await importPages(file, { progress: progress.update, stopped: progress.stopped });
       if (!pages) return;
       content = pages.flatMap((page) => [{ type: "imageBlock", attrs: { alt: page.alt, path: page.path } }, { type: "paragraph" }]);
     }
-    // The person may have opened another page while this was working.
-    if (pictureOptions.noteKey() !== key) return;
-    if (typeof position === "number") editor.commands.setTextSelection(Math.min(position, editor.state.doc.content.size));
-    editor.chain().focus().insertContent(content).run();
+    if (token && pictureOptions.pageToken() === token) {
+      // The same page was open all the time: put it where it was asked for, without taking the
+      // cursor away from what the person is doing.
+      editor.commands.insertContentAt(Math.min(at, editor.state.doc.content.size), content);
+    } else if (pages) {
+      try {
+        await pictureOptions.addToPage(key, pages);
+      } catch {
+        throw Object.assign(new Error("pdf_page_gone"), { code: "pdf_page_gone" });
+      }
+      pictureOptions.notify(fillText(strings.pdf.doneElsewhere, { count: pages.length, name: pdfTitle(file.name), page: pageTitleOf(key) }));
+    } else {
+      // A PDF block needs the page open to be placed; the file stays in the vault.
+      pictureOptions.onProblem("pdf_page_gone");
+    }
   } catch (error) {
     pictureOptions.onProblem(error && error.code ? error.code : "unknown");
   } finally {
-    progress.finish();
+    if (follow) editor.off("transaction", follow);
+    if (progress) progress.finish();
+    importing = false;
   }
 }
+
+const fillText = (text, values) => text.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+const pageTitleOf = (key) => String(key || "").split("/").pop().replace(/\.md$/i, "");
 
 const PictureInput = Extension.create({
   name: "pictureInput",
@@ -404,7 +443,15 @@ const SlashMenu = Extension.create({
 // `options.loadImage(path)` gives the picture for an image block as a data: address.
 export function createEditor(element, onChange, options = {}) {
   canvasOptions = { create: options.createCanvasRegion || (async () => null) };
-  pictureOptions = { onProblem: options.onProblem || (() => {}), noteKey: options.noteKey || (() => null), pdfDialog: options.pdfDialog || (() => null) };
+  pictureOptions = {
+    onProblem: options.onProblem || (() => {}),
+    noteKey: options.noteKey || (() => null),
+    pdfDialog: options.pdfDialog || (() => null),
+    jobCard: options.jobCard || (() => null),
+    pageToken: options.pageToken || (() => null),
+    addToPage: options.addToPage || (async () => {}),
+    notify: options.notify || (() => {}),
+  };
   const editor = new Editor({
     element,
     // The page has a strict content security policy that forbids injected styles, so the

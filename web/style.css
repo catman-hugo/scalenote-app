@@ -1831,7 +1831,7 @@ button.danger:hover { background: var(--bg-hover); }
 /* Printing and "save as PDF": the page title and the page itself, on white, with no controls. */
 @media print {
   :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
-  .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host, .ink-layer, .ink-bar, .ink-menus, .find-bar { display: none !important; }
+  .sidebar, .banner, .toast, .job-card, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host, .ink-layer, .ink-bar, .ink-menus, .find-bar { display: none !important; }
   .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; background: #fff; }
   .title { border: 0; padding-left: 0; }
   .note-body { max-width: none; padding: 0; }
@@ -1974,3 +1974,24 @@ button.danger:hover { background: var(--bg-hover); }
 .pdf-option-title { font-weight: 600; }
 .pdf-option-hint { color: var(--text-soft); font-size: var(--text-s); }
 .pdf-progress { margin: var(--space-3) 0; }
+
+/* The progress card of a PDF import. It is not a box: the page stays usable underneath. */
+.job-card[hidden] { display: none; }
+.job-card {
+  position: fixed;
+  z-index: 40;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  width: min(320px, calc(100vw - 32px));
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: var(--text-s);
+}
+.job-card p { margin: 0 0 var(--space-2); }
+.job-title { font-weight: 600; overflow-wrap: anywhere; }
+.job-hint { color: var(--text-soft); }
+.job-actions { display: flex; justify-content: flex-end; }

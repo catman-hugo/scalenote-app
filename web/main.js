@@ -2,6 +2,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appearance.js";
+import { writeImage } from "./richblocks.js";
 import { openSettings } from "./settings.js";
 import { checkForUpdate, platformOf, shouldCheck } from "./updates.js";
 import { startInstall } from "./apkinstall.js";
@@ -1282,6 +1283,29 @@ async function planLinkUpdates(path) {
   }
 }
 
+// Pictures made by a background PDF import go at the end of the page they were asked for. When
+// that page is open they go in through the editor (or the source box), so the page's own saving
+// stays in charge of the file; when it is not open the file is read and written back with the
+// version it had, like any other change to a page that is not open.
+async function addPicturesToPage(path, pages) {
+  const blocks = pages.map((page) => writeImage({ attrs: { alt: page.alt, path: page.path } }));
+  if (app.current && app.current.path === path) {
+    if (app.mode === "source") {
+      const box = el("source");
+      box.value = `${box.value.replace(/\s*$/, "")}\n\n${blocks.join("\n\n\n")}\n`;
+      box.dispatchEvent(new Event("input"));
+    } else {
+      const content = pages.flatMap((page) => [{ type: "imageBlock", attrs: { alt: page.alt, path: page.path } }, { type: "paragraph" }]);
+      app.editor.commands.insertContentAt(app.editor.state.doc.content.size, content);
+    }
+    return;
+  }
+  const note = await backend.readNote(path);
+  const added = `\n\n${blocks.join("\n\n\n")}\n`;
+  const text = note.text.replace(/\s*$/, "") + (note.text.includes("\r\n") ? added.replace(/\n/g, "\r\n") : added);
+  await backend.writeNote(path, text, note.version);
+}
+
 // After the page was renamed: points the links in the pages found by `planLinkUpdates` at the new
 // name. A page that cannot be written (it changed meanwhile, say) is skipped and counted, and the
 // rename itself is never undone. The open page is reloaded if it was one of the changed ones.
@@ -2125,6 +2149,9 @@ async function start() {
     openTag: (name) => openTagsDialog(name),
     onProblem: (code) => showBanner((strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown).replace("{limit}", String(PDF_LIMITS.importPages))),
     pdfDialog: () => el("pdfBox"),
+    jobCard: () => el("pdfJob"),
+    pageToken: () => app.current,
+    addToPage: addPicturesToPage,
   });
   app.editor.on("transaction", rememberFolds);
   app.ink = createInkLayer({

@@ -94,3 +94,24 @@ export function pageFileName(name, page, total) {
   const digits = String(total).length;
   return `${pdfTitle(name)}-p${String(page).padStart(digits, "0")}.jpg`;
 }
+
+/**
+ * How many seconds are left, worked out from the pages finished so far. Null until two pages
+ * are done (one page says too little: the first is often slower than the rest) and when
+ * nothing is left. The pace of the finished pages is applied to the pages still to do.
+ */
+export function secondsLeft(done, total, elapsedMs) {
+  if (!(done >= 2) || !(total > done) || !(elapsedMs > 0)) return null;
+  return Math.round(((elapsedMs / done) * (total - done)) / 1000);
+}
+
+/**
+ * Rounds a number of seconds for showing as an estimate: to 5 seconds under a minute, then to
+ * whole minutes (half minutes would look more exact than it is).
+ * Returns { minutes, seconds }, one of them 0.
+ */
+export function roundEstimate(seconds) {
+  const rounded = Math.max(5, Math.ceil(seconds / 5) * 5);
+  if (rounded < 60) return { minutes: 0, seconds: rounded };
+  return { minutes: Math.max(1, Math.round(seconds / 60)), seconds: 0 };
+}

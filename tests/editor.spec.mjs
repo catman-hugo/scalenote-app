@@ -7100,6 +7100,106 @@ await test("Pages as images makes one picture per page with an empty line after 
   assert.equal(await page.locator(".image-block").count(), 3);
 });
 
+// ---------- a PDF added as pictures runs in the background ----------
+// Saving each picture is slowed down a little so the import is still running while the test
+// does other things.
+const slowPictures = (ms = 120) => (page) => page.addInitScript((delay) => {
+  const real = HTMLCanvasElement.prototype.toBlob;
+  HTMLCanvasElement.prototype.toBlob = function slow(callback, ...rest) { setTimeout(() => real.call(this, callback, ...rest), delay); };
+}, ms);
+const startPagesImport = async (page, count = 8) => {
+  await slashPdf(page, pdfFile(count));
+  await pdfChoice(page, "Pages as images");
+  await page.waitForSelector("#pdfJob:not([hidden])");
+};
+
+await test("while pages are being added a small card shows the progress and the time left, and the page stays usable", async (page) => {
+  await startPagesImport(page, 12);
+  assert.equal(await page.evaluate(() => document.querySelector("#pdfBox").open), false, "no box is in the way");
+  assert.match(await page.textContent("#pdfJob"), /Adding Lecture 1/);
+  assert.match(await page.textContent("#pdfJob"), /You can keep working/);
+  await page.waitForFunction(() => /About .+ left/.test(document.querySelector("#pdfJob .job-left").textContent), null, { timeout: 15000 });
+  assert.match(await page.textContent("#pdfJob .job-status"), /^\d+ of 12 pages done$/);
+  // Typing works while it runs.
+  await page.click("#editor .note-body");
+  await page.keyboard.type(" and more");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 12, null, { timeout: 30000 });
+  await page.waitForSelector("#pdfJob", { state: "hidden" });
+  await waitSaved(page);
+  const text = (await files(page))["Untitled.md"];
+  assert.match(text, /before/);
+  assert.match(text, /and more/);
+  const order = [...text.matchAll(/Lecture-1-p(\d+)\.jpg/g)].map((m) => Number(m[1]));
+  assert.deepEqual(order, Array.from({ length: 12 }, (_, i) => i + 1), "the pages are in order");
+}, { before: slowPictures() });
+
+await test("text typed above the spot while pages are added does not move the pictures away from their spot", async (page) => {
+  await slashPdf(page, pdfFile(6));
+  await pdfChoice(page, "Pages as images");
+  await page.waitForSelector("#pdfJob:not([hidden])");
+  await page.click("#editor .note-body");
+  await page.keyboard.press("Control+Home");
+  await page.keyboard.type("TOP ");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 6, null, { timeout: 30000 });
+  await waitSaved(page);
+  const text = (await files(page))["Untitled.md"];
+  assert.match(text, /^(---\n[^]*?---\n\n)?TOP before\n/, "the new text is above");
+  assert.ok(text.indexOf("TOP") < text.indexOf("Lecture-1-p1"));
+}, { before: slowPictures() });
+
+await test("pages are added to the page they were asked for, even after going to another page", async (page) => {
+  await startPagesImport(page, 6);
+  // Leave for a new page and write there.
+  await page.click("#newNote");
+  await page.waitForFunction(() => document.querySelector("#title").value !== "Untitled" || true);
+  await page.click("#editor .note-body");
+  await page.keyboard.type("other page text");
+  await page.waitForSelector("#pdfJob", { state: "hidden", timeout: 30000 });
+  await page.waitForFunction(() => /Added 6 pages of Lecture 1 to Untitled/.test(document.querySelector("#toast").textContent), null, { timeout: 5000 });
+  await waitSaved(page);
+  const all = await files(page);
+  const withPictures = Object.entries(all).filter(([, text]) => text.includes("Lecture-1-p6.jpg"));
+  assert.equal(withPictures.length, 1, "exactly one page got the pictures");
+  const [name, text] = withPictures[0];
+  assert.match(text, /before/, `the pictures are in the page they were asked for (${name})`);
+  assert.doesNotMatch(text, /other page text/);
+  const other = Object.entries(all).find(([, t]) => t.includes("other page text"));
+  assert.ok(other && !other[1].includes("Lecture-1"), "the page that was open meanwhile is untouched");
+  // The first page, opened again, shows all pictures in order.
+  await page.click(`.tree-button[data-path="${name}"]`);
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 6);
+}, { before: slowPictures() });
+
+await test("Stop ends the import, the page stays as it was, and a second import is refused while one runs", async (page) => {
+  await startPagesImport(page, 10);
+  await page.evaluate(() => { window.__try = true; });
+  // A second PDF while the first runs is refused with a clear message.
+  const chooser = new Promise((resolve) => page.once("filechooser", resolve));
+  await page.click("#editor .note-body");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/pdf");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  await (await chooser).setFiles(pdfFile(2, "Second.pdf"));
+  await page.waitForFunction(() => /still being added/.test(document.body.innerText));
+  assert.equal(await page.evaluate(() => document.querySelector("#pdfBox").open), false);
+  await page.click("#pdfJob button");
+  await page.waitForSelector("#pdfJob", { state: "hidden", timeout: 30000 });
+  assert.equal(await page.locator(".image-block").count(), 0, "nothing was put in the page");
+  // After stopping, a new import can start again.
+  await slashPdf(page, pdfFile(2, "Third.pdf")).catch(() => {});
+}, { before: slowPictures() });
+
+await test("a page that is gone when its pictures are ready says so, and nothing breaks", async (page) => {
+  await startPagesImport(page, 6);
+  // Go to another page, then make the first one disappear from the vault behind the app's back.
+  await page.click("#newNote");
+  await page.evaluate(() => { for (const key of [...window.__mock.files.keys()]) if (!key.startsWith("Untitled 2")) window.__mock.files.delete(key); });
+  await page.waitForSelector("#pdfJob", { state: "hidden", timeout: 30000 });
+  await page.waitForFunction(() => /page they were for is gone/.test(document.querySelector("#banner").textContent), null, { timeout: 5000 });
+  assert.equal(await page.evaluate(() => [...window.__mock.files.values()].some((t) => t.includes("Lecture-1-p"))), false);
+}, { before: slowPictures() });
+
 await test("a PDF of more than 100 pages is refused as pictures with a clear message, and nothing is stored", async (page) => {
   await slashPdf(page, pdfFile(101, "Big.pdf"));
   await pdfChoice(page, "Pages as images");
