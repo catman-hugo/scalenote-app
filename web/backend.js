@@ -48,6 +48,11 @@ export const backend = {
   exportPage: (path, drawing = null) => call("export_page", { path, drawing }),
   // This device's sync name and on/off switch: { name, enabled }. Kept outside the vault.
   getSyncSettings: () => call("get_sync_settings"),
+  syncStatus: () => call("sync_status"),
+  syncStartPairing: () => call("sync_start_pairing"),
+  syncStopPairing: () => call("sync_stop_pairing"),
+  syncJoin: (address, code) => call("sync_join", { address, code }),
+  syncRemovePeer: (id) => call("sync_remove_peer", { id }),
   setSyncSettings: (patch) => call("set_sync_settings", { name: patch.name ?? null, enabled: patch.enabled ?? null }),
   // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
   trash: (path) => call("trash_entry", { path }),

@@ -13,6 +13,10 @@
   const history = new Map(); // path -> [{ id, time (seconds), text }]
   let trashSeq = 0;
   const syncDevice = { name: "this-device", enabled: true };
+  // Stand-in for the pairing service. The real rules (codes, attempts, keys) are tested in Rust
+  // with real connections; here the screen is driven with a fixed code.
+  const syncPairing = { peers: [], events: [], secondsLeft: null };
+  const syncStamp = () => "2026-01-01T12:00:00Z";
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
   const fail = (code) => { throw code; };
   const unique = (parent, stem, ext, exists) => {
@@ -113,6 +117,46 @@
       if (enabled !== null && enabled !== undefined) syncDevice.enabled = enabled;
       window.__syncSaves = (window.__syncSaves || 0) + 1;
       return { ...syncDevice };
+    },
+    sync_status: () => {
+      if (window.__failSync) fail("io");
+      if (syncPairing.secondsLeft !== null && window.__pairTick) syncPairing.secondsLeft = Math.max(0, syncPairing.secondsLeft - 1);
+      if (syncPairing.secondsLeft === 0) syncPairing.secondsLeft = null;
+      return {
+        problem: null,
+        enabled: syncDevice.enabled,
+        listeningPort: 47821,
+        address: window.__noAddress ? null : "192.168.1.20",
+        fingerprint: "ab12 cd34 ef56 7890 1234",
+        peers: syncPairing.peers.map((p) => ({ ...p })),
+        pairingSecondsLeft: syncPairing.secondsLeft,
+        events: [...syncPairing.events].reverse(),
+      };
+    },
+    sync_start_pairing: () => {
+      if (window.__failPairing) fail(window.__failPairing);
+      if (!syncDevice.enabled) fail("sync_off");
+      syncPairing.secondsLeft = 120;
+      window.__pairStarts = (window.__pairStarts || 0) + 1;
+      return "12345678";
+    },
+    sync_stop_pairing: () => {
+      syncPairing.secondsLeft = null;
+      window.__pairStops = (window.__pairStops || 0) + 1;
+    },
+    sync_join: ({ address, code }) => {
+      window.__joins = [...(window.__joins || []), { address, code }];
+      if (code.length !== 8) fail("pair_bad_code");
+      if (window.__failJoin) fail(window.__failJoin);
+      syncPairing.peers.push({ id: "k" + syncPairing.peers.length, name: "bob-laptop", fingerprint: "1111 2222 3333 4444 5555", added: syncStamp() });
+      syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "bob-laptop" });
+      return "bob-laptop";
+    },
+    sync_remove_peer: ({ id }) => {
+      const before = syncPairing.peers.length;
+      syncPairing.peers = syncPairing.peers.filter((p) => p.id !== id);
+      syncPairing.events.push({ when: syncStamp(), kind: "removed", name: "bob-laptop" });
+      return syncPairing.peers.length < before;
     },
     // The page export is made by Rust (tested there with real files); here it is only recorded.
     export_page: ({ path, drawing }) => {
@@ -276,5 +320,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { peerPairs: () => { syncPairing.peers.push({ id: "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp() }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

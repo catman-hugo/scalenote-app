@@ -650,3 +650,28 @@ Cost. Two more names in the dependency list to keep an eye on at each update.
 Decision. Adding a PDF as pictures runs behind a small progress card (pages done, time left, Stop) instead of a box that blocks the app. The person can keep working or open other pages; the pictures go into the page the import was started from (at the same spot if the page stayed open, otherwise at the end of that page). Only one PDF is added at a time. To speed it up without losing quality, two canvases take turns, so a page is encoded and saved while the next one is painted. Size (1.5 times the paper size) and JPEG quality (0.8) are unchanged.
 Alternatives. A lower size or quality setting (rejected by the owner: no loss of quality); painting two pages at once (tried: not faster here, so not kept); doing the whole import in a worker (rejected for now: painting a page needs the screen's own canvas code, and a larger change for an unknown gain).
 Cost. The gain is modest: about 10 to 15 percent in a desktop browser test; painting still dominates, so a phone will gain little. The import stops if the app is closed (the pictures made so far stay in the vault, unused). Whether Android keeps it running with the app off screen is not known until tried.
+
+## 2026-11-14: Pairing with a short code, Noise and SPAKE2
+
+Decision. Devices talk over an encrypted connection (Noise XX with 25519 keys) and trust each other by the other's pinned public key. To pair, one device shows a one-time 8-digit code for 2 minutes with 3 tries; the other types it. The code is used with SPAKE2 so it never travels and cannot be tested offline by a listener, and both sides then confirm with a tag over both public keys, so a device in the middle cannot swap keys. The connection port defaults to 47821 and the service listens only while a device is paired or the pairing screen is open.
+Alternatives. A QR code (rejected for now: a computer has no camera for a phone's code and the other way round; may be added later); trusting the first device that connects (rejected: anyone on the Wi-Fi could pair); a long code (rejected: hard to type on a phone; the attempt limit makes 8 digits enough on a home network).
+Cost. Someone on the same network can try the code: 3 tries in 2 minutes, about a 1 in 33 million chance. The code has to be typed with the address until 0.5.2 finds devices by itself.
+
+## 2026-11-14: Libraries for pairing (snow, spake2, hmac, zeroize, keyring)
+
+Decision. snow 0.10.0 (Noise protocol), spake2 0.4.0 (code-based key agreement), hmac 0.12.1 (confirmation tags), zeroize 1.8.2 (clear key memory) and, on Windows only, keyring 3.6.3 (system credential storage), all pinned to exact versions, used with their own documentation checked (function names compiled against the real crates, not remembered). snow is built with only the pieces needed (25519, ChaCha20-Poly1305, SHA-256, system random numbers). No existing version in the lock file changed.
+Alternatives. Writing the handshake by hand (rejected: exactly the code that goes wrong quietly); TLS with certificates (rejected: pinned keys are simpler to reason about than a certificate authority for devices at home); one library for the Windows, Linux and Android key storage (rejected: the Linux one needs system parts that may be missing).
+Cost. Five more names in the dependency list to watch at each update.
+
+## 2026-11-14: Where the private key lives (exception to the secure-storage rule)
+
+Decision. On Windows the private key is stored in the system credential storage. On Linux and Android it is stored in a file only the app's user can read (permission 0600), written atomically, inside the app's own data folder, never in a vault, a log or the repository. A key that cannot be read is reported and is never silently replaced.
+Alternatives. Linux Secret Service (needs libdbus and a running secret service, which a plain desktop may not have: pairing could silently fail there); Android Keystore (needs Kotlin code, planned in 0.5.4); no key storage at all (not possible).
+Cost. This is an exception to "secrets go in the system's secure storage". On Linux and Android, anything that can read the app's private folder can read the key (another program of the same user; on Android only with root). Closed in 0.5.4 for Android; for Linux when a safe way without extra system parts is found.
+
+## 2026-11-14: The version number stays 0.5.0 until LAN sync works
+
+Decision. The owner holds the release until sync between two devices on one network works. 0.5.1 to 0.5.4 are built as slices on separate branches and described in PROGRESS.md and `docs/release-notes/`, but the app's version number is not changed and nothing is tagged until the owner releases the finished sync.
+Alternatives. Bumping the number for each slice (rejected: it would make unfinished slices look like releases to the update check).
+Cost. The release notes file names (0.5.1 and so on) are ahead of the number the app shows.
+

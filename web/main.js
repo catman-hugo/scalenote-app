@@ -43,6 +43,7 @@ import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { PDF_LIMITS } from "./pdfrules.js";
+import { pairingRows } from "./syncpairing.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
@@ -494,6 +495,7 @@ function syncSettingsRows() {
     textElement("p", s.syncNotYet, "setting-hint"),
     textElement("p", s.syncRules, "setting-hint"),
     status,
+    ...pairingRows(logProblem),
   ];
 }
 
