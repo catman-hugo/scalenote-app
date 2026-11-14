@@ -221,6 +221,10 @@ export const strings = {
     saveFailed: "The ink could not be saved.",
   },
 
+  printPage: {
+    inkSkipped: "Some of the drawing over the text was too large to print and was left out.",
+  },
+
   exportPage: {
     done: "Exported to {path}. The folder holds the page and {pictures} pictures.",
     missing: " {missing} pictures could not be copied.",

@@ -34,7 +34,7 @@ import { openHistory } from "./historydialog.js";
 import { createCanvasView } from "./canvasview.js";
 import { createInkLayer } from "./inklayer.js";
 import { FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
-import { repaintCanvasBlocks } from "./canvasblock.js";
+import { paintForPaper, repaintCanvasBlocks } from "./canvasblock.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
@@ -942,6 +942,22 @@ async function printCurrentPage() {
   if (app.autosave) await app.autosave.flush();
   window.print();
 }
+
+// Drawings are made ready for paper just before the print window opens and put back when it is
+// closed. This is done on the browser's own before/after-print events, so it also holds when
+// printing is started with the keyboard and not from the menu.
+function getReadyForPaper() {
+  paintForPaper(true);
+  if (!app.ink) return;
+  const report = app.ink.printPrepare();
+  if (report.skipped) showToast(strings.printPage.inkSkipped);
+}
+function backFromPaper() {
+  paintForPaper(false);
+  if (app.ink) app.ink.printClear();
+}
+window.addEventListener("beforeprint", getReadyForPaper);
+window.addEventListener("afterprint", backFromPaper);
 
 function drawHistoryButton() {
   const button = el("historyButton");

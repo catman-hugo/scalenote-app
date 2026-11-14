@@ -23,6 +23,15 @@ export function repaintCanvasBlocks() {
   for (const view of views) view.paint();
 }
 
+// While a page is printed (or saved as a PDF) drawings are painted as they are on paper: black
+// ink on a white sheet, whatever theme is on screen. Paper is white, and white ink would vanish.
+let forPaper = false;
+export function paintForPaper(on) {
+  if (forPaper === on) return;
+  forPaper = on;
+  repaintCanvasBlocks();
+}
+
 /**
  * Paints the part of `canvas` inside `frame` onto `surface`, scaled down to fit `width` pixels
  * when the frame is wider (never scaled up). Returns the size on the page.
@@ -39,6 +48,10 @@ export function paintRegion(surface, canvas, frame, width) {
   const ctx = surface.getContext("2d");
   const env = { wrapped: new WeakMap() };
   readEnv(env);
+  if (forPaper) {
+    env.background = "#ffffff";
+    env.colours.ink = "#000000";
+  }
   env.pageFill = pageFill(canvas.page, env.background);
   const painter = createPainter(ctx, env);
   ctx.setTransform(1, 0, 0, 1, 0, 0);

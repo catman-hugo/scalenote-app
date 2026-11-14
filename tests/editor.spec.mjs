@@ -7613,6 +7613,90 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   }
 }
 
+// ---------- 0.4.15: drawings in print ----------
+
+await test("in a dark theme the printed text is still dark on white", async (page) => {
+  await inkVault(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await page.emulateMedia({ media: "print" });
+  const colours = await page.evaluate(() => {
+    const rgb = (el) => getComputedStyle(el).color.match(/\d+/g).slice(0, 3).map(Number);
+    return { text: rgb(document.querySelector("#editor .note-body p")), page: getComputedStyle(document.body).backgroundColor };
+  });
+  assert.ok(colours.text.every((v) => v < 90), `the text prints dark, got ${colours.text}`);
+  assert.equal(colours.page, "rgb(255, 255, 255)");
+}, ctxOpts);
+
+await test("printing puts the ink over the text on paper, and takes it away when printing is done", async (page) => {
+  await inkVault(page);
+  await startInk(page);
+  const second = await blockBox(page, 1);
+  await inkPen(page, horizontalLine(second));
+  await waitInkSaved(page);
+  await page.emulateMedia({ media: "print" });
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  const report = await page.evaluate(() => {
+    const blocks = [...document.querySelector("#editor .note-body").children];
+    return blocks.map((b) => getComputedStyle(b).backgroundImage);
+  });
+  assert.equal(report[0], "none", "a block without ink gets no picture");
+  assert.match(report[1], /^url\("data:image\/png;base64,/, "the inked block gets its ink as a picture");
+  assert.equal(report[2], "none");
+  // The picture really holds ink, black for the "ink" pen on white paper, whatever the theme.
+  const pixels = await page.evaluate(async () => {
+    const block = document.querySelector("#editor .note-body").children[1];
+    const url = getComputedStyle(block).backgroundImage.slice(5, -2);
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let n = 0;
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 0) { n++; if (data[i] < 40 && data[i + 1] < 40 && data[i + 2] < 40) dark++; }
+    return { n, dark };
+  });
+  assert.ok(pixels.n > 100, "ink is in the picture");
+  assert.ok(pixels.dark > pixels.n / 2, "and it is black");
+  assert.equal(await page.locator(".ink-layer").isVisible(), false, "the live sheet is not printed");
+  const pdf = await page.pdf();
+  assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  const after = await page.evaluate(() => [...document.querySelector("#editor .note-body").children].map((b) => getComputedStyle(b).backgroundImage));
+  assert.deepEqual(after, ["none", "none", "none"], "the printing rules are gone again");
+  assert.equal((await files(page))["Sketch.md"], INK_PAGE, "printing never touches the page text");
+}, ctxOpts);
+
+await test("a page without ink prints with no extra rules", async (page) => {
+  await inkVault(page);
+  const rules = () => page.evaluate(() => [...document.styleSheets].reduce((n, sheet) => n + sheet.cssRules.length, 0));
+  const before = await rules();
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  assert.equal(await rules(), before, "no rule is added");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+}, ctxOpts);
+
+await test("a canvas block prints black on white, even in the dark theme, and goes back after", async (page) => {
+  await start(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await blockVault(page, drawingWith([{ tool: "pen", color: "ink", width: 6, points: [[20, 160, 0.5], [460, 160, 0.5]] }]));
+  await page.waitForFunction(() => document.querySelector(".canvas-block-surface").width > 0);
+  const corner = () => page.evaluate(() => {
+    const s = document.querySelector(".canvas-block-surface");
+    return [...s.getContext("2d").getImageData(2, 2, 1, 1).data].slice(0, 3).join(",");
+  });
+  const dark = await corner();
+  assert.notEqual(dark, "255,255,255", "on screen the dark theme gives a dark sheet");
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  assert.equal(await corner(), "255,255,255", "on paper the sheet is white");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  assert.equal(await corner(), dark);
+});
+
 await browser.close();
 server.close();
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");

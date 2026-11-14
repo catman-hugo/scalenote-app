@@ -1831,10 +1831,12 @@ button.danger:hover { background: var(--bg-hover); }
 /* Printing and "save as PDF": the page title and the page itself, on white, with no controls. */
 @media print {
   :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
-  .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host { display: none !important; }
+  .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host, .ink-layer, .ink-bar, .ink-menus { display: none !important; }
   .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; }
   .title { border: 0; padding-left: 0; }
   .note-body { max-width: none; padding: 0; }
+  .canvas-block-surface { max-width: 100%; height: auto !important; }
+  .canvas-block { break-inside: avoid; }
   .note-body pre, .note-body blockquote, .note-body table, .note-body img { break-inside: avoid; }
   .note-body h1, .note-body h2, .note-body h3 { break-after: avoid; }
   a { color: inherit; text-decoration: underline; }
