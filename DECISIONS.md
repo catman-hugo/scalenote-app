@@ -669,8 +669,8 @@ Decision. On Windows the private key is stored in the system credential storage.
 Alternatives. Linux Secret Service (needs libdbus and a running secret service, which a plain desktop may not have: pairing could silently fail there); Android Keystore (needs Kotlin code, planned in 0.5.4); no key storage at all (not possible).
 Cost. This is an exception to "secrets go in the system's secure storage". On Linux and Android, anything that can read the app's private folder can read the key (another program of the same user; on Android only with root). Closed in 0.5.4 for Android; for Linux when a safe way without extra system parts is found.
 
-## 2026-11-14: Pairing is released as 0.5.1; 0.5.0 was never published
+## 2026-11-14: Pairing is released as 0.5.1
 
-Decision. The owner counts the pairing slice as version 0.5.1 and releases it. The app says 0.5.1, and the 0.5.1 release notes also carry what 0.5.0 would have said, because 0.5.0 was never tagged or published. This replaces the earlier idea of keeping the number at 0.5.0 until all of LAN sync worked.
+Decision. The owner counts the pairing slice as version 0.5.1 and releases it after 0.5.0, which the owner had already published. The app says 0.5.1 and the 0.5.1 release notes only list what is new since 0.5.0. This replaces the earlier idea of keeping the number at 0.5.0 until all of LAN sync worked.
 Alternatives. Holding the number back (rejected by the owner).
 Cost. 0.5.1 is a release that pairs devices but does not yet exchange pages; the notes say so.
