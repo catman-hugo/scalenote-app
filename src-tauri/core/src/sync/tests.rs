@@ -100,6 +100,9 @@ fn scan_never_follows_links_and_reports_them() {
     assert!(scan.skipped.iter().all(|s| s.reason == SkipReason::NotAFile));
 }
 
+// Windows refuses to create these names at all, so the scan is only tried on a system that can
+// hold them (a vault from Linux or Android can contain them). The rule itself is checked everywhere.
+#[cfg(unix)]
 #[test]
 fn scan_skips_names_other_systems_cannot_hold() {
     let dir = Dir::new("names");
@@ -111,8 +114,16 @@ fn scan_skips_names_other_systems_cannot_hold() {
     assert_eq!(scan.manifest.files.keys().collect::<Vec<_>>(), vec!["Fine.md"]);
     assert_eq!(scan.skipped.len(), 3);
     assert!(scan.skipped.iter().all(|s| s.reason == SkipReason::NotPortable));
+}
+
+#[test]
+fn names_other_systems_cannot_hold_are_not_portable() {
+    for bad in ["what?.md", "CON.md", "con.txt", "ends with dot.", "ends with space ", "a:b", "tab\there", ""] {
+        assert!(!portable_name(bad), "{bad:?}");
+    }
     // Linux cannot even create a name this long, so the rule is checked directly.
     assert!(!portable_name(&format!("{}.md", "x".repeat(300))));
+    assert!(portable_name("Fine.md") && portable_name("Café 日本.md"));
 }
 
 #[test]
