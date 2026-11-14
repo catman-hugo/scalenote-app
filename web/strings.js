@@ -221,8 +221,24 @@ export const strings = {
     saveFailed: "The ink could not be saved.",
   },
 
+  find: {
+    placeholder: "Find in this page",
+    previous: "Previous match",
+    next: "Next match",
+    close: "Close find",
+    searching: "Searching…",
+    none: "No matches",
+    count: "{current} of {total}",
+    many: "{current} of more than {total}",
+  },
+
+  printPage: {
+    inkSkipped: "Some of the drawing over the text was too large to print and was left out.",
+  },
+
   exportPage: {
     done: "Exported to {path}. The folder holds the page and {pictures} pictures.",
+    drawing: " The drawing is in it as a picture; drawing over the text is only in print.",
     missing: " {missing} pictures could not be copied.",
     failed: "The page could not be exported.",
   },

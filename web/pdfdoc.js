@@ -5,9 +5,10 @@
 // A PDF is untrusted. What keeps it contained: pdf.js runs in its own worker; it is only asked
 // for the pictures of the pages (no scripts, forms or links are used); the worker, fonts and
 // image decoders are files shipped with the app (nothing is fetched from the network); the
-// size, page count and pixels per page are limited (pdfrules.js).
+// size, page count and pixels per page are limited (pdfrules.js). The text of a page is only
+// ever put into the page as plain text (never as markup), and how much of it is read is limited.
 
-import { PDF_LIMITS, pageScale } from "./pdfrules.js";
+import { PDF_LIMITS, TEXT_LIMITS, pageScale } from "./pdfrules.js";
 
 let library = null;
 
@@ -97,6 +98,48 @@ export async function openPdf(bytes) {
         if (hold) hold.cancel = () => drawing.cancel();
         await drawing.promise;
         return { width: canvas.width, height: canvas.height, ratio: base.height / base.width };
+      } finally {
+        page.cleanup();
+      }
+    },
+    /**
+     * Puts the selectable text of page `n` into `container` (an empty element laid over the
+     * page, `cssWidth` pixels wide) as transparent words that line up with the drawn page.
+     * Resolves to `{ layer, texts, cancel }`: `texts[i]` is the words of the i-th element of
+     * `layer.textDivs`, which the find box uses to mark hits. Reading stops at TEXT_LIMITS.
+     */
+    async renderText(n, container, { cssWidth, task: hold } = {}) {
+      const page = await doc.getPage(n);
+      try {
+        const base = page.getViewport({ scale: 1 });
+        const scale = Math.max(50, cssWidth) / base.width;
+        const viewport = page.getViewport({ scale });
+        // pdf.js sizes the words by this variable; the page's own css supplies the rest.
+        container.style.setProperty("--total-scale-factor", String(scale));
+        const layer = new lib.TextLayer({ textContentSource: page.streamTextContent(), container, viewport });
+        if (hold) hold.cancel = () => layer.cancel();
+        await layer.render();
+        const texts = layer.textContentItemsStr.slice(0, TEXT_LIMITS.itemsPerPage).map((t) => String(t).slice(0, TEXT_LIMITS.itemChars));
+        return { layer, texts };
+      } finally {
+        page.cleanup();
+      }
+    },
+    /** The text pieces of page `n` (cut to the TEXT_LIMITS), for searching. */
+    async pageText(n) {
+      const page = await doc.getPage(n);
+      try {
+        const content = await page.getTextContent();
+        const out = [];
+        let chars = 0;
+        for (const item of content.items) {
+          if (typeof item.str !== "string") continue;
+          const piece = item.str.slice(0, TEXT_LIMITS.itemChars);
+          out.push(piece);
+          chars += piece.length;
+          if (out.length >= TEXT_LIMITS.itemsPerPage || chars >= TEXT_LIMITS.pageChars) break;
+        }
+        return out;
       } finally {
         page.cleanup();
       }

@@ -8,6 +8,7 @@ import { Placeholder } from "@tiptap/extensions";
 import Suggestion from "@tiptap/suggestion";
 import { strings } from "./strings.js";
 import { Callout, Column, Columns, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
+import { FindMarks } from "./findmarks.js";
 import { PdfBlock } from "./pdfblock.js";
 import { askPdfMode, choosePdf, importPages, looksLikePdf, showProgress, storePdf } from "./pdfimport.js";
 import { pdfTitle } from "./pdfrules.js";
@@ -436,6 +437,7 @@ export function createEditor(element, onChange, options = {}) {
       Column,
       Toggle,
       ToggleFold,
+      FindMarks,
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       PdfBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),

@@ -25,7 +25,12 @@ pub struct PageExport {
     pub pictures: usize,
     /// Pictures the page names that could not be copied (missing, not a picture, too big).
     pub missing: usize,
+    /// Whether the page's drawing was written as a picture too.
+    pub drawing: bool,
 }
+
+/// The name of the picture of the page's drawing, inside `attachments/` of the export folder.
+const DRAWING_NAME: &str = "drawing.png";
 
 /// The file names in `](attachments/NAME)` links, each once, in order. Only plain names are
 /// accepted: no folders, no `..`, nothing that could point outside `attachments/`.
@@ -66,7 +71,12 @@ fn read_picture(vault: &Vault, name: &str) -> Option<Vec<u8>> {
 impl Vault {
     /// Writes `relative` and its pictures into a new folder inside "<notes folder> (exports)",
     /// next to the notes folder. If anything fails half way the new folder is removed again.
-    pub fn export_page(&self, relative: &str) -> Result<PageExport> {
+    ///
+    /// `drawing` is a PNG picture of the page's drawing, made by the interface (it has the
+    /// painting code). It is only written if it really is a PNG of an allowed size; a page whose
+    /// picture is refused is still exported, without it. Ink drawn over the text is not in it:
+    /// markdown has no place to put ink over words, so that ink is only printed.
+    pub fn export_page(&self, relative: &str, drawing: Option<&[u8]>) -> Result<PageExport> {
         let note = self.read_note(relative)?;
         let root = self.root();
         let parent = root.parent().ok_or(VaultError::InvalidPath)?;
@@ -90,8 +100,8 @@ impl Vault {
         let stem = relative.rsplit('/').next().unwrap_or(relative).trim_end_matches(".md");
         let title = sanitize_name(stem, "Page");
         let dest = reserve_folder(&exports, &title)?;
-        match write_page(self, &dest, &title, &note.text) {
-            Ok((pictures, missing)) => Ok(PageExport { path: dest, pictures, missing }),
+        match write_page(self, &dest, &title, &note.text, drawing) {
+            Ok((pictures, missing, drawn)) => Ok(PageExport { path: dest, pictures, missing, drawing: drawn }),
             Err(error) => {
                 // The folder was made by this call and holds only what this call wrote.
                 let _ = fs::remove_dir_all(&dest);
@@ -101,9 +111,28 @@ impl Vault {
     }
 }
 
-fn write_page(vault: &Vault, dest: &std::path::Path, title: &str, text: &str) -> Result<(usize, usize)> {
-    write_atomic(&dest.join(format!("{title}.md")), to_obsidian(text).as_bytes())?;
+/// True for a PNG of a size the vault would accept as a picture.
+fn is_drawing_picture(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) && limit_for(bytes).is_some_and(|limit| bytes.len() <= limit)
+}
+
+fn write_page(vault: &Vault, dest: &std::path::Path, title: &str, text: &str, drawing: Option<&[u8]>) -> Result<(usize, usize, bool)> {
+    let picture = drawing.filter(|bytes| is_drawing_picture(bytes));
     let names = picture_names(text);
+    // A name no picture of the page already has, so the drawing never replaces one of them.
+    let drawing_name = (1..)
+        .map(|n| if n == 1 { DRAWING_NAME.to_string() } else { format!("drawing-{n}.png") })
+        .find(|candidate| !names.contains(candidate))
+        .unwrap_or_else(|| DRAWING_NAME.to_string());
+    let mut page = to_obsidian(text);
+    if picture.is_some() {
+        // The drawing goes at the end of the exported page, as an ordinary picture.
+        if !page.ends_with('\n') {
+            page.push('\n');
+        }
+        page.push_str(&format!("\n![Drawing]({ATTACHMENT_DIR}/{drawing_name})\n"));
+    }
+    write_atomic(&dest.join(format!("{title}.md")), page.as_bytes())?;
     let mut missing = names.len().saturating_sub(MAX_PICTURES);
     let mut pictures = 0;
     for name in names.iter().take(MAX_PICTURES) {
@@ -117,7 +146,14 @@ fn write_page(vault: &Vault, dest: &std::path::Path, title: &str, text: &str) ->
             None => missing += 1,
         }
     }
-    Ok((pictures, missing))
+    let mut drawn = false;
+    if let Some(bytes) = picture {
+        let dir = dest.join(ATTACHMENT_DIR);
+        fs::create_dir_all(&dir)?;
+        write_atomic(&dir.join(&drawing_name), bytes)?;
+        drawn = true;
+    }
+    Ok((pictures, missing, drawn))
 }
 
 #[cfg(test)]
@@ -148,7 +184,7 @@ mod tests {
         let root = parent.join("Notes");
         fs::write(root.join("sub").join("Plan.md"), "a <span class=\"sn-bg-red\">x</span>\n![p](attachments/p.png)\n![gone](attachments/gone.png)\n").expect("note");
         fs::write(root.join("attachments").join("p.png"), PNG).expect("png");
-        let report = vault.export_page("sub/Plan.md").expect("export");
+        let report = vault.export_page("sub/Plan.md", None).expect("export");
         assert_eq!((report.pictures, report.missing), (1, 1));
         assert_eq!(report.path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()), Some("Notes (exports)"));
         let text = fs::read_to_string(report.path.join("Plan.md")).expect("page");
@@ -162,9 +198,9 @@ mod tests {
     fn a_second_export_gets_a_new_folder_and_nothing_is_replaced() {
         let (parent, vault) = setup("twice");
         fs::write(parent.join("Notes").join("A.md"), "one\n").expect("note");
-        let first = vault.export_page("A.md").expect("first");
+        let first = vault.export_page("A.md", None).expect("first");
         fs::write(first.path.join("A.md"), "edited by hand\n").expect("edit");
-        let second = vault.export_page("A.md").expect("second");
+        let second = vault.export_page("A.md", None).expect("second");
         assert_ne!(first.path, second.path);
         assert_eq!(fs::read_to_string(first.path.join("A.md")).expect("first page"), "edited by hand\n");
     }
@@ -174,13 +210,13 @@ mod tests {
         let (parent, vault) = setup("hostile");
         let root = parent.join("Notes");
         fs::write(parent.join("outside.md"), "secret\n").expect("outside");
-        assert!(vault.export_page("../outside.md").is_err());
-        assert!(vault.export_page("missing.md").is_err());
-        assert!(vault.export_page("notes.txt").is_err());
+        assert!(vault.export_page("../outside.md", None).is_err());
+        assert!(vault.export_page("missing.md", None).is_err());
+        assert!(vault.export_page("notes.txt", None).is_err());
         // A "picture" that is really text is not copied.
         fs::write(root.join("attachments").join("fake.png"), "not a picture").expect("fake");
         fs::write(root.join("B.md"), "![x](attachments/fake.png)\n").expect("note");
-        let report = vault.export_page("B.md").expect("export");
+        let report = vault.export_page("B.md", None).expect("export");
         assert_eq!((report.pictures, report.missing), (0, 1));
         assert!(!report.path.join("attachments").exists());
     }
@@ -193,7 +229,7 @@ mod tests {
         fs::write(parent.join("secret.png"), PNG).expect("secret");
         std::os::unix::fs::symlink(parent.join("secret.png"), root.join("attachments").join("l.png")).expect("link");
         fs::write(root.join("C.md"), "![x](attachments/l.png)\n").expect("note");
-        let report = vault.export_page("C.md").expect("export");
+        let report = vault.export_page("C.md", None).expect("export");
         assert_eq!((report.pictures, report.missing), (0, 1));
     }
 
@@ -204,7 +240,49 @@ mod tests {
         fs::create_dir_all(parent.join("elsewhere")).expect("elsewhere");
         std::os::unix::fs::symlink(parent.join("elsewhere"), parent.join("Notes (exports)")).expect("link");
         fs::write(parent.join("Notes").join("D.md"), "x\n").expect("note");
-        assert!(vault.export_page("D.md").is_err());
+        assert!(vault.export_page("D.md", None).is_err());
         assert_eq!(fs::read_dir(parent.join("elsewhere")).expect("dir").count(), 0);
+    }
+
+    fn tiny_png() -> Vec<u8> {
+        let mut bytes = PNG.to_vec();
+        bytes.extend_from_slice(b"rest of a picture");
+        bytes
+    }
+
+    #[test]
+    fn the_drawing_picture_is_written_and_linked_at_the_end_of_the_page() {
+        let (parent, vault) = setup("drawing");
+        fs::write(parent.join("Notes").join("D1.md"), "text\n").expect("note");
+        let report = vault.export_page("D1.md", Some(&tiny_png())).expect("export");
+        assert!(report.drawing);
+        assert_eq!(fs::read(report.path.join("attachments").join("drawing.png")).expect("drawing"), tiny_png());
+        assert_eq!(fs::read_to_string(report.path.join("D1.md")).expect("page"), "text\n\n![Drawing](attachments/drawing.png)\n");
+    }
+
+    #[test]
+    fn a_drawing_that_is_not_a_png_is_left_out_and_the_page_is_still_exported() {
+        let (parent, vault) = setup("notpng");
+        fs::write(parent.join("Notes").join("D2.md"), "text\n").expect("note");
+        let report = vault.export_page("D2.md", Some(b"<script>alert(1)</script>")).expect("export");
+        assert!(!report.drawing);
+        assert_eq!(fs::read_to_string(report.path.join("D2.md")).expect("page"), "text\n");
+        assert!(!report.path.join("attachments").exists());
+        let mut big = PNG.to_vec();
+        big.resize(MAX_PDF_BYTES, 0);
+        let again = vault.export_page("D2.md", Some(&big)).expect("export again");
+        assert!(!again.drawing, "a picture over the size limit is refused");
+    }
+
+    #[test]
+    fn the_drawing_never_replaces_a_picture_of_the_page_with_the_same_name() {
+        let (parent, vault) = setup("samename");
+        let root = parent.join("Notes");
+        fs::write(root.join("attachments").join("drawing.png"), PNG).expect("own picture");
+        fs::write(root.join("D3.md"), "![mine](attachments/drawing.png)\n").expect("note");
+        let report = vault.export_page("D3.md", Some(&tiny_png())).expect("export");
+        assert_eq!(fs::read(report.path.join("attachments").join("drawing.png")).expect("own"), PNG);
+        assert_eq!(fs::read(report.path.join("attachments").join("drawing-2.png")).expect("drawing"), tiny_png());
+        assert!(fs::read_to_string(report.path.join("D3.md")).expect("page").ends_with("![Drawing](attachments/drawing-2.png)\n"));
     }
 }

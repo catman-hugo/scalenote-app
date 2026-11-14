@@ -9,7 +9,7 @@
 
 import { Node } from "@tiptap/core";
 import { bytesOfDataUrl, openPdf, wasCancelled } from "./pdfdoc.js";
-import { pdfTitle } from "./pdfrules.js";
+import { findInPages, pdfTitle } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -18,6 +18,10 @@ function make(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+
+// Every PDF block on screen, so the page's find bar can ask each one for its hits.
+const finders = new Set();
+export const pdfFinders = () => [...finders];
 
 const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
 
@@ -48,7 +52,7 @@ export const PdfBlock = Node.create({
   addNodeView() {
     const { load } = this.options;
     const t = strings.pdf.block;
-    return ({ node }) => {
+    return ({ node, getPos }) => {
       let current = node;
       const dom = make("figure", "pdf-block");
       const head = make("figcaption", "pdf-block-head");
@@ -80,7 +84,10 @@ export const PdfBlock = Node.create({
         old.observer.disconnect();
         if (old.resize) old.resize.disconnect();
         clearTimeout(old.resizeTimer);
-        for (const page of old.pages) if (page.task.cancel) page.task.cancel();
+        for (const page of old.pages) {
+          if (page.task.cancel) page.task.cancel();
+          if (page.textTask.cancel) page.textTask.cancel();
+        }
         void old.pdf.destroy();
         scroll.replaceChildren();
       }
@@ -93,6 +100,10 @@ export const PdfBlock = Node.create({
 
       function release(page) {
         if (page.task.cancel) page.task.cancel();
+        if (page.textTask.cancel) page.textTask.cancel();
+        page.textTask = {};
+        page.text.replaceChildren();
+        page.textDivs = null;
         page.task = {};
         page.rendered = false;
         // A zero size frees the pixels of the page.
@@ -112,11 +123,121 @@ export const PdfBlock = Node.create({
             page.box.style.aspectRatio = `${done.width} / ${done.height}`;
           } catch (error) {
             if (!wasCancelled(error) && !s.dead) page.box.classList.add("pdf-page-failed");
+            return;
+          }
+          // The words come after the picture; a page whose words cannot be read is still shown.
+          try {
+            const words = await s.pdf.renderText(page.n, page.text, { cssWidth: Math.max(50, page.box.clientWidth || scroll.clientWidth), task: page.textTask });
+            if (s.dead || !page.rendered) return;
+            page.textDivs = words.layer.textDivs;
+            mark(s, page);
+          } catch {
+            // No words: the picture alone is still useful.
           }
         });
       }
 
-      async function start() {
+      // ---- find ----
+      // The page's find bar (pagefind.js) drives this: it asks for the hits of a word, and then
+      // for one hit to be the current one. The hits are worked out from the text of every page
+      // (read once, then kept) and marked on the words of the pages that are drawn.
+      function mark(s, page) {
+        if (!page.textDivs) return;
+        for (const div of page.textDivs) div.classList.remove("pdf-hit", "pdf-hit-current");
+        const find = s.find;
+        if (!find) return;
+        find.hits.forEach((hit, k) => {
+          if (hit.page !== page.n) return;
+          const div = page.textDivs[hit.piece];
+          if (!div) return;
+          div.classList.add("pdf-hit");
+          if (k === find.current) {
+            div.classList.add("pdf-hit-current");
+            if (find.scrollTo === k) {
+              find.scrollTo = -1;
+              centre(div);
+            }
+          }
+        });
+      }
+
+      // Scrolls only the PDF box (never the page around it) so `target` is in its middle.
+      function centre(target) {
+        const box = scroll.getBoundingClientRect();
+        const at = target.getBoundingClientRect();
+        scroll.scrollTop += at.top - box.top - (box.height - at.height) / 2;
+      }
+
+      // Makes hit `k` the current one (-1: none) and scrolls the box to it. A page whose words
+      // are not drawn yet is marked as soon as it has been drawn.
+      function reveal(s, k) {
+        const find = s.find;
+        if (!find) return;
+        const old = find.hits[find.current];
+        find.current = k >= 0 && k < find.hits.length ? k : -1;
+        find.scrollTo = find.current;
+        const hit = find.hits[find.current];
+        if (hit) {
+          const page = s.pages[hit.page - 1];
+          const boxTop = scroll.scrollTop + page.box.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+          scroll.scrollTop = Math.max(0, boxTop - 8);
+          mark(s, page);
+        }
+        if (old && (!hit || old.page !== hit.page)) mark(s, s.pages[old.page - 1]);
+      }
+
+      // Resolves to the number of hits, or null when a newer search made this one out of date.
+      async function search(s, text) {
+        const old = s.find;
+        const find = (s.find = text ? { text, hits: [], current: -1, scrollTo: -1 } : null);
+        if (old) for (const page of s.pages) mark(s, page);
+        if (!find) return 0;
+        // Page text is read once for the whole PDF; two searches in a row share it.
+        if (!s.texts) {
+          s.texts = (async () => {
+            const all = [];
+            for (let n = 1; n <= s.pdf.pages; n++) {
+              if (s.dead) return all;
+              try {
+                all.push(await s.pdf.pageText(n));
+              } catch {
+                all.push([]);
+              }
+            }
+            return all;
+          })();
+        }
+        const pages = await s.texts;
+        if (s.dead || s.find !== find) return null;
+        find.hits = findInPages(pages, text);
+        for (const page of s.pages) mark(s, page);
+        return find.hits.length;
+      }
+
+      const finder = {
+        dom,
+        pos: () => {
+          const at = typeof getPos === "function" ? getPos() : -1;
+          return typeof at === "number" ? at : -1;
+        },
+        search: async (text) => {
+          await ready;
+          return session ? search(session, text) : 0;
+        },
+        reveal: (k) => {
+          if (session) reveal(session, k);
+        },
+      };
+      finders.add(finder);
+
+      // Resolves when the PDF has been opened (or has failed), so a search started while it is
+      // still loading waits for it instead of finding nothing.
+      let ready = Promise.resolve();
+      function start() {
+        ready = begin();
+        return ready;
+      }
+      async function begin() {
         const mine = ++generation;
         stopSession();
         scroll.hidden = false;
@@ -147,7 +268,7 @@ export const PdfBlock = Node.create({
           void pdf.destroy();
           return;
         }
-        const s = { pdf, pages: [], dead: false, queue: Promise.resolve(), resize: null, resizeTimer: 0, observer: null };
+        const s = { pdf, pages: [], dead: false, queue: Promise.resolve(), resize: null, resizeTimer: 0, observer: null, find: null, texts: null };
         s.observer = new IntersectionObserver(
           (entries) => {
             for (const entry of entries) {
@@ -168,8 +289,11 @@ export const PdfBlock = Node.create({
           // A new canvas is 300 x 150 pixels; a page that is not drawn must hold no pixels.
           canvas.width = 0;
           canvas.height = 0;
-          box.append(canvas);
-          const page = { n, box, canvas, visible: false, rendered: false, task: {} };
+          const text = make("div", "pdf-text");
+          // The words are not read out by a screen reader page by page; the label above is.
+          text.setAttribute("aria-hidden", "true");
+          box.append(canvas, text);
+          const page = { n, box, canvas, text, textDivs: null, textTask: {}, visible: false, rendered: false, task: {} };
           box.pageInfo = page;
           s.pages.push(page);
           scroll.append(box);
@@ -213,6 +337,7 @@ export const PdfBlock = Node.create({
         stopEvent: (event) => scroll.contains(event.target),
         ignoreMutation: () => true,
         destroy() {
+          finders.delete(finder);
           generation++;
           stopSession();
         },

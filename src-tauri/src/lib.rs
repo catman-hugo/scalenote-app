@@ -287,22 +287,31 @@ struct PageExportReply {
     path: String,
     pictures: usize,
     missing: usize,
+    /// Whether the page's drawing was written as a picture.
+    drawing: bool,
 }
 
 /// Writes one page and its pictures into a new folder beside the notes folder (see
 /// `scalenote_core::export`). The interface sends only the page; where the folder goes is fixed.
 /// Not offered on Android, for the same reason as the Obsidian copy.
 #[tauri::command(async)]
-fn export_page(state: State<AppState>, path: String) -> Result<PageExportReply, String> {
+fn export_page(state: State<AppState>, path: String, drawing: Option<String>) -> Result<PageExportReply, String> {
     if cfg!(target_os = "android") {
         return Err("unsupported".to_string());
     }
+    // The picture of the drawing comes as base64 text; its length is checked before decoding.
+    // One that cannot be read is left out, the page is still exported.
+    let picture = match drawing {
+        Some(data) if data.len() <= MAX_ATTACHMENT_BASE64 => base64::decode(&data),
+        _ => None,
+    };
     with_vault(&state, "export page", |vault| {
-        let report = vault.export_page(&path)?;
+        let report = vault.export_page(&path, picture.as_deref())?;
         Ok(PageExportReply {
             path: scalenote_core::obsidian::friendly_path(&report.path),
             pictures: report.pictures,
             missing: report.missing,
+            drawing: report.drawing,
         })
     })
 }

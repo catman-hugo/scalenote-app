@@ -1831,10 +1831,13 @@ button.danger:hover { background: var(--bg-hover); }
 /* Printing and "save as PDF": the page title and the page itself, on white, with no controls. */
 @media print {
   :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
-  .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host { display: none !important; }
-  .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; }
+  .sidebar, .banner, .toast, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host, .ink-layer, .ink-bar, .ink-menus, .find-bar { display: none !important; }
+  .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; background: #fff; }
   .title { border: 0; padding-left: 0; }
   .note-body { max-width: none; padding: 0; }
+  .find-hit, .find-hit-current, .pdf-hit, .pdf-hit-current { background: none; outline: 0; }
+  .canvas-block-surface { max-width: 100%; height: auto !important; }
+  .canvas-block { break-inside: avoid; }
   .note-body pre, .note-body blockquote, .note-body table, .note-body img { break-inside: avoid; }
   .note-body h1, .note-body h2, .note-body h3 { break-after: avoid; }
   a { color: inherit; text-decoration: underline; }
@@ -1896,10 +1899,19 @@ button.danger:hover { background: var(--bg-hover); }
 .canvas-block-missing { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
 .canvas-block.ProseMirror-selectednode .canvas-block-surface { outline: 2px solid var(--accent); }
 
+/* ---------- find in the page (pagefind.js, findmarks.js) ---------- */
+.find-bar { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-3); border-bottom: 1px solid var(--line); background: var(--bg-side); }
+.find-bar[hidden] { display: none; }
+.find-input { flex: 1 1 8rem; min-width: 0; max-width: 24rem; }
+.find-status { min-width: 5rem; font-size: var(--text-s); color: var(--text-soft); white-space: nowrap; }
+/* Solid colours with their own text colour, so a hit reads the same in every theme. */
+.find-hit { background: #ffe066; color: #000; border-radius: 2px; }
+.find-hit-current { background: #ff9f1c; outline: 1px solid var(--accent); }
+
 /* ---------- a PDF in the page (pdfblock.js) and the question box (pdfimport.js) ---------- */
 .pdf-block { margin: var(--space-3) 0; }
-.pdf-block-head { display: flex; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
-.pdf-block-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.pdf-block-title { flex: 1 1 6rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdf-block-count { flex: none; }
 /* A fixed height that the person can drag taller; the pages scroll inside it. */
 .pdf-block-scroll {
@@ -1920,6 +1932,39 @@ button.danger:hover { background: var(--bg-hover); }
 .pdf-page { position: relative; margin: 0 auto var(--space-2); background: #ffffff; border: 1px solid var(--line); }
 .pdf-page:last-child { margin-bottom: 0; }
 .pdf-page-canvas { display: block; width: 100%; height: 100%; }
+/* The words of a page, laid over its picture so they can be selected and copied. pdf.js puts
+   one span per piece of text and sets its size, place and stretch itself (the --font-height,
+   --scale-x and --rotate variables); the spans stay see-through so only the picture shows. */
+.pdf-text {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+  user-select: text;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-text .markedContent { display: contents; }
+.pdf-text ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
+.pdf-hit { background: var(--find-hit, rgba(255, 200, 0, 0.45)); }
+.pdf-hit-current { background: var(--find-current, rgba(255, 140, 0, 0.6)); outline: 1px solid var(--accent); }
 .pdf-page-failed { background: var(--bg-side); border-style: dashed; }
 .pdf-block-message { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }
 .pdf-block.ProseMirror-selectednode .pdf-block-scroll { outline: 2px solid var(--accent); }
