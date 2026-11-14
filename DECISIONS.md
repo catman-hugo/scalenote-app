@@ -620,3 +620,15 @@ Cost. A setting is one click further away than before. Tests that touch Settings
 Decision. Version 0.5 builds one sync engine that works between two devices that are both on, found on the same network the way LocalSend does it, or reached by a typed address. The home server is the same engine as a program with no window that never sleeps, so there is no second sync system. The browser client talks only to a server. This brings the "same person, two devices" part forward from the peer-to-peer work planned for 1.6; sharing with other people stays in 1.6 and 1.7.
 Alternatives. A server-only design (rejected by the owner as a first choice: it needs a machine that is always on); building direct sync in 1.6 as first planned (rejected: the owner wants two devices connected in 0.5).
 Cost. Android cannot sync while the app is asleep, and some Wi-Fi networks hide devices from each other, so a typed address is needed as a fallback. The Android multicast code can only be compiled by CI and tried on real devices.
+
+## 2026-11-14: Ink over text is printed, not exported
+
+Decision. Ink drawn over the text of a page is part of print and save-as-PDF (as a picture behind each block), and the markdown export carries only the drawing sheet as one picture at the end of the page. Ink over text is not in the markdown export.
+Alternatives. One picture per inked block placed under the block in the exported markdown (rejected for now: it would put pictures between the paragraphs of a page that other programs show as plain text, and the ink would no longer move with the words); a full-page picture of text and ink (rejected: the export would no longer be text).
+Cost. A person who exports a page loses the ink over the text. The toast after export says so. It can be added later as an option if it is missed.
+
+## 2026-11-14: PDF text is selected and searched in the block, not in the page search
+
+Decision. The PDF block lays a see-through text layer over each drawn page and has its own find box. Searching the PDF text from the global search is left to 1.12.
+Alternatives. Reading PDF text into the global index now (rejected: it needs a stored index and a size policy, planned for 1.12).
+Cost. A find hit split over two pieces of text in the PDF is not found, and a hit marks the whole piece of text.

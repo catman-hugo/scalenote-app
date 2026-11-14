@@ -7743,6 +7743,52 @@ await test("a canvas block prints black on white, even in the dark theme, and go
   assert.equal(await corner(), dark);
 });
 
+// Screenshots for the design check of 0.4.15 (only when SHOTS_DIR is set): the find box of a PDF
+// block, and a page with ink as it is printed, light and dark, desktop and phone.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await page.evaluate((b64) => {
+        window.__mock.attachments.set("attachments/n.pdf", b64);
+        window.__mock.files.set("Slides.md", "Notes from the lecture\n\n![Lecture 1](attachments/n.pdf)\n");
+      }, makePdf(3).toString("base64"));
+      await page.click("#newFolder");
+      await page.click('.tree-button[data-path="Slides.md"]');
+      await page.waitForSelector(".pdf-text span");
+      await page.fill(".pdf-block-find input", "page");
+      await page.waitForFunction(() => document.querySelector(".pdf-block-find-status").textContent === "1 of 3");
+      await page.waitForTimeout(300);
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: `${shots}/v0415-${label}-${scheme}-1-pdf-find.png` });
+      await context.close();
+
+      const inkContext = await browser.newContext({ viewport, colorScheme: scheme });
+      await inkContext.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const inkPage = await inkContext.newPage();
+      await inkPage.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await inkPage.goto(url);
+      await start(inkPage);
+      await inkVault(inkPage);
+      if (label === "phone") await inkPage.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await startInk(inkPage);
+      await inkPen(inkPage, horizontalLine(await blockBox(inkPage, 1), 0.6));
+      await waitInkSaved(inkPage);
+      await inkPage.emulateMedia({ media: "print" });
+      await inkPage.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+      await inkPage.waitForTimeout(200);
+      await inkPage.screenshot({ path: `${shots}/v0415-${label}-${scheme}-2-print-with-ink.png` });
+      await inkContext.close();
+    }
+  }
+}
+
 await browser.close();
 server.close();
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");
