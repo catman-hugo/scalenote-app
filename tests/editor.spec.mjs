@@ -7613,6 +7613,52 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   }
 }
 
+// ---------- 0.4.15: drawings in export ----------
+
+const exportViaPalette = async (page) => {
+  await openPaletteBox(page);
+  await page.fill(".palette-input", "Export this page");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => (window.__pageExports || []).length >= 1);
+};
+
+await test("exporting a page with a drawing sends the drawing as a white-paper PNG", async (page) => {
+  await start(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await exportViaPalette(page);
+  const sent = await page.evaluate(() => window.__exportDrawings[0]);
+  assert.ok(sent && sent.startsWith("iVBORw0KGgo"), "a PNG was sent");
+  const look = await page.evaluate(async (b64) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${b64}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let red = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] > 150 && data[i + 1] < 90 && data[i + 2] < 90) red++;
+    return { corner: [...data.slice(0, 3)], red, w: image.width, h: image.height };
+  }, sent);
+  assert.deepEqual(look.corner, [255, 255, 255], "paper is white even in the dark theme");
+  assert.ok(look.red > 200, "the rectangle is in it");
+  assert.ok(look.w < 400 && look.h < 300, `the picture is cut to the drawing, got ${look.w}x${look.h}`);
+  assert.match(await page.locator(".toast").innerText(), /drawing is in it as a picture/);
+  assert.equal((await files(page))["Sketch.md"], BLOCK_PAGE, "the page itself is untouched");
+});
+
+await test("exporting a page without a drawing sends no picture", async (page) => {
+  await start(page);
+  await blockVault(page, null, "just text\n");
+  await exportViaPalette(page);
+  assert.equal(await page.evaluate(() => window.__exportDrawings[0]), null);
+  assert.doesNotMatch(await page.locator(".toast").innerText(), /drawing/);
+});
+
 // ---------- 0.4.15: drawings in print ----------
 
 await test("in a dark theme the printed text is still dark on white", async (page) => {

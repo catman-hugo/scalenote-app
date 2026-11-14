@@ -227,6 +227,7 @@ export const strings = {
 
   exportPage: {
     done: "Exported to {path}. The folder holds the page and {pictures} pictures.",
+    drawing: " The drawing is in it as a picture; drawing over the text is only in print.",
     missing: " {missing} pictures could not be copied.",
     failed: "The page could not be exported.",
   },

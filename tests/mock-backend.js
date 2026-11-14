@@ -101,11 +101,12 @@
       return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
     },
     // The page export is made by Rust (tested there with real files); here it is only recorded.
-    export_page: ({ path }) => {
+    export_page: ({ path, drawing }) => {
       if (!files.has(path)) fail("not_found");
       window.__pageExports = [...(window.__pageExports || []), path];
+      window.__exportDrawings = [...(window.__exportDrawings || []), drawing || null];
       if (window.__failExport) fail(window.__failExport);
-      return { path: "/home/alice/ScaleNote (exports)/Page", pictures: 1, missing: window.__missingPictures || 0 };
+      return { path: "/home/alice/ScaleNote (exports)/Page", pictures: 1, missing: window.__missingPictures || 0, drawing: Boolean(drawing) };
     },
     // Stand-ins for the trash and search commands. The real rules are tested in Rust with real
     // folders; these follow the same shapes and error codes so the screens can be driven.

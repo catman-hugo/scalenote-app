@@ -34,7 +34,7 @@ import { openHistory } from "./historydialog.js";
 import { createCanvasView } from "./canvasview.js";
 import { createInkLayer } from "./inklayer.js";
 import { FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
-import { paintForPaper, repaintCanvasBlocks } from "./canvasblock.js";
+import { drawingPicture, paintForPaper, repaintCanvasBlocks } from "./canvasblock.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
@@ -924,9 +924,12 @@ async function exportCurrentPage() {
   if (!app.current) return;
   try {
     if (app.autosave) await app.autosave.flush();
-    const report = await backend.exportPage(app.current.path);
+    // The drawing of the page goes along as one picture; a page without a drawing sends none.
+    const d = inkDrawing();
+    const picture = d ? await drawingPicture(d.canvas) : null;
+    const report = await backend.exportPage(app.current.path, picture);
     const e = strings.exportPage;
-    showToast(fill(e.done, report) + (report.missing ? fill(e.missing, report) : ""));
+    showToast(fill(e.done, report) + (report.drawing ? e.drawing : "") + (report.missing ? fill(e.missing, report) : ""));
   } catch (error) {
     logProblem("export page failed", error);
     showBanner(strings.exportPage.failed);
