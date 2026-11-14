@@ -7118,6 +7118,26 @@ await test("a file called .pdf that is not a PDF says so and changes nothing", a
   await slashPdf(page, { name: "Fake2.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 but nothing else") }).catch(() => {});
 });
 
+await test("the words of a PDF page can be selected, and stay see-through", async (page) => {
+  await slashPdf(page, pdfFile(2));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-text span");
+  const word = await page.evaluate(() => {
+    const span = [...document.querySelectorAll(".pdf-page")[0].querySelectorAll(".pdf-text span")].find((el) => el.textContent.includes("Page 1"));
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return { selected: selection.toString(), colour: getComputedStyle(span).color, userSelect: getComputedStyle(span).userSelect };
+  });
+  assert.equal(word.selected, "Page 1");
+  assert.match(word.colour, /rgba\(0, 0, 0, 0\)|transparent/, "the words are see-through: only the picture shows");
+  assert.equal(word.userSelect, "text");
+  // The words belong to a page that is drawn, and go again when it is freed.
+  assert.equal(await page.locator(".pdf-page").nth(0).locator(".pdf-text").getAttribute("aria-hidden"), "true");
+});
+
 await test("a PDF can sit inside a callout, and is written back as it was", async (page) => {
   await start(page);
   const note = "> [!note] Slides\n> ![Notes](attachments/n.pdf)\n\nafter\n";
@@ -7553,6 +7573,316 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.click("#settingsTab-updates");
       await page.screenshot({ path: `${shots}/v0414-${label}-${scheme}-3-settings-updates.png` });
       await context.close();
+    }
+  }
+}
+
+// ---------- 0.4.15: find in the page (Ctrl+F) ----------
+
+async function findOpen(page, text, extra = {}) {
+  await page.waitForSelector("#newNote");
+  await seed(page, "Find.md", text);
+  if (extra.pdf) await page.evaluate((b64) => window.__mock.attachments.set("attachments/n.pdf", b64), makePdf(3).toString("base64"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Find.md"]');
+  await page.waitForSelector(".note-body");
+  if (extra.pdf) await page.waitForSelector(".pdf-text span");
+}
+const findStatus = (page) => page.locator(".find-status").innerText();
+const waitFindStatus = (page, text) => page.waitForFunction((want) => document.querySelector(".find-status").textContent === want, text);
+const findKey = (page) => page.keyboard.press("Control+f");
+
+await test("Ctrl+F opens a find bar for the text of the page, counts hits and moves between them", async (page) => {
+  await findOpen(page, "The cat sat. Another Cat came.\n\nA third cat.\n");
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+  await findKey(page);
+  assert.equal(await page.locator(".find-bar").isVisible(), true);
+  assert.equal(await page.evaluate(() => document.activeElement.className), "find-input", "the cursor is in the bar");
+  await page.keyboard.type("cat");
+  await waitFindStatus(page, "1 of 3");
+  assert.equal(await page.locator(".find-hit").count(), 3, "every hit is marked, whatever its case");
+  assert.equal(await page.locator(".find-hit-current").count(), 1);
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "2 of 3");
+  assert.equal(await page.locator(".find-hit-current").innerText(), "Cat");
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.press("Shift+Enter");
+  assert.equal(await findStatus(page), "3 of 3", "going back from the first hit wraps to the last");
+  await page.fill(".find-input", "zebra");
+  await waitFindStatus(page, "No matches");
+  assert.equal(await page.locator(".find-hit").count(), 0);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+  assert.equal(await page.locator(".find-hit").count(), 0, "the marks go when the bar closes");
+  await page.waitForTimeout(800);
+  assert.equal((await files(page))["Find.md"], "The cat sat. Another Cat came.\n\nA third cat.\n", "finding never changes the page");
+}, ctxOpts);
+
+await test("there is no find button: Ctrl+F is the only way in", async (page) => {
+  await findOpen(page, "text\n");
+  assert.equal(await page.locator("#findButton, .find-button, button[aria-label*='Find']").count(), 0);
+  await openPaletteBox(page);
+  await page.fill(".palette-input", "Find in this page");
+  await page.fill(".palette-input", "Print");
+  await page.waitForFunction(() => document.querySelector(".palette-list").textContent.includes("Print this page"));
+  await page.fill(".palette-input", "Find in");
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator(".palette-list").innerText().then((t) => t.includes("Find in this page")), false, "not in the command list either");
+}, ctxOpts);
+
+await test("Ctrl+F finds in the text and in a PDF, in the order they appear on the page", async (page) => {
+  await findOpen(page, "Page one text\n\n![Lecture](attachments/n.pdf)\n\nThe last page text\n", { pdf: true });
+  await findKey(page);
+  await page.keyboard.type("page");
+  await waitFindStatus(page, "1 of 5");
+  assert.equal(await page.locator(".find-hit-current").innerText(), "Page");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "2 of 5");
+  await page.waitForSelector(".pdf-hit-current");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 1");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "4 of 5");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 3");
+  assert.equal(await page.locator(".find-hit-current").count(), 0, "only one hit stands out at a time");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "5 of 5");
+  assert.equal(await page.locator(".find-hit-current").innerText(), "page");
+  assert.equal(await page.locator(".pdf-hit-current").count(), 0);
+  // The PDF is on screen when its hit is the current one.
+  await page.keyboard.press("Enter");
+  const inView = await page.evaluate(() => {
+    const block = document.querySelector(".pdf-block").getBoundingClientRect();
+    return block.bottom > 0 && block.top < window.innerHeight;
+  });
+  assert.ok(inView);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".pdf-hit").count(), 0, "the PDF marks go too");
+}, ctxOpts);
+
+await test("a word split by bold text, and a link, are found, and a hit in a folded toggle opens it", async (page) => {
+  await findOpen(page, "say he**llo** world\n\nsee [[Other page]] now\n\n<details>\n<summary>Folded</summary>\n\nhidden needle inside\n\n</details>\n");
+  await findKey(page);
+  await page.keyboard.type("hello w");
+  await waitFindStatus(page, "1 of 1");
+  assert.equal((await page.locator(".find-hit").allInnerTexts()).join(""), "hello w");
+  await page.fill(".find-input", "other");
+  await page.waitForFunction(() => [...document.querySelectorAll(".find-hit")].map((n) => n.textContent).join("") === "Other page");
+  assert.deepEqual(await page.locator(".find-hit").allInnerTexts(), ["Other page"], "a link is found by the name it shows");
+  await page.fill(".find-input", "needle");
+  await page.waitForSelector(".find-hit-current");
+  await page.waitForFunction(() => document.querySelector(".find-hit-current").textContent === "needle");
+  assert.equal(await page.locator(".toggle.folded").count(), 0, "the toggle opened to show the hit");
+  assert.equal(await page.locator(".find-hit-current").isVisible(), true);
+}, ctxOpts);
+
+await test("typing in the page while the bar is open searches again and keeps the text", async (page) => {
+  await findOpen(page, "one cat\n");
+  await findKey(page);
+  await page.keyboard.type("cat");
+  await waitFindStatus(page, "1 of 1");
+  await page.click(".note-body p");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" and a cat");
+  await waitFindStatus(page, "1 of 2");
+  await waitSaved(page);
+  assert.equal(bodyOfPage((await files(page))["Find.md"]), "one cat and a cat\n");
+}, ctxOpts);
+
+await test("Ctrl+F is left alone in the markdown view", async (page) => {
+  await findOpen(page, "some text\n");
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#source:not([hidden])");
+  await findKey(page);
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+}, ctxOpts);
+
+await test("a selected word starts the search, and the bar closes when another page opens", async (page) => {
+  await findOpen(page, "alpha beta gamma\n");
+  await page.evaluate(() => window.__mock.files.set("Other.md", "beta again\n"));
+  await page.click("#newFolder");
+  await page.dblclick(".note-body p");
+  await findKey(page);
+  assert.equal(await page.locator(".find-input").inputValue().then((v) => v.trim()), await page.evaluate(() => window.getSelection().toString().trim()) || "alpha");
+  await waitFindStatus(page, "1 of 1");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "Other");
+  assert.equal(await page.locator(".find-bar").isVisible(), false);
+}, ctxOpts);
+
+// ---------- 0.4.15: drawings in export ----------
+
+const exportViaPalette = async (page) => {
+  await openPaletteBox(page);
+  await page.fill(".palette-input", "Export this page");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => (window.__pageExports || []).length >= 1);
+};
+
+await test("exporting a page with a drawing sends the drawing as a white-paper PNG", async (page) => {
+  await start(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  await exportViaPalette(page);
+  const sent = await page.evaluate(() => window.__exportDrawings[0]);
+  assert.ok(sent && sent.startsWith("iVBORw0KGgo"), "a PNG was sent");
+  const look = await page.evaluate(async (b64) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${b64}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let red = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] > 150 && data[i + 1] < 90 && data[i + 2] < 90) red++;
+    return { corner: [...data.slice(0, 3)], red, w: image.width, h: image.height };
+  }, sent);
+  assert.deepEqual(look.corner, [255, 255, 255], "paper is white even in the dark theme");
+  assert.ok(look.red > 200, "the rectangle is in it");
+  assert.ok(look.w < 400 && look.h < 300, `the picture is cut to the drawing, got ${look.w}x${look.h}`);
+  assert.match(await page.locator(".toast").innerText(), /drawing is in it as a picture/);
+  assert.equal((await files(page))["Sketch.md"], BLOCK_PAGE, "the page itself is untouched");
+});
+
+await test("exporting a page without a drawing sends no picture", async (page) => {
+  await start(page);
+  await blockVault(page, null, "just text\n");
+  await exportViaPalette(page);
+  assert.equal(await page.evaluate(() => window.__exportDrawings[0]), null);
+  assert.doesNotMatch(await page.locator(".toast").innerText(), /drawing/);
+});
+
+// ---------- 0.4.15: drawings in print ----------
+
+await test("in a dark theme the printed text is still dark on white", async (page) => {
+  await inkVault(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await page.emulateMedia({ media: "print" });
+  const colours = await page.evaluate(() => {
+    const rgb = (el) => getComputedStyle(el).color.match(/\d+/g).slice(0, 3).map(Number);
+    return { text: rgb(document.querySelector("#editor .note-body p")), page: getComputedStyle(document.body).backgroundColor };
+  });
+  assert.ok(colours.text.every((v) => v < 90), `the text prints dark, got ${colours.text}`);
+  assert.equal(colours.page, "rgb(255, 255, 255)");
+}, ctxOpts);
+
+await test("printing puts the ink over the text on paper, and takes it away when printing is done", async (page) => {
+  await inkVault(page);
+  await startInk(page);
+  const second = await blockBox(page, 1);
+  await inkPen(page, horizontalLine(second));
+  await waitInkSaved(page);
+  await page.emulateMedia({ media: "print" });
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  const report = await page.evaluate(() => {
+    const blocks = [...document.querySelector("#editor .note-body").children];
+    return blocks.map((b) => getComputedStyle(b).backgroundImage);
+  });
+  assert.equal(report[0], "none", "a block without ink gets no picture");
+  assert.match(report[1], /^url\("data:image\/png;base64,/, "the inked block gets its ink as a picture");
+  assert.equal(report[2], "none");
+  // The picture really holds ink, black for the "ink" pen on white paper, whatever the theme.
+  const pixels = await page.evaluate(async () => {
+    const block = document.querySelector("#editor .note-body").children[1];
+    const url = getComputedStyle(block).backgroundImage.slice(5, -2);
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    let n = 0;
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 0) { n++; if (data[i] < 40 && data[i + 1] < 40 && data[i + 2] < 40) dark++; }
+    return { n, dark };
+  });
+  assert.ok(pixels.n > 100, "ink is in the picture");
+  assert.ok(pixels.dark > pixels.n / 2, "and it is black");
+  assert.equal(await page.locator(".ink-layer").isVisible(), false, "the live sheet is not printed");
+  const pdf = await page.pdf();
+  assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  const after = await page.evaluate(() => [...document.querySelector("#editor .note-body").children].map((b) => getComputedStyle(b).backgroundImage));
+  assert.deepEqual(after, ["none", "none", "none"], "the printing rules are gone again");
+  assert.equal((await files(page))["Sketch.md"], INK_PAGE, "printing never touches the page text");
+}, ctxOpts);
+
+await test("a page without ink prints with no extra rules", async (page) => {
+  await inkVault(page);
+  const rules = () => page.evaluate(() => [...document.styleSheets].reduce((n, sheet) => n + sheet.cssRules.length, 0));
+  const before = await rules();
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  assert.equal(await rules(), before, "no rule is added");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+}, ctxOpts);
+
+await test("a canvas block prints black on white, even in the dark theme, and goes back after", async (page) => {
+  await start(page);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await blockVault(page, drawingWith([{ tool: "pen", color: "ink", width: 6, points: [[20, 160, 0.5], [460, 160, 0.5]] }]));
+  await page.waitForFunction(() => document.querySelector(".canvas-block-surface").width > 0);
+  const corner = () => page.evaluate(() => {
+    const s = document.querySelector(".canvas-block-surface");
+    return [...s.getContext("2d").getImageData(2, 2, 1, 1).data].slice(0, 3).join(",");
+  });
+  const dark = await corner();
+  assert.notEqual(dark, "255,255,255", "on screen the dark theme gives a dark sheet");
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  assert.equal(await corner(), "255,255,255", "on paper the sheet is white");
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  assert.equal(await corner(), dark);
+});
+
+// Screenshots for the design check of 0.4.15 (only when SHOTS_DIR is set): the find box of a PDF
+// block, and a page with ink as it is printed, light and dark, desktop and phone.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await page.evaluate((b64) => {
+        window.__mock.attachments.set("attachments/n.pdf", b64);
+        window.__mock.files.set("Slides.md", "Notes from the lecture\n\n![Lecture 1](attachments/n.pdf)\n");
+      }, makePdf(3).toString("base64"));
+      await page.click("#newFolder");
+      await page.click('.tree-button[data-path="Slides.md"]');
+      await page.waitForSelector(".pdf-text span");
+      await page.keyboard.press("Control+f");
+      await page.keyboard.type("page");
+      await page.waitForFunction(() => document.querySelector(".find-status").textContent === "1 of 3");
+      await page.waitForTimeout(300);
+      if (label === "phone") await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await page.screenshot({ path: `${shots}/v0415-${label}-${scheme}-1-pdf-find.png` });
+      await context.close();
+
+      const inkContext = await browser.newContext({ viewport, colorScheme: scheme });
+      await inkContext.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const inkPage = await inkContext.newPage();
+      await inkPage.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await inkPage.goto(url);
+      await start(inkPage);
+      await inkVault(inkPage);
+      if (label === "phone") await inkPage.evaluate(() => document.body.classList.remove("sidebar-open"));
+      await startInk(inkPage);
+      await inkPen(inkPage, horizontalLine(await blockBox(inkPage, 1), 0.6));
+      await waitInkSaved(inkPage);
+      await inkPage.emulateMedia({ media: "print" });
+      await inkPage.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+      await inkPage.waitForTimeout(200);
+      await inkPage.screenshot({ path: `${shots}/v0415-${label}-${scheme}-2-print-with-ink.png` });
+      await inkContext.close();
     }
   }
 }

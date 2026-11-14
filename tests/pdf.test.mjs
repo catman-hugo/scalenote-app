@@ -67,3 +67,22 @@ test("a PDF has no size: a size typed into its description is just text", () => 
   assert.equal(writeBlock(node), "![Notes|300](attachments/n.pdf)");
   assert.equal(writeBlock({ type: "pdfBlock", attrs: { alt: "a]b\nc", path: "attachments/n.pdf" } }), "![a b c](attachments/n.pdf)");
 });
+
+// ---------- 0.4.15: finding words in a PDF ----------
+import { findInPages as findHits, TEXT_LIMITS as TEXT } from "../web/pdfrules.js";
+
+test("findInPages finds every hit in reading order and ignores case", () => {
+  const hits = findHits([["Hello world", "x"], ["say HELLO hello"]], "  hello ");
+  assert.deepEqual(hits, [
+    { page: 1, piece: 0, offset: 0 },
+    { page: 2, piece: 0, offset: 4 },
+    { page: 2, piece: 0, offset: 10 },
+  ]);
+});
+
+test("findInPages gives nothing for an empty word and stops at the limit", () => {
+  assert.deepEqual(findHits([["abc"]], "   "), []);
+  assert.deepEqual(findHits([["abc"]], undefined), []);
+  const many = [Array.from({ length: TEXT.hits + 50 }, () => "a")];
+  assert.equal(findHits(many, "a").length, TEXT.hits);
+});

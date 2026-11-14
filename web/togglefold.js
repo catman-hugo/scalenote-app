@@ -47,6 +47,11 @@ export function flipFold(view, pos) {
   view.dispatch(view.state.tr.setMeta(key, { flip: pos }).setMeta("addToHistory", false));
 }
 
+/** Whether the toggle that starts at `pos` is folded shut. */
+export function isFoldedAt(state, pos) {
+  return (key.getState(state) || []).includes(pos);
+}
+
 /** Whether these decorations (as a node view receives them) say "folded". */
 export const isFoldedBy = (decorations) => (decorations || []).some((d) => d.spec && d.spec.fold);
 

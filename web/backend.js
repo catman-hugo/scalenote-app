@@ -45,7 +45,7 @@ export const backend = {
   // Makes a copy of the vault next to it with the colours turned into plain highlights, for
   // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
   exportObsidianCopy: () => call("export_obsidian_copy"),
-  exportPage: (path) => call("export_page", { path }),
+  exportPage: (path, drawing = null) => call("export_page", { path, drawing }),
   // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
   trash: (path) => call("trash_entry", { path }),
   // Items in the trash, newest first: { id, name, from, is_folder, deleted_at }.

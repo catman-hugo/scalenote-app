@@ -22,6 +22,10 @@ const HIGHLIGHT_ALPHA = 0.35;
 const ERASER_PIXELS = 10;
 // A new point closer than this many screen pixels to the last one adds nothing visible.
 const MIN_STEP_PIXELS = 0.8;
+// Limits for the pictures made for printing: pixels in one, longest side of one, text length of all.
+const PRINT_PIXELS = 4_000_000;
+const PRINT_SIDE = 8000;
+const PRINT_CHARS = 40_000_000;
 const TOOLS = ["pen", "highlighter", "eraser"];
 
 function make(tag, className, text) {
@@ -89,7 +93,8 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   surface.setAttribute("aria-label", s.surface);
   layer.append(surface);
   scroller.prepend(layer);
-  const context = surface.getContext("2d");
+  const surfaceContext = surface.getContext("2d");
+  const context = surfaceContext;
 
   // ---- the bar ----
   const bar = make("div", "ink-bar");
@@ -275,8 +280,8 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
       state.colours[name] = style.getPropertyValue(name === "ink" ? "--text" : `--pen-${name}`).trim() || "#000";
     }
   }
-  function paintLine(stroke, points) {
-    const colour = state.colours[stroke.color] || "#000";
+  function paintLine(stroke, points, context = surfaceContext, colours = state.colours) {
+    const colour = colours[stroke.color] || "#000";
     context.strokeStyle = colour;
     context.fillStyle = colour;
     context.lineCap = "round";
@@ -366,6 +371,81 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   }
   function scheduleDraw() {
     if (!state.frame) state.frame = requestAnimationFrame(draw);
+  }
+
+  // ---- printing ----
+  // On paper the sheet over the text is not used (it is as big as the screen). Instead the ink of
+  // each block is drawn once into a picture as big as that block, and the picture becomes the
+  // background of the block (style rules for printing only, added with insertRule, which the
+  // page policy allows and which leaves the editor's own elements alone). Ink is stored as shares
+  // of its block, so the picture is stretched with the block to the width of the paper and the
+  // ink stays on its words; a block that gets much taller or wider on paper stretches its ink a
+  // little with it.
+  let printSheet = null;
+  function printPrepare() {
+    printClear();
+    const d = drawing();
+    if (!d || !d.canvas.ink.length) return { drawn: 0, skipped: 0 };
+    const root = body();
+    const nodes = blocks();
+    const known = tags();
+    const groups = new Map();
+    for (const item of d.canvas.ink) {
+      const at = findBlock(known, item.anchor);
+      if (at < 0 || !nodes[at]) continue;
+      if (!groups.has(at)) groups.set(at, []);
+      groups.get(at).push(item);
+    }
+    // The rules go at the end of the app's own style sheet, and are cut off again afterwards. (A
+    // style element made from script is refused by the page policy, but rules added through the
+    // sheet's own methods are not.)
+    const sheet = [...document.styleSheets].find((candidate) => candidate.ownerNode && candidate.ownerNode.tagName === "LINK");
+    if (!sheet) return { drawn: 0, skipped: 0 };
+    const start = sheet.cssRules.length;
+    let chars = 0;
+    let drawn = 0;
+    let skipped = 0;
+    const colours = {};
+    for (const name of PEN_COLOURS) {
+      colours[name] = name === "ink" ? "#000000" : getComputedStyle(document.documentElement).getPropertyValue(`--pen-${name}`).trim() || "#000";
+    }
+    for (const [at, items] of groups) {
+      const node = nodes[at];
+      const box = node.getBoundingClientRect();
+      const width = Math.max(1, Math.round(box.width));
+      const height = Math.max(1, Math.round(box.height));
+      // At most this many pixels per picture and in all, so a long page of ink cannot use all the memory.
+      const scale = Math.min(2, Math.sqrt(PRINT_PIXELS / (width * height)), PRINT_SIDE / Math.max(width, height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      const rect = { left: 0, top: 0, width, height, bottom: height };
+      for (const item of items) paintLine(item, inkToScreen(item, rect), ctx, colours);
+      const url = canvas.toDataURL("image/png");
+      canvas.width = 0;
+      canvas.height = 0;
+      if (chars + url.length > PRINT_CHARS) {
+        skipped++;
+        continue;
+      }
+      chars += url.length;
+      const index = [...root.children].indexOf(node) + 1;
+      sheet.insertRule(
+        `@media print { #editor .ProseMirror > :nth-child(${index}) { background-image: url("${url}"); background-size: 100% 100%; background-repeat: no-repeat; print-color-adjust: exact; -webkit-print-color-adjust: exact; } }`,
+        sheet.cssRules.length,
+      );
+      drawn++;
+    }
+    printSheet = { sheet, start };
+    return { drawn, skipped };
+  }
+  function printClear() {
+    if (!printSheet) return;
+    const { sheet, start } = printSheet;
+    printSheet = null;
+    while (sheet.cssRules.length > start) sheet.deleteRule(sheet.cssRules.length - 1);
   }
   scroller.addEventListener("scroll", scheduleDraw, { passive: true });
   new ResizeObserver(scheduleDraw).observe(scroller);
@@ -577,6 +657,10 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
       state.tagsDirty = true;
       if (state.visible) scheduleDraw();
     },
+    /** Gets the ink ready for printing (see above). Resolves to `{ drawn, skipped }` block counts. */
+    printPrepare,
+    /** Takes the printing rules away again. */
+    printClear,
     /** Redraws, for example after a different drawing was loaded. */
     redraw() {
       state.history = new DrawingHistory();

@@ -6,7 +6,7 @@
 // message instead, and the drawing is never touched by the block.
 import { Node } from "@tiptap/core";
 import { createPainter, readEnv } from "./canvaspaint.js";
-import { pageFill } from "./canvasrules.js";
+import { boundsOf, pageFill } from "./canvasrules.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -23,15 +23,23 @@ export function repaintCanvasBlocks() {
   for (const view of views) view.paint();
 }
 
+// While a page is printed (or saved as a PDF) drawings are painted as they are on paper: black
+// ink on a white sheet, whatever theme is on screen. Paper is white, and white ink would vanish.
+let forPaper = false;
+export function paintForPaper(on) {
+  if (forPaper === on) return;
+  forPaper = on;
+  repaintCanvasBlocks();
+}
+
 /**
  * Paints the part of `canvas` inside `frame` onto `surface`, scaled down to fit `width` pixels
  * when the frame is wider (never scaled up). Returns the size on the page.
  */
-export function paintRegion(surface, canvas, frame, width) {
+export function paintRegion(surface, canvas, frame, width, { paper = forPaper, ratio = window.devicePixelRatio || 1 } = {}) {
   const scale = Math.min(1, width / frame.w);
   const cssWidth = Math.max(1, Math.round(frame.w * scale));
   const cssHeight = Math.max(1, Math.round(frame.h * scale));
-  const ratio = window.devicePixelRatio || 1;
   surface.style.width = `${cssWidth}px`;
   surface.style.height = `${cssHeight}px`;
   if (surface.width !== Math.round(cssWidth * ratio)) surface.width = Math.round(cssWidth * ratio);
@@ -39,6 +47,10 @@ export function paintRegion(surface, canvas, frame, width) {
   const ctx = surface.getContext("2d");
   const env = { wrapped: new WeakMap() };
   readEnv(env);
+  if (paper) {
+    env.background = "#ffffff";
+    env.colours.ink = "#000000";
+  }
   env.pageFill = pageFill(canvas.page, env.background);
   const painter = createPainter(ctx, env);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -117,3 +129,43 @@ export const CanvasBlock = Node.create({
     };
   },
 });
+
+// The longest side and the most pixels of the picture made for an export, so a drawing that
+// spreads over a huge area becomes a smaller picture instead of using all the memory.
+const PICTURE_SIDE = 4000;
+const PICTURE_PIXELS = 12_000_000;
+const PICTURE_MARGIN = 24;
+
+/**
+ * A picture of the sheet of a drawing (everything drawn on it, on white paper with the ink in
+ * black), as a base64 PNG, or null when nothing is drawn. Ink drawn over the text of a page is
+ * not part of it, because it belongs to the words, not to the sheet. Resolves to null as well
+ * when the browser cannot make the picture.
+ */
+export async function drawingPicture(canvas) {
+  const box = canvas && canvas.items.length ? boundsOf(canvas.items) : null;
+  if (!box) return null;
+  const frame = {
+    x: Math.floor(box.minX - PICTURE_MARGIN),
+    y: Math.floor(box.minY - PICTURE_MARGIN),
+    w: Math.ceil(box.maxX - box.minX + 2 * PICTURE_MARGIN),
+    h: Math.ceil(box.maxY - box.minY + 2 * PICTURE_MARGIN),
+  };
+  // Drawn at its own size, or smaller when it would be too big; never enlarged.
+  const shrink = Math.min(1, PICTURE_SIDE / Math.max(frame.w, frame.h), Math.sqrt(PICTURE_PIXELS / (frame.w * frame.h)));
+  const surface = document.createElement("canvas");
+  try {
+    paintRegion(surface, canvas, frame, frame.w * shrink, { paper: true, ratio: 1 });
+    const blob = await new Promise((resolve) => surface.toBlob(resolve, "image/png"));
+    if (!blob) return null;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let text = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(text);
+  } catch {
+    return null;
+  } finally {
+    surface.width = 0;
+    surface.height = 0;
+  }
+}

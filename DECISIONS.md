@@ -620,3 +620,15 @@ Cost. A setting is one click further away than before. Tests that touch Settings
 Decision. Version 0.5 builds one sync engine that works between two devices that are both on, found on the same network the way LocalSend does it, or reached by a typed address. The home server is the same engine as a program with no window that never sleeps, so there is no second sync system. The browser client talks only to a server. This brings the "same person, two devices" part forward from the peer-to-peer work planned for 1.6; sharing with other people stays in 1.6 and 1.7.
 Alternatives. A server-only design (rejected by the owner as a first choice: it needs a machine that is always on); building direct sync in 1.6 as first planned (rejected: the owner wants two devices connected in 0.5).
 Cost. Android cannot sync while the app is asleep, and some Wi-Fi networks hide devices from each other, so a typed address is needed as a fallback. The Android multicast code can only be compiled by CI and tried on real devices.
+
+## 2026-11-14: Ink over text is printed, not exported
+
+Decision. Ink drawn over the text of a page is part of print and save-as-PDF (as a picture behind each block), and the markdown export carries only the drawing sheet as one picture at the end of the page. Ink over text is not in the markdown export.
+Alternatives. One picture per inked block placed under the block in the exported markdown (rejected for now: it would put pictures between the paragraphs of a page that other programs show as plain text, and the ink would no longer move with the words); a full-page picture of text and ink (rejected: the export would no longer be text).
+Cost. A person who exports a page loses the ink over the text. The toast after export says so. It can be added later as an option if it is missed.
+
+## 2026-11-14: One find for the whole page, opened with Ctrl+F only
+
+Decision. Finding a word is one feature for the whole page: Ctrl+F opens a find bar that searches the text and the PDFs shown in the page and visits the hits in page order. There is no PDF-only search. It has no button and no entry in the command list; the shortcut is the whole feature. Searching PDF text from the global search stays in 1.12.
+Alternatives. A find box in each PDF block (built first, then rejected by the owner: two kinds of search for one page); a find button in the top bar or the View menu (rejected by the owner).
+Cost. A phone or tablet without a keyboard has no way to open it. A hit split over two pieces of text in a PDF is not found, and a PDF hit marks the whole piece of text.
