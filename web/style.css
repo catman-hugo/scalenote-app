@@ -1249,6 +1249,9 @@ body.block-dragging .float-bar { visibility: hidden; }
   .settings-tabs { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: var(--space-2); overflow: visible; }
   .settings-tab { white-space: nowrap; }
   .settings-main { padding: var(--space-3); }
+  /* The two fields of the pairing form stack on a phone: label above, field below. */
+  .settings-body .pair-field { flex-direction: column; align-items: stretch; gap: var(--space-1); }
+  .settings-body .pair-field input { max-width: none; width: 100%; box-sizing: border-box; }
 }
 /* The What's new box is a column: the title and the Close button stay in view, and only the notes
    between them scroll. The height follows the real screen (dvh, with vh for older webviews), so the
@@ -1995,3 +1998,11 @@ button.danger:hover { background: var(--bg-hover); }
 .job-title { font-weight: 600; overflow-wrap: anywhere; }
 .job-hint { color: var(--text-soft); }
 .job-actions { display: flex; justify-content: flex-end; }
+
+/* Pairing in the Sync tab. */
+.dialog ul.pair-list, .pair-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; font-size: var(--text-s); }
+.pair-list li { padding: var(--space-1) 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.pair-remove { flex: none; white-space: nowrap; }
+.pair-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.pair-code-box { margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); }
+.pair-code { margin: var(--space-2) 0; font-size: var(--text-l, 1.5rem); font-weight: 600; letter-spacing: 0.1em; font-variant-numeric: tabular-nums; }

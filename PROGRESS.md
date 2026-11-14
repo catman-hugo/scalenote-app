@@ -2,7 +2,22 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-14, 0.5.0 built (sync foundations, no network); built and tested in a browser and with real folders in Rust, NOT tried on a device.
+Last updated: 2026-11-14, 0.5.1 built (device keys and pairing); tested in a browser and with real connections on one computer in Rust, NOT tried on two devices.
+
+## 0.5.1: built, not tried on two devices
+
+Identity and pairing. Branch `feature/v0.5.1-pairing`. Release notes: `docs/release-notes/0.5.1.md`; security checklist: `docs/security-checklist-0.5.1.md`. The app version number is still 0.5.0 on purpose: the owner holds the release until sync between two devices works (see DECISIONS.md).
+
+Done (tried here: 196 Rust tests in the core, about 36 of them new and using real connections on one computer; 3 new browser tests and 1 unit test; screenshots light and dark, desktop and phone):
+- `sync::identity` (device key pair, fingerprint, secret store trait, private-file store), `sync::trust` (paired devices list), `sync::channel` (encrypted connection), `sync::pairing` (8-digit code, SPAKE2, confirmation tags), `sync::service` (listens only when allowed, pairs, refuses unpaired devices, events), `sync::manager` (the app's one entry point).
+- App commands `sync_status`, `sync_start_pairing`, `sync_stop_pairing`, `sync_join`, `sync_remove_peer`; Windows key storage in `src-tauri/src/secure.rs`.
+- Settings, Sync: paired devices with Remove, "Pair a device" (code, address, countdown), "Enter a code from another device", Sync activity.
+
+Not done / untried:
+- `src-tauri/src/lib.rs` and `secure.rs` could not be compiled here (system libraries missing); CI compiles them. The Windows credential store was never run.
+- Pairing was never tried between two real devices, on the real network, or on Android.
+- Linux and Android keep the key in a private file, not the system storage (see DECISIONS.md). Android keystore is planned for 0.5.4.
+- Nothing is exchanged after pairing yet (0.5.3). Finding the other device without typing its address is 0.5.2.
 
 ## 0.5.0: built, not tried on a device
 

@@ -7348,7 +7348,7 @@ await test("Settings has a Sync tab: on by default, the name is kept clean, and 
   await page.waitForSelector("#syncEnabled:not([disabled])");
   assert.equal(await page.isChecked("#syncEnabled"), true, "sync is on by default");
   assert.equal(await page.inputValue("#syncName"), "this-device");
-  assert.ok((await page.locator("#settings .settings-body:visible").textContent()).includes("Nothing is sent yet"), "honest about what it does not do yet");
+  assert.ok((await page.locator("#settings .settings-body:visible").textContent()).includes("No pages are exchanged yet"), "honest about what it does not do yet");
   await page.fill("#syncName", "  Alice's Phone / 2 ");
   await page.dispatchEvent("#syncName", "change");
   await page.waitForFunction(() => document.querySelector("#syncName").value === "Alices-Phone-2");
@@ -7387,6 +7387,70 @@ await test("when the Sync settings cannot be read the switch and the name stay l
   assert.equal(await page.isDisabled("#syncEnabled"), true);
   assert.equal(await page.isDisabled("#syncName"), true);
 }, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__failSync = true; }) });
+
+await test("pairing: the Sync tab shows this device, shows a code with its address and time, and closes it when a device pairs", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairStart");
+  assert.match(await page.textContent("#pairFingerprint"), /ab12 cd34 ef56 7890 1234/);
+  assert.match(await page.textContent("#pairList"), /No devices are paired yet/);
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.equal((await page.textContent("#pairCode")).trim(), "1234 5678");
+  assert.match(await page.textContent("#pairAddressText"), /192\.168\.1\.20:47821/);
+  await page.waitForFunction(() => /Good for 2:00|Good for 1:5\d/.test(document.querySelector("#pairLeft").textContent));
+  await page.evaluate(() => window.__mock.peerPairs());
+  await page.waitForFunction(() => document.querySelector("#pairMessage").textContent.includes("Paired with alice-phone"), null, { timeout: 5000 });
+  assert.equal(await page.isHidden("#pairCodeBox"), true);
+  assert.match(await page.textContent("#pairList"), /alice-phone/);
+  assert.match(await page.textContent("#pairActivity"), /paired with alice-phone/);
+}, { settings: existingUser({ updates: false }) });
+
+await test("pairing: stopping the code, closing Settings while a code shows, and a refused start all end calmly", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  await page.click("#pairStop");
+  await page.waitForSelector("#pairCodeBox", { state: "hidden" });
+  assert.equal(await page.evaluate(() => window.__pairStops), 1);
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await page.waitForFunction(() => window.__pairStops === 2, null, { timeout: 5000 });
+  await openSettingsTab(page, "sync");
+  await page.evaluate(() => { window.__failPairing = "sync_off"; });
+  await page.click("#pairStart");
+  await page.waitForFunction(() => document.querySelector("#pairMessage").textContent.includes("turned off"));
+  assert.equal(await page.isHidden("#pairCodeBox"), true);
+}, { settings: existingUser({ updates: false }) });
+
+await test("pairing: entering a code pairs, a wrong-length code and an unreachable device say why, and removing needs a second click", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.fill("#pairJoinAddress", "bob.example.local:47821");
+  await page.fill("#pairJoinCode", "12");
+  await page.click("#pairJoin");
+  await page.waitForFunction(() => document.querySelector("#pairMessage").textContent.includes("8 digits"));
+  await page.evaluate(() => { window.__failJoin = "sync_unreachable"; });
+  await page.fill("#pairJoinCode", "1234 5678");
+  await page.click("#pairJoin");
+  await page.waitForFunction(() => document.querySelector("#pairMessage").textContent.includes("Could not reach"));
+  await page.evaluate(() => { window.__failJoin = null; });
+  await page.click("#pairJoin");
+  await page.waitForFunction(() => document.querySelector("#pairMessage").textContent.includes("Paired with bob-laptop"));
+  const joins = await page.evaluate(() => window.__joins);
+  assert.deepEqual(joins[joins.length - 1], { address: "bob.example.local:47821", code: "12345678" });
+  assert.equal(await page.inputValue("#pairJoinCode"), "");
+  await page.click("#pairList .pair-remove");
+  assert.match(await page.textContent("#pairList"), /Click again to remove/);
+  await page.click("#pairList .pair-remove");
+  await page.waitForFunction(() => document.querySelector("#pairList").textContent.includes("No devices are paired yet"));
+  assert.match(await page.textContent("#pairActivity"), /removed/);
+  // Rapid clicking on Pair never throws.
+  for (let i = 0; i < 10; i++) await page.click("#pairJoin");
+}, { settings: existingUser({ updates: false }) });
 
 await test("on a computer Settings is wide with the tabs on the left; on a phone the tabs are a row on top and nothing overflows", async (page) => {
   await page.waitForSelector("#newNote");
@@ -8051,6 +8115,14 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.dispatchEvent("#syncName", "change");
       await page.waitForFunction(() => document.querySelector("#syncStatus").textContent === "Saved.");
       await page.screenshot({ path: `${shots}/v050-${label}-${scheme}-1-sync-settings.png` });
+      // 0.5.1: one paired device, a code showing, and the activity list.
+      await page.evaluate(() => window.__mock.peerPairs());
+      await page.click("#pairStart");
+      await page.waitForSelector("#pairCodeBox:not([hidden])");
+      await page.locator("#pairCodeBox").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v051-${label}-${scheme}-1-pairing-code.png` });
+      await page.locator("#pairActivity").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v051-${label}-${scheme}-2-activity.png` });
       await context.close();
     }
   }
