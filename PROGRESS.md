@@ -14,6 +14,8 @@ Done (tried here: 160 Rust tests in the core, 29 of them new and run on real fol
 - `sync::device`: a random device id, a cleaned device name and the on/off switch (on by default), kept in the app's data folder outside the vault, written atomically.
 - Settings has a "Sync" tab with the switch and the device name. It says that nothing is sent yet.
 
+Also (branch `feature/pdf-import-background`, not yet merged): adding PDF pages as pictures runs in the background behind a progress card with the time left, and is a little faster. Tried here: browser tests (card, typing during the import, spot kept when text is typed above, going to another page, Stop, a second import refused, page gone) and a 40-page timing in headless Chromium (about 2.5 s before, 2.2 s after; the phone will differ). NOT tried on a phone: the real speed-up, and whether Android keeps the import running when the app is not on screen.
+
 Not done / untried:
 - The Tauri commands `get_sync_settings` and `set_sync_settings` are in `src-tauri/src/lib.rs`, which cannot be compiled here (system libraries missing); CI compiles it.
 - The Sync tab has not been seen on a real phone or in the packaged app.

@@ -9,7 +9,7 @@
 import { backend } from "./backend.js";
 import { readAsBase64, storePicture } from "./images.js";
 import { openPdf } from "./pdfdoc.js";
-import { PDF_LIMITS, checkPdf, pageFileName, pdfTitle } from "./pdfrules.js";
+import { PDF_LIMITS, checkPdf, pageFileName, pdfTitle, roundEstimate, secondsLeft } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -61,8 +61,15 @@ export async function storePdf(file) {
 
 /**
  * Turns every page into a picture in the vault. Resolves to `[{ path, alt }]` in page order.
- * `progress(page, total)` is told before each page, and `stopped()` says whether the person
- * pressed Stop (the pictures already made stay in the vault, unused).
+ * `progress(done, total)` is told when the import starts and after each page is saved, and
+ * `stopped()` says whether the person pressed Stop (the pictures already made stay in the vault,
+ * unused).
+ *
+ * Why it is built as two lanes: painting a page uses the screen's own thread, while turning the
+ * painting into a JPEG, and saving it, mostly wait for other threads. So while page N is being
+ * encoded and saved, page N + 1 is already being painted. Two canvases take turns for this. The
+ * pictures are the same as doing one page at a time (same size, same JPEG quality). Painting two
+ * pages at once was tried and was not faster, so it is not done.
  */
 export async function importPages(file, { progress = () => {}, stopped = () => false } = {}) {
   const problem = checkPdf(file);
@@ -73,30 +80,61 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
   } catch {
     throw fail("pdf_failed");
   }
+  const canvases = [document.createElement("canvas"), document.createElement("canvas")];
   try {
     if (pdf.pages > PDF_LIMITS.importPages) throw fail("pdf_too_many_pages");
     const title = pdfTitle(file.name);
-    const canvas = document.createElement("canvas");
-    const made = [];
-    for (let page = 1; page <= pdf.pages; page++) {
-      if (stopped()) return null;
-      progress(page, pdf.pages);
+    const total = pdf.pages;
+    const made = new Array(total);
+    const saves = [];
+    let failure = null;
+    let done = 0;
+    progress(0, total);
+
+    // Encodes and saves one drawn page. A failure is kept and thrown by the main loop, so a
+    // rejected promise is never left without someone listening.
+    const save = async (canvas, page) => {
+      try {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", PDF_LIMITS.jpegQuality));
+        if (!blob) throw fail("pdf_failed");
+        const picture = new File([blob], pageFileName(file.name, page, total), { type: "image/jpeg" });
+        const path = await storePicture(picture);
+        made[page - 1] = { path, alt: fill(strings.pdf.pageAlt, { page, name: title }) };
+        done++;
+        progress(done, total);
+      } catch (error) {
+        failure = failure || (error && error.code ? error : fail("pdf_failed"));
+      }
+    };
+
+    let cancelled = false;
+    for (let page = 1; page <= total; page++) {
+      if (stopped()) {
+        cancelled = true;
+        break;
+      }
+      // The canvas this page will use was used by the page before the previous one; its save
+      // has to be finished (at most two pages are in flight at once, so memory stays small).
+      if (page > 2) await saves[page - 3];
+      if (failure) break;
+      const canvas = canvases[(page - 1) % 2];
       try {
         await pdf.render(page, canvas);
       } catch {
-        throw fail("pdf_failed");
+        failure = failure || fail("pdf_failed");
+        break;
       }
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", PDF_LIMITS.jpegQuality));
-      if (!blob) throw fail("pdf_failed");
-      const picture = new File([blob], pageFileName(file.name, page, pdf.pages), { type: "image/jpeg" });
-      const path = await storePicture(picture);
-      made.push({ path, alt: fill(strings.pdf.pageAlt, { page, name: title }) });
+      saves.push(save(canvas, page));
     }
-    // Free the page memory at once; a long PDF's last page would otherwise stay in memory.
-    canvas.width = 0;
-    canvas.height = 0;
-    return made;
+    await Promise.all(saves);
+    if (failure) throw failure;
+    return cancelled ? null : made;
   } finally {
+    // Free the page memory at once; a long PDF's last page would otherwise stay in memory.
+    for (const canvas of canvases) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
     await pdf.destroy();
   }
 }
@@ -140,40 +178,46 @@ export function askPdfMode(dialog, name) {
   });
 }
 
-/**
- * Turns the open box into a progress view. Returns `{ update(page, total), stopped(), finish() }`;
- * Stop, or Escape, makes `stopped()` true, and `finish()` closes the box.
- */
-export function showProgress(dialog, name) {
+/** The time left as words, for example "About 2 min left". */
+export function describeTimeLeft(seconds) {
   const t = strings.pdf;
+  if (seconds === null) return t.timeUnknown;
+  const { minutes, seconds: rest } = roundEstimate(seconds);
+  return fill(t.timeLeft, { time: minutes > 0 ? fill(t.minutes, { count: minutes }) : fill(t.seconds, { count: rest }) });
+}
+
+/**
+ * Fills the small progress card that sits over the page (not a box: the person keeps working
+ * while it runs). Returns `{ update(done, total), stopped(), finish() }`; Stop makes `stopped()`
+ * true, and `finish()` hides the card.
+ */
+export function showProgress(card, name) {
+  const t = strings.pdf;
+  const began = performance.now();
   let stop = false;
-  const status = make("p", "pdf-progress", "");
-  status.setAttribute("role", "status");
+  const title = make("p", "job-title", fill(t.working, { name: pdfTitle(name) }));
+  const status = make("p", "job-status", "");
+  const left = make("p", "job-left", t.timeUnknown);
   const button = make("button", "", t.stop);
   button.type = "button";
-  const end = () => {
+  button.addEventListener("click", () => {
     stop = true;
     button.disabled = true;
-  };
-  button.addEventListener("click", end);
-  // Escape asks to stop instead of closing the box under a running import.
-  const onEscape = (event) => {
-    event.preventDefault();
-    end();
-  };
-  dialog.addEventListener("cancel", onEscape);
-  const actions = make("div", "dialog-actions");
+    left.textContent = t.stopping;
+  });
+  const actions = make("div", "job-actions");
   actions.append(button);
-  dialog.replaceChildren(make("h2", "", fill(t.working, { name: pdfTitle(name) })), status, actions);
+  card.replaceChildren(title, status, left, make("p", "job-hint", t.keepOpen), actions);
+  card.hidden = false;
   return {
-    update: (page, total) => {
-      status.textContent = fill(t.progress, { page, total });
+    update: (done, total) => {
+      status.textContent = fill(t.progress, { done, total });
+      if (!stop) left.textContent = describeTimeLeft(secondsLeft(done, total, performance.now() - began));
     },
     stopped: () => stop,
-    // Gives Escape its normal job back and closes the box.
     finish: () => {
-      dialog.removeEventListener("cancel", onEscape);
-      dialog.close();
+      card.hidden = true;
+      card.replaceChildren();
     },
   };
 }

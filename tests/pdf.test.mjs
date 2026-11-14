@@ -86,3 +86,24 @@ test("findInPages gives nothing for an empty word and stops at the limit", () =>
   const many = [Array.from({ length: TEXT.hits + 50 }, () => "a")];
   assert.equal(findHits(many, "a").length, TEXT.hits);
 });
+
+// ---------- the time left of a long import ----------
+import { roundEstimate, secondsLeft } from "../web/pdfrules.js";
+
+test("the time left is worked out from the pages done, and not guessed from one page", () => {
+  assert.equal(secondsLeft(0, 33, 5000), null);
+  assert.equal(secondsLeft(1, 33, 9000), null, "the first page alone says too little");
+  assert.equal(secondsLeft(2, 33, 6000), 93, "3 s a page, 31 pages to go");
+  assert.equal(secondsLeft(33, 33, 99000), null, "nothing left");
+  assert.equal(secondsLeft(5, 3, 1000), null, "more done than total is not an estimate");
+  assert.equal(secondsLeft(2, 33, 0), null);
+  assert.equal(secondsLeft(NaN, 10, 1000), null);
+});
+
+test("an estimate is rounded so it does not look more exact than it is", () => {
+  assert.deepEqual(roundEstimate(1), { minutes: 0, seconds: 5 });
+  assert.deepEqual(roundEstimate(42), { minutes: 0, seconds: 45 });
+  assert.deepEqual(roundEstimate(59), { minutes: 1, seconds: 0 });
+  assert.deepEqual(roundEstimate(93), { minutes: 2, seconds: 0 });
+  assert.deepEqual(roundEstimate(600), { minutes: 10, seconds: 0 });
+});
