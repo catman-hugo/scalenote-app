@@ -7224,7 +7224,7 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Files"]);
+  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
@@ -7241,6 +7241,52 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   assert.equal(await page.locator("#settings h2").textContent(), "Files", "it opens where it was left");
 }, { settings: existingUser({ updates: false }) });
+
+await test("Settings has a Sync tab: on by default, the name is kept clean, and both choices are saved and shown as saved", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#syncEnabled:not([disabled])");
+  assert.equal(await page.isChecked("#syncEnabled"), true, "sync is on by default");
+  assert.equal(await page.inputValue("#syncName"), "this-device");
+  assert.ok((await page.locator("#settings .settings-body:visible").textContent()).includes("Nothing is sent yet"), "honest about what it does not do yet");
+  await page.fill("#syncName", "  Alice's Phone / 2 ");
+  await page.dispatchEvent("#syncName", "change");
+  await page.waitForFunction(() => document.querySelector("#syncName").value === "Alices-Phone-2");
+  assert.equal(await page.textContent("#syncStatus"), "Saved.");
+  await page.uncheck("#syncEnabled");
+  await page.waitForFunction(() => window.__syncSaves >= 2);
+  assert.equal(await page.isChecked("#syncEnabled"), false);
+  // Closing and opening again shows what was saved, not what was typed.
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#syncEnabled:not([disabled])");
+  assert.equal(await page.isChecked("#syncEnabled"), false);
+  assert.equal(await page.inputValue("#syncName"), "Alices-Phone-2");
+}, { settings: existingUser({ updates: false }) });
+
+await test("Sync settings that cannot be saved or read say so calmly and change nothing on screen", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#syncEnabled:not([disabled])");
+  await page.evaluate(() => { window.__failSync = true; });
+  await page.uncheck("#syncEnabled");
+  await page.waitForFunction(() => document.querySelector("#syncStatus").textContent.startsWith("Could not save"));
+  await page.fill("#syncName", "bob");
+  await page.dispatchEvent("#syncName", "change");
+  await page.waitForFunction(() => document.querySelector("#syncStatus").textContent.startsWith("Could not save"));
+  // Rapid clicking on the switch never throws.
+  for (let i = 0; i < 10; i++) await page.click("#syncEnabled");
+  assert.equal(await page.evaluate(() => document.querySelector("#syncStatus").textContent.startsWith("Could not save")), true);
+}, { settings: existingUser({ updates: false }) });
+
+await test("when the Sync settings cannot be read the switch and the name stay locked and the tab says why", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForFunction(() => document.querySelector("#syncStatus").textContent.startsWith("Could not read"));
+  assert.equal(await page.isDisabled("#syncEnabled"), true);
+  assert.equal(await page.isDisabled("#syncName"), true);
+}, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__failSync = true; }) });
 
 await test("on a computer Settings is wide with the tabs on the left; on a phone the tabs are a row on top and nothing overflows", async (page) => {
   await page.waitForSelector("#newNote");
@@ -7273,7 +7319,7 @@ await test("on a phone the Settings tabs sit in a row on top and the box does no
   if (shots) await page.screenshot({ path: `${shots}/v0414-phone-settings-tabs-wrapped.png` });
   // Every tab is on the screen, none is cut off at the edge.
   const edges = await page.evaluate(() => [...document.querySelectorAll('#settings [role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return [b.left, b.right]; }));
-  assert.equal(edges.length, 5);
+  assert.equal(edges.length, 6);
   assert.ok(edges.every(([l, r]) => l >= 0 && r <= r0.vw), JSON.stringify(edges));
   await page.click("#settingsTab-files");
   assert.equal(await page.locator("#settings h2").textContent(), "Files");
@@ -7883,6 +7929,29 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await inkPage.waitForTimeout(200);
       await inkPage.screenshot({ path: `${shots}/v0415-${label}-${scheme}-2-print-with-ink.png` });
       await inkContext.close();
+    }
+  }
+}
+
+// Screenshots for the design check of 0.5.0 (only when SHOTS_DIR is set): the Sync tab of
+// Settings, light and dark, desktop and phone.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await openSettingsTab(page, "sync");
+      await page.waitForSelector("#syncEnabled:not([disabled])");
+      await page.fill("#syncName", "Alice laptop");
+      await page.dispatchEvent("#syncName", "change");
+      await page.waitForFunction(() => document.querySelector("#syncStatus").textContent === "Saved.");
+      await page.screenshot({ path: `${shots}/v050-${label}-${scheme}-1-sync-settings.png` });
+      await context.close();
     }
   }
 }

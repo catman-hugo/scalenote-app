@@ -46,6 +46,9 @@ export const backend = {
   // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
   exportObsidianCopy: () => call("export_obsidian_copy"),
   exportPage: (path, drawing = null) => call("export_page", { path, drawing }),
+  // This device's sync name and on/off switch: { name, enabled }. Kept outside the vault.
+  getSyncSettings: () => call("get_sync_settings"),
+  setSyncSettings: (patch) => call("set_sync_settings", { name: patch.name ?? null, enabled: patch.enabled ?? null }),
   // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
   trash: (path) => call("trash_entry", { path }),
   // Items in the trash, newest first: { id, name, from, is_folder, deleted_at }.

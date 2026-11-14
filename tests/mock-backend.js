@@ -12,6 +12,7 @@
   const canvases = new Map(); // path of the page -> text of its drawing
   const history = new Map(); // path -> [{ id, time (seconds), text }]
   let trashSeq = 0;
+  const syncDevice = { name: "this-device", enabled: true };
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
   const fail = (code) => { throw code; };
   const unique = (parent, stem, ext, exists) => {
@@ -99,6 +100,19 @@
       window.__exports = (window.__exports || 0) + 1;
       if (window.__failExport) fail(window.__failExport);
       return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
+    },
+    // Same shapes as the real commands. The name is cleaned in Rust (tested there); the stand-in
+    // only drops what a file name could not hold, so the screen can be driven.
+    get_sync_settings: () => {
+      if (window.__failSync) fail("io");
+      return { ...syncDevice };
+    },
+    set_sync_settings: ({ name, enabled }) => {
+      if (window.__failSync) fail("io");
+      if (name !== null && name !== undefined) syncDevice.name = name.replace(/[^\p{L}\p{N}_ -]/gu, "").trim().replace(/ +/g, "-").slice(0, 40) || "this-device";
+      if (enabled !== null && enabled !== undefined) syncDevice.enabled = enabled;
+      window.__syncSaves = (window.__syncSaves || 0) + 1;
+      return { ...syncDevice };
     },
     // The page export is made by Rust (tested there with real files); here it is only recorded.
     export_page: ({ path, drawing }) => {

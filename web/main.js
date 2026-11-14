@@ -434,6 +434,68 @@ function obsidianRows() {
 
 // History keeps old text, including text deleted since, so there is a way to wipe it. Two clicks,
 // because it cannot be undone.
+// The Sync tab: this device's name and the on/off switch. Both are kept by the Rust side outside
+// the vault. Each change is saved at once and the screen shows what was actually saved (the name
+// is cleaned there), so the person always sees the result. Nothing is sent over a network yet.
+function syncSettingsRows() {
+  const s = strings.settings;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.id = "syncEnabled";
+  box.disabled = true;
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.syncOn, "setting-label"), box);
+  const name = document.createElement("input");
+  name.type = "text";
+  name.id = "syncName";
+  name.maxLength = 40;
+  name.disabled = true;
+  name.autocomplete = "off";
+  const nameRow = document.createElement("label");
+  nameRow.className = "setting-row";
+  nameRow.append(textElement("span", s.syncName, "setting-label"), name);
+  const status = textElement("p", "", "setting-hint");
+  status.id = "syncStatus";
+  status.setAttribute("role", "status");
+  const show = (settings) => {
+    box.checked = settings.enabled;
+    name.value = settings.name;
+  };
+  const save = async (patch) => {
+    try {
+      show(await backend.setSyncSettings(patch));
+      status.textContent = s.syncSaved;
+    } catch (error) {
+      logProblem("saving sync settings failed", error);
+      status.textContent = s.syncFailed;
+    }
+  };
+  box.addEventListener("change", () => save({ enabled: box.checked }));
+  name.addEventListener("change", () => save({ name: name.value }));
+  backend
+    .getSyncSettings()
+    .then((settings) => {
+      show(settings);
+      box.disabled = false;
+      name.disabled = false;
+    })
+    .catch((error) => {
+      logProblem("reading sync settings failed", error);
+      status.textContent = s.syncLoadFailed;
+    });
+  return [
+    textElement("h3", s.syncHeading, "setting-heading"),
+    row,
+    textElement("p", s.syncOnHint, "setting-hint"),
+    nameRow,
+    textElement("p", s.syncNameHint, "setting-hint"),
+    textElement("p", s.syncNotYet, "setting-hint"),
+    textElement("p", s.syncRules, "setting-hint"),
+    status,
+  ];
+}
+
 function historySettingsRows() {
   const s = strings.settings;
   const result = textElement("p", "", "setting-hint");
@@ -1947,6 +2009,7 @@ function fillStaticText() {
         pages: [...coverSettingsRows(), ...backlinkSettingsRows()],
         drawing: canvasSettingsRows(),
         updates: updateSettingsRows(),
+        sync: syncSettingsRows(),
         files: [...historySettingsRows(), ...obsidianRows()],
       },
     );

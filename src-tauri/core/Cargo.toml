@@ -1,6 +1,6 @@
 [package]
 name = "scalenote-core"
-version = "0.4.15"
+version = "0.5.0"
 description = "Vault logic with no window or web view in it, so it can be tested anywhere."
 edition = "2021"
 rust-version = "1.77"
@@ -8,6 +8,11 @@ rust-version = "1.77"
 # Only the standard library on purpose: every extra library is something that can
 # change or break, and the vault code is the part that must never lose a note.
 [dependencies]
+# Both are already in the lock file through Tauri, so no new code is added to the build.
+# sha2 gives the content hashes the sync compares (a vetted library, not hand-written code);
+# getrandom gives the operating system's random numbers for the device id.
+sha2 = "=0.10.9"
+getrandom = "=0.3.4"
 
 [[bin]]
 # Used only by the tests. It writes a note over and over so a test can kill it

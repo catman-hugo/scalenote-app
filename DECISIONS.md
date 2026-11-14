@@ -632,3 +632,15 @@ Cost. A person who exports a page loses the ink over the text. The toast after e
 Decision. Finding a word is one feature for the whole page: Ctrl+F opens a find bar that searches the text and the PDFs shown in the page and visits the hits in page order. There is no PDF-only search. It has no button and no entry in the command list; the shortcut is the whole feature. Searching PDF text from the global search stays in 1.12.
 Alternatives. A find box in each PDF block (built first, then rejected by the owner: two kinds of search for one page); a find button in the top bar or the View menu (rejected by the owner).
 Cost. A phone or tablet without a keyboard has no way to open it. A hit split over two pieces of text in a PDF is not found, and a PDF hit marks the whole piece of text.
+
+## 2026-11-14: Sync answers from the owner
+
+Decision. Sync is on by default with a switch in Settings; nothing syncs until a device is paired. The first sync with a device always shows what it will change and asks. Later syncs run by themselves when a paired device appears while the app is open, with a "Sync now" button as the fallback, and every sync shows what it did (status line and a "Sync activity" list): the program never does anything without feedback. The home server works on the home network and over Tailscale; an open port waits until after the security checks after v1. The server holds several vaults from 0.5.5, each with its own paired devices and keys, so a second person has their own vault.
+Alternatives. Off by default (the first plan; the owner chose on); automatic sync only on a button press (rejected by the owner); a single-vault server until 1.7 (rejected: a second person needs a vault now).
+Cost and builder's choice. A default-on feature that listens on a network is a risk on other people's Wi-Fi, so the app listens and announces itself only while a device is paired or the pairing screen is open. The owner can change this. Multi-vault moves part of the server work from 1.7 into 0.5.5 (separate folders and keys per vault, no accounts or sharing).
+
+## 2026-11-14: Two small libraries for sync (sha2, getrandom)
+
+Decision. The sync rules use sha2 0.10.9 (SHA-256 of file content, to tell whether two files are the same) and getrandom 0.3.4 (random numbers from the system for the device id). Both are pinned to exact versions and are the licences MIT or Apache-2.0. Both were already in the build as parts of other libraries, so the lock file only gained two lines and no other version changed.
+Alternatives. Writing SHA-256 by hand (rejected: a hand-written hash is exactly the kind of code that goes wrong quietly); comparing whole files byte by byte on every sync (rejected: needs both files in one place, which two devices do not have); a weaker source of random numbers (rejected: the id and later the pairing keys must not be guessable).
+Cost. Two more names in the dependency list to keep an eye on at each update.
