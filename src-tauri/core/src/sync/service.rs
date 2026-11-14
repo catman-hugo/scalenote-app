@@ -418,3 +418,15 @@ pub fn ping(service: &Service, address: &str) -> Result<String> {
         Err(SyncError::Refused("not paired with that device"))
     }
 }
+
+/// This device's address on the local network, as far as the system can tell, for showing to
+/// the person ("type this on the other device"). It asks the system which interface it would
+/// use to reach another network; a UDP "connection" sends nothing, so no packet leaves. `None`
+/// when there is no network.
+pub fn local_address_hint() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    // 192.0.2.1 is a documentation address: it is never a real machine.
+    socket.connect("192.0.2.1:9").ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_unspecified() && !ip.is_loopback()).then(|| ip.to_string())
+}

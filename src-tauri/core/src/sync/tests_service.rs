@@ -247,3 +247,49 @@ fn a_bad_address_or_code_fails_calmly() {
     assert!(matches!(bob.join("127.0.0.1:9", "123"), Err(SyncError::Refused(_))));
     assert!(matches!(bob.join("127.0.0.1:9", "1234567a"), Err(SyncError::Refused(_))));
 }
+
+// ---- the manager ----
+
+use super::identity::FileSecretStore;
+use super::manager::Manager;
+
+#[test]
+fn the_manager_follows_the_switch_and_survives_broken_keys() {
+    let dir = Dir::new("manager");
+    let store = FileSecretStore::new(dir.0.join("keys").join("device.key"));
+    let manager = Manager::start(&dir.0, &store);
+    assert!(manager.problem().is_none() && manager.service().is_some());
+    assert!(manager.settings().expect("settings").enabled, "on by default");
+    assert_eq!(manager.service().expect("service").status().listening_port, None, "and silent until a device is paired");
+    manager.update(Some("Alice laptop"), Some(false)).expect("update");
+    assert_eq!(manager.settings().expect("settings").name, "Alice-laptop");
+    assert!(manager.service().expect("service").start_pairing().is_err(), "off means no pairing");
+    // A damaged key file: sync is unavailable with a reason, nothing panics, the file is kept.
+    let broken = Dir::new("manager-broken");
+    let path = broken.0.join("device.key");
+    fs::write(&path, b"damaged").expect("write");
+    let manager = Manager::start(&broken.0, &FileSecretStore::new(path.clone()));
+    assert_eq!(manager.problem(), Some("keys"));
+    assert!(manager.service().is_none());
+    assert_eq!(fs::read(&path).expect("read"), b"damaged");
+    assert!(manager.update(Some("x"), None).is_ok(), "the name and switch can still be saved");
+}
+
+#[test]
+fn the_address_hint_never_panics_and_is_never_loopback() {
+    if let Some(hint) = super::service::local_address_hint() {
+        assert!(!hint.starts_with("127.") && hint != "0.0.0.0" && hint != "::1");
+    }
+}
+
+#[test]
+fn errors_have_codes_the_interface_can_turn_into_sentences() {
+    let dir = Dir::new("codes");
+    let bob = device(&dir, "bob");
+    assert_eq!(bob.join("127.0.0.1:9", "12").expect_err("bad code").code(), "pair_bad_code");
+    assert_eq!(bob.join("127.0.0.1:9", "12345678").expect_err("nobody there").code(), "sync_unreachable");
+    bob.set_enabled(false).expect("off");
+    assert_eq!(bob.start_pairing().expect_err("off").code(), "sync_off");
+    assert_eq!(SyncError::Refused("anything else").code(), "pair_refused");
+    assert_eq!(SyncError::Channel("x").code(), "pair_failed");
+}

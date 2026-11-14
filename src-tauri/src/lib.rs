@@ -4,15 +4,20 @@
 // real tests. Commands return an error *code* (see `VaultError::code`) as text, and the
 // interface turns the code into a sentence from the language file.
 
+mod secure;
+
 use scalenote_core::atomic::write_atomic;
 use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
 use scalenote_core::base64;
 use scalenote_core::logger::{Level, Logger};
+use scalenote_core::sync::manager::Manager;
+use scalenote_core::sync::service::{local_address_hint, Event, EventKind, PeerView, Status};
+use scalenote_core::sync::SyncError;
 use scalenote_core::{EntryKind, NoteVersion, Vault, VaultError};
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use tauri::{Manager, State};
+use std::sync::{Arc, Mutex};
+use tauri::{Manager as _, State};
 
 /// Settings are a small piece of text owned by the interface. The limit stops a bug from
 /// filling the disk.
@@ -27,6 +32,8 @@ struct AppState {
     default_vault: PathBuf,
     /// The app's own folder (outside any vault): settings, logs and this device's sync identity.
     data_dir: PathBuf,
+    /// This device's sync: name, switch, keys, paired devices and the listening service.
+    sync: Arc<Manager>,
 }
 
 #[derive(Serialize)]
@@ -522,23 +529,141 @@ struct SyncSettingsReply {
 }
 
 /// This device's sync name and on/off switch. They are kept in the app's own folder, never in a
-/// vault, so a copied vault does not carry them along. Nothing is sent anywhere yet (0.5.0).
+/// vault, so a copied vault does not carry them along.
 #[tauri::command]
 fn get_sync_settings(state: State<AppState>) -> Result<SyncSettingsReply, String> {
-    let loaded = scalenote_core::sync::device::load(&state.data_dir).map_err(|error| {
+    let settings = state.sync.settings().map_err(|error| {
         state.logger.log(Level::Warn, &format!("read sync settings failed: {error}"));
         "io".to_string()
     })?;
-    Ok(SyncSettingsReply { name: loaded.settings.name, enabled: loaded.settings.enabled })
+    Ok(SyncSettingsReply { name: settings.name, enabled: settings.enabled })
 }
 
 #[tauri::command]
 fn set_sync_settings(name: Option<String>, enabled: Option<bool>, state: State<AppState>) -> Result<SyncSettingsReply, String> {
-    let saved = scalenote_core::sync::device::update(&state.data_dir, name.as_deref(), enabled).map_err(|error| {
+    let saved = state.sync.update(name.as_deref(), enabled).map_err(|error| {
         state.logger.log(Level::Warn, &format!("save sync settings failed: {error}"));
-        "io".to_string()
+        error.code().to_string()
     })?;
     Ok(SyncSettingsReply { name: saved.name, enabled: saved.enabled })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncPeerReply {
+    id: String,
+    name: String,
+    fingerprint: String,
+    added: String,
+}
+
+#[derive(Serialize)]
+struct SyncEventReply {
+    when: String,
+    kind: &'static str,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncStatusReply {
+    /// Why sync cannot be used on this device (a short code), or null when it can.
+    problem: Option<&'static str>,
+    enabled: bool,
+    listening_port: Option<u16>,
+    /// This device's address on the local network, for the other device to type.
+    address: Option<String>,
+    fingerprint: String,
+    peers: Vec<SyncPeerReply>,
+    pairing_seconds_left: Option<u64>,
+    events: Vec<SyncEventReply>,
+}
+
+fn event_reply(event: Event) -> SyncEventReply {
+    let kind = match event.kind {
+        EventKind::Paired => "paired",
+        EventKind::Refused => "refused",
+        EventKind::Removed => "removed",
+    };
+    SyncEventReply { when: event.when, kind, name: event.name }
+}
+
+fn peer_reply(peer: PeerView) -> SyncPeerReply {
+    SyncPeerReply { id: peer.id, name: peer.name, fingerprint: peer.fingerprint, added: peer.added }
+}
+
+fn status_reply(status: Status, problem: Option<&'static str>) -> SyncStatusReply {
+    SyncStatusReply {
+        problem,
+        enabled: status.enabled,
+        listening_port: status.listening_port,
+        address: local_address_hint(),
+        fingerprint: status.fingerprint,
+        peers: status.peers.into_iter().map(peer_reply).collect(),
+        pairing_seconds_left: status.pairing_seconds_left,
+        events: status.events.into_iter().rev().map(event_reply).collect(),
+    }
+}
+
+/// Runs work that may wait on the network or on a lock off the window's own thread.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work).await.map_err(|_| "io".to_string())
+}
+
+/// Turns a sync error into the short code the interface shows, and logs it. The text of a sync
+/// error never contains a key, a code or a note's text.
+fn sync_failed(logger: &Logger, what: &str, error: SyncError) -> String {
+    logger.log(Level::Warn, &format!("{what} failed: {error}"));
+    error.code().to_string()
+}
+
+/// Gives the running service, or the reason sync cannot be used on this device.
+fn running(sync: &Manager) -> Result<&scalenote_core::sync::service::Service, SyncError> {
+    sync.service().ok_or(SyncError::Refused("sync is not available"))
+}
+
+/// What the Sync tab shows: this device, its paired devices, a running pairing code's time and
+/// the recent events.
+#[tauri::command]
+async fn sync_status(state: State<'_, AppState>) -> Result<SyncStatusReply, String> {
+    let sync = state.sync.clone();
+    blocking(move || match sync.service() {
+        Some(service) => Ok(status_reply(service.status(), None)),
+        None => Err(sync.problem().unwrap_or("service").to_string()),
+    })
+    .await?
+}
+
+/// Opens the pairing screen: returns the code to show. The device listens for a pairing until
+/// the screen is closed, the code runs out or the attempts are used up.
+#[tauri::command]
+async fn sync_start_pairing(state: State<'_, AppState>) -> Result<String, String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.start_pairing())).await?;
+    result.map_err(|error| sync_failed(&state.logger, "start pairing", error))
+}
+
+#[tauri::command]
+async fn sync_stop_pairing(state: State<'_, AppState>) -> Result<(), String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.stop_pairing())).await?;
+    result.map_err(|error| sync_failed(&state.logger, "stop pairing", error))
+}
+
+/// Types the code shown on another device: connects to its address and pairs. Returns the
+/// other device's name.
+#[tauri::command]
+async fn sync_join(address: String, code: String, state: State<'_, AppState>) -> Result<String, String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.join(&address, &code))).await?;
+    result.map(|peer| peer.name).map_err(|error| sync_failed(&state.logger, "pairing", error))
+}
+
+#[tauri::command]
+async fn sync_remove_peer(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.remove_peer(&id))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "remove device", error))
 }
 
 fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
@@ -555,6 +680,11 @@ fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>>
             Err(_) => data_dir.join("vault"),
         }
     };
+    let store = secure::make_store(&data_dir);
+    let sync = Arc::new(Manager::start(&data_dir, store.as_ref()));
+    if let Some(problem) = sync.problem() {
+        logger.log(Level::Warn, &format!("sync is not available: {problem}"));
+    }
     logger.log(Level::Info, "app started");
     Ok(AppState {
         vault: Mutex::new(None),
@@ -562,6 +692,7 @@ fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>>
         settings_file: data_dir.join("settings.json"),
         default_vault,
         data_dir,
+        sync,
     })
 }
 
@@ -621,6 +752,11 @@ pub fn run() {
             export_page,
             get_sync_settings,
             set_sync_settings,
+            sync_status,
+            sync_start_pairing,
+            sync_stop_pairing,
+            sync_join,
+            sync_remove_peer,
             trash_entry,
             trash_list,
             trash_restore,

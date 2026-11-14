@@ -23,3 +23,8 @@ tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-opener = "=2.7.2"
 scalenote-core = { path = "core" }
 serde = { version = "=1.0.229", features = ["derive"] }
+
+# The system's secure storage for the sync key. Windows only for now (Credential Manager);
+# other systems keep the key in a private file in the app's own folder (see src/secure.rs).
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }

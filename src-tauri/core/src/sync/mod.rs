@@ -13,6 +13,7 @@ pub mod identity;
 pub mod manifest;
 pub mod pairing;
 pub mod plan;
+pub mod manager;
 pub mod service;
 pub mod trust;
 
@@ -49,7 +50,23 @@ impl fmt::Display for SyncError {
     }
 }
 
-impl std::error::Error for SyncError {}
+impl std::error::Error for SyncError {
+}
+
+impl SyncError {
+    /// A short code the interface turns into a sentence (same idea as `VaultError::code`).
+    pub fn code(&self) -> &'static str {
+        match self {
+            SyncError::Io(_) => "sync_unreachable",
+            SyncError::TooManyFiles | SyncError::Damaged(_) => "io",
+            SyncError::Refused("the code is not 8 digits") => "pair_bad_code",
+            SyncError::Refused("sync is off") => "sync_off",
+            SyncError::Refused("sync is not available") => "sync_unavailable",
+            SyncError::Refused(_) => "pair_refused",
+            SyncError::Channel(_) => "pair_failed",
+        }
+    }
+}
 
 impl From<io::Error> for SyncError {
     fn from(error: io::Error) -> Self {
