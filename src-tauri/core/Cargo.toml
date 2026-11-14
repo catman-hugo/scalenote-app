@@ -13,6 +13,15 @@ rust-version = "1.77"
 # getrandom gives the operating system's random numbers for the device id.
 sha2 = "=0.10.9"
 getrandom = "=0.3.4"
+# Pairing and the encrypted connection between devices (0.5.1). All three are pinned and come
+# from well-known security projects; no cryptography is written by hand here.
+# snow: the Noise protocol (an encrypted, mutually authenticated connection with fixed keys).
+# spake2: lets two devices prove they know the same short code without sending it.
+# hmac: the confirmation tags that tie the code to both devices' keys.
+snow = "=0.10.0"
+spake2 = "=0.4.0"
+hmac = "=0.12.1"
+zeroize = "=1.8.2"
 
 [[bin]]
 # Used only by the tests. It writes a note over and over so a test can kill it
