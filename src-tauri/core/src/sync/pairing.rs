@@ -32,11 +32,12 @@ pub const CODE_DIGITS: usize = 8;
 pub const MAX_ATTEMPTS: u8 = 3;
 pub const CODE_LIFETIME: Duration = Duration::from_secs(120);
 
-const KIND_START: u8 = 1;
+/// The first byte of the first pairing message; the service uses it to recognise a pairing.
+pub const KIND_START: u8 = 1;
 const KIND_REPLY: u8 = 2;
 const KIND_CONFIRM: u8 = 3;
 const KIND_CONFIRMED: u8 = 4;
-const KIND_REFUSED: u8 = 0xFF;
+pub const KIND_REFUSED: u8 = 0xFF;
 const SPAKE_MESSAGE_LEN: usize = 33;
 const TAG_LEN: usize = 32;
 const JOINER_ID: &[u8] = b"scalenote-pairing-1 joiner";
@@ -52,9 +53,15 @@ pub struct PairingOffer {
 }
 
 /// The host's side of the one-time code: at most one code is open at a time.
-#[derive(Default)]
 pub struct CodeBook {
     offer: Option<PairingOffer>,
+    lifetime: Duration,
+}
+
+impl Default for CodeBook {
+    fn default() -> Self {
+        CodeBook { offer: None, lifetime: CODE_LIFETIME }
+    }
 }
 
 /// A fresh code of `CODE_DIGITS` digits from the system's random numbers.
@@ -81,13 +88,25 @@ impl CodeBook {
         Ok(code)
     }
 
+    /// A shorter life, for tests only.
+    #[cfg(test)]
+    pub(crate) fn set_lifetime(&mut self, lifetime: Duration) {
+        self.lifetime = lifetime;
+    }
+
     pub fn close(&mut self) {
         self.offer = None;
     }
 
+    /// Seconds the open code is still good for.
+    pub fn seconds_left(&self, now: Instant) -> Option<u64> {
+        let offer = self.offer.as_ref()?;
+        self.lifetime.checked_sub(now.duration_since(offer.opened)).map(|left| left.as_secs())
+    }
+
     /// Whether a code is open and still good.
     pub fn is_open(&self, now: Instant) -> bool {
-        self.offer.as_ref().is_some_and(|o| o.attempts_left > 0 && now.duration_since(o.opened) < CODE_LIFETIME)
+        self.offer.as_ref().is_some_and(|o| o.attempts_left > 0 && now.duration_since(o.opened) < self.lifetime)
     }
 
     /// Uses up one attempt and returns the code to check against, or `None` when no code is
@@ -138,11 +157,17 @@ fn check_confirmation(message: &[u8], kind: u8, key: &[u8], label: &[u8], first:
 /// The host's half. `code` is what `CodeBook::take_attempt` returned (`None`: refuse at once).
 /// Returns the new trusted device; the caller adds it to the trust list and closes the code.
 pub fn host<S: Read + Write>(channel: &mut Channel<S>, code: Option<&str>, own_name: &str, today: &str) -> Result<Peer> {
+    let start = channel.recv()?;
+    host_from(channel, start, code, own_name, today)
+}
+
+/// The same, for a caller that has already read the first message (the service does, to tell a
+/// pairing from other requests).
+pub fn host_from<S: Read + Write>(channel: &mut Channel<S>, start: Vec<u8>, code: Option<&str>, own_name: &str, today: &str) -> Result<Peer> {
     let Some(code) = code else {
         let _ = channel.send(&[KIND_REFUSED]);
         return Err(SyncError::Refused("no open code"));
     };
-    let start = channel.recv()?;
     if start.len() != 1 + SPAKE_MESSAGE_LEN || start[0] != KIND_START {
         return Err(SyncError::Refused("unexpected message"));
     }

@@ -13,6 +13,7 @@ pub mod identity;
 pub mod manifest;
 pub mod pairing;
 pub mod plan;
+pub mod service;
 pub mod trust;
 
 pub use device::{Device, Loaded, SyncSettings};
@@ -63,3 +64,6 @@ mod tests;
 
 #[cfg(test)]
 mod tests_pairing;
+
+#[cfg(test)]
+mod tests_service;

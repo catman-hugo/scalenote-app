@@ -18,7 +18,7 @@ getrandom = "=0.3.4"
 # snow: the Noise protocol (an encrypted, mutually authenticated connection with fixed keys).
 # spake2: lets two devices prove they know the same short code without sending it.
 # hmac: the confirmation tags that tie the code to both devices' keys.
-snow = "=0.10.0"
+snow = { version = "=0.10.0", default-features = false, features = ["default-resolver", "use-chacha20poly1305", "use-sha2", "use-curve25519", "use-getrandom", "std"] }
 spake2 = "=0.4.0"
 hmac = "=0.12.1"
 zeroize = "=1.8.2"
