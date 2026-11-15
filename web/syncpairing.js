@@ -90,6 +90,11 @@ export function pairingRows(logProblem) {
   code.autocomplete = "off";
   const joinButton = button(s.pairJoin, () => join());
   joinButton.id = "pairJoin";
+  const findButton = button(s.pairFind, () => find());
+  findButton.id = "pairFind";
+  const nearby = element("ul", "", "pair-list");
+  nearby.id = "pairNearby";
+  nearby.hidden = true;
 
   const labelled = (text, input) => {
     const row = element("label", "", "setting-row pair-field");
@@ -213,6 +218,37 @@ export function pairingRows(logProblem) {
     else pairing = false;
   }
 
+  // Listens for devices that are showing a code; choosing one puts its address in the field.
+  async function find() {
+    message.textContent = "";
+    findButton.disabled = true;
+    findButton.textContent = s.pairFinding;
+    try {
+      const found = (await backend.syncFind()).filter((device) => !device.paired);
+      nearby.replaceChildren();
+      nearby.hidden = false;
+      if (found.length === 0) nearby.append(element("li", s.pairFoundNone));
+      for (const device of found) {
+        const item = element("li", "", "pair-item");
+        item.append(element("span", `${device.name} (${device.address})`, "pair-name"));
+        const use = button(s.pairUse, () => {
+          address.value = device.address;
+          code.focus();
+        });
+        use.className = "pair-use";
+        use.setAttribute("aria-label", `${s.pairUse} ${device.name}`);
+        item.append(use);
+        nearby.append(item);
+      }
+    } catch (error) {
+      logProblem("looking for devices failed", error);
+      message.textContent = errorSentence(error);
+    } finally {
+      findButton.disabled = false;
+      findButton.textContent = s.pairFind;
+    }
+  }
+
   async function join() {
     message.textContent = "";
     joinButton.disabled = true;
@@ -243,6 +279,8 @@ export function pairingRows(logProblem) {
     codeBox,
     element("h3", s.pairJoinHeading, "setting-heading"),
     element("p", s.pairJoinHint, "setting-hint"),
+    findButton,
+    nearby,
     labelled(s.pairAddressLabel, address),
     labelled(s.pairCodeLabel, code),
     joinButton,

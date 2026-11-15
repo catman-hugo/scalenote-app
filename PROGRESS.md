@@ -2,7 +2,20 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-14, 0.5.1 built (device keys and pairing); tested in a browser and with real connections on one computer in Rust, NOT tried on two devices.
+Last updated: 2026-11-15, 0.5.2 built (finding devices); tested in a browser and with real sockets on one computer in Rust, NOT tried on two devices or on a real network.
+
+## 0.5.2: built, not tried on two devices
+
+Finding devices. Branch `feature/v0.5.2-discovery` (it also carries the canvas block fix below). Release notes: `docs/release-notes/0.5.2.md`; security checklist: `docs/security-checklist-0.5.2.md`.
+
+Done (tried here: 204 Rust tests in the core, 8 new for discovery with real sockets on loopback, 1 new browser test, screenshots light and dark, desktop and phone):
+- `sync::discovery`: announcement notes, strict reading, `Announcer`, `find`; the service announces only while a pairing code shows and stops with it; `Service::find_nearby`.
+- App command `sync_find`; Settings, Sync: "Find devices" with a list and "Use".
+
+Not done / untried:
+- The real network route (multicast and local broadcast) was only tried on loopback. Not tried on a real Wi-Fi, a router with device isolation, or between two devices.
+- Android: receiving notes needs a multicast lock (a few lines of Kotlin), not built; planned for 0.5.4. A phone may not find other devices until then.
+- `lib.rs` could not be compiled here; CI compiles it.
 
 ## Fix after 0.5.1: canvas block in the Split view
 

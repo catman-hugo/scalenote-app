@@ -7439,6 +7439,27 @@ await test("pairing: stopping the code, closing Settings while a code shows, and
   assert.equal(await page.isHidden("#pairCodeBox"), true);
 }, { settings: existingUser({ updates: false }) });
 
+await test("pairing: Find devices lists the devices showing a code, Use fills the address, and nothing found says what to do", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.click("#pairFind");
+  await page.waitForFunction(() => document.querySelector("#pairNearby") && !document.querySelector("#pairNearby").hidden);
+  assert.match(await page.textContent("#pairNearby"), /No device found/);
+  await page.evaluate(() => { window.__nearby = [{ name: "bob-laptop", address: "192.168.1.30:47821", paired: false }, { name: "old-friend", address: "192.168.1.31:47821", paired: true }]; });
+  await page.click("#pairFind");
+  await page.waitForSelector("#pairNearby .pair-use");
+  assert.equal(await page.locator("#pairNearby .pair-use").count(), 1, "a device that is already paired is not offered");
+  assert.doesNotMatch(await page.textContent("#pairNearby"), /old-friend/);
+  await page.click("#pairNearby .pair-use");
+  assert.equal(await page.inputValue("#pairJoinAddress"), "192.168.1.30:47821");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "pairJoinCode");
+  await page.evaluate(() => { window.__failFind = "sync_find_failed"; });
+  await page.click("#pairFind");
+  await page.waitForFunction(() => document.querySelector("#pairMessage").textContent.includes("Type the address"));
+  for (let i = 0; i < 6; i++) await page.click("#pairFind");
+  assert.equal(await page.isEnabled("#pairFind"), true);
+}, { settings: existingUser({ updates: false }) });
+
 await test("pairing: entering a code pairs, a wrong-length code and an unreachable device say why, and removing needs a second click", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
@@ -8134,6 +8155,12 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.waitForSelector("#pairCodeBox:not([hidden])");
       await page.locator("#pairCodeBox").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${shots}/v051-${label}-${scheme}-1-pairing-code.png` });
+      // 0.5.2: Find devices with one device found.
+      await page.evaluate(() => { window.__nearby = [{ name: "bob-laptop", address: "192.168.1.30:47821", paired: false }]; });
+      await page.click("#pairFind");
+      await page.waitForSelector("#pairNearby .pair-use");
+      await page.locator("#pairFind").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v052-${label}-${scheme}-1-find-devices.png` });
       await page.locator("#pairActivity").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${shots}/v051-${label}-${scheme}-2-activity.png` });
       await context.close();

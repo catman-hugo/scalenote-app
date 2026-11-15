@@ -152,6 +152,12 @@
       syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "bob-laptop" });
       return "bob-laptop";
     },
+    sync_find: () => {
+      if (!syncDevice.enabled) fail("sync_off");
+      if (window.__failFind) fail(window.__failFind);
+      window.__finds = (window.__finds || 0) + 1;
+      return window.__nearby || [];
+    },
     sync_remove_peer: ({ id }) => {
       const before = syncPairing.peers.length;
       syncPairing.peers = syncPairing.peers.filter((p) => p.id !== id);

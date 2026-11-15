@@ -13,6 +13,7 @@
 
 use super::channel::Channel;
 use super::device::clean_name;
+use super::discovery::{self, Announcer, Route};
 use super::identity::{fingerprint, Identity, KEY_LEN};
 use super::pairing::{self, clean_code, CodeBook, KIND_REFUSED, KIND_START};
 use super::trust::{Peer, TrustList};
@@ -71,6 +72,8 @@ struct Shared {
     first_port: u16,
     identity: Identity,
     trust_path: PathBuf,
+    /// Where discovery notes go and are listened for (loopback only in tests).
+    route: Mutex<Route>,
     state: Mutex<State>,
     connections: AtomicUsize,
 }
@@ -84,6 +87,18 @@ struct Listener {
 pub struct Service {
     shared: Arc<Shared>,
     listener: Mutex<Option<Listener>>,
+    /// Shouts "I am here" while a pairing code is showing, and only then.
+    announcer: Mutex<Option<Announcer>>,
+}
+
+/// A device heard on the network.
+#[derive(Clone, Debug)]
+pub struct Nearby {
+    pub name: String,
+    /// `ip:port`, ready for `join`.
+    pub address: String,
+    /// Already in the trust list.
+    pub paired: bool,
 }
 
 /// What the Sync tab shows.
@@ -142,7 +157,7 @@ impl Service {
         let trust_path = dir.join(TRUST_FILE);
         let trust = TrustList::load(&trust_path)?;
         let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new() };
-        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, identity, trust_path, state: Mutex::new(state), connections: AtomicUsize::new(0) }), listener: Mutex::new(None) };
+        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, identity, trust_path, route: Mutex::new(Route::network()), state: Mutex::new(state), connections: AtomicUsize::new(0) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
     }
@@ -167,7 +182,56 @@ impl Service {
             }
             _ => {}
         }
+        let port = listener.as_ref().map(|l| l.port);
+        drop(listener);
+        self.refresh_announcer(port);
         Ok(())
+    }
+
+    /// The announcement runs exactly while a pairing code is showing on a listening device.
+    fn refresh_announcer(&self, port: Option<u16>) {
+        let mut announcer = lock(&self.announcer);
+        if announcer.as_ref().is_some_and(|a| a.is_finished()) {
+            announcer.take();
+        }
+        let showing = {
+            let state = lock(&self.shared.state);
+            state.enabled && state.pairing_open && state.codes.is_open(Instant::now())
+        };
+        match (showing.then_some(port).flatten(), announcer.is_some()) {
+            (Some(port), false) => {
+                let (route, key, name) = (lock(&self.shared.route).clone(), *self.shared.identity.public(), lock(&self.shared.state).name.clone());
+                let shared = self.shared.clone();
+                let keep = move || {
+                    let state = lock(&shared.state);
+                    state.enabled && state.pairing_open && state.codes.is_open(Instant::now())
+                };
+                // Not being able to announce is not fatal: the address can still be typed.
+                *announcer = Announcer::start(route, key, name, port, keep).ok();
+            }
+            (None, true) => {
+                announcer.take();
+            }
+            _ => {}
+        }
+    }
+
+    /// Listens for a few seconds for devices that are showing a pairing code. Only when sync is
+    /// on. The device's own announcements are left out.
+    pub fn find_nearby(&self, wait: Duration) -> Result<Vec<Nearby>> {
+        if !lock(&self.shared.state).enabled {
+            return Err(SyncError::Refused("sync is off"));
+        }
+        let route = lock(&self.shared.route).clone();
+        let heard = discovery::find(&route, wait, self.shared.identity.public())?;
+        let state = lock(&self.shared.state);
+        Ok(heard.into_iter().map(|d| Nearby { paired: state.trust.contains(&d.key), name: d.name, address: d.address }).collect())
+    }
+
+    /// For tests: discovery on loopback only, with quick notes.
+    #[cfg(test)]
+    pub(crate) fn set_route(&self, route: Route) {
+        *lock(&self.shared.route) = route;
     }
 
     fn spawn_listener(&self) -> Result<Listener> {

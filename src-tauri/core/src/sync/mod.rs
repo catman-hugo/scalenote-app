@@ -8,6 +8,7 @@
 
 pub mod channel;
 pub mod device;
+pub mod discovery;
 pub mod hex;
 pub mod identity;
 pub mod manifest;
@@ -57,6 +58,7 @@ impl SyncError {
     /// A short code the interface turns into a sentence (same idea as `VaultError::code`).
     pub fn code(&self) -> &'static str {
         match self {
+            SyncError::Io(error) if error.kind() == std::io::ErrorKind::AddrInUse => "sync_find_failed",
             SyncError::Io(_) => "sync_unreachable",
             SyncError::TooManyFiles | SyncError::Damaged(_) => "io",
             SyncError::Refused("the code is not 8 digits") => "pair_bad_code",
@@ -79,6 +81,8 @@ pub type Result<T> = std::result::Result<T, SyncError>;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod tests_discovery;
 #[cfg(test)]
 mod tests_pairing;
 

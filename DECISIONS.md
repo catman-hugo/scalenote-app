@@ -674,3 +674,10 @@ Cost. This is an exception to "secrets go in the system's secure storage". On Li
 Decision. The owner counts the pairing slice as version 0.5.1 and releases it after 0.5.0, which the owner had already published. The app says 0.5.1 and the 0.5.1 release notes only list what is new since 0.5.0. This replaces the earlier idea of keeping the number at 0.5.0 until all of LAN sync worked.
 Alternatives. Holding the number back (rejected by the owner).
 Cost. 0.5.1 is a release that pairs devices but does not yet exchange pages; the notes say so.
+
+## 2026-11-15: Finding devices with announcements while pairing
+
+Decision. A device announces itself (name, port, public key) once a second on the local network while its pairing code is showing, and only then. The other device listens for 2.5 seconds when "Find devices" is pressed and lists what it heard; choosing one fills in the address. Notes go to a multicast group (239.255.42.99, port 47822) and to the local broadcast address, because some networks drop one and not the other. A found device gives no trust; the pairing code still decides. Typing the address stays possible. No new libraries (standard UDP sockets).
+Alternatives. Always announcing while sync is on (rejected: a device would be visible on every network it joins); mDNS/DNS-SD (rejected for now: needs a library and still needs the Android multicast lock; may come later); a QR code (see the 0.5.1 decision).
+Cost. Someone on the same network can see that a device is pairing and its name. Android: receiving notes needs a multicast lock that is not built yet, so a phone may not find other devices until 0.5.4; other devices can still find the phone, and typing works. The real network route was only tried on loopback here.
+

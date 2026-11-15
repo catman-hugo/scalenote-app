@@ -52,6 +52,7 @@ export const backend = {
   syncStartPairing: () => call("sync_start_pairing"),
   syncStopPairing: () => call("sync_stop_pairing"),
   syncJoin: (address, code) => call("sync_join", { address, code }),
+  syncFind: () => call("sync_find"),
   syncRemovePeer: (id) => call("sync_remove_peer", { id }),
   setSyncSettings: (patch) => call("set_sync_settings", { name: patch.name ?? null, enabled: patch.enabled ?? null }),
   // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
