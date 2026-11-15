@@ -4,6 +4,10 @@ Status key: not started, in progress, built (tried only where the builder can ru
 
 Last updated: 2026-11-14, 0.5.1 built (device keys and pairing); tested in a browser and with real connections on one computer in Rust, NOT tried on two devices.
 
+## Fix after 0.5.1: canvas block in the Split view
+
+Branch `fix/canvas-block-split-view`. Going from the text to the Canvas or Split view made the page's canvas blocks say "This canvas region could not be found" although the drawing had the region (the text looked the drawing up through a value that was cleared on the way). Fixed; a browser test goes Canvas, Text, Split, Canvas, Split and fails without the fix. The full browser suite passes. For the release notes of the next version: "Fixed: a canvas block no longer says its region could not be found after you open the Split view." Not tried on a device.
+
 ## 0.5.1: built, not tried on two devices
 
 Identity and pairing. Branch `feature/v0.5.1-pairing`. Release notes: `docs/release-notes/0.5.1.md`; security checklist: `docs/security-checklist-0.5.1.md`. The app version is 0.5.1 (0.5.0 was published earlier; see DECISIONS.md).
