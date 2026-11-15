@@ -1593,6 +1593,7 @@ async function enterCanvas(mode = "canvas") {
     // Already loaded for this page: only the layout changes.
     app.mode = mode;
     applyMode();
+    repaintCanvasBlocks();
     if (mode === "canvas") app.canvasView.focus();
     return;
   }
@@ -1620,6 +1621,10 @@ async function enterCanvas(mode = "canvas") {
   app.mode = mode;
   applyMode();
   view.show(canvas, problem);
+  // The canvas blocks in the text look the drawing up through inkPath. leaveInk cleared it, so
+  // without this the split view showed "region could not be found" beside a drawing that has it.
+  app.inkPath = path;
+  repaintCanvasBlocks();
   // In the split view the text keeps the cursor; the drawing is only looked at until it is touched.
   if (mode === "canvas") view.focus();
 }
@@ -1634,7 +1639,8 @@ async function leaveCanvas() {
   app.mode = "editor";
   applyMode();
   // The text shows the drawing again (its regions in canvas blocks, and ink) as it was just saved.
-  if (app.current) await loadInk(app.current.path, false);
+  // Without a drawing for the text to use, the text has nothing to look regions up in.
+  if (app.current && !(await loadInk(app.current.path, false))) app.inkPath = null;
 }
 
 async function toggleCanvas() {

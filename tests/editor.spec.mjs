@@ -6874,6 +6874,19 @@ await test("a canvas block shows its region of the page's drawing, and only that
   assert.equal(await page.locator(".canvas-block-missing:visible").count(), 0);
 });
 
+await test("a canvas block still shows its region after going to the Canvas view, back to Text, and to Split", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([rectItem([20, 20], [200, 120])]));
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  for (const name of ["Canvas", "Text", "Split", "Canvas", "Split"]) {
+    await view(page, name);
+    await page.waitForTimeout(200);
+    if (name === "Canvas") continue;
+    assert.equal(await page.locator(".canvas-block-missing:visible").count(), 0, `no "region not found" in the ${name} view`);
+    await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  }
+});
+
 await test("a drawing made outside the frame is not shown in the block", async (page) => {
   await start(page);
   await blockVault(page, drawingWith([rectItem([900, 900], [1100, 1000])]));
