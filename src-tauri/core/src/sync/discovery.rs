@@ -166,7 +166,10 @@ pub fn find(route: &Route, wait: Duration, own: &[u8; KEY_LEN]) -> io::Result<Ve
                 }
             }
             Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
-            Err(error) => return Err(error),
+            // Any other read problem belongs to one packet, not to the search: Windows reports a
+            // too-big packet (WSAEMSGSIZE) and a reset caused by an earlier send as errors, so one
+            // hostile or odd packet must not end the search. The wait is bounded by `end`.
+            Err(_) => thread::sleep(Duration::from_millis(5)),
         }
     }
     Ok(found)
