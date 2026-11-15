@@ -109,14 +109,19 @@ fn a_flood_of_bad_and_many_notes_is_bounded() {
     let target = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = std::thread::spawn({
         let route = route.clone();
-        move || find(&route, Duration::from_millis(900), &[0u8; 32]).expect("find")
+        move || find(&route, Duration::from_millis(1800), &[0u8; 32]).expect("find")
     });
     std::thread::sleep(Duration::from_millis(150));
     for i in 0..40u8 {
         let key = format!("{i:02x}").repeat(32);
         sender.send_to(&note(&key, "peer", &format!("{}", 2000 + i as u16)), target).expect("send");
         sender.send_to(b"garbage", target).expect("send");
-        sender.send_to(&vec![b'x'; 60_000], target).ok();
+        if i % 10 == 0 {
+            sender.send_to(&vec![b'x'; 60_000], target).ok();
+        }
+        // A little pause: a real network does not deliver a thousand packets in one instant, and
+        // Windows drops what does not fit in the socket's small receive buffer.
+        std::thread::sleep(Duration::from_millis(8));
     }
     assert_eq!(listener.join().expect("thread").len(), 16, "at most 16 devices are kept");
 }
