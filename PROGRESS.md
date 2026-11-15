@@ -6,7 +6,7 @@ Last updated: 2026-11-14, 0.5.1 built (device keys and pairing); tested in a bro
 
 ## 0.5.1: built, not tried on two devices
 
-Identity and pairing. Branch `feature/v0.5.1-pairing`. Release notes: `docs/release-notes/0.5.1.md`; security checklist: `docs/security-checklist-0.5.1.md`. The app version number is still 0.5.0 on purpose: the owner holds the release until sync between two devices works (see DECISIONS.md).
+Identity and pairing. Branch `feature/v0.5.1-pairing`. Release notes: `docs/release-notes/0.5.1.md`; security checklist: `docs/security-checklist-0.5.1.md`. The app version is 0.5.1 (0.5.0 was published earlier; see DECISIONS.md).
 
 Done (tried here: 196 Rust tests in the core, about 36 of them new and using real connections on one computer; 3 new browser tests and 1 unit test; screenshots light and dark, desktop and phone):
 - `sync::identity` (device key pair, fingerprint, secret store trait, private-file store), `sync::trust` (paired devices list), `sync::channel` (encrypted connection), `sync::pairing` (8-digit code, SPAKE2, confirmation tags), `sync::service` (listens only when allowed, pairs, refuses unpaired devices, events), `sync::manager` (the app's one entry point).
