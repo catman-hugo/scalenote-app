@@ -11,7 +11,7 @@ use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
 use scalenote_core::base64;
 use scalenote_core::logger::{Level, Logger};
 use scalenote_core::sync::manager::Manager;
-use scalenote_core::sync::service::{local_address_hint, Event, EventKind, PeerView, Status};
+use scalenote_core::sync::service::{local_address_hint, Event, EventKind, Nearby, PeerView, Status};
 use scalenote_core::sync::SyncError;
 use scalenote_core::{EntryKind, NoteVersion, Vault, VaultError};
 use serde::Serialize;
@@ -659,6 +659,28 @@ async fn sync_join(address: String, code: String, state: State<'_, AppState>) ->
     result.map(|peer| peer.name).map_err(|error| sync_failed(&state.logger, "pairing", error))
 }
 
+#[derive(Serialize)]
+struct NearbyReply {
+    name: String,
+    address: String,
+    paired: bool,
+}
+
+fn nearby_reply(found: Nearby) -> NearbyReply {
+    NearbyReply { name: found.name, address: found.address, paired: found.paired }
+}
+
+/// Listens for a few seconds for devices that are showing a pairing code, so their address does
+/// not have to be typed. A found device is only an address to try; the code still decides.
+#[tauri::command]
+async fn sync_find(state: State<'_, AppState>) -> Result<Vec<NearbyReply>, String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.find_nearby(std::time::Duration::from_millis(2500)))).await?;
+    result
+        .map(|found| found.into_iter().map(nearby_reply).collect())
+        .map_err(|error| sync_failed(&state.logger, "looking for devices", error))
+}
+
 #[tauri::command]
 async fn sync_remove_peer(id: String, state: State<'_, AppState>) -> Result<bool, String> {
     let sync = state.sync.clone();
@@ -756,6 +778,7 @@ pub fn run() {
             sync_start_pairing,
             sync_stop_pairing,
             sync_join,
+            sync_find,
             sync_remove_peer,
             trash_entry,
             trash_list,
