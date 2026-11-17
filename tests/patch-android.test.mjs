@@ -2,7 +2,7 @@
 // (the Tauri 2.12.4 template, with the example identifier used everywhere in this repository).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { patchManifest, patchActivity, apkInstallerSource, apkFileProviderSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
+import { patchManifest, patchActivity, networkBridgeSource, apkInstallerSource, apkFileProviderSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
 
 const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -68,6 +68,25 @@ test("the installer reports how much of the file has come in, as plain numbers, 
   assert.match(out, /fun reportProgress\(done: Long, length: Long\)/);
   assert.match(out, /now - lastReport >= 250/);
   assert.match(out, /val length = connection\.contentLengthLong/);
+});
+
+test("the manifest gets the three network permissions once each", () => {
+  const out = patchManifest(MANIFEST);
+  for (const name of ["ACCESS_NETWORK_STATE", "ACCESS_WIFI_STATE", "CHANGE_WIFI_MULTICAST_STATE"]) assert.equal(out.split(name).length, 2, name);
+  assert.equal(patchManifest(out), out);
+});
+
+test("the network bridge holds the multicast lock only while the app is open and answers yes or no", () => {
+  const bridge = networkBridgeSource("local.example.scalenote");
+  assert.match(bridge, /^package local\.example\.scalenote$/m);
+  assert.match(bridge, /createMulticastLock/);
+  assert.match(bridge, /fun isWifi\(\): Boolean/);
+  assert.match(bridge, /TRANSPORT_WIFI/);
+  assert.match(bridge, /\?: return true/, "an unknown network never blocks");
+  const activity = patchActivity(ACTIVITY);
+  assert.match(activity, /override fun onResume\(\) \{\n    super\.onResume\(\)\n    network\.holdMulticast\(\)/);
+  assert.match(activity, /override fun onPause\(\) \{\n    network\.releaseMulticast\(\)\n    super\.onPause\(\)/);
+  assert.match(activity, /addJavascriptInterface\(network, "ScaleNoteNetwork"\)/);
 });
 
 test("a manifest missing the application entry is refused", () => {

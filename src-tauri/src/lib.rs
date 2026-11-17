@@ -569,6 +569,7 @@ struct SyncPeerReply {
     last_sync: String,
     last_changed: usize,
     has_history: bool,
+    wifi_only: bool,
 }
 
 #[derive(Serialize)]
@@ -597,6 +598,7 @@ struct SyncStatusReply {
     address: Option<String>,
     fingerprint: String,
     paused: bool,
+    on_wifi: bool,
     syncing: Option<SyncingReply>,
     peers: Vec<SyncPeerReply>,
     pairing_seconds_left: Option<u64>,
@@ -623,6 +625,7 @@ fn peer_reply(peer: PeerView) -> SyncPeerReply {
         last_sync: peer.last_sync,
         last_changed: peer.last_changed,
         has_history: peer.has_history,
+        wifi_only: peer.wifi_only,
     }
 }
 
@@ -634,6 +637,7 @@ fn status_reply(status: Status, problem: Option<&'static str>) -> SyncStatusRepl
         address: local_address_hint(),
         fingerprint: status.fingerprint,
         paused: status.paused,
+        on_wifi: status.on_wifi,
         syncing: status.syncing.map(|s: SyncingView| SyncingReply { name: s.name, done: s.done, total: s.total }),
         peers: status.peers.into_iter().map(peer_reply).collect(),
         pairing_seconds_left: status.pairing_seconds_left,
@@ -859,6 +863,24 @@ async fn sync_rename_peer(id: String, name: String, state: State<'_, AppState>) 
     result.map_err(|error| sync_failed(&state.logger, "rename device", error))
 }
 
+#[tauri::command]
+async fn sync_set_wifi_only(id: String, only: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.set_wifi_only(&id, only))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "wifi only", error))
+}
+
+/// The interface tells the service whether the system is on Wi-Fi (see `Service::set_on_wifi`).
+#[tauri::command]
+async fn sync_set_on_wifi(on_wifi: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || {
+        running(&sync).map(|service| service.set_on_wifi(on_wifi))
+    })
+    .await?;
+    result.map_err(|error| sync_failed(&state.logger, "network kind", error))
+}
+
 fn vault_root(state: &AppState) -> Result<PathBuf, String> {
     let guard = state.vault.lock().map_err(|_| "io".to_string())?;
     guard.as_ref().map(|vault| vault.root().to_path_buf()).ok_or_else(|| "no_vault".to_string())
@@ -1025,6 +1047,8 @@ pub fn run() {
             sync_run,
             sync_set_paused,
             sync_rename_peer,
+            sync_set_wifi_only,
+            sync_set_on_wifi,
             vault_signature,
             conflicts_list,
             conflict_settle,

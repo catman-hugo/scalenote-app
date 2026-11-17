@@ -28,7 +28,27 @@ export function patchManifest(text) {
   if (!text.includes(anchor)) throw new Error("AndroidManifest.xml has no MainActivity entry");
   let out = text;
   if (!out.includes("android:windowSoftInputMode")) out = out.replace(anchor, `${anchor}\n            ${MODE_ATTRIBUTE}`);
-  return addInstaller(out);
+  return addNetwork(addInstaller(out));
+}
+
+// Sync between devices needs three things Android keeps behind permissions. None of them lets
+// the app read anything from the network: they let it ask what kind of network it is on, and
+// let it receive the short "I am here" notes that other devices send to the whole network
+// (Android drops those unless the app holds a "multicast lock", see NetworkBridge).
+const NETWORK_PERMISSIONS = [
+  "android.permission.ACCESS_NETWORK_STATE",
+  "android.permission.ACCESS_WIFI_STATE",
+  "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+];
+
+function addNetwork(text) {
+  let out = text;
+  for (const name of NETWORK_PERMISSIONS) {
+    if (out.includes(name)) continue;
+    if (!out.includes("<application")) throw new Error("AndroidManifest.xml has no application entry");
+    out = out.replace("<application", `<uses-permission android:name="${name}" />\n    <application`);
+  }
+  return out;
 }
 
 // Installing an update from inside the app needs the permission Android calls "install unknown
@@ -94,6 +114,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  private val network by lazy { NetworkBridge(this) }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
@@ -104,6 +126,19 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     webView.addJavascriptInterface(ApkInstaller(this, webView), "ScaleNoteInstaller")
+    webView.addJavascriptInterface(network, "ScaleNoteNetwork")
+  }
+
+  // Devices find each other while the app is on screen. The multicast lock is held only then,
+  // because it keeps the Wi-Fi radio awake and costs battery.
+  override fun onResume() {
+    super.onResume()
+    network.holdMulticast()
+  }
+
+  override fun onPause() {
+    network.releaseMulticast()
+    super.onPause()
   }
 
   // On Android 11 and newer an edge to edge window is not made shorter by the keyboard, so the
@@ -116,6 +151,60 @@ class MainActivity : TauriActivity() {
       val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
       view.setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, keyboard)
       insets
+    }
+  }
+}
+`;
+}
+
+// The native part of sync on Android. Two jobs:
+//  1. Hold the multicast lock while the app is open. Without it Android's Wi-Fi chip throws away
+//     multicast packets to save power, so this phone would never hear other devices announce.
+//  2. Say whether the connection is Wi-Fi or wired, for "sync on Wi-Fi only". The page can ask;
+//     it gets one yes or no, never any address or name of the network.
+export function networkBridgeSource(pkg) {
+  return `package ${pkg}
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
+import android.webkit.JavascriptInterface
+
+class NetworkBridge(context: Context) {
+  private val app = context.applicationContext
+  private var lock: WifiManager.MulticastLock? = null
+
+  fun holdMulticast() {
+    try {
+      if (lock == null) {
+        val wifi = app.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        lock = wifi.createMulticastLock("scalenote-sync").also { it.setReferenceCounted(false) }
+      }
+      lock?.acquire()
+    } catch (error: Exception) {
+      android.util.Log.w("ScaleNote", "could not hold the multicast lock", error)
+    }
+  }
+
+  fun releaseMulticast() {
+    try {
+      if (lock?.isHeld == true) lock?.release()
+    } catch (error: Exception) {
+      android.util.Log.w("ScaleNote", "could not release the multicast lock", error)
+    }
+  }
+
+  // True on Wi-Fi or a wired connection. If Android cannot say, the answer is true, so a guess
+  // never blocks a sync.
+  @JavascriptInterface
+  fun isWifi(): Boolean {
+    return try {
+      val manager = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+      val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return true
+      capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    } catch (error: Exception) {
+      true
     }
   }
 }
@@ -312,6 +401,7 @@ async function main() {
   const pkg = /^package\s+([^\s]+)\s*$/m.exec(activityText)[1];
   await writeFile(path.join(path.dirname(activity), "ApkInstaller.kt"), apkInstallerSource(pkg));
   await writeFile(path.join(path.dirname(activity), "ApkFileProvider.kt"), apkFileProviderSource(pkg));
+  await writeFile(path.join(path.dirname(activity), "NetworkBridge.kt"), networkBridgeSource(pkg));
   await mkdir(path.join(root, "res", "xml"), { recursive: true });
   await writeFile(path.join(root, "res", "xml", "apk_paths.xml"), APK_PATHS_XML);
   console.log("patched", manifest);
