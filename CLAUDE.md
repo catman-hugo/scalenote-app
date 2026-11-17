@@ -11,6 +11,7 @@ A local-first note app. Notes are plain markdown files in a normal folder, so Ob
 - Each version in `PROGRESS.md` is built in short slices. One chat builds one version or slice.
 - Nothing lives only in a chat. At the end of every session, update `PROGRESS.md` (what is done, what is half done, what is untested on a device) and `DECISIONS.md`.
 - A new session starts by reading this file, `PROGRESS.md` and `DECISIONS.md`.
+- `README.md` has a "Current progress" section. Update it in every pull request that changes the app, a version or the plan, and at the end of every session: the date, the latest version, what is done, what is being built next, and what is not yet tried on a real device. It must never be older than `PROGRESS.md`. Check it again before opening the pull request.
 
 ## Git rules
 
@@ -64,3 +65,4 @@ The interface should look like a tool someone made on purpose, in the line of No
 4. The design check and the security checklist are done.
 5. Release notes are written in plain language.
 6. `PROGRESS.md` is accurate.
+7. The "Current progress" section of `README.md` is up to date.

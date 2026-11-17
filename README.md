@@ -2,7 +2,21 @@
 
 A note-taking app that keeps your notes as plain markdown files in a normal folder. It has a block editor, a canvas for drawing with a pen next to the text, and search, tags, links between pages and page history. Because the notes are just files, you can open the same folder in Obsidian and nothing is locked inside the app.
 
-**Status: early test versions (0.4.x). The notes and drawing parts work, but sync, the calendar and the study assistant do not exist yet. Keep your own backup of anything you care about.**
+**Status: early test versions (0.5.x). Notes and drawing work. Sync between your own devices is being built: pairing and finding devices exist, but no notes are exchanged yet. The calendar and the study assistant do not exist yet. Keep your own backup of anything you care about.**
+
+## Current progress
+
+*Last updated: 2026-11-17. This section is updated with every change to the app.*
+
+- **Latest version: 0.5.2.** Finding devices. Tried on one computer only, not yet on two real devices or a real network.
+- **Done in 0.5 (sync between your own devices):**
+  - 0.5.0: the groundwork. The app can work out what two copies of your notes would need to become the same. Nothing is sent. Adding a PDF as pictures runs in the background.
+  - 0.5.1: pairing. Two devices trust each other after a one-time code. Paired devices can be listed and removed.
+  - 0.5.2: "Find devices", so the address does not have to be typed. A device only announces itself while its pairing code is showing.
+- **Being built next: 0.5.3.** The sync itself between two apps on the same network. The first sync shows what it will do and waits for a yes. If a page changed on both devices, both versions are kept. Deleted pages go to the trash on the other device.
+- **After that in 0.5:** Android (0.5.4), the home server (0.5.5), the browser client (0.5.6), hardening and release (0.5.7). The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
+- **Not tried on real devices yet:** pairing and finding on two devices, the Android phone finding other devices (needs a later change), printing and export from the packaged app, selecting PDF text by touch.
+- **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).
 
 ## About the AI in this project
 
@@ -12,11 +26,18 @@ ScaleNote is a personal side project. I am making it to learn how to build softw
 
 - **Plain files.** Every page is a markdown file with a few lines of settings at the top. Delete the app and your notes are still readable. Point Obsidian at the folder and it just works. Markdown the app does not know is kept exactly as it was written.
 - **Block editor.** Slash menu, headings, lists, to-dos, quotes, code, callouts, toggles, tables, pictures, dividers, inline styles and colours, a handle to move and change blocks, and a markdown source view of the whole page.
-- **Pages and folders.** A page list you can rearrange by dragging, folders with icons and colours, favourites, tags, covers (off by default), and a trash.
+- **Pages and folders.** A page list you can rearrange by dragging, folders and pages with icons and colours, favourites, tags, covers (off by default), and a trash.
 - **Links.** `[[Wikilinks]]` between pages and a "Linked from" list under each page.
 - **Search and commands.** One box to find pages by title and text and to run commands.
-- **Page history and export.** Look at earlier versions of a page and restore one. Export a page or print it.
+- **Page history and export.** Look at earlier versions of a page and restore one. Export a page or print it. Drawings are included when you print, and the page's drawing is added to a markdown export.
 - **Drawing.** A canvas for each page, saved next to it as a small file. Pressure-sensitive pen, highlighter, shapes, sticky notes, eraser, a loop to select, move, recolour and delete, paper (rule lines and grids) and page colour, undo and redo. The highlighter sits behind the ink, and pen and highlighter strokes that go a little over a shape are cut at its edge. The page can be shown as text, as canvas, or both side by side.
+- **Draw on the text.** Ink drawn over a paragraph, heading or list stays on it when the page changes shape.
+- **Canvas regions.** `/canvas` shows a named region of the page's canvas inside the text, also inside callouts, toggles and columns.
+- **Columns.** `/2 columns` or `/3 columns`, or drag a block to the side of another block.
+- **PDF.** `/pdf` or drop a PDF on a page: scroll through it, or add every page as a picture to draw on. Text in a PDF can be selected and found.
+- **Pictures.** Click a picture to resize it with handles.
+- **Find in page.** Ctrl+F finds a word in all the text of a page and in the PDFs on it.
+- **Pair your devices.** Two of your devices can trust each other with a one-time code and find each other on the same network. Notes are not exchanged yet; that is the next step.
 - **Works offline.** No account, and nothing is sent anywhere. The one thing that goes online is an update check, which you can turn off in Settings.
 - **Looks:** eight themes, five text sizes and a choice of page width.
 - **Runs on:** Windows, Linux and Android. A browser version comes later.
@@ -25,8 +46,7 @@ ScaleNote is a personal side project. I am making it to learn how to build softw
 
 The plan, in order, is in [PROGRESS.md](PROGRESS.md), and the reasons behind choices are in [DECISIONS.md](DECISIONS.md). In short:
 
-- **Next (0.4.x):** drawing over text, a `/canvas` block inside a page, importing a PDF as pages to draw on.
-- **0.5:** an optional home server to keep devices in sync, and a browser client. Without a server, two devices on the same network will be able to share a notebook directly with a one-time code.
+- **Next (0.5):** sync between your own devices. Two devices on the same network share a notebook directly after pairing, with no server. An optional home server keeps a copy when your other devices are off, and a browser client talks to that server. Android comes after the desktop apps.
 - **Later:** calendar, templates, an optional study assistant (off by default and completely absent until you turn it on), flashcards, importers for other note apps, and a 3DS drawing app.
 
 Version 1.0.0 is the notes, drawing and sync working on phone, tablet, laptop and desktop. The public release is 2.0.0, after a security review.
