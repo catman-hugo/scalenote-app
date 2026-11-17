@@ -1,0 +1,44 @@
+# Draws the "stars over time" chart shown in the README.
+# It runs once a week and can be run by hand: Actions tab -> "Star history chart" -> Run workflow.
+# The two picture files (light and dark) go on a branch called `star-history-data`, not on `main`,
+# so the project's rule of changing `main` only through a pull request still holds.
+# The branch is made fresh each time (it has no history), so it stays tiny.
+name: Star history chart
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+# Pushing the picture branch is the only reason this workflow may write to the repository.
+permissions:
+  contents: write
+
+# Two runs at once would push over each other.
+concurrency:
+  group: star-history
+  cancel-in-progress: false
+
+jobs:
+  chart:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - name: Draw the chart
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/star-history.mjs "$RUNNER_TEMP/chart"
+      - name: Publish the chart on the star-history-data branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan star-history-data
+          git rm -rf --quiet . || true
+          cp "$RUNNER_TEMP"/chart/*.svg .
+          git add star-history-light.svg star-history-dark.svg
+          git commit --quiet -m "Update the star history chart"
+          git push --force origin star-history-data

@@ -93,15 +93,14 @@ Open an [issue](../../issues) and say which system you use, which version of Sca
 
 ## Star history
 
-<a href="https://www.star-history.com/#catman-hugo/scalenote-app&Date">
+<a href="https://github.com/catman-hugo/scalenote-app/stargazers">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=catman-hugo/scalenote-app&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=catman-hugo/scalenote-app&type=Date" />
-    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=catman-hugo/scalenote-app&type=Date" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/catman-hugo/scalenote-app/star-history-data/star-history-dark.svg" />
+    <img alt="Stars over time" src="https://raw.githubusercontent.com/catman-hugo/scalenote-app/star-history-data/star-history-light.svg" />
   </picture>
 </a>
 
-The chart is drawn by an outside service (star-history.com) when this page is opened, so your browser loads an image from it. Nothing in the app itself uses it.
+The chart is drawn by [a small script in this repository](scripts/star-history.mjs) and refreshed once a week. No outside chart service is used.
 
 ## Licence
 
