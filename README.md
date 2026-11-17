@@ -8,14 +8,15 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
 
 *Last updated: 2026-11-17. This section is updated with every change to the app.*
 
-- **Latest version: 0.5.2.** Finding devices. Tried on one computer only, not yet on two real devices or a real network.
+- **Latest version: 0.5.3.** The sync itself between two paired devices. Tried on one computer only, not yet on two real devices or a real network.
 - **Done in 0.5 (sync between your own devices):**
   - 0.5.0: the groundwork. The app can work out what two copies of your notes would need to become the same. Nothing is sent. Adding a PDF as pictures runs in the background.
   - 0.5.1: pairing. Two devices trust each other after a one-time code. Paired devices can be listed and removed.
   - 0.5.2: "Find devices", so the address does not have to be typed. A device only announces itself while its pairing code is showing.
-- **Being built next: 0.5.3.** The sync itself between two apps on the same network. The first sync shows what it will do and waits for a yes. If a page changed on both devices, both versions are kept. Deleted pages go to the trash on the other device.
-- **After that in 0.5:** Android (0.5.4), the home server (0.5.5), and hardening and release (0.5.6). Each of the four coming releases also gets some extra features (25 in all, for example a conflict review screen, a backup screen, a true-black theme and an optional app lock). The browser client moved to a later release. The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
-- **Not tried on real devices yet:** pairing and finding on two devices, the Android phone finding other devices (needs a later change), printing and export from the packaged app, selecting PDF text by touch.
+  - 0.5.3: the sync. Only changed files are sent, the first sync asks first, a page changed on both devices is kept in both versions, deleted pages go to the other device's trash. Also a status line, Pause and Compare, renaming a device, noticing changes made by other programs, and a conflict copies screen.
+- **Being built next: 0.5.4.** Android: the phone finding other devices and syncing. Then the home server (0.5.5), and hardening and release (0.5.6).
+- **After that in 0.5:** each of the three coming releases also gets some extra features (for example a backup screen, a true-black theme and an optional app lock). The browser client moved to a later release. The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
+- **Not tried on real devices yet:** syncing between two devices on a real network, pairing and finding on two devices, the Android phone finding other devices (needs a later change), printing and export from the packaged app, selecting PDF text by touch.
 - **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).
 
 ## About the AI in this project
