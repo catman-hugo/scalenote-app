@@ -7340,7 +7340,7 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files"]);
+  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
@@ -7351,11 +7351,11 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-pages");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
-  assert.equal(await page.locator("#settings h2").textContent(), "Files", "it wraps round");
+  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it wraps round");
   await page.click("#settings button.primary");
   await page.waitForSelector("#settings", { state: "hidden" });
   await page.click("#openSettings");
-  assert.equal(await page.locator("#settings h2").textContent(), "Files", "it opens where it was left");
+  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it opens where it was left");
 }, { settings: existingUser({ updates: false }) });
 
 await test("Settings has a Sync tab: on by default, the name is kept clean, and both choices are saved and shown as saved", async (page) => {
@@ -7647,7 +7647,7 @@ await test("on a phone the Settings tabs sit in a row on top and the box does no
   if (shots) await page.screenshot({ path: `${shots}/v0414-phone-settings-tabs-wrapped.png` });
   // Every tab is on the screen, none is cut off at the edge.
   const edges = await page.evaluate(() => [...document.querySelectorAll('#settings [role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return [b.left, b.right]; }));
-  assert.equal(edges.length, 6);
+  assert.equal(edges.length, 7);
   assert.ok(edges.every(([l, r]) => l >= 0 && r <= r0.vw), JSON.stringify(edges));
   await page.click("#settingsTab-files");
   assert.equal(await page.locator("#settings h2").textContent(), "Files");
@@ -7992,9 +7992,9 @@ await test("Ctrl+F opens a find bar for the text of the page, counts hits and mo
   assert.equal((await files(page))["Find.md"], "The cat sat. Another Cat came.\n\nA third cat.\n", "finding never changes the page");
 }, ctxOpts);
 
-await test("there is no find button: Ctrl+F is the only way in", async (page) => {
+await test("the Find button in the top bar is the only button for find, and find is not in the command list", async (page) => {
   await findOpen(page, "text\n");
-  assert.equal(await page.locator("#findButton, .find-button, button[aria-label*='Find']").count(), 0);
+  assert.equal(await page.locator("#findButton, .find-button, button[aria-label*='Find']").count(), 1);
   await openPaletteBox(page);
   await page.fill(".palette-input", "Find in this page");
   await page.fill(".palette-input", "Print");
@@ -8495,6 +8495,49 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.click("#conflictsOpen");
       await page.waitForSelector(".conflict-item");
       await page.screenshot({ path: `${shots}/v053-${label}-${scheme}-4-conflict-review.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots for the design check of 0.5.4 (only when SHOTS_DIR is set): the true black theme with
+// a page open and the new top bar buttons, Settings search, the This device tab and the Wi-Fi only row.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript(() => { window.ScaleNoteNetwork = { isWifi: () => true }; });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await page.evaluate((id) => window.__mock.peerPairs(id), "d".repeat(64));
+      // Two pages, so Back is on. The button is pressed in the page because on a phone the list is closed.
+      await page.evaluate(() => document.getElementById("newNote").click());
+      await page.waitForSelector("#findButton", { state: "visible" });
+      await page.evaluate(() => document.getElementById("newNote").click());
+      await page.waitForFunction(() => !document.getElementById("navBack").disabled);
+      if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.selectOption("#settings select >> nth=0", "black");
+      await page.click("#settings button.primary");
+      await page.waitForSelector("#settings", { state: "hidden" });
+      // On a phone the list covers the page; the top bar is shown with it closed.
+      if (await page.isVisible("#scrim")) await page.evaluate(() => document.getElementById("toggle").click());
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-1-black-topbar.png` });
+      if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.fill("#settingsSearch", "sync");
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-2-settings-search.png` });
+      await page.fill("#settingsSearch", "");
+      await page.click('#settings [role="tab"][id="settingsTab-device"]');
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-3-this-device.png` });
+      await page.click('#settings [role="tab"][id="settingsTab-sync"]');
+      await page.waitForSelector(".sync-wifi-only");
+      await page.locator(".sync-wifi-row").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-4-wifi-only.png` });
       await context.close();
     }
   }

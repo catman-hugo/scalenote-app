@@ -139,8 +139,13 @@ export function openSettings(dialog, current, onChange, groups = {}) {
     let found = 0;
     for (const [id, rows] of tabs) {
       let here = 0;
+      // A hint under a setting is shown with that setting and never found on its own, so a
+      // paragraph about something else is not left standing alone.
+      let previous = false;
       for (const row of rows) {
-        const hit = row.textContent.toLowerCase().includes(wanted);
+        const isHint = row.classList.contains("setting-hint");
+        const hit = isHint ? previous : row.textContent.toLowerCase().includes(wanted);
+        if (!isHint) previous = hit;
         row.classList.toggle("search-miss", !hit);
         if (hit) here += 1;
       }

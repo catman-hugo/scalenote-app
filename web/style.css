@@ -2029,7 +2029,16 @@ button.danger:hover { background: var(--bg-hover); }
 @media (max-width: 600px) { .conflict-sides { grid-template-columns: 1fr; } }
 
 /* Settings search, and the Back, Forward and Find buttons. */
-.settings-search { width: 100%; box-sizing: border-box; margin-bottom: 0.75rem; }
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  min-height: 36px;
+}
 .search-miss { display: none !important; }
 .settings-nomatch { margin: 0.5rem 0; }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
