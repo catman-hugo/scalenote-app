@@ -10,8 +10,13 @@ use scalenote_core::atomic::write_atomic;
 use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
 use scalenote_core::base64;
 use scalenote_core::logger::{Level, Logger};
+use scalenote_core::sync::conflicts::{self, Keep};
+use scalenote_core::sync::engine::{Outcome, Preview, Report};
+use scalenote_core::sync::files::Done;
 use scalenote_core::sync::manager::Manager;
-use scalenote_core::sync::service::{local_address_hint, Event, EventKind, Nearby, PeerView, Status};
+use scalenote_core::sync::plan::Action;
+use scalenote_core::sync::service::{local_address_hint, Event, EventKind, Nearby, PeerView, Status, SyncingView};
+use scalenote_core::sync::watch;
 use scalenote_core::sync::SyncError;
 use scalenote_core::{EntryKind, NoteVersion, Vault, VaultError};
 use serde::Serialize;
@@ -101,8 +106,14 @@ fn install_vault(state: &AppState, vault: Vault) -> Result<OpenedVault, String> 
             .unwrap_or_default(),
         path: vault.root().to_string_lossy().into_owned(),
     };
+    let root = vault.root().to_path_buf();
     let mut guard = state.vault.lock().map_err(|_| "io".to_string())?;
     *guard = Some(vault);
+    drop(guard);
+    // Sync always works on the folder the app has open.
+    if let Some(service) = state.sync.service() {
+        service.set_vault(Some(root));
+    }
     state.logger.log(Level::Info, &format!("vault opened, {removed} leftover files removed"));
     Ok(reply)
 }
@@ -555,6 +566,9 @@ struct SyncPeerReply {
     name: String,
     fingerprint: String,
     added: String,
+    last_sync: String,
+    last_changed: usize,
+    has_history: bool,
 }
 
 #[derive(Serialize)]
@@ -562,6 +576,14 @@ struct SyncEventReply {
     when: String,
     kind: &'static str,
     name: String,
+    changed: usize,
+}
+
+#[derive(Serialize)]
+struct SyncingReply {
+    name: String,
+    done: usize,
+    total: usize,
 }
 
 #[derive(Serialize)]
@@ -574,6 +596,8 @@ struct SyncStatusReply {
     /// This device's address on the local network, for the other device to type.
     address: Option<String>,
     fingerprint: String,
+    paused: bool,
+    syncing: Option<SyncingReply>,
     peers: Vec<SyncPeerReply>,
     pairing_seconds_left: Option<u64>,
     events: Vec<SyncEventReply>,
@@ -584,12 +608,22 @@ fn event_reply(event: Event) -> SyncEventReply {
         EventKind::Paired => "paired",
         EventKind::Refused => "refused",
         EventKind::Removed => "removed",
+        EventKind::Synced => "synced",
+        EventKind::SyncFailed => "syncFailed",
     };
-    SyncEventReply { when: event.when, kind, name: event.name }
+    SyncEventReply { when: event.when, kind, name: event.name, changed: event.changed }
 }
 
 fn peer_reply(peer: PeerView) -> SyncPeerReply {
-    SyncPeerReply { id: peer.id, name: peer.name, fingerprint: peer.fingerprint, added: peer.added }
+    SyncPeerReply {
+        id: peer.id,
+        name: peer.name,
+        fingerprint: peer.fingerprint,
+        added: peer.added,
+        last_sync: peer.last_sync,
+        last_changed: peer.last_changed,
+        has_history: peer.has_history,
+    }
 }
 
 fn status_reply(status: Status, problem: Option<&'static str>) -> SyncStatusReply {
@@ -599,6 +633,8 @@ fn status_reply(status: Status, problem: Option<&'static str>) -> SyncStatusRepl
         listening_port: status.listening_port,
         address: local_address_hint(),
         fingerprint: status.fingerprint,
+        paused: status.paused,
+        syncing: status.syncing.map(|s: SyncingView| SyncingReply { name: s.name, done: s.done, total: s.total }),
         peers: status.peers.into_iter().map(peer_reply).collect(),
         pairing_seconds_left: status.pairing_seconds_left,
         events: status.events.into_iter().rev().map(event_reply).collect(),
@@ -688,6 +724,210 @@ async fn sync_remove_peer(id: String, state: State<'_, AppState>) -> Result<bool
     result.map_err(|error| sync_failed(&state.logger, "remove device", error))
 }
 
+const MAX_PREVIEW_ITEMS: usize = 200;
+
+#[derive(Serialize)]
+struct PreviewItem {
+    path: String,
+    action: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewReply {
+    first: bool,
+    send: usize,
+    receive: usize,
+    delete_here: usize,
+    delete_there: usize,
+    conflicts: usize,
+    clashes: usize,
+    skipped_here: usize,
+    skipped_there: usize,
+    too_big: Vec<String>,
+    files_here: usize,
+    files_there: usize,
+    items: Vec<PreviewItem>,
+    items_truncated: bool,
+}
+
+fn preview_reply(preview: Preview) -> PreviewReply {
+    let items_truncated = preview.plan.actions.len() > MAX_PREVIEW_ITEMS;
+    let items = preview
+        .plan
+        .actions
+        .iter()
+        .take(MAX_PREVIEW_ITEMS)
+        .map(|action| PreviewItem {
+            path: action.path().to_string(),
+            action: match action {
+                Action::Push { .. } => "send",
+                Action::Pull { .. } => "receive",
+                Action::DeleteLocal { .. } => "deleteHere",
+                Action::DeleteRemote { .. } => "deleteThere",
+                Action::Conflict { .. } => "conflict",
+            },
+        })
+        .collect();
+    PreviewReply {
+        first: preview.first,
+        send: preview.summary.push,
+        receive: preview.summary.pull,
+        delete_here: preview.summary.delete_local,
+        delete_there: preview.summary.delete_remote,
+        conflicts: preview.summary.conflicts,
+        clashes: preview.summary.clashes,
+        skipped_here: preview.skipped_here,
+        skipped_there: preview.skipped_there,
+        too_big: preview.too_big,
+        files_here: preview.files_here,
+        files_there: preview.files_there,
+        items,
+        items_truncated,
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReportReply {
+    sent: usize,
+    received: usize,
+    deleted_here: usize,
+    deleted_there: usize,
+    conflicts: usize,
+    conflict_copies: Vec<String>,
+    left_for_next: usize,
+    too_big: Vec<String>,
+    clashes: usize,
+}
+
+fn report_reply(report: Report) -> ReportReply {
+    ReportReply {
+        sent: report.sent,
+        received: report.received,
+        deleted_here: report.deleted_here,
+        deleted_there: report.deleted_there,
+        conflicts: report.conflicts,
+        conflict_copies: report.conflict_copies,
+        left_for_next: report.left_for_next,
+        too_big: report.too_big,
+        clashes: report.clashes.len(),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncRunReply {
+    /// The first sync with this device: nothing was changed; show `preview` and ask.
+    needs_approval: bool,
+    preview: Option<PreviewReply>,
+    report: Option<ReportReply>,
+}
+
+/// What a sync with one paired device would change. Changes nothing on either device.
+#[tauri::command]
+async fn sync_compare(id: String, state: State<'_, AppState>) -> Result<PreviewReply, String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.compare_peer(&id))).await?;
+    result.map(preview_reply).map_err(|error| sync_failed(&state.logger, "compare", error))
+}
+
+/// Syncs with one paired device. The first sync with a device only reports what it would do
+/// until `approved` is true.
+#[tauri::command]
+async fn sync_run(id: String, approved: bool, state: State<'_, AppState>) -> Result<SyncRunReply, String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.sync_peer(&id, approved, &mut |_| {}))).await?;
+    match result {
+        Ok(Outcome::NeedsApproval(preview)) => Ok(SyncRunReply { needs_approval: true, preview: Some(preview_reply(preview)), report: None }),
+        Ok(Outcome::Done(report)) => Ok(SyncRunReply { needs_approval: false, preview: None, report: Some(report_reply(report)) }),
+        Err(error) => Err(sync_failed(&state.logger, "sync", error)),
+    }
+}
+
+#[tauri::command]
+async fn sync_set_paused(paused: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.set_paused(paused))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "pause", error))
+}
+
+#[tauri::command]
+async fn sync_rename_peer(id: String, name: String, state: State<'_, AppState>) -> Result<(), String> {
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.rename_peer(&id, &name))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "rename device", error))
+}
+
+fn vault_root(state: &AppState) -> Result<PathBuf, String> {
+    let guard = state.vault.lock().map_err(|_| "io".to_string())?;
+    guard.as_ref().map(|vault| vault.root().to_path_buf()).ok_or_else(|| "no_vault".to_string())
+}
+
+/// One number that changes when something in the open folder changes (a page saved by another
+/// program, a sync that wrote files). Hex text, because a 64-bit number does not fit in a
+/// JavaScript number. It reads names and times only, so it is cheap to ask every few seconds.
+#[tauri::command(async)]
+fn vault_signature(state: State<AppState>) -> Result<String, String> {
+    let root = vault_root(&state)?;
+    Ok(format!("{:x}", watch::signature(&root)))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConflictReply {
+    copy: String,
+    original: String,
+    device: String,
+    date: String,
+    is_page: bool,
+}
+
+/// The copies a sync made when two devices changed the same page.
+#[tauri::command(async)]
+fn conflicts_list(state: State<AppState>) -> Result<Vec<ConflictReply>, String> {
+    let root = vault_root(&state)?;
+    let items = conflicts::list(&root).map_err(|error| sync_failed(&state.logger, "list conflicts", error))?;
+    Ok(items
+        .into_iter()
+        .map(|c| ConflictReply { copy: c.copy, original: c.original, device: c.device, date: c.date, is_page: c.is_page })
+        .collect())
+}
+
+/// Keeps one version of a conflicted page: `keep` is "page" (the copy goes to the trash) or
+/// "copy" (the copy's text becomes the page, the old text goes to the trash). Returns false
+/// when something changed in the meantime and nothing was done.
+#[tauri::command(async)]
+fn conflict_settle(copy: String, keep: String, state: State<AppState>) -> Result<bool, String> {
+    let keep = match keep.as_str() {
+        "page" => Keep::Page,
+        "copy" => Keep::Copy,
+        _ => return Err("invalid_path".to_string()),
+    };
+    let root = vault_root(&state)?;
+    conflicts::settle(&root, &copy, keep)
+        .map(|done| done == Done::Applied)
+        .map_err(|error| sync_failed(&state.logger, "settle conflict", error))
+}
+
+/// Starts the automatic syncing: a background thread that every little while asks the sync
+/// service whether a paired device is due. The service itself decides, and does nothing (not
+/// even listen on the network) when nothing is due, when sync is off or paused, or when no
+/// folder is open.
+fn start_auto_sync(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        let state = app.state::<AppState>();
+        let Some(service) = state.sync.service() else { return };
+        for result in service.auto_sync_tick(std::time::Duration::from_secs(3)) {
+            match result.outcome {
+                Ok(report) => state.logger.log(Level::Info, &format!("automatic sync done, {} files changed", report.changed())),
+                Err(code) => state.logger.log(Level::Warn, &format!("automatic sync failed: {code}")),
+            }
+        }
+    });
+}
+
 fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
@@ -751,6 +991,7 @@ pub fn run() {
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
+            start_auto_sync(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -780,6 +1021,13 @@ pub fn run() {
             sync_join,
             sync_find,
             sync_remove_peer,
+            sync_compare,
+            sync_run,
+            sync_set_paused,
+            sync_rename_peer,
+            vault_signature,
+            conflicts_list,
+            conflict_settle,
             trash_entry,
             trash_list,
             trash_restore,
