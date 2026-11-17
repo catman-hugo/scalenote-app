@@ -102,7 +102,7 @@ export const strings = {
     title: "Settings",
     tabs: { look: "Look", pages: "Pages", drawing: "Drawing", updates: "Updates", sync: "Sync", files: "Files" },
     theme: "Theme",
-    themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
+    themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", black: "True black", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
     fontSize: "Text size",
     fontSizes: { 80: "Smallest", 90: "Small", 100: "Normal", 112: "Large", 125: "Largest" },
     editorWidth: "Page width",

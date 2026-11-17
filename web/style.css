@@ -1380,6 +1380,7 @@ body.block-dragging .float-bar { visibility: hidden; }
 }
 :root[data-theme="dark"],
 :root[data-theme="midnight"],
+:root[data-theme="black"],
 :root[data-theme="forest"],
 :root[data-theme="dusk"] {
   --sn-text-gray: #807d78;

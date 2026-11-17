@@ -25,7 +25,7 @@ function contrast(a, b) {
 
 test("there is a theme block for every named theme (the system choice has none)", () => {
   assert.deepEqual(Object.keys(themes).sort(), THEMES.filter((t) => t !== "system").sort());
-  assert.equal(Object.keys(themes).length, 8);
+  assert.equal(Object.keys(themes).length, 9);
 });
 
 for (const name of Object.keys(themes)) {
