@@ -6,7 +6,9 @@
 // once so the device does not keep listening for pairings nobody can see.
 
 import { BackendError, backend } from "./backend.js";
+import { openConflictReview } from "./conflictreview.js";
 import { groupCode, timeLeftText } from "./syncpairrules.js";
+import { peerControls } from "./syncrun.js";
 import { strings } from "./strings.js";
 
 const POLL_MS = 1000;
@@ -36,12 +38,13 @@ function button(text, onClick, primary) {
 
 function activityLine(event) {
   const s = strings.settings;
-  const template = { paired: s.activityPaired, refused: s.activityRefused, removed: s.activityRemoved }[event.kind];
-  return fill(template || "{when}", { when: event.when.replace("T", " ").replace("Z", " UTC"), name: event.name });
+  const synced = event.changed > 0 ? s.activitySynced : s.activitySyncedNone;
+  const template = { paired: s.activityPaired, refused: s.activityRefused, removed: s.activityRemoved, synced, syncFailed: s.activitySyncFailed }[event.kind];
+  return fill(template || "{when}", { when: event.when.replace("T", " ").replace("Z", " UTC"), name: event.name, changed: event.changed });
 }
 
 /** Returns the rows to append to the Sync tab. `isOn()` says whether the switch is on. */
-export function pairingRows(logProblem) {
+export function pairingRows(logProblem, { onVaultChanged = async () => {} } = {}) {
   const s = strings.settings;
   const message = element("p", "", "setting-hint");
   message.id = "pairMessage";
@@ -69,6 +72,8 @@ export function pairingRows(logProblem) {
   let knownPeers = null;
   let timer = null;
   let removing = null;
+  let paused = false;
+  let lastStatus = null;
 
   const startButton = button(s.pairStart, () => start());
   startButton.id = "pairStart";
@@ -96,6 +101,23 @@ export function pairingRows(logProblem) {
   nearby.id = "pairNearby";
   nearby.hidden = true;
 
+  const pauseButton = button(s.pauseButton, async () => {
+    try {
+      await backend.syncSetPaused(!paused);
+      await refresh();
+      document.dispatchEvent(new Event("scalenote-sync-changed"));
+    } catch (error) {
+      logProblem("pausing sync failed", error);
+      message.textContent = errorSentence(error);
+    }
+  });
+  pauseButton.id = "syncPause";
+  const pausedHint = element("p", s.pausedHint, "setting-hint");
+  pausedHint.id = "syncPausedHint";
+  pausedHint.hidden = true;
+  const conflictsButton = button(s.conflictsOpen, () => openConflictReview({ logProblem, onSettled: onVaultChanged }));
+  conflictsButton.id = "conflictsOpen";
+
   const labelled = (text, input) => {
     const row = element("label", "", "setting-row pair-field");
     row.append(element("span", text, "setting-label"), input);
@@ -109,7 +131,8 @@ export function pairingRows(logProblem) {
       return;
     }
     for (const peer of peers) {
-      const item = element("li", "", "pair-item");
+      const item = element("li", "", "pair-peer");
+      const head = element("div", "", "pair-item");
       const text = element("span", `${peer.name} (${peer.fingerprint})`, "pair-name");
       const remove = button(removing === peer.id ? s.pairRemoveConfirm : s.pairRemove, async () => {
         if (removing !== peer.id) {
@@ -127,12 +150,27 @@ export function pairingRows(logProblem) {
         }
       });
       remove.className = "pair-remove";
-      item.append(text, remove);
+      head.append(text, remove);
+      const when = peer.lastSync ? fill(s.pairLastSync, { when: peer.lastSync.replace("T", " ").replace("Z", " UTC"), n: peer.lastChanged }) : peer.hasHistory ? "" : s.pairNeverSynced;
+      item.append(head);
+      if (when) item.append(element("p", when, "setting-hint pair-last"));
+      item.append(peerControls(peer, { logProblem, paused, done: afterSync }));
       list.append(item);
     }
   }
 
+  // After a sync or a rename: show the new state here, tell the status line and the page list.
+  async function afterSync(report) {
+    await refresh();
+    document.dispatchEvent(new Event("scalenote-sync-changed"));
+    if (report && report.sent + report.received + report.deletedHere + report.deletedThere + report.conflicts > 0) await onVaultChanged();
+  }
+
   function showStatus(status) {
+    lastStatus = status;
+    paused = status.paused;
+    pauseButton.textContent = paused ? s.resumeButton : s.pauseButton;
+    pausedHint.hidden = !paused;
     fingerprint.textContent = `${s.pairThisDevice}: ${status.fingerprint}`;
     showPeers(status.peers);
     activity.replaceChildren();
@@ -274,6 +312,9 @@ export function pairingRows(logProblem) {
     element("h3", s.pairHeading, "setting-heading"),
     fingerprint,
     list,
+    pauseButton,
+    pausedHint,
+    conflictsButton,
     startButton,
     stopButton,
     codeBox,
@@ -287,5 +328,7 @@ export function pairingRows(logProblem) {
     message,
     element("h3", s.activityHeading, "setting-heading"),
     activity,
+    element("h3", s.netHeading, "setting-heading"),
+    ...[s.netUpdates, s.netAnnounce, s.netSync, s.netNothing].map((line) => element("p", line, "setting-hint net-statement")),
   ];
 }

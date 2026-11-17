@@ -44,6 +44,9 @@ import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { PDF_LIMITS } from "./pdfrules.js";
 import { pairingRows } from "./syncpairing.js";
+import { startSyncLine } from "./syncline.js";
+import { pageAction, sameEntries } from "./syncrules.js";
+import { watchVault } from "./vaultwatch.js";
 import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
@@ -495,7 +498,7 @@ function syncSettingsRows() {
     textElement("p", s.syncNotYet, "setting-hint"),
     textElement("p", s.syncRules, "setting-hint"),
     status,
-    ...pairingRows(logProblem),
+    ...pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true) }),
   ];
 }
 
@@ -711,6 +714,8 @@ async function openVaultFrom(choice) {
   app.folds = new Map();
   await showNoNote();
   await refreshTree();
+  // A new folder starts a new baseline for noticing outside changes.
+  if (app.watcher) app.watcher.reset();
 }
 
 // Switching to another folder from the folder menu. `choice` is "default" or a path. The page
@@ -781,6 +786,53 @@ async function refreshTree() {
   drawTree();
   syncLinks();
   refreshIndex();
+}
+
+// ---------- changes made outside ScaleNote ----------
+
+// Another program saved a page, or a sync wrote files, while the app is open. The page list is
+// redrawn when the names changed, the favourites and tags are read again (not more than once a
+// minute unless asked), and the open page is reloaded when it changed on disk and nothing of it
+// is unsaved. If the person is typing, nothing is replaced: saving notices the change, as it
+// always did, and keeps both texts.
+async function refreshAfterOutsideChange(force) {
+  let tree;
+  try {
+    tree = await backend.tree();
+  } catch {
+    return;
+  }
+  const namesChanged = !sameEntries(app.entries, tree.entries);
+  if (force || namesChanged) {
+    await refreshTree();
+    app.lastIndexRefresh = Date.now();
+  } else if (Date.now() - (app.lastIndexRefresh || 0) > 60000) {
+    app.lastIndexRefresh = Date.now();
+    refreshIndex();
+  }
+  await reloadOpenPage();
+}
+
+async function reloadOpenPage() {
+  const shown = app.current;
+  if (!shown) return;
+  let fresh;
+  try {
+    fresh = await backend.readNote(shown.path);
+  } catch (error) {
+    // The page was deleted somewhere else (it is in the trash there and here).
+    if (error instanceof BackendError && error.code === "not_found" && app.current === shown && !app.autosave.pending && !app.autosave.running) {
+      await showNoNote();
+      showToast(strings.messages.pageRefreshed);
+    }
+    return;
+  }
+  if (app.current !== shown) return;
+  const busy = Boolean(app.autosave.pending || app.autosave.running);
+  if (pageAction({ onDisk: fresh.version, shown: shown.version, busy }) === "reload") {
+    showNote(shown.path, fresh);
+    showToast(strings.messages.pageRefreshed);
+  }
 }
 
 // ---------- folder icons ----------
@@ -2183,6 +2235,12 @@ async function start() {
   app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => setShowBacklinks(false) });
   keepCaretVisible();
   startFlushTriggers();
+  startSyncLine(el("syncLine"));
+  app.watcher = watchVault({
+    signature: () => backend.vaultSignature(),
+    onChange: () => refreshAfterOutsideChange(false),
+    isUsable: () => app.settings.vaultPath !== null,
+  });
 
   await loadSettings();
   applyAppearance(document.documentElement, app.settings);

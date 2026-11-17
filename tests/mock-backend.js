@@ -15,7 +15,7 @@
   const syncDevice = { name: "this-device", enabled: true };
   // Stand-in for the pairing service. The real rules (codes, attempts, keys) are tested in Rust
   // with real connections; here the screen is driven with a fixed code.
-  const syncPairing = { peers: [], events: [], secondsLeft: null };
+  const syncPairing = { peers: [], events: [], secondsLeft: null, paused: false, syncing: null };
   const syncStamp = () => "2026-01-01T12:00:00Z";
   const hash = (s) => { let h = 5381; for (const c of new TextEncoder().encode(s)) h = ((h * 33) ^ c) >>> 0; return `${s.length.toString(16)}-${h.toString(16)}`; };
   const fail = (code) => { throw code; };
@@ -128,7 +128,9 @@
         listeningPort: 47821,
         address: window.__noAddress ? null : "192.168.1.20",
         fingerprint: "ab12 cd34 ef56 7890 1234",
-        peers: syncPairing.peers.map((p) => ({ ...p })),
+        paused: syncPairing.paused,
+        syncing: syncPairing.syncing,
+        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, hasHistory: false, ...p })),
         pairingSecondsLeft: syncPairing.secondsLeft,
         events: [...syncPairing.events].reverse(),
       };
@@ -148,7 +150,7 @@
       window.__joins = [...(window.__joins || []), { address, code }];
       if (code.length !== 8) fail("pair_bad_code");
       if (window.__failJoin) fail(window.__failJoin);
-      syncPairing.peers.push({ id: "k" + syncPairing.peers.length, name: "bob-laptop", fingerprint: "1111 2222 3333 4444 5555", added: syncStamp() });
+      syncPairing.peers.push({ id: "k" + syncPairing.peers.length, name: "bob-laptop", fingerprint: "1111 2222 3333 4444 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false });
       syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "bob-laptop" });
       return "bob-laptop";
     },
@@ -157,6 +159,44 @@
       if (window.__failFind) fail(window.__failFind);
       window.__finds = (window.__finds || 0) + 1;
       return window.__nearby || [];
+    },
+    // Stand-ins for the sync itself. The real rules (plans, conflicts, trash, limits) are tested in
+    // Rust with two real services and real folders; here the screens are driven with fixed answers.
+    sync_compare: ({ id }) => {
+      window.__compares = [...(window.__compares || []), id];
+      if (window.__failSyncRun) fail(window.__failSyncRun);
+      return window.__syncPreview || { first: false, send: 0, receive: 0, deleteHere: 0, deleteThere: 0, conflicts: 0, clashes: 0, skippedHere: 0, skippedThere: 0, tooBig: [], filesHere: 3, filesThere: 3, items: [], itemsTruncated: false };
+    },
+    sync_run: ({ id, approved }) => {
+      window.__runs = [...(window.__runs || []), { id, approved }];
+      if (window.__failSyncRun) fail(window.__failSyncRun);
+      const peer = syncPairing.peers.find((p) => p.id === id);
+      const preview = window.__syncPreview;
+      if (preview && preview.first && !approved) return { needsApproval: true, preview, report: null };
+      const report = window.__syncReport || { sent: 1, received: 2, deletedHere: 0, deletedThere: 0, conflicts: 0, conflictCopies: [], leftForNext: 0, tooBig: [], clashes: 0 };
+      const changed = report.sent + report.received + report.deletedHere + report.deletedThere + report.conflicts;
+      if (peer) { peer.hasHistory = true; peer.lastSync = syncStamp(); peer.lastChanged = changed; }
+      syncPairing.events.push({ when: syncStamp(), kind: "synced", name: peer ? peer.name : "bob-laptop", changed });
+      return { needsApproval: false, preview: null, report };
+    },
+    sync_set_paused: ({ paused }) => { syncPairing.paused = paused; },
+    sync_rename_peer: ({ id, name }) => {
+      if (window.__failRename) fail("io");
+      const peer = syncPairing.peers.find((p) => p.id === id);
+      if (!peer) fail("pair_refused");
+      peer.name = name.replace(/[^\p{L}\p{N}_ -]/gu, "").trim().replace(/ +/g, "-") || "this-device";
+    },
+    // Changes whenever a page or folder is added, removed or changed; a test can also bump it.
+    vault_signature: () => hash([...files.entries()].map(([p, t]) => p + "\n" + t).join("\n") + [...folders].join("|") + (window.__sigBump || 0)),
+    conflicts_list: () => (window.__conflicts || []).map((c) => ({ ...c })),
+    conflict_settle: ({ copy, keep }) => {
+      window.__settles = [...(window.__settles || []), { copy, keep }];
+      if (window.__settleChanged) return false;
+      window.__conflicts = (window.__conflicts || []).filter((c) => c.copy !== copy);
+      const item = (window.__conflictsAll || []).find((c) => c.copy === copy);
+      if (item && keep === "copy") files.set(item.original, files.get(copy));
+      files.delete(copy);
+      return true;
     },
     sync_remove_peer: ({ id }) => {
       const before = syncPairing.peers.length;
@@ -326,5 +366,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { peerPairs: () => { syncPairing.peers.push({ id: "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp() }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { peerPairs: () => { syncPairing.peers.push({ id: "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

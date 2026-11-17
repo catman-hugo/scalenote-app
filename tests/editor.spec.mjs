@@ -33,7 +33,8 @@ const url = `http://127.0.0.1:${server.address().port}/`;
 // The app looks for updates by default. Tests must never reach the real GitHub, so every page
 // gets an empty release list unless a test sets up its own answer (a later route wins).
 const GITHUB = "https://api.github.com/repos/catman-hugo/scalenote-app/releases?per_page=20";
-const browser = await chromium.launch();
+// CHROME_PATH lets a machine without Playwright's own browser use an installed Chrome.
+const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
 let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
@@ -7486,6 +7487,133 @@ await test("pairing: entering a code pairs, a wrong-length code and an unreachab
   for (let i = 0; i < 10; i++) await page.click("#pairJoin");
 }, { settings: existingUser({ updates: false }) });
 
+const aliceFirst = { first: true, send: 2, receive: 1, deleteHere: 0, deleteThere: 0, conflicts: 0, clashes: 0, skippedHere: 0, skippedThere: 0, tooBig: [], filesHere: 2, filesThere: 1, items: [{ path: "A.md", action: "send" }, { path: "B.md", action: "send" }, { path: "School/C.md", action: "receive" }], itemsTruncated: false };
+
+await test("sync: the first sync shows what it would do and changes nothing until the yes; the status line then says what changed", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((preview) => { window.__syncPreview = preview; window.__mock.peerPairs(); }, aliceFirst);
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairList .sync-now");
+  assert.match(await page.textContent("#pairList"), /Not synced yet/);
+  await page.click("#pairList .sync-now");
+  await page.waitForSelector(".sync-panel");
+  const panel = await page.textContent(".sync-peer-panel");
+  assert.match(panel, /First sync with alice-phone/);
+  assert.match(panel, /Nothing has been changed yet/);
+  assert.match(panel, /2 to send to alice-phone/);
+  assert.match(panel, /1 to receive from alice-phone/);
+  assert.match(panel, /School\/C\.md \(receive\)/);
+  assert.deepEqual(await page.evaluate(() => window.__runs), [{ id: "p0", approved: false }], "the first call only asked");
+  await page.getByRole("button", { name: "Start the sync" }).click();
+  await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("Synced with alice-phone: 3 changed."));
+  assert.deepEqual((await page.evaluate(() => window.__runs)).map((r) => r.approved), [false, true]);
+  await page.waitForFunction(() => document.querySelector("#syncLine") && !document.querySelector("#syncLine").hidden && document.querySelector("#syncLine").textContent === "Synced · 3 changed");
+  assert.match(await page.textContent("#pairActivity"), /synced with alice-phone, 3 changed/);
+  assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 12:00:00 UTC \(3 changed\)/);
+}, { settings: existingUser({ updates: false }) });
+
+await test("sync: Compare shows the plan and runs nothing; an error says what to do; rapid clicking never throws", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs());
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairList .sync-compare");
+  await page.click("#pairList .sync-compare");
+  await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("Nothing to do: both devices already have the same files."));
+  assert.equal(await page.evaluate(() => window.__runs), undefined, "compare never starts a sync");
+  assert.equal((await page.evaluate(() => window.__compares)).length, 1);
+  await page.evaluate(() => { window.__failSyncRun = "sync_not_found"; });
+  await page.click("#pairList .sync-now");
+  await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("was not found on this network"));
+  await page.evaluate(() => { window.__failSyncRun = null; });
+  for (let i = 0; i < 8; i++) await page.click("#pairList .sync-compare", { force: true }).catch(() => {});
+}, { settings: existingUser({ updates: false }) });
+
+await test("sync: Pause stops the buttons and the status line says so; Resume brings them back", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs());
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#syncPause");
+  assert.equal((await page.textContent("#syncPause")).trim(), "Pause sync");
+  await page.click("#syncPause");
+  await page.waitForFunction(() => document.querySelector("#syncPause").textContent === "Resume sync");
+  assert.equal(await page.isVisible("#syncPausedHint"), true);
+  assert.equal(await page.isDisabled("#pairList .sync-now"), true);
+  await page.waitForFunction(() => document.querySelector("#syncLine").textContent === "Sync paused");
+  await page.click("#syncPause");
+  await page.waitForFunction(() => document.querySelector("#syncPause").textContent === "Pause sync");
+  assert.equal(await page.isDisabled("#pairList .sync-now"), false);
+}, { settings: existingUser({ updates: false }) });
+
+await test("sync: a paired device can be renamed here; the name is cleaned and the box can be cancelled", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs());
+  await openSettingsTab(page, "sync");
+  await page.click("#pairList .sync-rename");
+  await page.waitForSelector(".sync-rename-input");
+  await page.press(".sync-rename-input", "Escape");
+  assert.equal(await page.locator(".sync-rename-input").count(), 0);
+  await page.click("#pairList .sync-rename");
+  await page.fill(".sync-rename-input", "Alice's tablet!");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.waitForFunction(() => document.querySelector("#pairList").textContent.includes("Alices-tablet"));
+}, { settings: existingUser({ updates: false }) });
+
+await test("sync: the status line is hidden without paired devices and the network statement is in the Sync tab", async (page) => {
+  await page.waitForSelector("#newNote");
+  assert.equal(await page.isHidden("#syncLine"), true);
+  await openSettingsTab(page, "sync");
+  const text = await page.textContent("#settings");
+  assert.match(text, /What ScaleNote contacts/);
+  assert.match(text, /GitHub can see your internet address/);
+  assert.match(text, /no central server/);
+}, { settings: existingUser({ updates: false }) });
+
+await test("sync: conflict copies are shown beside their page, keeping the copy settles it, and a change meanwhile is said", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    const item = { copy: "Plan (conflict bob 2026-11-17).md", original: "Plan.md", device: "bob", date: "2026-11-17", isPage: true };
+    window.__mock.files.set("Plan.md", "my version\n");
+    window.__mock.files.set(item.copy, "bob's version\n");
+    window.__conflicts = [item];
+    window.__conflictsAll = [item];
+  });
+  await openSettingsTab(page, "sync");
+  await page.click("#conflictsOpen");
+  await page.waitForSelector(".conflict-item");
+  const sides = await page.locator(".conflict-text").allTextContents();
+  assert.deepEqual(sides.map((t) => t.trim()), ["my version", "bob's version"]);
+  assert.match(await page.textContent(".conflict-item"), /from bob, 2026-11-17/);
+  await page.evaluate(() => { window.__settleChanged = true; });
+  await page.click(".keep-copy");
+  await page.waitForFunction(() => document.querySelector(".conflict-message")?.textContent.includes("Something changed while you were looking"));
+  await page.evaluate(() => { window.__settleChanged = false; });
+  await page.click(".keep-copy");
+  await page.waitForFunction(() => document.querySelector(".conflict-dialog").textContent.includes("There are no conflict copies."));
+  assert.equal((await page.evaluate(() => window.__settles)).at(-1).keep, "copy");
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Plan.md")), "bob's version\n");
+  await page.click("#conflictsClose");
+  await page.waitForFunction(() => document.querySelectorAll(".conflict-dialog").length === 0);
+}, { settings: existingUser({ updates: false }) });
+
+await test("outside changes: a page added elsewhere appears in the list and the open page is reloaded when nothing of it is unsaved", async (page) => {
+  await page.waitForSelector("#newNote");
+  await seed(page, "Open.md", "first text\n");
+  await page.evaluate(() => window.__mock.folders.add("Existing"));
+  await page.evaluate(() => { document.querySelector("#newNote").click(); });
+  await page.waitForSelector(".tree-button");
+  await page.click('.tree-button[data-path="Open.md"]');
+  await page.waitForFunction(() => document.querySelector("#editor").textContent.includes("first text"));
+  // Another device's sync wrote a new page and changed the open one.
+  await page.evaluate(() => { window.__mock.files.set("From sync.md", "new\n"); window.__mock.files.set("Open.md", "changed on the other device\n"); });
+  await page.waitForSelector('.tree-button[data-path="From sync.md"]', { timeout: 6000 });
+  await page.waitForFunction(() => document.querySelector("#editor").textContent.includes("changed on the other device"), null, { timeout: 6000 });
+  assert.match(await page.textContent("#toast"), /reloaded/);
+  // The page is deleted elsewhere: the page area is emptied, calmly.
+  await page.evaluate(() => window.__mock.files.delete("Open.md"));
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Open.md"]'), null, { timeout: 6000 });
+  assert.equal(await page.isVisible("#empty"), true);
+}, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { globalThis.__scalenoteWatchMs = 300; }) });
+
 await test("on a computer Settings is wide with the tabs on the left; on a phone the tabs are a row on top and nothing overflows", async (page) => {
   await page.waitForSelector("#newNote");
   await page.click("#openSettings");
@@ -8163,6 +8291,48 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.screenshot({ path: `${shots}/v052-${label}-${scheme}-1-find-devices.png` });
       await page.locator("#pairActivity").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${shots}/v051-${label}-${scheme}-2-activity.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots for the design check of 0.5.3 (only when SHOTS_DIR is set): the first-sync plan,
+// the status line, the paused state and the conflict review, light and dark, desktop and phone.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await page.evaluate((preview) => {
+        window.__syncPreview = preview;
+        window.__mock.peerPairs();
+        const item = { copy: "Plan (conflict bob 2026-11-17).md", original: "Plan.md", device: "bob", date: "2026-11-17", isPage: true };
+        window.__mock.files.set("Plan.md", "my version\n");
+        window.__mock.files.set(item.copy, "bob's version\n");
+        window.__conflicts = [item];
+        window.__conflictsAll = [item];
+      }, aliceFirst);
+      await openSettingsTab(page, "sync");
+      await page.waitForSelector("#pairList .sync-now");
+      await page.click("#pairList .sync-now");
+      await page.waitForSelector(".sync-peer-panel");
+      await page.locator(".sync-peer-panel").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v053-${label}-${scheme}-1-first-sync-plan.png` });
+      await page.getByRole("button", { name: "Start the sync" }).click();
+      await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("Synced with"));
+      await page.screenshot({ path: `${shots}/v053-${label}-${scheme}-2-synced.png` });
+      await page.click("#syncPause");
+      await page.waitForFunction(() => document.querySelector("#syncPause").textContent === "Resume sync");
+      await page.screenshot({ path: `${shots}/v053-${label}-${scheme}-3-paused.png` });
+      await page.click("#syncPause");
+      await page.click("#conflictsOpen");
+      await page.waitForSelector(".conflict-item");
+      await page.screenshot({ path: `${shots}/v053-${label}-${scheme}-4-conflict-review.png` });
       await context.close();
     }
   }
