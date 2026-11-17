@@ -91,6 +91,18 @@ Run `npm run build` before the browser tests, because they test the built interf
 
 Open an [issue](../../issues) and say which system you use, which version of ScaleNote, and what you did before it went wrong. Please do not paste private notes into an issue.
 
+## Star history
+
+<a href="https://www.star-history.com/#catman-hugo/scalenote-app&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=catman-hugo/scalenote-app&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=catman-hugo/scalenote-app&type=Date" />
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=catman-hugo/scalenote-app&type=Date" />
+  </picture>
+</a>
+
+The chart is drawn by an outside service (star-history.com) when this page is opened, so your browser loads an image from it. Nothing in the app itself uses it.
+
 ## Licence
 
 No licence has been chosen yet. Until one is added, the code can be read but not reused.
