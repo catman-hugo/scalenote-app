@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-15, 0.5.2 built (finding devices); tested in a browser and with real sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-17 (plan for 0.5.3 to 0.5.6 changed, see `docs/v0.5-plan.md`); code last changed 2026-11-15, 0.5.2 built (finding devices); tested in a browser and with real sockets on one computer in Rust, NOT tried on two devices or on a real network.
 
 ## 0.5.2: built, not tried on two devices
 
@@ -549,7 +549,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.13 | Planned (owner, 2026-11-13): fixes from the device test of 0.4.12, then page icon colours (the same sixteen colours as folders, no other icon styles), and names for canvas regions | planned |
 | 0.4.14 | The `/canvas` block inside callouts, toggles and columns (see "0.4.14") | built, not tried on a device |
 | 0.4.15 | Ink and canvas drawings in print and export; text selection and find inside a PDF block | built, waiting for device test |
-| 0.5 | Sync between your own devices: LocalSend-style direct sync, home server as an always-on device, browser client. Slices 0.5.0 to 0.5.7, see `docs/v0.5-plan.md` | planned, not started |
+| 0.5 | Sync between your own devices: LocalSend-style direct sync and the home server as an always-on device. Slices 0.5.0 to 0.5.6, see `docs/v0.5-plan.md`. 25 extra features were added to 0.5.3 to 0.5.6 on 2026-11-17. The browser client moved to a later release | 0.5.0 to 0.5.2 built, not tried on two devices; 0.5.3 next |
 | 0.6 | Android, offline choices per item, share target and quick capture | not started |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
 | 1.1 | Planning and calendar, templates, daily notes | not started |

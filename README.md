@@ -14,7 +14,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
   - 0.5.1: pairing. Two devices trust each other after a one-time code. Paired devices can be listed and removed.
   - 0.5.2: "Find devices", so the address does not have to be typed. A device only announces itself while its pairing code is showing.
 - **Being built next: 0.5.3.** The sync itself between two apps on the same network. The first sync shows what it will do and waits for a yes. If a page changed on both devices, both versions are kept. Deleted pages go to the trash on the other device.
-- **After that in 0.5:** Android (0.5.4), the home server (0.5.5), the browser client (0.5.6), hardening and release (0.5.7). The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
+- **After that in 0.5:** Android (0.5.4), the home server (0.5.5), and hardening and release (0.5.6). Each of the four coming releases also gets some extra features (25 in all, for example a conflict review screen, a backup screen, a true-black theme and an optional app lock). The browser client moved to a later release. The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
 - **Not tried on real devices yet:** pairing and finding on two devices, the Android phone finding other devices (needs a later change), printing and export from the packaged app, selecting PDF text by touch.
 - **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).
 
@@ -46,7 +46,7 @@ ScaleNote is a personal side project. I am making it to learn how to build softw
 
 The plan, in order, is in [PROGRESS.md](PROGRESS.md), and the reasons behind choices are in [DECISIONS.md](DECISIONS.md). In short:
 
-- **Next (0.5):** sync between your own devices. Two devices on the same network share a notebook directly after pairing, with no server. An optional home server keeps a copy when your other devices are off, and a browser client talks to that server. Android comes after the desktop apps.
+- **Next (0.5):** sync between your own devices. Two devices on the same network share a notebook directly after pairing, with no server. An optional home server keeps a copy when your other devices are off. Android comes after the desktop apps. A browser client comes later.
 - **Later:** calendar, templates, an optional study assistant (off by default and completely absent until you turn it on), flashcards, importers for other note apps, and a 3DS drawing app.
 
 Version 1.0.0 is the notes, drawing and sync working on phone, tablet, laptop and desktop. The public release is 2.0.0, after a security review.
