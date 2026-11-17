@@ -7362,7 +7362,7 @@ await test("Settings has a Sync tab: on by default, the name is kept clean, and 
   await page.waitForSelector("#syncEnabled:not([disabled])");
   assert.equal(await page.isChecked("#syncEnabled"), true, "sync is on by default");
   assert.equal(await page.inputValue("#syncName"), "this-device");
-  assert.ok((await page.locator("#settings .settings-body:visible").textContent()).includes("No pages are exchanged yet"), "honest about what it does not do yet");
+  assert.ok((await page.locator("#settings .settings-body:visible").textContent()).includes("What ScaleNote contacts"), "says what the app does on the network");
   await page.fill("#syncName", "  Alice's Phone / 2 ");
   await page.dispatchEvent("#syncName", "change");
   await page.waitForFunction(() => document.querySelector("#syncName").value === "Alices-Phone-2");
