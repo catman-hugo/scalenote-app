@@ -61,6 +61,8 @@ export const backend = {
   syncRun: (id, approved) => call("sync_run", { id, approved }),
   syncSetPaused: (paused) => call("sync_set_paused", { paused }),
   syncRenamePeer: (id, name) => call("sync_rename_peer", { id, name }),
+  syncSetWifiOnly: (id, only) => call("sync_set_wifi_only", { id, only }),
+  syncSetOnWifi: (onWifi) => call("sync_set_on_wifi", { onWifi }),
   // One text that changes when something in the open folder changes.
   vaultSignature: () => call("vault_signature"),
   // The copies made when two devices changed the same page, and settling one of them.

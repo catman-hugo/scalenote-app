@@ -34,6 +34,24 @@ function errorSentence(error) {
   return strings.errors[code] || strings.errors.unknown;
 }
 
+function wifiRow(peer, wifi, text, logProblem) {
+  const row = element("label", "", "setting-row sync-wifi-row");
+  const box = element("input");
+  box.type = "checkbox";
+  box.className = "sync-wifi-only";
+  box.checked = peer.wifiOnly === true;
+  box.addEventListener("change", async () => {
+    try {
+      await wifi.change(peer.id, box.checked);
+    } catch (error) {
+      logProblem("changing Wi-Fi only failed", error);
+      box.checked = !box.checked;
+    }
+  });
+  row.append(element("span", text.wifiOnly, "setting-label"), box);
+  return row;
+}
+
 function previewPanel(peer, preview, ask, text) {
   const box = element("div", "", "sync-panel");
   box.append(element("h4", fill(preview.first ? text.previewFirstHeading : text.previewHeading, { name: peer.name }), "sync-panel-title"));
@@ -63,7 +81,7 @@ function previewPanel(peer, preview, ask, text) {
  * The buttons and the answer panel for one paired device. `done(report)` is called after a sync
  * ran, so the screen and the page list can be refreshed.
  */
-export function peerControls(peer, { logProblem, done, paused }) {
+export function peerControls(peer, { logProblem, done, paused, wifi = null }) {
   const text = strings.settings;
   const state = views.get(peer.id) || { view: null, busy: false, render: null };
   views.set(peer.id, state);
@@ -71,7 +89,10 @@ export function peerControls(peer, { logProblem, done, paused }) {
   const panel = element("div", "", "sync-peer-panel");
   panel.setAttribute("role", "status");
   const wrapper = element("div", "", "sync-peer");
-  wrapper.append(buttons, panel);
+  wrapper.append(buttons);
+  // Only where the app can tell the kind of network (the Android app).
+  if (wifi && wifi.available) wrapper.append(wifiRow(peer, wifi, text, logProblem));
+  wrapper.append(panel);
 
   const syncButton = button(text.syncNow, () => run(false));
   const compareButton = button(text.syncCompare, () => compare());

@@ -44,7 +44,7 @@ function activityLine(event) {
 }
 
 /** Returns the rows to append to the Sync tab. `isOn()` says whether the switch is on. */
-export function pairingRows(logProblem, { onVaultChanged = async () => {} } = {}) {
+export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi = null } = {}) {
   const s = strings.settings;
   const message = element("p", "", "setting-hint");
   message.id = "pairMessage";
@@ -154,7 +154,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {} } = {}
       const when = peer.lastSync ? fill(s.pairLastSync, { when: peer.lastSync.replace("T", " ").replace("Z", " UTC"), n: peer.lastChanged }) : peer.hasHistory ? "" : s.pairNeverSynced;
       item.append(head);
       if (when) item.append(element("p", when, "setting-hint pair-last"));
-      item.append(peerControls(peer, { logProblem, paused, done: afterSync }));
+      item.append(peerControls(peer, { logProblem, paused, wifi, done: afterSync }));
       list.append(item);
     }
   }
