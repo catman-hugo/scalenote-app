@@ -24,6 +24,7 @@ export const strings = {
     accept: "I understand",
   },
 
+  navigation: { back: "Back to the previous page", forward: "Forward to the next page", find: "Find in this page" },
   sidebar: {
     notes: "Pages",
     newNote: "New page",
@@ -100,7 +101,17 @@ export const strings = {
   settings: {
     open: "Settings",
     title: "Settings",
-    tabs: { look: "Look", pages: "Pages", drawing: "Drawing", updates: "Updates", sync: "Sync", files: "Files" },
+    tabs: { look: "Look", pages: "Pages", drawing: "Drawing", updates: "Updates", sync: "Sync", files: "Files", device: "This device" },
+    search: "Search settings",
+    searchPlaceholder: "Search settings",
+    searchResults: "Search results",
+    searchNone: "No setting matches. Try another word.",
+    reopenLast: "Open the page I was on when the app starts",
+    reopenLastHint: "Also after Android closed the app to free memory.",
+    reset: "Reset to defaults",
+    resetAsk: "Press again to reset",
+    resetHint: "Puts the look, page, drawing and update settings back to how they were at the start. Your notes, the open folder, paired devices and what each device syncs are not touched.",
+    resetDone: "Settings are back to the defaults.",
     theme: "Theme",
     themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", black: "True black", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
     fontSize: "Text size",
@@ -171,7 +182,10 @@ export const strings = {
     syncComparing: "Comparing",
     syncRunning: "Syncing",
     syncCompare: "Compare",
+    androidSleepHint: "On Android, syncing happens while ScaleNote is open. When the app is in the background, Android may pause it, so open the app to catch up.",
     syncRename: "Rename",
+    wifiOnly: "Sync with this device only on Wi-Fi",
+    wifiOnlyOffNetwork: "This phone is not on Wi-Fi, so syncing with this device waits.",
     renameLabel: "Name for this device on this device",
     renameSave: "Save",
     renameCancel: "Cancel",
@@ -713,6 +727,7 @@ export const strings = {
   },
 
   messages: {
+    backFromSleep: "ScaleNote was in the background, and Android may have paused syncing. It is catching up now.",
     pageRefreshed: "This page was changed on another device or by another program, so it was reloaded.",
     conflict:
       "This page was changed by another program while you were editing. The version on disk was loaded, and your edits were saved as a separate page.",
@@ -748,6 +763,7 @@ export const strings = {
     sync_unavailable: "Sync could not start on this device.",
     sync_paused: "Sync is paused on this device. Resume it first.",
     sync_busy: "A sync is already running. Try again when it is done.",
+    sync_wifi_only: "This device is set to sync only on Wi-Fi, and this phone is not on Wi-Fi now. Connect to Wi-Fi, or turn the setting off.",
     sync_no_vault: "Open a folder first. Sync works on the folder that is open.",
     sync_not_found: "The other device was not found on this network. Check that it is on, that ScaleNote is open there and that sync is not paused.",
     sync_wrong_device: "The device at that address is not the one you paired with.",

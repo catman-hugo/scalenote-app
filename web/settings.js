@@ -29,7 +29,7 @@ function select(options, value, onPick) {
   return control;
 }
 
-const TAB_ORDER = ["pages", "drawing", "updates", "sync", "files"];
+const TAB_ORDER = ["pages", "drawing", "updates", "sync", "files", "device"];
 
 // The tab that was open last, kept while the app runs so the box opens where it was left.
 let lastTab = "look";
@@ -116,10 +116,56 @@ export function openSettings(dialog, current, onChange, groups = {}) {
     buttons.get(next).focus();
   });
 
+  // A box to find a setting by its words. While it holds text, every tab's rows that do not
+  // match are hidden (with a class, so rows that hide themselves for other reasons stay as they are).
+  const search = make("input", "settings-search");
+  search.type = "search";
+  search.id = "settingsSearch";
+  search.autocomplete = "off";
+  search.maxLength = 60;
+  search.placeholder = s.searchPlaceholder;
+  search.setAttribute("aria-label", s.search);
+  const nothing = make("p", "setting-hint settings-nomatch", s.searchNone);
+  nothing.hidden = true;
+  const filter = () => {
+    const wanted = search.value.trim().toLowerCase();
+    nav.classList.toggle("is-searching", wanted !== "");
+    if (!wanted) {
+      for (const rows of tabs.map(([, r]) => r)) rows.forEach((row) => row.classList.remove("search-miss"));
+      nothing.hidden = true;
+      show(lastTab);
+      return;
+    }
+    let found = 0;
+    for (const [id, rows] of tabs) {
+      let here = 0;
+      for (const row of rows) {
+        const hit = row.textContent.toLowerCase().includes(wanted);
+        row.classList.toggle("search-miss", !hit);
+        if (hit) here += 1;
+      }
+      panels.get(id).hidden = here === 0;
+      found += here;
+    }
+    for (const button of buttons.values()) button.setAttribute("aria-selected", "false");
+    heading.textContent = s.searchResults;
+    nothing.hidden = found > 0;
+  };
+  search.addEventListener("input", filter);
+  search.addEventListener("keydown", (event) => {
+    // Escape empties the box first; only an empty box lets Escape close the window.
+    if (event.key === "Escape" && search.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      search.value = "";
+      filter();
+    }
+  });
+
   const close = make("button", "primary", s.close);
   close.type = "button";
   close.addEventListener("click", () => dialog.close());
-  main.append(heading, ...panels.values(), close);
+  main.append(search, heading, nothing, ...panels.values(), close);
   layout.append(nav, main);
   dialog.append(layout);
   show(lastTab);

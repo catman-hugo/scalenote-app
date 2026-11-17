@@ -2027,3 +2027,11 @@ button.danger:hover { background: var(--bg-hover); }
 .conflict-side-title { margin: 0 0 var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
 .conflict-text { margin: 0; padding: var(--space-2); max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font); font-size: var(--text-s); background: var(--bg-code); border-radius: var(--radius); }
 @media (max-width: 600px) { .conflict-sides { grid-template-columns: 1fr; } }
+
+/* Settings search, and the Back, Forward and Find buttons. */
+.settings-search { width: 100%; box-sizing: border-box; margin-bottom: 0.75rem; }
+.search-miss { display: none !important; }
+.settings-nomatch { margin: 0.5rem 0; }
+.icon-button:disabled { opacity: 0.4; cursor: default; }
+.sync-wifi-row { margin-top: 0.5rem; }
+.icon-button[hidden] { display: none; }

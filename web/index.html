@@ -38,10 +38,13 @@
       <main class="main">
         <header class="topbar">
           <button id="toggle" type="button" class="icon-button"></button>
+          <button id="navBack" type="button" class="icon-button" disabled></button>
+          <button id="navForward" type="button" class="icon-button" disabled></button>
           <input id="title" class="title" type="text" maxlength="100" autocomplete="off" hidden />
           <!-- Before the buttons, so the words that appear here while saving push the title,
                not the buttons: a tap on a button must not land beside it. -->
           <span id="status" class="status" role="status"></span>
+          <button id="findButton" type="button" class="icon-button" hidden></button>
           <button id="favorite" type="button" class="icon-button favorite-button" aria-pressed="false" hidden></button>
           <button id="historyButton" type="button" class="icon-button" aria-haspopup="dialog" hidden></button>
           <button id="inkButton" type="button" class="icon-button" aria-pressed="false" hidden></button>

@@ -2,6 +2,8 @@
 // are hidden from screen readers; every button also has a text label.
 const paths = {
   menu: "M2 4h12M2 8h12M2 12h12",
+  arrowLeft: "M13 8H3M7 4L3 8l4 4",
+  arrowRight: "M3 8h10M9 4l4 4-4 4",
   plus: "M8 3v10M3 8h10",
   folder: "M2 4.5h4l1.5 1.5H14v6.5H2z",
   // A book with a spiral binding down the left side.
