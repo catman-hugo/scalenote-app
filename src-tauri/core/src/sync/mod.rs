@@ -7,6 +7,7 @@
 //! these rules, so every rule about not losing a note is tested here, on real folders.
 
 pub mod channel;
+pub mod conflicts;
 pub mod device;
 pub mod discovery;
 pub mod engine;
@@ -101,3 +102,6 @@ mod tests_service;
 
 #[cfg(test)]
 mod tests_sync;
+
+#[cfg(test)]
+mod tests_conflicts;
