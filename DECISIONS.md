@@ -681,3 +681,9 @@ Decision. A device announces itself (name, port, public key) once a second on th
 Alternatives. Always announcing while sync is on (rejected: a device would be visible on every network it joins); mDNS/DNS-SD (rejected for now: needs a library and still needs the Android multicast lock; may come later); a QR code (see the 0.5.1 decision).
 Cost. Someone on the same network can see that a device is pairing and its name. Android: receiving notes needs a multicast lock that is not built yet, so a phone may not find other devices until 0.5.4; other devices can still find the phone, and typing works. The real network route was only tried on loopback here.
 
+
+## 2026-11-17: Wanted features are kept in one file, all after sync, and suggestions are opt-in
+Context. The owner went through a list of possible features and decided which to add, skip or leave. Most of them are less important than sync between devices, which is being built now.
+Decision. The chosen features are written in `docs/features-to-implement.md` without version numbers, and nothing in it changes the current build. Anything that suggests, shows or collects something on its own (suggested connections between pages, home widgets, the calendar, app lock, statistics) is off until the user switches it on. A toggle heading is saved as a normal markdown heading followed by an invisible `<!-- toggle -->` marker, so other programs show a normal heading; `#>` is only a typing shortcut and is never written. There is no central server in any mode.
+Alternatives. Giving every item a version now (rejected: it would plan work in order of a list, not of importance). Saving a toggle heading with `#>` in the file (rejected: it is not markdown, and other programs would show it wrongly).
+Cost. The file is a wish list, so the order has to be chosen again when sync is done. The `<!-- toggle -->` marker is visible in a text editor and has to be kept when a heading is edited or moved.

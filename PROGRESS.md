@@ -569,6 +569,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 1.15 | Dutch translation | not started |
 | 2.0.0 | Public release: security gates, outside review, signed builds | not started |
 | 2.1 | Community themes and extensions | not started |
+| Later | Features the owner wants that have no version yet, all after the sync work: see `docs/features-to-implement.md` | not started |
 
 Not planned: voice calls, and Apple hardware.
 
