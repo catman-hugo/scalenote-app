@@ -29,8 +29,12 @@ pub struct Channel<S: Read + Write> {
 
 fn write_frame<S: Write>(stream: &mut S, bytes: &[u8]) -> Result<()> {
     let length = u16::try_from(bytes.len()).map_err(|_| SyncError::Channel("message too long"))?;
-    stream.write_all(&length.to_be_bytes())?;
-    stream.write_all(bytes)?;
+    // One write for the length and the bytes: two small writes in a row make a network wait for
+    // the first to be acknowledged (a delay of tens of milliseconds for every message).
+    let mut frame = Vec::with_capacity(bytes.len() + 2);
+    frame.extend_from_slice(&length.to_be_bytes());
+    frame.extend_from_slice(bytes);
+    stream.write_all(&frame)?;
     stream.flush()?;
     Ok(())
 }

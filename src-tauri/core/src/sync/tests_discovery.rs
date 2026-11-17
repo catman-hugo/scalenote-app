@@ -173,10 +173,21 @@ fn a_device_is_found_only_while_its_pairing_code_shows_and_the_address_pairs() {
     let after = bob.find_nearby(Duration::from_millis(500)).expect("find");
     assert!(after.iter().all(|d| d.paired), "a paired device is marked as paired");
 
-    // Closing the pairing screen ends the announcement.
+    // Since 0.5.3 a device that has a paired device keeps announcing (so its pair finds it
+    // again when its address changes). Closing the pairing screen alone does not end that.
     alice.stop_pairing().expect("stop");
     std::thread::sleep(Duration::from_millis(250));
-    assert!(bob.find_nearby(Duration::from_millis(500)).expect("find").is_empty());
+    assert_eq!(bob.find_nearby(Duration::from_millis(600)).expect("find").len(), 1, "a paired device is still announced");
+    // Pausing sync ends the announcement at once.
+    alice.set_paused(true).expect("pause");
+    std::thread::sleep(Duration::from_millis(250));
+    assert!(bob.find_nearby(Duration::from_millis(500)).expect("find").is_empty(), "a paused device is silent");
+    alice.set_paused(false).expect("resume");
+    // Removing the last paired device ends it for good (no code showing, nobody paired).
+    let id = alice.status().peers[0].id.clone();
+    alice.remove_peer(&id).expect("remove");
+    std::thread::sleep(Duration::from_millis(250));
+    assert!(bob.find_nearby(Duration::from_millis(500)).expect("find").is_empty(), "nobody paired and no code: silent");
 }
 
 #[test]

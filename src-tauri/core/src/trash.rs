@@ -118,6 +118,39 @@ impl Vault {
         Ok(TrashItem { id, name, from, is_folder, deleted_at })
     }
 
+    /// Moves one ordinary file of any kind (a picture, a PDF, a drawing) into the trash, the
+    /// same way a page goes. Sync uses it when the other device deleted the file: the file is
+    /// kept and can be restored. Links, folders and hidden names are refused.
+    pub fn move_file_to_trash(&self, relative: &str) -> Result<TrashItem> {
+        if relative.is_empty() {
+            return Err(VaultError::InvalidPath);
+        }
+        let path = self.resolve(relative)?;
+        let meta = fs::symlink_metadata(&path)?;
+        if !meta.is_file() {
+            return Err(VaultError::NotANote);
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).ok_or(VaultError::InvalidPath)?.to_string();
+        let from = match relative.rfind('/') {
+            Some(at) => relative[..at].to_string(),
+            None => String::new(),
+        };
+        let deleted_at = now_seconds();
+        let (id, dir) = self.reserve_item_dir()?;
+        let result = (|| -> Result<()> {
+            write_atomic(&dir.join("name"), name.as_bytes())?;
+            write_atomic(&dir.join("from"), from.as_bytes())?;
+            write_atomic(&dir.join("deleted"), deleted_at.to_string().as_bytes())?;
+            fs::rename(&path, dir.join(ITEM))?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = fs::remove_dir_all(&dir);
+            return Err(error);
+        }
+        Ok(TrashItem { id, name, from, is_folder: false, deleted_at })
+    }
+
     /// Takes the next free id: `create_dir` fails if the name exists, so choosing the id and
     /// claiming it is one step.
     fn reserve_item_dir(&self) -> Result<(String, PathBuf)> {
