@@ -4788,6 +4788,33 @@ await test("on a phone the canvas toolbar fits the window and the sheet fills th
   assert.ok(titleWidth >= 90, `the page title is still readable (title ${titleWidth}; ${bar})`);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
 
+// A touch the way a finger sends it, on the element at `selector`; says whether the page cancelled
+// it (then the web view's own scrolling and zooming do not run, which matters on Linux).
+const touchCancelled = (page, selector, type = "touchstart", fingers = 1) => page.evaluate(({ selector, type, fingers }) => {
+  const target = document.querySelector(selector);
+  const box = target.getBoundingClientRect();
+  const touches = Array.from({ length: fingers }, (_, i) => new Touch({ identifier: i + 1, target, clientX: box.x + 40 + i * 60, clientY: box.y + 40 }));
+  const event = new TouchEvent(type, { touches, targetTouches: touches, changedTouches: touches, cancelable: true, bubbles: true });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}, { selector, type, fingers });
+
+await test("on the drawing sheet every touch is cancelled, so the Linux web view cannot zoom the window or scroll the page", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  for (const [type, fingers] of [["touchstart", 1], ["touchmove", 1], ["touchstart", 2], ["touchmove", 2]]) {
+    assert.equal(await touchCancelled(page, ".canvas-surface", type, fingers), true, `${type} with ${fingers} finger(s)`);
+  }
+  // Fingers still pan the sheet (pointer events are not affected).
+  const before = await sheetBox(page);
+  const x = before.x + 200;
+  const y = before.y + 200;
+  await page.dispatchEvent(".canvas-surface", "pointerdown", { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x, clientY: y, buttons: 1 });
+  await page.dispatchEvent(".canvas-surface", "pointermove", { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x + 80, clientY: y, buttons: 1 });
+  await page.dispatchEvent(".canvas-surface", "pointerup", { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x + 80, clientY: y });
+  assert.equal(await page.evaluate(() => window.scrollX + window.scrollY), 0, "the window itself did not move");
+}, { hasTouch: true, settings: existingUser({ updates: false }) });
+
 // ---------- 0.4.1: highlighter, shapes, sticky notes, lasso, pen button ----------
 
 const SHAPE_LABELS = ["Line", "Arrow", "Rectangle", "Ellipse"];
@@ -6693,6 +6720,21 @@ const startInk = async (page) => {
   await page.click("#inkButton");
   await page.waitForSelector(".ink-bar:not([hidden])");
 };
+await test("drawing over the text cancels touches only while drawing; with it off, a finger scrolls the page as usual", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.files.set("Sketch.md", "One\n\nTwo\n"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Sketch.md"]');
+  await page.waitForSelector(".note-body");
+  await startInk(page);
+  assert.equal(await touchCancelled(page, ".ink-surface", "touchstart"), true);
+  assert.equal(await touchCancelled(page, ".ink-surface", "touchmove", 2), true);
+  await page.click("#inkButton");
+  await page.waitForFunction(() => !document.querySelector(".ink-surface").classList.contains("ink-drawing"));
+  assert.equal(await touchCancelled(page, ".ink-surface", "touchstart"), false, "off: nothing is held");
+  assert.equal(await touchCancelled(page, ".note-body", "touchmove"), false, "the text itself never holds a finger");
+}, { hasTouch: true, settings: existingUser({ updates: false }) });
+
 // Where the n-th block of the text is, in page coordinates.
 const blockBox = (page, n) => page.evaluate((i) => {
   const r = document.querySelector("#editor .note-body").children[i].getBoundingClientRect();

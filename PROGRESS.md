@@ -13,12 +13,13 @@ Done (tried here: node tests, the browser tests for PDFs and find, screenshots l
 - A PDF in a page has side handles to change its width, saved as `![name|600](file.pdf)`.
 - Find in a PDF in a page marks only the found letters.
 - Extras (branch `feature/v0.5.6-extras`, on top of the PDF branch): (19) app lock (`core/src/applock.rs` with 5 tests, `src/lock.rs`, `web/applock.js`; fingerprint/face on Android through `tauri-plugin-biometric`), (20) About tab, (21) Shortcuts tab with a printable sheet (`web/shortcuts.js`), (22) zoom shortcuts and a Zoom setting (window zoom on computers, text zoom on Android); the compact layout by width is the phone sizing below.
+- (23) Linux drawing zoom and finger bug: the Linux web view (WebKitGTK) ignores CSS `touch-action` and runs its own pinch zoom and scrolling for touches that are not cancelled in script. The canvas sheet and the draw-over-text layer (while on) now cancel touchstart and touchmove (`web/touchhold.js`); pointer events still arrive. Two browser tests fail on the old code and pass now. Not tried on a Linux touch screen (WebKit could not be downloaded here). A touchpad pinch on Linux is a different path and was not looked at.
 - Phone sizing: root text size is the chosen size times `--screen-scale` (0.875 at 480 CSS px wide or less, 0.8125 at 360 or less), spacing steps shrink too; full-screen Settings keeps clear of the status bar (safe-area padding). Compared with the owner's phone screenshots at the same size (393 x 873, 2.75x).
 
 Not done / untried:
 - PDFs imported as pictures before this change have no words file and are not searchable; nothing adds one afterwards.
 - The Rust commands are only compiled by CI. Not tried in the packaged app or on a device. The phone sizing and the status bar fix are only tried in a phone-sized browser, not on the phone. The width handles were tried with a mouse in the browser tests, not with a finger.
-- Still planned for 0.5.6: (23) the Linux drawing zoom and finger bug, (24) the flaky tests, (25) the Fedora install check, tying each pairing to one local folder, the 0.5 security checklist and set-up guide, and the tests on every device.
+- Still planned for 0.5.6: (24) the flaky tests, (25) the Fedora install check, tying each pairing to one local folder, the 0.5 security checklist and set-up guide, and the tests on every device.
 - Untried: the lock, fingerprint unlock, zoom and tray commands only compiled by CI; never run in the packaged app. Fingerprint unlock not tried on a phone.
 
 ## 0.5.5: built (home server and the six extras), not tried on a real server or device
