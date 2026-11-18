@@ -1,0 +1,19 @@
+# Security checklist, version 0.5.5 (home server, first slice)
+
+Checked by the builder by reading, searches and automatic tests. Not an outside review. Items marked "device" still need a try on a real server. Everything from 0.5.4 still applies.
+
+| Item | Result |
+|---|---|
+| The server uses the same sync service as the apps: the same encrypted connection, pairing and trust list. No new protocol and no new network code | Reading; Rust tests with real connections |
+| Each vault has its own service: its own port, device key and list of paired devices. A device paired with vault A is refused by vault B | Rust test (`a_phone_paired_with_one_vault_cannot_reach_the_other...`) |
+| A vault's port is exact. If it is taken the vault reports an error instead of moving to a neighbour's port | Rust test |
+| Vault folders cannot overlap, be the same, or hold the data folder, so a vault never contains keys and two vaults never share files | Rust test with nested, equal and missing folders |
+| The data folder (keys, paired devices) is made with mode 700; the program refuses to start if group or others have any access, or if it is a link | Rust test; real run |
+| Key files are written private from the start (mode 600, temporary file then rename); the pairing code file is mode 600 and is removed when pairing closes | Rust test |
+| The config file is plain text, at most 64 KiB, with a vault limit of 20, ports from 1024, full paths only, and plain vault names (a to z, 0 to 9, - and _) because the name becomes a folder name | Rust tests with odd and huge input |
+| The server never runs code from anything received. The pairing command works through a file in the private data folder, not a network port or a socket | Reading |
+| The pairing code is only ever shown on the console of the person who runs the command; it is not logged | Reading |
+| A vault that cannot start (taken port, unreadable key) is left out and reported; the other vaults keep running | Rust test |
+| The example service file runs as its own user with NoNewPrivileges, PrivateTmp, ProtectSystem=strict and ProtectHome, and can write only to the data and vault folders | Reading; server: device |
+| No new dependencies. No new `unwrap()` or `expect()` in the server code outside tests | `Cargo.toml` diff; reading |
+| Open risk | Device: never run for days on a real server; restart, power cut and disk-full tests on the server are still to do. The server stops on a kill signal without a goodbye message (notes are safe because writes are atomic, but a sync in progress is cut and redone). Linux only. No central server exists or is added |

@@ -716,3 +716,10 @@ Alternatives. A separate list of swatch colours in the script (rejected: two cop
 Cost. Old saved settings have no `lightTheme`/`darkTheme`; they get the defaults and a saved fixed theme sets its own kind. The 0.5.4 version number is reused, so the owner re-tags it.
 
 Addendum 2026-11-18. A True white theme (`white`, pure #ffffff page) was added to the same release, and the cards are ordered so matching colours line up in columns (Sage over Forest, Lavender over Dusk) with the two true themes last. The order is the key order of `THEME_KIND` in `web/appearance.js`.
+
+## 2026-11-18: Home server: one service per vault, a pairing request file, a plain config
+
+Context. 0.5.5 puts the sync engine in a program with no window that holds several vaults, and a device paired with one vault must not reach another.
+Decision. (1) Each vault runs its own sync service: its own port, device key and trust list, in its own folder inside a private data folder. Nothing in the sync engine had to change except an exact-port constructor. (2) Pairing is asked for with `scalenote-server pair` through a request file in the private data folder; the running server answers with a mode-600 code file and removes it when pairing closes, so there is no control socket to secure. (3) The config is a small `key = value` file with `[vault name]` sections, read by hand-written code (no new library). (4) The server refuses to start if its data folder can be read by others.
+Alternatives. One port for all vaults with a vault name sent at pairing (rejected: more protocol to get wrong, and one trust list could cover two vaults). A control socket for pairing (rejected: one more thing to protect). TOML or YAML (rejected: a new dependency for ten lines of settings).
+Cost. Each vault needs its own port to open or forward, and a phone holding two vaults pairs twice. The server stops on a kill signal without a goodbye; notes stay safe because writes are atomic.

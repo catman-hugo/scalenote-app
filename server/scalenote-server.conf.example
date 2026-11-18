@@ -1,0 +1,21 @@
+# ScaleNote home server config. Copy to /etc/scalenote-server.conf and edit.
+# Every path is written in full, starting with /. Lines starting with # are comments.
+
+# Where the server keeps its device keys and lists of paired devices. Only the server's own
+# user may enter it (chmod 700). Never put it inside a vault folder.
+data_dir = /var/lib/scalenote-server
+
+# How the server is named on your paired devices.
+name = Home server
+
+# One section for each vault. A vault is one folder of notes with its own port, its own key and
+# its own list of paired devices. A device paired with one vault cannot reach another.
+# A vault name uses a to z, 0 to 9, - and _. Each vault needs its own folder (not inside another)
+# and its own port from 1024 up.
+[vault alice]
+folder = /srv/scalenote/alice
+port = 47821
+
+# [vault bob]
+# folder = /srv/scalenote/bob
+# port = 47822

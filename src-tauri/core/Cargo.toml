@@ -1,6 +1,6 @@
 [package]
 name = "scalenote-core"
-version = "0.5.4"
+version = "0.5.5"
 description = "Vault logic with no window or web view in it, so it can be tested anywhere."
 edition = "2021"
 rust-version = "1.77"
@@ -28,3 +28,8 @@ zeroize = "=1.8.2"
 # at a random moment and check the file is never half written.
 name = "sn-crash-writer"
 path = "src/bin/crash_writer.rs"
+
+[[bin]]
+# The home server: the sync part of the app as a program with no window (see docs/home-server.md).
+name = "scalenote-server"
+path = "src/bin/scalenote_server.rs"
