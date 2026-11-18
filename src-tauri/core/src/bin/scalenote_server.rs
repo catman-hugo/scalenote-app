@@ -74,6 +74,8 @@ fn log(line: &str) {
 
 fn run(config: &Config) -> Result<(), String> {
     server::prepare_data_dir(&config.data_dir)?;
+    // A missing data folder could not be checked for overlap before it was created.
+    server::check_folders(config)?;
     let (runner, problems) = Runner::start(config);
     for problem in &problems {
         eprintln!("{problem}");
