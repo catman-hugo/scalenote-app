@@ -697,7 +697,7 @@ await test("settings: theme, text size, note width and list width apply at once 
     bg: getComputedStyle(document.body).backgroundColor,
   }));
   assert.equal(look.theme, "sage");
-  assert.equal(look.size, "125%");
+  assert.equal(look.size, "calc(125% * var(--screen-scale, 1))");
   assert.equal(look.side, "360px");
   assert.equal(look.bodyWidth, "1200px"); // 60rem at 125% text size
   assert.equal(look.bg, "rgb(248, 250, 247)");
@@ -1183,6 +1183,23 @@ await test("the content security policy lets the app talk to the app itself and 
 
 const FOLDER_SETTINGS = { vaultPath: "/home/alice/Documents/ScaleNote", recentVaults: ["/home/alice/Documents/ScaleNote", "/home/alice/Work", "/home/alice/gone"], disclosureAccepted: true, lastSeenVersion: VERSION, updates: false };
 const settingsNow = (page) => page.evaluate(() => JSON.parse(window.__mock.getSettings()));
+
+await test("the text and spacing get smaller on a phone-sized screen and grow back on a wide one", async (page) => {
+  await page.waitForSelector("#newNote");
+  const size = () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  const space = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--space-4").trim());
+  assert.equal(await size(), 14, "100% is 14 px on a phone");
+  assert.equal(await space(), "12px");
+  await page.setViewportSize({ width: 340, height: 700 });
+  assert.equal(await size(), 13);
+  await page.setViewportSize({ width: 1100, height: 760 });
+  assert.equal(await size(), 16, "a computer keeps the full size");
+  assert.equal(await space(), "16px");
+  // The text size chosen in Settings still applies on top.
+  await page.evaluate(() => { document.documentElement.style.fontSize = "calc(125% * var(--screen-scale, 1))"; });
+  await page.setViewportSize({ width: 390, height: 800 });
+  assert.equal(await size(), 17.5);
+}, { settings: FOLDER_SETTINGS, viewport: { width: 390, height: 800 } });
 
 await test("the folder name opens a menu with recent folders, and choosing one switches to it", async (page) => {
   await page.waitForSelector("#vaultButton");

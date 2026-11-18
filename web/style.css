@@ -44,6 +44,9 @@
 
   --radius: 4px;
   --sidebar-width: 280px;
+  /* How much smaller everything is on a small screen (see the phone block below). The chosen
+     text size in Settings is multiplied by it, so 100% on a phone is a little smaller. */
+  --screen-scale: 1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1254,6 +1257,21 @@ body.block-dragging .float-bar { visibility: hidden; }
 @media (max-width: 640px) {
   #settings.settings-dialog { min-height: 0; }
 }
+/* Phones: the screen is measured (its width in CSS pixels, which already counts in how dense
+   its pixels are), and text and spacing get smaller in two steps, so a phone shows about as
+   much as other phone apps. Touch targets stay at least 40 pixels high. */
+@media (max-width: 480px) {
+  :root {
+    --screen-scale: 0.875;
+    --space-3: 10px;
+    --space-4: 12px;
+    --space-5: 18px;
+    --space-6: 28px;
+  }
+}
+@media (max-width: 360px) {
+  :root { --screen-scale: 0.8125; }
+}
 #settings[open].settings-dialog { display: block; }
 .settings-layout { display: flex; height: 100%; }
 .settings-tabs { display: flex; flex-direction: column; gap: var(--space-1); flex: 0 0 12rem; padding: var(--space-4) var(--space-3); border-right: 1px solid var(--line); background: var(--bg-side); overflow-y: auto; }
@@ -1285,10 +1303,11 @@ body.block-dragging .float-bar { visibility: hidden; }
 .swatch-accent { display: block; width: 30%; height: 6px; background: var(--accent); }
 @media (max-width: 640px) {
   /* On a phone the settings fill the screen: first a list of the groups, then one group as its own page. */
-  #settings.settings-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0; }
+  /* It covers the whole screen, so it keeps clear of the clock and the system bars itself. */
+  #settings.settings-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .settings-layout { flex-direction: column; }
   .settings-tabs { flex: 1 1 auto; flex-direction: column; border-right: 0; border-bottom: 0; padding: var(--space-2) var(--space-3); gap: 0; }
-  .settings-tab { padding: var(--space-3); border-bottom: 1px solid var(--line); border-radius: 0; min-height: 48px; }
+  .settings-tab { padding: var(--space-3); border-bottom: 1px solid var(--line); border-radius: 0; min-height: 44px; }
   .settings-tab[aria-selected="true"] { background: transparent; border-color: transparent; border-bottom-color: var(--line); font-weight: 400; }
   .settings-main { padding: var(--space-3); flex: 0 0 auto; }
   .settings-back { display: none; }
