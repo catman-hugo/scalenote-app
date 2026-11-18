@@ -17,6 +17,7 @@ pub mod history;
 pub mod links;
 pub mod obsidian;
 pub mod search;
+pub mod server;
 pub mod sync;
 pub mod tags;
 pub mod trash;

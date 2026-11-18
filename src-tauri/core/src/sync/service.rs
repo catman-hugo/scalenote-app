@@ -121,6 +121,9 @@ struct Shared {
     /// loopback address and a free port so they never open anything on the real network.
     bind_ip: &'static str,
     first_port: u16,
+    /// Use exactly `first_port` and never the next ones. The home server needs this: each vault
+    /// has its own port, and a vault must never quietly end up on its neighbour's.
+    strict_port: bool,
     identity: Identity,
     trust_path: PathBuf,
     /// Where discovery notes go and are listened for (loopback only in tests).
@@ -230,11 +233,20 @@ impl Service {
         Service::with_bind(dir, identity, name, enabled, "0.0.0.0", DEFAULT_PORT)
     }
 
+    /// Like `new`, but on exactly this port (the home server gives each vault its own).
+    pub fn on_port(dir: &Path, identity: Identity, name: &str, enabled: bool, port: u16) -> Result<Service> {
+        Service::build(dir, identity, name, enabled, "0.0.0.0", port, true)
+    }
+
     pub(crate) fn with_bind(dir: &Path, identity: Identity, name: &str, enabled: bool, bind_ip: &'static str, first_port: u16) -> Result<Service> {
+        Service::build(dir, identity, name, enabled, bind_ip, first_port, false)
+    }
+
+    fn build(dir: &Path, identity: Identity, name: &str, enabled: bool, bind_ip: &'static str, first_port: u16, strict_port: bool) -> Result<Service> {
         let trust_path = dir.join(TRUST_FILE);
         let trust = TrustList::load(&trust_path)?;
         let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None };
-        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, identity, trust_path, route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
+        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
     }
@@ -308,7 +320,7 @@ impl Service {
     fn spawn_listener(&self) -> Result<Listener> {
         let mut bound = None;
         // Port 0 means "any free port" (tests); otherwise the default port and the next few.
-        let tries = if self.shared.first_port == 0 { 1 } else { PORT_TRIES };
+        let tries = if self.shared.first_port == 0 || self.shared.strict_port { 1 } else { PORT_TRIES };
         for offset in 0..tries {
             if let Ok(socket) = TcpListener::bind((self.shared.bind_ip, self.shared.first_port + offset)) {
                 bound = Some(socket);
