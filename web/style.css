@@ -1232,6 +1232,9 @@ body.block-dragging .float-bar { visibility: hidden; }
 .setting-heading { margin: var(--space-3) 0 0; font-size: var(--text-m); font-weight: 600; }
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
 .setting-subheading { margin: var(--space-2) 0 0; font-size: var(--text-s); font-weight: 600; }
+.security-cards { display: flex; flex-direction: column; gap: var(--space-2); }
+.security-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
+.security-card-title { margin: 0; font-weight: 600; }
 .backup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 
 /* The settings box is wide on a computer: the tabs are a list on the left and the settings of the open

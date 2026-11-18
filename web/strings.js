@@ -251,6 +251,21 @@ export const strings = {
     netSync: "Syncing: this device connects straight to the devices you paired, over an encrypted connection, on port 47821 or the next few. A device you did not pair is turned away.",
     netNothing: "Nothing else. There is no account, no central server and no statistics. Your pages are never sent anywhere except to your own paired devices.",
     syncRules: "When two devices change the same page, both versions are kept: the newer one keeps the name and the older one is saved next to it as a copy. A page deleted on one device goes to the trash on the other. The first sync always shows what it would change and waits for your yes.",
+    securityHeading: "How your pages are kept private",
+    securityCards: [
+      {
+        title: "Only on your devices",
+        text: "Your pages are plain files in a folder on your own devices. There is no ScaleNote account and no ScaleNote server that holds a copy. The only thing the app asks the internet for is the optional check for a new version, which you can turn off under Updates.",
+      },
+      {
+        title: "Your own home server",
+        text: "A home server is a computer you run yourself, for example a small Linux machine at home. It is a device you paired like any other, so it only talks to devices you paired with it, and it only holds the folders you gave it. It is reachable on your home network, or from outside through a private network you set up yourself, such as Tailscale. Nothing is opened to the whole internet.",
+      },
+      {
+        title: "Device to device",
+        text: "Two devices talk directly to each other over an encrypted connection. Pairing needs a code shown on one device and typed on the other, and after that each device only accepts the other one's key. Anyone else on the same network can see that the devices talk, but not what they send. Without a home server, both devices have to be on at the same time to sync.",
+      },
+    ],
     syncSaved: "Saved.",
     syncFailed: "Could not save the sync settings. Try again.",
     syncLoadFailed: "Could not read the sync settings.",

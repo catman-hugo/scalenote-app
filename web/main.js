@@ -649,9 +649,27 @@ function syncSettingsRows() {
     textElement("p", s.syncNotYet, "setting-hint"),
     textElement("p", s.syncRules, "setting-hint"),
     ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : []),
+    securityCards(),
     status,
     ...pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly } }),
   ];
+}
+
+// Three short cards that say where the pages are, who can reach them and what is encrypted.
+// Plain text only: this is explanation, there is nothing to press.
+function securityCards() {
+  const s = strings.settings;
+  const box = document.createElement("section");
+  box.className = "security-cards";
+  box.id = "securityCards";
+  box.append(textElement("h4", s.securityHeading, "setting-subheading"));
+  for (const card of s.securityCards) {
+    const item = document.createElement("div");
+    item.className = "security-card";
+    item.append(textElement("p", card.title, "security-card-title"), textElement("p", card.text, "setting-hint"));
+    box.append(item);
+  }
+  return box;
 }
 
 function historySettingsRows() {

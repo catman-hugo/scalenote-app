@@ -2079,6 +2079,18 @@ await test("Settings can make a copy for Obsidian, shows where it is, and report
   assert.equal((await files(page))["O.md"], "plain\n");
 }, { viewport: { width: 1100, height: 760 } });
 
+await test("the Sync tab explains in three cards where pages live and who can reach them, and makes no promise it cannot keep", async (page) => {
+  await openSeeded(page, "S.md", "plain\n");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#securityCards");
+  const titles = await page.$$eval("#securityCards .security-card-title", (n) => n.map((x) => x.textContent));
+  assert.deepEqual(titles, ["Only on your devices", "Your own home server", "Device to device"]);
+  const text = await page.textContent("#securityCards");
+  assert.match(text, /no ScaleNote account/);
+  assert.match(text, /optional check for a new version/);
+  assert.doesNotMatch(text, /cloud|unhackable|100%|guarantee/i);
+}, { viewport: { width: 1100, height: 760 } });
+
 await test("Settings can make a backup, lists backups newest first, and restores only after a second press", async (page) => {
   await openSeeded(page, "B.md", "plain\n");
   await openSettingsTab(page, "files");
