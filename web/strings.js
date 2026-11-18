@@ -119,7 +119,7 @@ export const strings = {
     lightThemes: "Light themes",
     darkThemes: "Dark themes",
     back: "Back",
-    themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", black: "True black", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk" },
+    themes: { system: "Follow the system", light: "Light", dark: "Dark", sepia: "Sepia", midnight: "Midnight", black: "True black", sage: "Sage", forest: "Forest", lavender: "Lavender", dusk: "Dusk", white: "True white" },
     fontSize: "Text size",
     fontSizes: { 80: "Smallest", 90: "Small", 100: "Normal", 112: "Large", 125: "Largest" },
     editorWidth: "Page width",

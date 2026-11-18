@@ -7350,7 +7350,7 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
   assert.equal(await page.locator('#settings .settings-body:visible select').count(), 2, "text size and page width are on Look, next to the theme cards");
-  assert.equal(await page.locator('#settings .settings-body:visible .theme-card').count(), 9, "the theme cards are on Look");
+  assert.equal(await page.locator("#settings .settings-body:visible .theme-card").count(), 10, "the theme cards are on Look");
   await page.focus("#settingsTab-look");
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.locator("#settings h2").textContent(), "Pages");
@@ -7670,9 +7670,9 @@ await test("the theme cards: True black is listed under Dark themes, a card swit
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const dark = await page.locator("#settings .theme-group").nth(1).locator(".theme-name").allTextContents();
-  assert.deepEqual(dark, ["Dark", "Midnight", "True black", "Forest", "Dusk"]);
+  assert.deepEqual(dark, ["Dark", "Midnight", "Forest", "Dusk", "True black"]);
   const light = await page.locator("#settings .theme-group").nth(0).locator(".theme-name").allTextContents();
-  assert.deepEqual(light, ["Light", "Sepia", "Sage", "Lavender"]);
+  assert.deepEqual(light, ["Light", "Sepia", "Sage", "Lavender", "True white"]);
   assert.equal(await page.getAttribute('#settings .mode-option[data-mode="auto"]', "aria-checked"), "true");
   // In Auto a card is the choice for its kind; the page keeps following the system.
   await page.click('#settings .theme-card[data-theme="black"]');

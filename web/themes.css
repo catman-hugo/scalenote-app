@@ -184,6 +184,28 @@
 
 /* True black: the page itself is #000000, which switches the pixels off on an OLED screen.
    The sidebar and the cards are only a little lighter so they still read as separate areas. */
+:root[data-theme="white"],
+.theme-swatch[data-card="white"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-side: #f2f2f2;
+  --bg-hover: #e9e9e9;
+  --bg-code: #f7f7f7;
+  --text: #111111;
+  --text-soft: #555555;
+  --line: #c8c8c8;
+  --accent: #5a3fb8;
+  --accent-text: #ffffff;
+  --accent-soft: #ebe7f8;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #a3231b;
+  --kind-ok: #296c36;
+  --kind-warn: #8e5100;
+  --highlight: #fbe58a;
+  --kind-info: #1f5fa8;
+}
+
 :root[data-theme="black"],
 .theme-swatch[data-card="black"] {
   color-scheme: dark;

@@ -111,7 +111,7 @@ test("the stylesheet has a light and a dark shade for every colour, and every cl
 test("the light shades go to the light themes and the dark shades to the dark themes", () => {
   assert.deepEqual(themeNamesIn(lightRule[1]), schemeOf("light").sort());
   assert.deepEqual(themeNamesIn(darkRule[1]), schemeOf("dark").sort());
-  assert.equal(schemeOf("light").length + schemeOf("dark").length, 9);
+  assert.equal(schemeOf("light").length + schemeOf("dark").length, 10);
 });
 
 test("the shades are Notion's, except the few text shades moved to stay readable", () => {

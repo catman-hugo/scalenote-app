@@ -1,10 +1,11 @@
 // The look settings: theme, text size, editor width and list width. Kept apart from the
 // screens so the rules (what values are allowed, how they reach the page) can be tested.
 
-export const THEMES = ["system", "light", "dark", "sepia", "midnight", "black", "sage", "forest", "lavender", "dusk"];
+export const THEMES = ["system", "light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk", "white", "black"];
 // Whether each named theme is a light or a dark one. A test compares this with the colour scheme
-// each block in themes.css declares, so the two cannot drift apart.
-export const THEME_KIND = { light: "light", sepia: "light", sage: "light", lavender: "light", dark: "dark", midnight: "dark", black: "dark", forest: "dark", dusk: "dark" };
+// each block in themes.css declares. The order is the order of the cards: matching colours sit above each
+// other (Sage over Forest, Lavender over Dusk) and the two true themes come last., so the two cannot drift apart.
+export const THEME_KIND = { light: "light", sepia: "light", sage: "light", lavender: "light", white: "light", dark: "dark", midnight: "dark", forest: "dark", dusk: "dark", black: "dark" };
 export const LIGHT_THEMES = Object.keys(THEME_KIND).filter((t) => THEME_KIND[t] === "light");
 export const DARK_THEMES = Object.keys(THEME_KIND).filter((t) => THEME_KIND[t] === "dark");
 
