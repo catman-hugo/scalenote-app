@@ -467,7 +467,12 @@ fn the_last_sync_time_is_still_known_after_a_restart() {
     // A new service with the same folders knows nothing live, but the vault's saved list tells it.
     let again = Service::with_bind(&p._dirs.0 .0, Identity::generate().expect("identity"), "alice", true, "127.0.0.1", 0).expect("service");
     again.set_vault(Some(p.va.0.clone()));
-    assert_eq!(again.status().peers[0].last_sync, before);
+    // The live time is taken just after the list is saved, so the two can be a second apart.
+    let after = again.status().peers[0].last_sync.clone();
+    let seconds = |t: &str| -> i64 { t[11..13].parse::<i64>().unwrap_or(0) * 3600 + t[14..16].parse::<i64>().unwrap_or(0) * 60 + t[17..19].parse::<i64>().unwrap_or(0) };
+    assert_eq!(after.len(), 20, "{after}");
+    assert_eq!(after[..10], before[..10], "same day: {after} {before}");
+    assert!((seconds(&before) - seconds(&after)).abs() <= 1, "{after} vs {before}");
 }
 
 #[test]
