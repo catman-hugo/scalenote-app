@@ -1,7 +1,7 @@
 // The settings dialog. Changes are applied as they are made and handed to `onChange`,
 // which saves them. Nothing here is typed text: every label comes from strings.js.
 
-import { DARK_THEMES, EDITOR_WIDTHS, FONT_SIZES, LIGHT_THEMES, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_STEP, modeOf, normalizeAppearance, pickMode, pickTheme } from "./appearance.js";
+import { DARK_THEMES, EDITOR_WIDTHS, FONT_SIZES, LIGHT_THEMES, ZOOMS, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_STEP, modeOf, normalizeAppearance, pickMode, pickTheme } from "./appearance.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -92,10 +92,15 @@ function themePicker(state, change) {
   return box;
 }
 
-const TAB_ORDER = ["pages", "drawing", "updates", "sync", "files", "device"];
+const TAB_ORDER = ["pages", "drawing", "updates", "sync", "files", "device", "shortcuts", "about"];
 
 // The tab that was open last, kept while the app runs so the box opens where it was left.
 let lastTab = "look";
+// A tab asked for from outside (Ctrl / opens Shortcuts): it opens as its own page, also on a phone.
+let askedTab = null;
+export function openSettingsAt(id) {
+  askedTab = id;
+}
 
 /**
  * Fills the dialog and opens it. `current` is the look settings; `onChange(next)` is called after each
@@ -113,6 +118,8 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const look = [
     themePicker(() => state, change),
     field(s.fontSize, select(FONT_SIZES.map((n) => [n, s.fontSizes[n]]), state.fontSize, (v) => change({ fontSize: Number(v) }))),
+    field(s.zoom, select(ZOOMS.map((n) => [n, `${n}%`]), state.zoom || 100, (v) => change({ zoom: Number(v) }))),
+    make("p", "setting-hint", s.zoomHint),
     field(s.editorWidth, select(Object.keys(EDITOR_WIDTHS).map((k) => [k, s.editorWidths[k]]), state.editorWidth, (v) => change({ editorWidth: v }))),
   ];
   const slider = make("input");
@@ -126,6 +133,9 @@ export function openSettings(dialog, current, onChange, groups = {}) {
 
   // A tab with no rows (the Obsidian copy is not offered on Android, say) is left out.
   const tabs = [["look", look], ...TAB_ORDER.map((id) => [id, groups[id] || []])].filter(([, rows]) => rows.length > 0);
+  const asked = askedTab;
+  askedTab = null;
+  if (asked && tabs.some(([id]) => id === asked)) lastTab = asked;
   if (!tabs.some(([id]) => id === lastTab)) lastTab = "look";
 
   dialog.replaceChildren();
@@ -139,7 +149,7 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const heading = make("h2");
   // On a phone the tabs are a full-screen list and a tab opens as its own page with a Back button.
   // style.css reads data-view; on a wide screen the attribute has no effect.
-  layout.dataset.view = "list";
+  layout.dataset.view = asked ? "page" : "list";
   const back = make("button", "settings-back", s.back);
   back.type = "button";
   back.addEventListener("click", () => {

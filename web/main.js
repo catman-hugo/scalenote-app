@@ -1,10 +1,11 @@
 // Wires the screens together: settings, the folder, the note list, the editor and saving.
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { applyAppearance, DEFAULT_APPEARANCE, followSystem, normalizeAppearance } from "./appearance.js";
+import { applyAppearance, DEFAULT_APPEARANCE, followSystem, nextZoom, normalizeAppearance } from "./appearance.js";
 import { writeImage } from "./richblocks.js";
-import { openSettings } from "./settings.js";
-import { checkForUpdate, platformOf, shouldCheck } from "./updates.js";
+import { openSettingsAt, openSettings } from "./settings.js";
+import { shortcutTables } from "./shortcuts.js";
+import { checkForUpdate, platformOf, shouldCheck, RELEASE_PAGE } from "./updates.js";
 import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
 import { renderNotes } from "./whatsnew.js";
@@ -551,6 +552,57 @@ function backupRows() {
 // the vault. Each change is saved at once and the screen shows what was actually saved (the name
 // is cleaned there), so the person always sees the result. Nothing is sent over a network yet.
 // The "This device" tab: what is about this device alone and not about the notes.
+// The Shortcuts tab: every shortcut, and a button that prints them on one sheet.
+function shortcutRows() {
+  const t = strings.shortcuts;
+  const print = buttonElement(t.print, printShortcuts);
+  print.id = "printShortcuts";
+  return [textElement("p", t.hint, "setting-hint"), ...shortcutTables(), print];
+}
+
+// Printing the list: a copy of it is put straight in the page with a class that the print
+// style sheet (style.css) shows on its own; it is taken away again after the print window.
+function printShortcuts() {
+  el("printSheet")?.remove();
+  const sheet = document.createElement("div");
+  sheet.id = "printSheet";
+  sheet.append(textElement("h1", strings.shortcuts.sheetTitle), ...shortcutTables());
+  document.body.append(sheet);
+  document.body.classList.add("print-sheet");
+  const done = () => {
+    document.body.classList.remove("print-sheet");
+    sheet.remove();
+  };
+  window.addEventListener("afterprint", done, { once: true });
+  window.print();
+}
+
+// The About tab: which version this is, when it was built, its notes and how it is made.
+const BUILD_DATE = typeof __BUILD_DATE__ === "string" ? __BUILD_DATE__ : "";
+function aboutRows() {
+  const t = strings.about;
+  const version = textElement("p", fill(t.version, { version: APP_VERSION }), "about-version");
+  version.id = "aboutVersion";
+  const rows = [version];
+  if (BUILD_DATE) rows.push(textElement("p", fill(t.built, { date: BUILD_DATE }), "setting-hint"));
+  const notes = buttonElement(t.whatsNew, () => showNotes(fill(t.whatsNewTitle, { version: APP_VERSION }), RELEASE_NOTES));
+  notes.id = "aboutWhatsNew";
+  const all = buttonElement(t.allChanges, () => openUrlOrWarn(RELEASE_PAGE));
+  all.id = "aboutAllChanges";
+  rows.push(notes, all, textElement("p", t.allChangesHint, "setting-hint"), textElement("h3", t.howMade, "setting-heading"));
+  for (const point of strings.disclosure.points) rows.push(textElement("p", point, "setting-hint"));
+  return rows;
+}
+
+// Ctrl / opens Settings on the Shortcuts tab.
+function shortcutsShortcut(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key !== "/" || event.isComposing) return;
+  if (document.querySelector("dialog[open]")) return;
+  event.preventDefault();
+  openSettingsAt("shortcuts");
+  el("openSettings").click();
+}
+
 // The tray and the login list. Both are off until turned on. The tray switch is kept in the
 // settings and applied again at every start; the login switch is only the computer's own list,
 // so what is shown is always what that list says.
@@ -650,7 +702,7 @@ function deviceSettingsRows() {
     clearTimeout(armed);
     armed = null;
     app.settings = resetSettings(app.settings);
-    applyAppearance(document.documentElement, app.settings);
+    applyLook();
     repaintCanvasBlocks();
     await saveSettings();
     // Draw the window again so every control shows the reset values.
@@ -836,8 +888,38 @@ async function showWhatsNewOnce(freshInstall) {
 }
 
 function appearanceOf(settings) {
-  const { theme, lightTheme, darkTheme, fontSize, editorWidth, sidebarWidth } = settings;
-  return { theme, lightTheme, darkTheme, fontSize, editorWidth, sidebarWidth };
+  const { theme, lightTheme, darkTheme, fontSize, editorWidth, sidebarWidth, zoom } = settings;
+  return { theme, lightTheme, darkTheme, fontSize, editorWidth, sidebarWidth, zoom };
+}
+
+// Puts the look settings on the page, and the zoom on the window. On a computer the window itself
+// zooms (everything grows together, drawings included); Android's window cannot, so there the
+// text and everything sized by it grow instead (the --zoom part of the text size, appearance.js).
+let shownZoom = null;
+function applyLook() {
+  applyAppearance(document.documentElement, app.settings);
+  const zoom = app.settings.zoom || 100;
+  document.documentElement.style.setProperty("--zoom", isAndroid ? String(zoom / 100) : "1");
+  if (isAndroid || zoom === shownZoom) return;
+  shownZoom = zoom;
+  backend.setZoom(zoom / 100).catch((error) => logProblem("zoom not set", error));
+}
+
+// Ctrl + and Ctrl - zoom in and out a step, Ctrl 0 goes back to 100%. The keys work everywhere,
+// also while typing, like in a browser; the new size is shown for a moment.
+function zoomShortcut(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
+  const step = { "+": 1, "=": 1, "-": -1, _: -1 }[event.key];
+  const reset = event.key === "0";
+  if (!step && !reset) return;
+  event.preventDefault();
+  const next = reset ? 100 : nextZoom(app.settings.zoom, step);
+  if (next !== app.settings.zoom) {
+    app.settings.zoom = next;
+    applyLook();
+    saveSettings();
+  }
+  showToast(fill(strings.zoom.now, { zoom: next }));
 }
 
 async function saveSettings() {
@@ -2410,7 +2492,7 @@ function fillStaticText() {
       appearanceOf(app.settings),
       (next) => {
         Object.assign(app.settings, next);
-        applyAppearance(document.documentElement, app.settings);
+        applyLook();
         repaintCanvasBlocks();
         saveSettings();
       },
@@ -2421,6 +2503,8 @@ function fillStaticText() {
         sync: syncSettingsRows(),
         files: [...historySettingsRows(), ...obsidianRows(), ...backupRows()],
         device: deviceSettingsRows(),
+        shortcuts: shortcutRows(),
+        about: aboutRows(),
       },
     );
   });
@@ -2527,6 +2611,8 @@ function wireEvents() {
   el("inkButton").addEventListener("click", () => (app.ink && app.ink.active ? stopInk() : startInk()));
   document.addEventListener("keydown", searchShortcut, true);
   document.addEventListener("keydown", folderShortcut, true);
+  document.addEventListener("keydown", zoomShortcut, true);
+  document.addEventListener("keydown", shortcutsShortcut, true);
   document.addEventListener("keydown", findShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
@@ -2616,9 +2702,9 @@ async function start() {
   });
 
   await loadSettings();
-  applyAppearance(document.documentElement, app.settings);
+  applyLook();
   // In Auto with a chosen card the attribute depends on the system setting, so repaint when it flips.
-  followSystem(() => applyAppearance(document.documentElement, app.settings));
+  followSystem(() => applyLook());
   repaintCanvasBlocks();
   // The tray comes back at every start while it is switched on. If it cannot be made, the switch
   // is turned off again so closing the window never hides it with no way to get it back.

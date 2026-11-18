@@ -13,13 +13,17 @@ export const DARK_THEMES = Object.keys(THEME_KIND).filter((t) => THEME_KIND[t] =
 export const FONT_SIZES = [80, 90, 100, 112, 125];
 // Width of the note column. "full" lets it use all the room.
 export const EDITOR_WIDTHS = { narrow: "36rem", medium: "46rem", wide: "60rem", full: "none" };
+// Zoom of the whole window, in percent (Ctrl +, Ctrl -, Ctrl 0). On a computer the window's own
+// zoom is used, so everything grows together, drawings included; on Android, where the window
+// cannot zoom, the text and everything sized by it grow instead.
+export const ZOOMS = [80, 90, 100, 110, 125, 150, 175, 200];
 export const SIDEBAR_MIN = 200;
 export const SIDEBAR_MAX = 420;
 export const SIDEBAR_STEP = 20;
 
 // `theme` is "system" (Auto) or one fixed theme. `lightTheme` and `darkTheme` are the themes used in light
 // and dark mode, and by Auto when the system is light or dark.
-export const DEFAULT_APPEARANCE = { theme: "system", lightTheme: "light", darkTheme: "dark", fontSize: 100, editorWidth: "medium", sidebarWidth: 280 };
+export const DEFAULT_APPEARANCE = { theme: "system", lightTheme: "light", darkTheme: "dark", fontSize: 100, editorWidth: "medium", sidebarWidth: 280, zoom: 100 };
 
 /** Reads the look settings from untrusted json: anything not allowed becomes the default. */
 export function normalizeAppearance(raw) {
@@ -39,7 +43,14 @@ export function normalizeAppearance(raw) {
     fontSize: FONT_SIZES.includes(source.fontSize) ? source.fontSize : d.fontSize,
     editorWidth: Object.hasOwn(EDITOR_WIDTHS, source.editorWidth) ? source.editorWidth : d.editorWidth,
     sidebarWidth: Number.isFinite(width) ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(width / SIDEBAR_STEP) * SIDEBAR_STEP)) : d.sidebarWidth,
+    zoom: ZOOMS.includes(source.zoom) ? source.zoom : d.zoom,
   };
+}
+
+/** The next zoom step up (`step` 1) or down (-1) from `zoom`, staying between the smallest and largest. */
+export function nextZoom(zoom, step) {
+  const at = ZOOMS.indexOf(ZOOMS.includes(zoom) ? zoom : 100);
+  return ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, at + step))];
 }
 
 /** "auto", "light" or "dark": which of the three the person picked in the mode switch. */
@@ -97,7 +108,7 @@ export function applyAppearance(root, appearance) {
   root.setAttribute("data-theme", effectiveTheme(a, systemIsDark()));
   // The chosen size times the screen's own scale (style.css makes it smaller on a phone). The
   // browser works this out again whenever the window changes size or the phone is turned.
-  root.style.fontSize = `calc(${a.fontSize}% * var(--screen-scale, 1))`;
+  root.style.fontSize = `calc(${a.fontSize}% * var(--screen-scale, 1) * var(--zoom, 1))`;
   root.style.setProperty("--editor-width", EDITOR_WIDTHS[a.editorWidth]);
   root.style.setProperty("--sidebar-width", `${a.sidebarWidth}px`);
 }

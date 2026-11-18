@@ -697,7 +697,7 @@ await test("settings: theme, text size, note width and list width apply at once 
     bg: getComputedStyle(document.body).backgroundColor,
   }));
   assert.equal(look.theme, "sage");
-  assert.equal(look.size, "calc(125% * var(--screen-scale, 1))");
+  assert.equal(look.size, "calc(125% * var(--screen-scale, 1) * var(--zoom, 1))");
   assert.equal(look.side, "360px");
   assert.equal(look.bodyWidth, "1200px"); // 60rem at 125% text size
   assert.equal(look.bg, "rgb(248, 250, 247)");
@@ -1201,6 +1201,64 @@ await test("the text and spacing get smaller on a phone-sized screen and grow ba
   assert.equal(await size(), 17.5);
 }, { settings: FOLDER_SETTINGS, viewport: { width: 390, height: 800 } });
 
+await test("Ctrl + and Ctrl - zoom the window a step at a time between 80% and 200%, Ctrl 0 goes back, and it is kept", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.waitForFunction(() => window.__zoom === 1);
+  await page.keyboard.press("Control+Equal");
+  await page.waitForFunction(() => window.__zoom === 1.1);
+  assert.match(await page.textContent(".toast"), /Zoom 110%/);
+  assert.equal((await settingsNow(page)).zoom, 110);
+  for (let i = 0; i < 10; i++) await page.keyboard.press("Control+Equal");
+  await page.waitForFunction(() => window.__zoom === 2);
+  await page.keyboard.press("Control+Minus");
+  await page.waitForFunction(() => window.__zoom === 1.75);
+  for (let i = 0; i < 12; i++) await page.keyboard.press("Control+Minus");
+  await page.waitForFunction(() => window.__zoom === 0.8);
+  await page.keyboard.press("Control+0");
+  await page.waitForFunction(() => window.__zoom === 1);
+  assert.equal((await settingsNow(page)).zoom, 100);
+  // The same from Settings, and the text size is not touched by it.
+  await page.click("#openSettings");
+  await page.selectOption('#settings label:has-text("Zoom") select', "150");
+  await page.waitForFunction(() => window.__zoom === 1.5);
+  assert.equal((await settingsNow(page)).fontSize, 100);
+}, { settings: FOLDER_SETTINGS });
+
+await test("on Android, where the window cannot zoom, the zoom makes the text bigger instead", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => document.documentElement.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true })));
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--zoom").trim() === "1.1");
+  assert.equal(await page.evaluate(() => window.__zoom), undefined, "the window zoom is not asked for");
+}, { settings: FOLDER_SETTINGS, userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
+await test("Ctrl / opens Settings on the Shortcuts tab, which lists real shortcuts and prints them on their own", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.keyboard.press("Control+Slash");
+  await page.waitForSelector("#settingsPanel-shortcuts:not([hidden])");
+  const text = await page.textContent("#settingsPanel-shortcuts");
+  for (const keys of ["Ctrl K", "Ctrl F", "Ctrl Shift O", "Ctrl /", "Ctrl 0", "Ctrl B", "Ctrl Alt 1 … 6"]) assert.ok(text.includes(keys), keys);
+  await page.evaluate(() => { window.print = () => { window.__printed = { sheet: Boolean(document.getElementById("printSheet")), only: document.body.classList.contains("print-sheet"), title: document.querySelector("#printSheet h1").textContent }; window.dispatchEvent(new Event("afterprint")); }; });
+  await page.click("#printShortcuts");
+  assert.deepEqual(await page.evaluate(() => window.__printed), { sheet: true, only: true, title: "ScaleNote keyboard shortcuts" });
+  assert.equal(await page.locator("#printSheet").count(), 0, "the sheet is taken away after printing");
+  assert.equal(await page.evaluate(() => document.body.classList.contains("print-sheet")), false);
+}, { settings: FOLDER_SETTINGS });
+
+await test("About shows the version and build day, its notes, the releases page, and how the app is made", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click("#settingsTab-about");
+  assert.equal(await page.textContent("#aboutVersion"), `ScaleNote ${VERSION}`);
+  assert.match(await page.textContent("#settingsPanel-about"), /Built on \d{4}-\d{2}-\d{2}/);
+  assert.match(await page.textContent("#settingsPanel-about"), /written by AI tools/);
+  await page.click("#aboutAllChanges");
+  await page.waitForFunction(() => window.__mock.opened.length === 1);
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), ["https://github.com/catman-hugo/scalenote-app/releases"]);
+  await page.click("#aboutWhatsNew");
+  await page.waitForSelector("#whatsnew[open]");
+  assert.match(await page.textContent("#whatsnew h2"), new RegExp(`What's new in ${VERSION.replace(/\./g, "\\.")}`));
+}, { settings: FOLDER_SETTINGS });
+
 await test("the folder name opens a menu with recent folders, and choosing one switches to it", async (page) => {
   await page.waitForSelector("#vaultButton");
   await page.evaluate(() => window.__mock.files.set("Page.md", "hello\n"));
@@ -1342,7 +1400,7 @@ await test("there are five text sizes, the smallest is 80 percent, and the icons
   const options = await page.locator("#settings select").nth(0).locator("option").allTextContents();
   assert.deepEqual(options, ["Smallest", "Small", "Normal", "Large", "Largest"]);
   await page.locator("#settings select").nth(0).selectOption("80");
-  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "calc(80% * var(--screen-scale, 1))");
+  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "calc(80% * var(--screen-scale, 1) * var(--zoom, 1))");
   const small = await iconWidth();
   await page.locator("#settings select").nth(0).selectOption("125");
   const large = await iconWidth();

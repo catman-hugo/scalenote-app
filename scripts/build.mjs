@@ -31,7 +31,9 @@ await build({
   minify: true,
   sourcemap: false,
   legalComments: "none",
-  define: { __APP_VERSION__: JSON.stringify(version), __RELEASE_NOTES__: JSON.stringify(notes) },
+  // The day this build was made (UTC), for the About page. SOURCE_DATE_EPOCH, when set, gives the
+  // same date on every machine that builds the same version.
+  define: { __APP_VERSION__: JSON.stringify(version), __RELEASE_NOTES__: JSON.stringify(notes), __BUILD_DATE__: JSON.stringify(new Date(process.env.SOURCE_DATE_EPOCH ? Number(process.env.SOURCE_DATE_EPOCH) * 1000 : Date.now()).toISOString().slice(0, 10)) },
   logLevel: "info",
 });
 

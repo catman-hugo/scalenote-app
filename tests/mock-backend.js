@@ -109,6 +109,7 @@
     // Backups are made by Rust (tested there with real files). The stand-in keeps a list so the
     // Settings screen can be driven.
     // The tray and the login list are the computer's own; the stand-in only remembers the calls.
+    set_zoom: ({ scale }) => { window.__zoom = scale; },
     tray_set: ({ enabled, showLabel, quitLabel }) => {
       if (window.__failTray) fail(window.__failTray);
       window.__tray = { enabled, showLabel, quitLabel };

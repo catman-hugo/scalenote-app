@@ -1901,7 +1901,19 @@ button.danger:hover { background: var(--bg-hover); }
 .history-dialog .dialog-actions { flex-wrap: wrap; }
 
 /* Printing and "save as PDF": the page title and the page itself, on white, with no controls. */
+#printSheet { display: none; }
+.about-version { margin: 0; font-size: var(--text-l); font-weight: 600; }
+.shortcut-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.shortcut-table { width: 100%; border-collapse: collapse; font-size: var(--text-s); }
+.shortcut-table td { padding: var(--space-1) 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.shortcut-table td:last-child { text-align: right; padding-left: var(--space-3); white-space: nowrap; }
+.shortcut-table kbd { font-family: var(--mono); font-size: var(--text-s); padding: 1px var(--space-1); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-side); }
+
 @media print {
+  /* Printing the shortcut list: only the sheet, nothing of the app around it. */
+  body.print-sheet > :not(#printSheet) { display: none !important; }
+  body.print-sheet #printSheet { display: block; padding: 0; }
+  #printSheet .shortcut-table td, #printSheet kbd { border-color: #999; background: none; color: #000; }
   :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
   .sidebar, .banner, .toast, .job-card, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host, .ink-layer, .ink-bar, .ink-menus, .find-bar { display: none !important; }
   .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; background: #fff; }

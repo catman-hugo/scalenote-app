@@ -1128,6 +1128,7 @@ pub fn run() {
             write_page_text,
             read_page_text,
             export_obsidian_copy,
+            tray::set_zoom,
             tray::tray_set,
             tray::hide_main_window,
             tray::autostart_get,

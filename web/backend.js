@@ -53,6 +53,8 @@ export const backend = {
   // The tray icon and "open at login" (computers only). trayEnabled makes or removes the tray
   // icon; hideWindow hides the window while the tray is on; autostartGet/Set read and change the
   // computer's own login list and answer whether it now holds this program.
+  // The zoom of the window (1 is 100%). Computers only; Android's window cannot zoom.
+  setZoom: (scale) => call("set_zoom", { scale }),
   traySet: (enabled, showLabel, quitLabel) => call("tray_set", { enabled, showLabel, quitLabel }),
   hideWindow: () => call("hide_main_window"),
   autostartGet: () => call("autostart_get"),
