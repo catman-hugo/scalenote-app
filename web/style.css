@@ -1242,13 +1242,37 @@ body.block-dragging .float-bar { visibility: hidden; }
 .settings-main .settings-body[hidden] { display: none; }
 .settings-main > .primary { align-self: flex-end; }
 .settings-body .setting-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+/* Theme picker: a three-way mode switch and one card per theme. Cards have a flat swatch painted with the
+   theme's own colours (themes.css), a name, and a plain outline when chosen. */
+.theme-picker { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.mode-switch { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; align-self: flex-start; }
+.mode-option { padding: var(--space-2) var(--space-4); border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; cursor: pointer; min-height: 36px; }
+.mode-option:last-child { border-right: 0; }
+.mode-option:hover { background: var(--bg-hover); }
+.mode-option[aria-checked="true"] { background: var(--accent-soft); font-weight: 600; }
+.settings-back { display: none; }
+.theme-group-title { margin: var(--space-2) 0 var(--space-1); font-size: 0.9em; font-weight: 600; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: var(--space-2); }
+.theme-card { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.theme-card:hover { background: var(--bg-hover); }
+.theme-card[aria-checked="true"] { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: -2px; font-weight: 600; }
+.theme-swatch { display: flex; flex-direction: column; justify-content: space-between; height: 3rem; padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+.swatch-text { display: block; width: 60%; height: 4px; background: var(--text); }
+.swatch-accent { display: block; width: 30%; height: 6px; background: var(--accent); }
 @media (max-width: 640px) {
-  #settings.settings-dialog { height: min(40rem, 92vh); }
+  /* On a phone the settings fill the screen: first a list of the groups, then one group as its own page. */
+  #settings.settings-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0; }
   .settings-layout { flex-direction: column; }
-  /* The tabs wrap onto a second row instead of scrolling sideways, so every tab is always in view. */
-  .settings-tabs { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: var(--space-2); overflow: visible; }
-  .settings-tab { white-space: nowrap; }
-  .settings-main { padding: var(--space-3); }
+  .settings-tabs { flex: 1 1 auto; flex-direction: column; border-right: 0; border-bottom: 0; padding: var(--space-2) var(--space-3); gap: 0; }
+  .settings-tab { padding: var(--space-3); border-bottom: 1px solid var(--line); border-radius: 0; min-height: 48px; }
+  .settings-tab[aria-selected="true"] { background: transparent; border-color: transparent; border-bottom-color: var(--line); font-weight: 400; }
+  .settings-main { padding: var(--space-3); flex: 0 0 auto; }
+  .settings-back { display: none; }
+  .settings-layout[data-view="list"] .settings-main > :not(.settings-search):not(.primary) { display: none; }
+  .settings-layout[data-view="list"] .settings-main { order: -1; }
+  .settings-layout[data-view="page"] .settings-tabs { display: none; }
+  .settings-layout[data-view="page"] .settings-back { display: inline-block; align-self: flex-start; margin-bottom: var(--space-2); }
+  .settings-layout[data-view="page"] .settings-main { flex: 1 1 auto; min-height: 0; }
   /* The two fields of the pairing form stack on a phone: label above, field below. */
   .settings-body .pair-field { flex-direction: column; align-items: stretch; gap: var(--space-1); }
   .settings-body .pair-field input { max-width: none; width: 100%; box-sizing: border-box; }

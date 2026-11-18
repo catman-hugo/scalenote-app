@@ -8,7 +8,7 @@ import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance, THEMES } from
 
 const css = fs.readFileSync(new URL("../web/themes.css", import.meta.url), "utf8");
 const themes = {};
-for (const [, name, body] of css.matchAll(/:root\[data-theme="([a-z]+)"\]\s*\{([^}]*)\}/g)) {
+for (const [, name, body] of css.matchAll(/:root\[data-theme="([a-z]+)"\](?:,\s*\.theme-swatch\[data-card="[a-z]+"\])?\s*\{([^}]*)\}/g)) {
   themes[name] = Object.fromEntries([...body.matchAll(/([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
 

@@ -684,9 +684,10 @@ await test("settings: theme, text size, note width and list width apply at once 
   await openSeeded(page, "S.md", "hello\n");
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
-  await page.selectOption('#settings select >> nth=0', "sage");
-  await page.selectOption('#settings select >> nth=1', "125");
-  await page.selectOption('#settings select >> nth=2', "wide");
+  await page.click('#settings .mode-option[data-mode="light"]');
+  await page.click('#settings .theme-card[data-theme="sage"]');
+  await page.selectOption('#settings select >> nth=0', "125");
+  await page.selectOption('#settings select >> nth=1', "wide");
   await page.locator('#settings input[type="range"]').fill("360");
   const look = await page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
@@ -701,14 +702,17 @@ await test("settings: theme, text size, note width and list width apply at once 
   assert.equal(look.bodyWidth, "1200px"); // 60rem at 125% text size
   assert.equal(look.bg, "rgb(248, 250, 247)");
   const saved = JSON.parse(await page.evaluate(() => window.__mock.getSettings()));
-  assert.deepEqual([saved.theme, saved.fontSize, saved.editorWidth, saved.sidebarWidth], ["sage", 125, "wide", 360]);
+  assert.deepEqual([saved.theme, saved.lightTheme, saved.fontSize, saved.editorWidth, saved.sidebarWidth], ["sage", "sage", 125, "wide", 360]);
   assert.equal(saved.vaultPath !== undefined, true);
   await page.click("#settings button.primary");
   await page.waitForSelector("#settings", { state: "hidden" });
   // back to the system choice removes the attribute
   await page.click("#openSettings");
-  await page.selectOption('#settings select >> nth=0', "system");
-  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-theme")), false);
+  // Auto follows the system (light here), and the light card chosen for it is Sage, so Sage stays.
+  await page.click('#settings .mode-option[data-mode="auto"]');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "sage");
+  const autoSaved = JSON.parse(await page.evaluate(() => window.__mock.getSettings()));
+  assert.equal(autoSaved.theme, "system");
 });
 
 await test("every theme draws the whole interface without errors", async (page) => {
@@ -1281,12 +1285,12 @@ await test("there are five text sizes, the smallest is 80 percent, and the icons
   const iconWidth = () => page.evaluate(() => document.querySelector("#newNote svg").getBoundingClientRect().width);
   const normal = await iconWidth();
   await page.click("#openSettings");
-  const options = await page.locator("#settings select").nth(1).locator("option").allTextContents();
+  const options = await page.locator("#settings select").nth(0).locator("option").allTextContents();
   assert.deepEqual(options, ["Smallest", "Small", "Normal", "Large", "Largest"]);
-  await page.locator("#settings select").nth(1).selectOption("80");
+  await page.locator("#settings select").nth(0).selectOption("80");
   assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "80%");
   const small = await iconWidth();
-  await page.locator("#settings select").nth(1).selectOption("125");
+  await page.locator("#settings select").nth(0).selectOption("125");
   const large = await iconWidth();
   assert.ok(small < normal && normal < large, `icon widths ${small}, ${normal}, ${large}`);
   assert.equal((await settingsNow(page)).fontSize, 125);
@@ -2042,7 +2046,7 @@ await test("the Obsidian copy button is not offered on an Android phone", async 
   await openSeeded(page, "O.md", "plain\n");
   await page.click("#toggle"); // on a phone the page list (with Settings) is closed after a page opens
   await page.click("#openSettings");
-  await page.waitForSelector("#settings .settings-body");
+  await page.waitForSelector('#settings [role="tab"]');
   assert.equal(await page.locator('#settings button:has-text("Make a copy for Obsidian")').count(), 0);
   assert.doesNotMatch(await page.textContent("#settings"), /Obsidian/);
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
@@ -3331,7 +3335,8 @@ if (shots && !process.env.SHOTS_ONLY) {
       await page.screenshot({ path: `${shots}/v0210-${label}-${scheme}-4-both.png` });
       if (label === "phone") await page.click("#toggle");
       await page.click("#openSettings");
-      await page.waitForSelector("#settings .settings-body");
+      await page.waitForSelector("#settings [role=\"tab\"]");
+      if (label === "phone") await page.click("#settingsTab-look");
       await page.screenshot({ path: `${shots}/v0210-${label}-${scheme}-5-settings.png` });
       await context.close();
     }
@@ -7344,7 +7349,8 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
-  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 3, "theme, text size and page width are on Look");
+  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 2, "text size and page width are on Look, next to the theme cards");
+  assert.equal(await page.locator('#settings .settings-body:visible .theme-card').count(), 9, "the theme cards are on Look");
   await page.focus("#settingsTab-look");
   await page.keyboard.press("ArrowDown");
   assert.equal(await page.locator("#settings h2").textContent(), "Pages");
@@ -7630,30 +7636,62 @@ await test("on a computer Settings is wide with the tabs on the left; on a phone
   assert.ok(wide.tabRight <= wide.mainLeft, "the tabs are left of the settings");
 }, { viewport: { width: 1300, height: 800 }, settings: existingUser({ updates: false }) });
 
-await test("on a phone the Settings tabs sit in a row on top and the box does not overflow the screen", async (page) => {
+await test("on a phone Settings is a full-screen list of groups, each opening as its own page with Back", async (page) => {
   await page.waitForSelector("#newNote");
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const r = await page.evaluate(() => {
     const d = document.querySelector("#settings").getBoundingClientRect();
-    const a = document.querySelector("#settingsTab-look").getBoundingClientRect();
-    const b = document.querySelector("#settingsTab-pages").getBoundingClientRect();
-    const main = document.querySelector(".settings-main").getBoundingClientRect();
-    return { left: d.left, right: d.right, bottom: d.bottom, sameRow: Math.abs(a.top - b.top) < 2, tabsAbove: a.bottom <= main.top + 1, vw: innerWidth, vh: innerHeight };
+    const rows = [...document.querySelectorAll('#settings [role="tab"]')].map((t) => t.getBoundingClientRect());
+    return { left: d.left, right: d.right, top: d.top, bottom: d.bottom, w: d.width, vw: innerWidth, vh: innerHeight, stacked: rows.every((b, i) => i === 0 || b.top >= rows[i - 1].bottom - 1), count: rows.length, fullWidth: rows.every((b) => b.width > innerWidth * 0.8) };
   });
-  assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh, JSON.stringify(r));
-  assert.ok(r.tabsAbove, JSON.stringify(r));
-  const r0 = r;
-  if (shots) await page.screenshot({ path: `${shots}/v0414-phone-settings-tabs-wrapped.png` });
-  // Every tab is on the screen, none is cut off at the edge.
-  const edges = await page.evaluate(() => [...document.querySelectorAll('#settings [role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return [b.left, b.right]; }));
-  assert.equal(edges.length, 7);
-  assert.ok(edges.every(([l, r]) => l >= 0 && r <= r0.vw), JSON.stringify(edges));
+  assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh + 1 && r.w >= r.vw - 1, JSON.stringify(r));
+  assert.equal(r.count, 7);
+  assert.ok(r.stacked && r.fullWidth, JSON.stringify(r));
+  assert.equal(await page.isVisible("#settingsPanel-look"), false);
+  if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-list.png` });
+  await page.click("#settingsTab-look");
+  assert.equal(await page.isVisible("#settingsPanel-look"), true);
+  assert.equal(await page.isVisible("#settingsTab-pages"), false);
+  assert.equal(await page.isVisible(".settings-back"), true);
+  assert.equal(await page.isVisible('#settings .theme-card[data-theme="black"]'), true);
+  if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-look.png` });
+  await page.click(".settings-back");
+  assert.equal(await page.isVisible("#settingsTab-pages"), true);
   await page.click("#settingsTab-files");
   assert.equal(await page.locator("#settings h2").textContent(), "Files");
+  await page.click(".settings-back");
   await page.click("#settingsTab-updates");
   assert.equal(await page.isVisible('#settings .setting-row:has-text("new versions") input'), true);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("the theme cards: True black is listed under Dark themes, a card switches the page at once, and Auto keeps the mode", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  const dark = await page.locator("#settings .theme-group").nth(1).locator(".theme-name").allTextContents();
+  assert.deepEqual(dark, ["Dark", "Midnight", "True black", "Forest", "Dusk"]);
+  const light = await page.locator("#settings .theme-group").nth(0).locator(".theme-name").allTextContents();
+  assert.deepEqual(light, ["Light", "Sepia", "Sage", "Lavender"]);
+  assert.equal(await page.getAttribute('#settings .mode-option[data-mode="auto"]', "aria-checked"), "true");
+  // In Auto a card is the choice for its kind; the page keeps following the system.
+  await page.click('#settings .theme-card[data-theme="black"]');
+  assert.equal(await page.getAttribute('#settings .mode-option[data-mode="auto"]', "aria-checked"), "true");
+  assert.equal(await page.getAttribute('#settings .theme-card[data-theme="black"]', "aria-checked"), "true");
+  // Dark mode shows the dark card chosen; a light card switches the mode to Light.
+  await page.click('#settings .mode-option[data-mode="dark"]');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "black");
+  await page.click('#settings .theme-card[data-theme="sepia"]');
+  assert.equal(await page.getAttribute('#settings .mode-option[data-mode="light"]', "aria-checked"), "true");
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "sepia");
+  // The swatch is painted with the theme's real colours.
+  const swatch = await page.evaluate(() => getComputedStyle(document.querySelector('.theme-swatch[data-card="black"]')).backgroundColor);
+  assert.equal(swatch, "rgb(0, 0, 0)");
+  // Searching for a theme name finds the picker.
+  await page.fill("#settingsSearch", "true black");
+  assert.equal(await page.isVisible("#settings .theme-picker"), true);
+  if (shots) await page.screenshot({ path: `${shots}/v054-settings-theme-cards.png` });
+}, { settings: existingUser({ updates: false }) });
 
 await test("a PDF dropped on the page asks how to add it, like the slash menu", async (page) => {
   await start(page);
@@ -8305,7 +8343,8 @@ const titleOf = (page) => page.inputValue("#title");
 await test("true black theme: the page is #000000 and the setting is saved", async (page) => {
   await page.waitForSelector("#newNote");
   await page.click("#openSettings");
-  await page.selectOption("#settings select >> nth=0", "black");
+  await page.click('#settings .mode-option[data-mode="dark"]');
+  await page.click('#settings .theme-card[data-theme="black"]');
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "black");
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".main")).backgroundColor === "rgb(0, 0, 0)" || getComputedStyle(document.body).backgroundColor === "rgb(0, 0, 0)"), true);
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings() || "{}").theme === "black");
@@ -8378,7 +8417,7 @@ await test("Settings search finds a setting by its words across the tabs and say
   await page.fill("#settingsSearch", "theme");
   await page.waitForFunction(() => document.querySelector("#settings h2").textContent === "Search results");
   assert.equal(await page.locator("#settings .setting-row:visible").count() >= 1, true);
-  assert.match(await page.locator("#settings .settings-body:visible").first().textContent(), /Theme/);
+  assert.match(await page.locator("#settings .settings-body:visible").first().textContent(), /theme/i);
   await page.fill("#settingsSearch", "zzzzqq");
   await page.waitForSelector(".settings-nomatch", { state: "visible" });
   assert.equal(await page.locator("#settings .setting-row:visible").count(), 0);
@@ -8396,7 +8435,8 @@ await test("This device: Reset to defaults needs a second press, restores the lo
   await page.waitForSelector("#newNote");
   await page.evaluate(() => window.__mock.peerPairs());
   await page.click("#openSettings");
-  await page.selectOption("#settings select >> nth=0", "sepia");
+  await page.click('#settings .mode-option[data-mode="light"]');
+  await page.click('#settings .theme-card[data-theme="sepia"]');
   await page.click('#settings [role="tab"][id="settingsTab-device"]');
   await page.click("#settingsReset");
   assert.equal(await page.textContent("#settingsReset"), "Press again to reset");
@@ -8521,7 +8561,8 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.waitForFunction(() => !document.getElementById("navBack").disabled);
       if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
       await page.click("#openSettings");
-      await page.selectOption("#settings select >> nth=0", "black");
+      await page.click('#settings .mode-option[data-mode="dark"]');
+      await page.click('#settings .theme-card[data-theme="black"]');
       await page.click("#settings button.primary");
       await page.waitForSelector("#settings", { state: "hidden" });
       // On a phone the list covers the page; the top bar is shown with it closed.

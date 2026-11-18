@@ -6,7 +6,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
 
 ## Current progress
 
-*Last updated: 2026-11-17. This section is updated with every change to the app.*
+*Last updated: 2026-11-18. This section is updated with every change to the app.*
 
 - **Latest version: 0.5.4.** Android support for sync and six extras. Tried on one computer only; nothing has run on a phone or tablet yet, and sync has not been tried between two real devices.
 - **Done in 0.5 (sync between your own devices):**
@@ -14,7 +14,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
   - 0.5.1: pairing. Two devices trust each other after a one-time code. Paired devices can be listed and removed.
   - 0.5.2: "Find devices", so the address does not have to be typed. A device only announces itself while its pairing code is showing.
   - 0.5.3: the sync. Only changed files are sent, the first sync asks first, a page changed on both devices is kept in both versions, deleted pages go to the other device's trash. Also a status line, Pause and Compare, renaming a device, noticing changes made by other programs, and a conflict copies screen.
-  - 0.5.4: Android: the phone can find other devices while the app is open, the back gesture goes to the previous page, and sync can be limited to Wi-Fi per device. Also Back and Forward buttons, a Find button, a true black theme, Settings search and Reset to defaults, and the app starts on the page you had open last.
+  - 0.5.4: Android: the phone can find other devices while the app is open, the back gesture goes to the previous page, and sync can be limited to Wi-Fi per device. Also Back and Forward buttons, a Find button, a true black theme, Settings search and Reset to defaults, and the app starts on the page you had open last. Themes are cards under an Auto/Light/Dark switch, and Settings is a full-screen list on a phone.
 - **Being built next: 0.5.5.** The home server. Then hardening and release (0.5.6).
 - **After that in 0.5:** each of the two coming releases also gets some extra features (for example a backup screen, a true-black theme and an optional app lock). The browser client moved to a later release. The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
 - **Not tried on real devices yet:** syncing between two devices on a real network, pairing and finding on two devices, the Android phone finding other devices and syncing, printing and export from the packaged app, selecting PDF text by touch.

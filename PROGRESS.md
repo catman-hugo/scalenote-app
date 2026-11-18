@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-17; 0.5.4 built (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-18; 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
 
 ## 0.5.4: built, not tried on a phone or tablet
 
@@ -11,6 +11,7 @@ Android and the six extras. Branch `feature/v0.5.4-android` (made on top of `fea
 Done (tried here: 227 Rust tests in the core, 1 new for Wi-Fi only; about 30 new node tests; about 12 new browser tests; the Android patch script is tested as text):
 - Android: `scripts/patch-android.mjs` adds three permissions, a `NetworkBridge` (multicast lock while the app is open, `isWifi()`), and the activity holds the lock in `onResume`/`onPause`. A message after the app was in the background for a minute or more, and a hint in the Sync tab.
 - Sync service: Wi-Fi only per device (`set_wifi_only`, `set_on_wifi`), enforced for manual and automatic syncs; new error code `sync_wifi_only`; app commands `sync_set_wifi_only` and `sync_set_on_wifi`.
+- Re-release 2026-11-18: Settings, Look has a mode switch (Auto/Light/Dark) and theme cards with swatches (light and dark lists, True black under dark); `appearance.js` gained `lightTheme`/`darkTheme`, `pickMode`, `pickTheme`, `effectiveTheme`, `followSystem`; swatches are painted by `themes.css` through `data-card`, so colours are written once. On a phone Settings is a full-screen list with a Back button per page. Not built, on purpose: custom themes, favourites, theme codes, contrast check. Tried here: 7 new node tests, the browser suite (2 new tests, 6 updated), screenshots. Not tried on a phone.
 - Extras: (7) true black theme; (8) Find button in the top bar; (9) Settings search, "This device" tab, Reset to defaults; (10) Wi-Fi only per device; (11) start on the last page; (12) Back and Forward through the pages seen, joined to the browser history so the Android back gesture uses it.
 
 Not done / untried:
