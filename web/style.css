@@ -1229,7 +1229,8 @@ body.block-dragging .float-bar { visibility: hidden; }
 
 /* The settings box is wide on a computer: the tabs are a list on the left and the settings of the open
    tab fill the rest. On a phone the tabs become a row on top. Flat colours only. */
-#settings.settings-dialog { max-width: 56rem; width: min(56rem, calc(100% - 2 * var(--space-4))); height: min(40rem, 88vh); padding: 0; overflow: hidden; }
+/* On a computer the box takes about four fifths of the window, so the cards and long hints have room. */
+#settings.settings-dialog { max-width: none; width: 80vw; min-width: min(56rem, calc(100% - 2 * var(--space-4))); height: 80vh; min-height: min(40rem, 88vh); padding: 0; overflow: hidden; }
 #settings[open].settings-dialog { display: block; }
 .settings-layout { display: flex; height: 100%; }
 .settings-tabs { display: flex; flex-direction: column; gap: var(--space-1); flex: 0 0 12rem; padding: var(--space-4) var(--space-3); border-right: 1px solid var(--line); background: var(--bg-side); overflow-y: auto; }
