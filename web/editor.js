@@ -485,7 +485,7 @@ export function createEditor(element, onChange, options = {}) {
       Toggle,
       ToggleFold,
       FindMarks,
-      ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
+      ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))), words: options.loadWords || (() => Promise.reject(new Error("no words"))) }),
       PdfBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),
       ...tableExtensions,

@@ -187,6 +187,67 @@ impl Vault {
     }
 }
 
+/// Largest file of page words kept next to an imported picture (see `write_page_text`).
+pub const MAX_PAGE_TEXT_BYTES: usize = 1_000_000;
+/// The words of a picture are kept in `<picture>` plus this, beside the picture.
+pub const PAGE_TEXT_SUFFIX: &str = ".text.json";
+
+/// The file name of a picture directly inside `attachments/`, or an error for anything else.
+fn picture_name(relative: &str) -> Result<&str> {
+    let name = relative
+        .strip_prefix(ATTACHMENT_DIR)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .ok_or(VaultError::InvalidPath)?;
+    let extension = Path::new(name).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.starts_with('.') {
+        return Err(VaultError::InvalidPath);
+    }
+    if !["png", "jpg", "jpeg", "gif", "webp"].contains(&extension.as_str()) {
+        return Err(VaultError::UnsupportedType);
+    }
+    Ok(name)
+}
+
+impl Vault {
+    /// Keeps the words of an imported PDF page beside its picture, so the find bar can find them.
+    ///
+    /// Only for a picture that exists directly in `attachments/`. The text is what the interface
+    /// made (a small JSON file, see web/imagetext.js); it is never run or interpreted here, only
+    /// stored, and the interface checks it again when it reads it.
+    pub fn write_page_text(&self, picture: &str, text: &str) -> Result<()> {
+        let name = picture_name(picture)?;
+        if text.len() > MAX_PAGE_TEXT_BYTES {
+            return Err(VaultError::TooLarge);
+        }
+        let path = self.resolve(picture)?;
+        if !fs::metadata(&path)?.is_file() {
+            return Err(VaultError::NotFound);
+        }
+        let dir = self.resolve(ATTACHMENT_DIR)?;
+        self.ensure_inside(&dir)?;
+        write_atomic(&dir.join(format!("{name}{PAGE_TEXT_SUFFIX}")), text.as_bytes())?;
+        Ok(())
+    }
+
+    /// The words kept beside a picture, or `NotFound` when it has none.
+    pub fn read_page_text(&self, picture: &str) -> Result<String> {
+        let name = picture_name(picture)?;
+        let path = self.resolve(&format!("{ATTACHMENT_DIR}/{name}{PAGE_TEXT_SUFFIX}"))?;
+        let meta = match fs::symlink_metadata(&path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(VaultError::NotFound),
+            Err(error) => return Err(error.into()),
+        };
+        if !meta.is_file() {
+            return Err(VaultError::NotFound);
+        }
+        if meta.len() > MAX_PAGE_TEXT_BYTES as u64 {
+            return Err(VaultError::TooLarge);
+        }
+        String::from_utf8(fs::read(&path)?).map_err(|_| VaultError::NotUtf8)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,4 +423,24 @@ mod tests {
         let names: Vec<String> = vault.tree().expect("tree").entries.into_iter().map(|e| e.path).collect();
         assert_eq!(names, vec!["A.md".to_string()]);
     }
+    #[test]
+    fn page_words_are_kept_beside_a_picture_and_nowhere_else() {
+        let dir = scratch("page-text");
+        let vault = Vault::open(&dir).expect("vault");
+        let picture = vault.write_attachment("page.jpg", &[0xFF, 0xD8, 0xFF, 0xE0, 1]).expect("picture");
+        assert_eq!(vault.read_page_text(&picture), Err(VaultError::NotFound), "none yet");
+        vault.write_page_text(&picture, "{\"format\":1,\"items\":[]}").expect("write");
+        assert_eq!(vault.read_page_text(&picture).expect("read"), "{\"format\":1,\"items\":[]}");
+        assert!(dir.join(format!("{picture}{PAGE_TEXT_SUFFIX}")).is_file());
+        // Only beside a picture that exists, directly in attachments, never elsewhere.
+        assert_eq!(vault.write_page_text("attachments/missing.jpg", "{}"), Err(VaultError::NotFound));
+        for bad in ["notes.md", "attachments/../x.jpg", "attachments/sub/x.jpg", "attachments/.hidden.jpg", "../x.jpg", "attachments/"] {
+            assert_eq!(vault.write_page_text(bad, "{}"), Err(VaultError::InvalidPath), "{bad}");
+        }
+        assert_eq!(vault.write_page_text("attachments/doc.pdf", "{}"), Err(VaultError::UnsupportedType));
+        let big = "x".repeat(MAX_PAGE_TEXT_BYTES + 1);
+        assert_eq!(vault.write_page_text(&picture, &big), Err(VaultError::TooLarge));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
 }

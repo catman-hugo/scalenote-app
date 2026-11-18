@@ -9,6 +9,7 @@
 import { backend } from "./backend.js";
 import { readAsBase64, storePicture } from "./images.js";
 import { openPdf } from "./pdfdoc.js";
+import { encodePageText } from "./imagetext.js";
 import { PDF_LIMITS, checkPdf, pageFileName, pdfTitle, roundEstimate, secondsLeft } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
@@ -99,11 +100,24 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
         if (!blob) throw fail("pdf_failed");
         const picture = new File([blob], pageFileName(file.name, page, total), { type: "image/jpeg" });
         const path = await storePicture(picture);
+        await keepWords(path, page);
         made[page - 1] = { path, alt: fill(strings.pdf.pageAlt, { page, name: title }) };
         done++;
         progress(done, total);
       } catch (error) {
         failure = failure || (error && error.code ? error : fail("pdf_failed"));
+      }
+    };
+
+    // The words of the page go in a small file beside its picture, so the find bar can find
+    // them (see imagetext.js). This is extra: if it fails, the picture is still imported.
+    const keepWords = async (path, page) => {
+      try {
+        const words = await pdf.pageTextBoxes(page);
+        const text = encodePageText(words.items, words.width, words.height);
+        if (text) await backend.writePageText(path, text);
+      } catch {
+        // A page whose words cannot be read is still a good picture; it is just not searchable.
       }
     };
 

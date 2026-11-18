@@ -305,18 +305,18 @@ export function readImage(src) {
   const path = match[2];
   if (path.split("/").some((part) => part === ".." || part === "." || part === "")) return null;
   // A link to a PDF is a PDF in the page, never a picture, and has no size of its own.
-  if (/\.pdf$/i.test(path)) return { type: "pdfBlock", attrs: { alt: match[1], path } };
   const size = sizeOf(match[1]);
+  // A PDF keeps only a width (`name|600`); its height is the box's scroll height.
+  if (/\.pdf$/i.test(path)) return size ? { type: "pdfBlock", attrs: { alt: match[1].slice(0, size.cut), path, width: size.width } } : { type: "pdfBlock", attrs: { alt: match[1], path } };
   if (!size) return { type: "imageBlock", attrs: { alt: match[1], path } };
   const attrs = { alt: match[1].slice(0, size.cut), path, width: size.width };
   if (size.height !== null) attrs.height = size.height;
   return { type: "imageBlock", attrs };
 }
 
-/** A PDF is written like a picture without a size: `![name](attachments/name.pdf)`. */
+/** A PDF is written like a picture: `![name](attachments/name.pdf)`, or `![name|600](...)` with a width. */
 export function writePdf(node) {
-  const { alt = "", path = "" } = node.attrs || {};
-  return `![${alt.replace(/[\[\]\n]/g, " ")}](${path})`;
+  return writeImage({ attrs: { ...(node.attrs || {}), height: null } });
 }
 
 export function writeImage(node) {

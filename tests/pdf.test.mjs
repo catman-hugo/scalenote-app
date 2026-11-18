@@ -60,10 +60,11 @@ test("a PDF link that is not a plain attachment link stays as it was", () => {
   assert.equal(readImage("![x](attachments/a.pdf.exe)"), null);
 });
 
-test("a PDF has no size: a size typed into its description is just text", () => {
+test("a PDF keeps a width written after its name (since 0.5.6), and is written back byte for byte", () => {
   const node = readRichBlock("image", "![Notes|300](attachments/n.pdf)");
   assert.equal(node.type, "pdfBlock");
-  assert.equal(node.attrs.alt, "Notes|300");
+  assert.equal(node.attrs.alt, "Notes");
+  assert.equal(node.attrs.width, 300);
   assert.equal(writeBlock(node), "![Notes|300](attachments/n.pdf)");
   assert.equal(writeBlock({ type: "pdfBlock", attrs: { alt: "a]b\nc", path: "attachments/n.pdf" } }), "![a b c](attachments/n.pdf)");
 });
@@ -74,9 +75,9 @@ import { findInPages as findHits, TEXT_LIMITS as TEXT } from "../web/pdfrules.js
 test("findInPages finds every hit in reading order and ignores case", () => {
   const hits = findHits([["Hello world", "x"], ["say HELLO hello"]], "  hello ");
   assert.deepEqual(hits, [
-    { page: 1, piece: 0, offset: 0 },
-    { page: 2, piece: 0, offset: 4 },
-    { page: 2, piece: 0, offset: 10 },
+    { page: 1, piece: 0, start: 0, end: 5 },
+    { page: 2, piece: 0, start: 4, end: 9 },
+    { page: 2, piece: 0, start: 10, end: 15 },
   ]);
 });
 

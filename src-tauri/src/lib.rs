@@ -270,6 +270,22 @@ fn read_attachment(path: String, state: State<AppState>) -> Result<String, Strin
     with_vault(&state, "read attachment", |vault| vault.read_attachment_data_url(&path))
 }
 
+/// Keeps the words of an imported PDF page beside its picture (see `Vault::write_page_text`).
+#[tauri::command]
+fn write_page_text(picture: String, text: String, state: State<AppState>) -> Result<(), String> {
+    // Checked before anything else, so a huge text is refused at once.
+    if text.len() > scalenote_core::attachments::MAX_PAGE_TEXT_BYTES {
+        return Err("too_large".to_string());
+    }
+    with_vault(&state, "save page text", |vault| vault.write_page_text(&picture, &text))
+}
+
+/// The words kept beside a picture; the error "not_found" when it has none.
+#[tauri::command]
+fn read_page_text(picture: String, state: State<AppState>) -> Result<String, String> {
+    with_vault(&state, "read page text", |vault| vault.read_page_text(&picture))
+}
+
 #[derive(Serialize)]
 struct ExportReply {
     /// Where the copy was made, for the message that tells the person.
@@ -1109,6 +1125,8 @@ pub fn run() {
             move_entry,
             save_attachment,
             read_attachment,
+            write_page_text,
+            read_page_text,
             export_obsidian_copy,
             tray::tray_set,
             tray::hide_main_window,

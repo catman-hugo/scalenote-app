@@ -2570,6 +2570,7 @@ async function start() {
   app.autosave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCurrent, onStatus: setStatus });
   app.editor = createEditor(el("editor"), () => app.autosave.touch(), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
+    loadWords: (path) => backend.readPageText(pathForVault(path)),
     canvasDrawing: inkDrawing,
     createCanvasRegion,
     noteKey: () => (app.current ? app.current.path : null),
@@ -2598,6 +2599,7 @@ async function start() {
   app.pageText = createPageText(app.editor);
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
+    loadWords: (path) => backend.readPageText(pathForVault(path)),
     onAdd: chooseCover,
     onChange: chooseCover,
     onRemove: removeCover,

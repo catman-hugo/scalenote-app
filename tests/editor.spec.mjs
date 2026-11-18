@@ -8222,11 +8222,11 @@ await test("Ctrl+F finds in the text and in a PDF, in the order they appear on t
   await page.keyboard.press("Enter");
   assert.equal(await findStatus(page), "2 of 5");
   await page.waitForSelector(".pdf-hit-current");
-  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 1");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page", "only the letters typed are marked");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   assert.equal(await findStatus(page), "4 of 5");
-  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page 3");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "Page");
   assert.equal(await page.locator(".find-hit-current").count(), 0, "only one hit stands out at a time");
   await page.keyboard.press("Enter");
   assert.equal(await findStatus(page), "5 of 5");
@@ -8242,6 +8242,84 @@ await test("Ctrl+F finds in the text and in a PDF, in the order they appear on t
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".pdf-hit").count(), 0, "the PDF marks go too");
 }, ctxOpts);
+
+await test("in a PDF in the page only the found letters are marked, and the words are whole again after", async (page) => {
+  await findOpen(page, "Intro\n\n![Lecture](attachments/n.pdf)\n", { pdf: true });
+  await findKey(page);
+  await page.keyboard.type("age 2");
+  await waitFindStatus(page, "1 of 1");
+  await page.waitForSelector(".pdf-hit-current");
+  assert.equal(await page.locator(".pdf-hit-current").textContent(), "age 2");
+  const piece = await page.evaluate(() => document.querySelector(".pdf-hit-current").parentElement.textContent);
+  assert.equal(piece, "Page 2", "the rest of the words stay in place around the mark");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".pdf-hit").count(), 0);
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll(".pdf-text span")].some((s) => s.textContent === "Page 2" && !s.children.length)), "the words are put back as they were");
+}, ctxOpts);
+
+await test("a PDF in the page can be made narrower with its side handle; the width is saved and comes back", async (page) => {
+  await findOpen(page, "Intro\n\n![Lecture](attachments/n.pdf)\n", { pdf: true });
+  await page.hover(".pdf-block");
+  const handle = page.locator(".pdf-width-handle-e");
+  await handle.waitFor();
+  const box = await handle.boundingBox();
+  const before = await page.evaluate(() => document.querySelector(".pdf-block-inner").offsetWidth);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 100, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => document.querySelector(".pdf-block-inner").offsetWidth);
+  assert.ok(Math.abs(before - 200 - after) <= 12, `about 200 px narrower: ${before} -> ${after}`);
+  await waitSaved(page);
+  assert.match((await files(page))["Find.md"], new RegExp(`!\\[Lecture\\|${after}\\]\\(attachments/n\\.pdf\\)`));
+  // Reopened, it has the same width.
+  await page.click('.tree-button[data-path="Find.md"]');
+  await page.click("#newNote");
+  await page.click('.tree-button[data-path="Find.md"]');
+  await page.waitForSelector(".pdf-block-inner");
+  assert.equal(await page.evaluate(() => document.querySelector(".pdf-block-inner").offsetWidth), after);
+  // Dragged back out to the page's width, the width is not written any more.
+  await page.hover(".pdf-block");
+  const again = await page.locator(".pdf-width-handle-e").boundingBox();
+  await page.mouse.move(again.x + 5, again.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(again.x + 600, again.y + 5, { steps: 5 });
+  await page.mouse.up();
+  await waitSaved(page);
+  assert.match((await files(page))["Find.md"], /!\[Lecture\]\(attachments\/n\.pdf\)/);
+}, ctxOpts);
+
+await test("the words of PDF pages added as pictures, and the pictures' descriptions, are found by Ctrl+F", async (page) => {
+  await slashPdf(page, pdfFile(3));
+  await pdfChoice(page, "Pages as images");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 3);
+  await page.waitForFunction(() => !document.querySelector("#pdfBox").open);
+  // Each picture got its words beside it.
+  const kept = await page.evaluate(() => [...(window.__pageTexts || new Map()).keys()]);
+  assert.deepEqual(kept.sort(), ["attachments/Lecture-1-p1.jpg", "attachments/Lecture-1-p2.jpg", "attachments/Lecture-1-p3.jpg"]);
+  await waitSaved(page);
+  assert.doesNotMatch((await files(page))["Untitled.md"], /text\.json/, "the page itself is not changed");
+  await findKey(page);
+  await page.keyboard.type("page 2");
+  // On the second picture: its words, then its description "Page 2 of Lecture 1".
+  await waitFindStatus(page, "1 of 2");
+  await page.waitForSelector(".image-find-hit.find-hit-current");
+  const where = await page.evaluate(() => {
+    const hit = document.querySelector(".image-find-hit.find-hit-current");
+    const blocks = [...document.querySelectorAll(".image-block")];
+    const pic = hit.closest(".image-sizer").getBoundingClientRect();
+    const box = hit.getBoundingClientRect();
+    return { block: blocks.indexOf(hit.closest(".image-block")), inside: box.left >= pic.left && box.right <= pic.right + 1 && box.top >= pic.top && box.bottom <= pic.bottom + 1, small: box.width < pic.width / 2 };
+  });
+  assert.deepEqual(where, { block: 1, inside: true, small: true }, "a box over the words on the second page");
+  await page.keyboard.press("Enter");
+  assert.equal(await findStatus(page), "2 of 2");
+  assert.equal(await page.locator(".image-alt-marks .find-hit-current").textContent(), "Page 2");
+  assert.equal(await page.locator(".image-find-hit.find-hit-current").count(), 0);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator(".image-find-hit").count(), 0);
+  assert.equal(await page.locator(".image-alt-marks:not([hidden])").count(), 0);
+});
 
 await test("a word split by bold text, and a link, are found, and a hit in a folded toggle opens it", async (page) => {
   await findOpen(page, "say he**llo** world\n\nsee [[Other page]] now\n\n<details>\n<summary>Folded</summary>\n\nhidden needle inside\n\n</details>\n");
