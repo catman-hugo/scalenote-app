@@ -4633,7 +4633,9 @@ await test("on a phone the canvas toolbar fits the window and the sheet fills th
   const sheet = await sheetBox(page);
   assert.ok(sheet.width >= window_.width - 2 && sheet.height > 300);
   // The top bar has the star, the history clock, Text and the save status; the title keeps room.
-  assert.ok((await page.locator("#title").boundingBox()).width >= 90, "the page title is still readable");
+  const titleWidth = (await page.locator("#title").boundingBox()).width;
+  const bar = await page.evaluate(() => [...document.querySelectorAll(".topbar > *")].filter((n) => n.offsetWidth).map((n) => `${n.id || n.className}:${n.offsetWidth}`).join(" "));
+  assert.ok(titleWidth >= 90, `the page title is still readable (title ${titleWidth}; ${bar})`);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
 
 // ---------- 0.4.1: highlighter, shapes, sticky notes, lasso, pen button ----------
