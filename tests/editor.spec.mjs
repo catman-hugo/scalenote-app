@@ -21,7 +21,9 @@ const shots = process.env.SHOTS_DIR || "";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png" };
 // The same policy as src-tauri/tauri.conf.json, so a violation here would also happen there.
 const CSP = JSON.parse(fs.readFileSync(path.join(here, "..", "src-tauri", "tauri.conf.json"), "utf8")).app.security.csp;
+let networkRequests = 0;
 const server = http.createServer((req, res) => {
+  networkRequests++;
   const file = path.join(dist, req.url === "/" ? "index.html" : req.url.split("?")[0]);
   if (!file.startsWith(dist) || !fs.existsSync(file)) { res.writeHead(404).end(); return; }
   res.writeHead(200, { "content-type": types[path.extname(file)] || "application/octet-stream", "content-security-policy": CSP });
@@ -35,6 +37,24 @@ const url = `http://127.0.0.1:${server.address().port}/`;
 const GITHUB = "https://api.github.com/repos/catman-hugo/scalenote-app/releases?per_page=20";
 // CHROME_PATH lets a machine without Playwright's own browser use an installed Chrome.
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
+
+// The app's files are handed to the browser straight from the test, not over the local network.
+// Each test opens a fresh browser that loads every file, and Windows keeps a closed connection
+// around for a while, so over a full run they piled up and a random page load failed with
+// ERR_NO_BUFFER_SPACE. Answering here opens no connection at all. The server above stays only
+// for anything that is not caught here. Every new browser, also in the screenshot blocks, gets it.
+function serveApp(route) {
+  const address = new URL(route.request().url());
+  const file = path.join(dist, address.pathname === "/" ? "index.html" : decodeURIComponent(address.pathname));
+  if (!file.startsWith(dist) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return route.fulfill({ status: 404, body: "" });
+  return route.fulfill({ status: 200, headers: { "content-type": types[path.extname(file)] || "application/octet-stream", "content-security-policy": CSP }, body: fs.readFileSync(file) });
+}
+const openContext = browser.newContext.bind(browser);
+browser.newContext = async (options) => {
+  const context = await openContext(options);
+  await context.route(`${url}**`, serveApp);
+  return context;
+};
 let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
@@ -9088,5 +9108,11 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
 
 await browser.close();
 server.close();
+// Nothing should have gone over the local network (see serveApp); if something did, the
+// Windows connection pile-up could come back, so it counts as a failure.
+if (networkRequests > 0) {
+  console.log(`FAIL - ${networkRequests} file(s) were loaded over the network instead of being handed over directly`);
+  failures++;
+}
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");
 process.exit(failures ? 1 : 0);
