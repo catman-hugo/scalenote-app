@@ -22,7 +22,7 @@ const contrast = (a, b) => {
 
 // The themes: name, light or dark, and their own colours, read from themes.css as data.
 const themes = {};
-for (const [, name, body] of themesCss.matchAll(/:root\[data-theme="([a-z]+)"\]\s*\{([^}]*)\}/g)) {
+for (const [, name, body] of themesCss.matchAll(/:root\[data-theme="([a-z]+)"\](?:,\s*\.theme-swatch\[data-card="[a-z]+"\])?\s*\{([^}]*)\}/g)) {
   themes[name] = Object.fromEntries([...body.matchAll(/([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
 const schemeOf = (scheme) => Object.entries(themes).filter(([, t]) => t["color-scheme"] === scheme).map(([name]) => name);
@@ -111,7 +111,7 @@ test("the stylesheet has a light and a dark shade for every colour, and every cl
 test("the light shades go to the light themes and the dark shades to the dark themes", () => {
   assert.deepEqual(themeNamesIn(lightRule[1]), schemeOf("light").sort());
   assert.deepEqual(themeNamesIn(darkRule[1]), schemeOf("dark").sort());
-  assert.equal(schemeOf("light").length + schemeOf("dark").length, 9);
+  assert.equal(schemeOf("light").length + schemeOf("dark").length, 10);
 });
 
 test("the shades are Notion's, except the few text shades moved to stay readable", () => {

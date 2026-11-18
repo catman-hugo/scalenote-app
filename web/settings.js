@@ -1,7 +1,7 @@
 // The settings dialog. Changes are applied as they are made and handed to `onChange`,
 // which saves them. Nothing here is typed text: every label comes from strings.js.
 
-import { EDITOR_WIDTHS, FONT_SIZES, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_STEP, THEMES } from "./appearance.js";
+import { DARK_THEMES, EDITOR_WIDTHS, FONT_SIZES, LIGHT_THEMES, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_STEP, modeOf, normalizeAppearance, pickMode, pickTheme } from "./appearance.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -29,6 +29,69 @@ function select(options, value, onPick) {
   return control;
 }
 
+// The mode switch (Auto, Light, Dark) and the theme cards. Each card shows the theme's own colours in a
+// small swatch (themes.css paints it through data-card). The chosen card of each kind is marked, so True
+// black is listed under Dark themes where it can be seen instead of hidden in a drop-down.
+function themePicker(state, change) {
+  const s = strings.settings;
+  const box = make("div", "setting-row theme-picker");
+  const modeLabel = make("span", "setting-label", s.mode);
+  const modes = make("div", "mode-switch");
+  modes.setAttribute("role", "radiogroup");
+  modes.setAttribute("aria-label", s.mode);
+  const cards = make("div", "theme-groups");
+
+  const paint = () => {
+    const a = normalizeAppearance(state());
+    const mode = modeOf(a);
+    for (const button of modes.children) button.setAttribute("aria-checked", String(button.dataset.mode === mode));
+    for (const card of cards.querySelectorAll(".theme-card")) {
+      const name = card.dataset.theme;
+      const chosen = a.theme === name || (a.theme === "system" && (a.lightTheme === name || a.darkTheme === name));
+      card.setAttribute("aria-checked", String(chosen));
+    }
+  };
+  for (const mode of ["auto", "light", "dark"]) {
+    const button = make("button", "mode-option", s.modes[mode]);
+    button.type = "button";
+    button.dataset.mode = mode;
+    button.setAttribute("role", "radio");
+    button.addEventListener("click", () => {
+      change(pickMode(state(), mode));
+      paint();
+    });
+    modes.append(button);
+  }
+  const group = (title, names) => {
+    const section = make("div", "theme-group");
+    section.append(make("h3", "theme-group-title", title));
+    const grid = make("div", "theme-grid");
+    for (const name of names) {
+      const card = make("button", "theme-card");
+      card.type = "button";
+      card.dataset.theme = name;
+      card.setAttribute("role", "radio");
+      const swatch = make("span", "theme-swatch");
+      swatch.dataset.card = name;
+      swatch.setAttribute("aria-hidden", "true");
+      swatch.append(make("span", "swatch-text"), make("span", "swatch-accent"));
+      card.append(swatch, make("span", "theme-name", s.themes[name]));
+      card.addEventListener("click", () => {
+        change(pickTheme(state(), name));
+        paint();
+      });
+      grid.append(card);
+    }
+    section.append(grid);
+    return section;
+  };
+  cards.append(group(s.lightThemes, LIGHT_THEMES), group(s.darkThemes, DARK_THEMES));
+  const hint = make("p", "setting-hint", s.modeHint);
+  box.append(modeLabel, modes, hint, cards);
+  paint();
+  return box;
+}
+
 const TAB_ORDER = ["pages", "drawing", "updates", "sync", "files", "device"];
 
 // The tab that was open last, kept while the app runs so the box opens where it was left.
@@ -48,7 +111,7 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   };
 
   const look = [
-    field(s.theme, select(THEMES.map((t) => [t, s.themes[t]]), state.theme, (v) => change({ theme: v }))),
+    themePicker(() => state, change),
     field(s.fontSize, select(FONT_SIZES.map((n) => [n, s.fontSizes[n]]), state.fontSize, (v) => change({ fontSize: Number(v) }))),
     field(s.editorWidth, select(Object.keys(EDITOR_WIDTHS).map((k) => [k, s.editorWidths[k]]), state.editorWidth, (v) => change({ editorWidth: v }))),
   ];
@@ -74,6 +137,14 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   nav.setAttribute("aria-label", s.title);
   const main = make("div", "settings-main");
   const heading = make("h2");
+  // On a phone the tabs are a full-screen list and a tab opens as its own page with a Back button.
+  // style.css reads data-view; on a wide screen the attribute has no effect.
+  layout.dataset.view = "list";
+  const back = make("button", "settings-back", s.back);
+  back.type = "button";
+  back.addEventListener("click", () => {
+    layout.dataset.view = "list";
+  });
   const buttons = new Map();
   const panels = new Map();
 
@@ -94,7 +165,10 @@ export function openSettings(dialog, current, onChange, groups = {}) {
     button.id = `settingsTab-${id}`;
     button.setAttribute("role", "tab");
     button.setAttribute("aria-controls", `settingsPanel-${id}`);
-    button.addEventListener("click", () => show(id));
+    button.addEventListener("click", () => {
+      show(id);
+      layout.dataset.view = "page";
+    });
     buttons.set(id, button);
     nav.append(button);
     const panel = make("div", "settings-body");
@@ -130,6 +204,7 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const filter = () => {
     const wanted = search.value.trim().toLowerCase();
     nav.classList.toggle("is-searching", wanted !== "");
+    if (wanted) layout.dataset.view = "page";
     if (!wanted) {
       for (const rows of tabs.map(([, r]) => r)) rows.forEach((row) => row.classList.remove("search-miss"));
       nothing.hidden = true;
@@ -170,7 +245,7 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const close = make("button", "primary", s.close);
   close.type = "button";
   close.addEventListener("click", () => dialog.close());
-  main.append(search, heading, nothing, ...panels.values(), close);
+  main.append(back, search, heading, nothing, ...panels.values(), close);
   layout.append(nav, main);
   dialog.append(layout);
   show(lastTab);

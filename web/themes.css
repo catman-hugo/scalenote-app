@@ -1,10 +1,13 @@
+/* Each theme block also applies to a small swatch in the theme picker (data-card), so the picker shows
+   the real colours without writing them a second time. */
 /* Colour themes. Generated once from the first ScaleNote's theme values, then kept by hand.
    Every colour is solid: the translucent borders and tints of the first version were
    blended onto the theme's own background. Colours that failed the contrast test
    (tests/themes.test.mjs) were nudged until they passed. No theme here is the default:
    with no data-theme, style.css follows the system's light or dark setting. */
 
-:root[data-theme="light"] {
+:root[data-theme="light"],
+.theme-swatch[data-card="light"] {
   color-scheme: light;
   --bg: #f9f7f4;
   --bg-side: #e8e5e1;
@@ -25,7 +28,8 @@
   --kind-info: #1f5fa8;
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+.theme-swatch[data-card="dark"] {
   color-scheme: dark;
   --bg: #181818;
   --bg-side: #141414;
@@ -46,7 +50,8 @@
   --kind-info: #8fbcf0;
 }
 
-:root[data-theme="sepia"] {
+:root[data-theme="sepia"],
+.theme-swatch[data-card="sepia"] {
   color-scheme: light;
   --bg: #f5f0e8;
   --bg-side: #e5dfd3;
@@ -67,7 +72,8 @@
   --kind-info: #1d599e;
 }
 
-:root[data-theme="midnight"] {
+:root[data-theme="midnight"],
+.theme-swatch[data-card="midnight"] {
   color-scheme: dark;
   --bg: #131c24;
   --bg-side: #101920;
@@ -88,7 +94,8 @@
   --kind-info: #8fbcf0;
 }
 
-:root[data-theme="sage"] {
+:root[data-theme="sage"],
+.theme-swatch[data-card="sage"] {
   color-scheme: light;
   --bg: #f8faf7;
   --bg-side: #e8ede4;
@@ -109,7 +116,8 @@
   --kind-info: #1f5fa8;
 }
 
-:root[data-theme="forest"] {
+:root[data-theme="forest"],
+.theme-swatch[data-card="forest"] {
   color-scheme: dark;
   --bg: #222e20;
   --bg-side: #1e2a1c;
@@ -130,7 +138,8 @@
   --kind-info: #8fbcf0;
 }
 
-:root[data-theme="lavender"] {
+:root[data-theme="lavender"],
+.theme-swatch[data-card="lavender"] {
   color-scheme: light;
   --bg: #f7f4fc;
   --bg-side: #e8e2f4;
@@ -151,7 +160,8 @@
   --kind-info: #1f5fa8;
 }
 
-:root[data-theme="dusk"] {
+:root[data-theme="dusk"],
+.theme-swatch[data-card="dusk"] {
   color-scheme: dark;
   --bg: #20163a;
   --bg-side: #1c1234;
@@ -174,7 +184,30 @@
 
 /* True black: the page itself is #000000, which switches the pixels off on an OLED screen.
    The sidebar and the cards are only a little lighter so they still read as separate areas. */
-:root[data-theme="black"] {
+:root[data-theme="white"],
+.theme-swatch[data-card="white"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-side: #f2f2f2;
+  --bg-hover: #e9e9e9;
+  --bg-code: #f7f7f7;
+  --text: #111111;
+  --text-soft: #555555;
+  --line: #c8c8c8;
+  --accent: #5a3fb8;
+  --accent-text: #ffffff;
+  --accent-soft: #ebe7f8;
+  --warn-bg: #fbeeda;
+  --warn-text: #5c3a00;
+  --bad: #a3231b;
+  --kind-ok: #296c36;
+  --kind-warn: #8e5100;
+  --highlight: #fbe58a;
+  --kind-info: #1f5fa8;
+}
+
+:root[data-theme="black"],
+.theme-swatch[data-card="black"] {
   color-scheme: dark;
   --bg: #000000;
   --bg-side: #0a0a0a;

@@ -27,7 +27,7 @@ These overlap with what is being built now and are the cheapest to pull forward 
 
 ## Editor
 
-- **Math blocks.** Today math is kept as written. Add a block that shows it formatted. Callouts already exist.
+- **Math.** See "Editor: richer writing" below.
 - **Toggle headings.** Any heading can be a toggle heading, and can be turned back into a normal one, one heading at a time (not only as a global setting).
   - Made from the slash menu with `/toggle_heading` or `/heading`, or by typing `#>` for a toggle heading and `#` for a normal one.
   - In the file it is a normal heading followed by an invisible marker, for example `## Title <!-- toggle -->`. Other programs, Obsidian included, show a normal heading. `#>` is only a typing shortcut and is never written to the file.
@@ -35,6 +35,21 @@ These overlap with what is being built now and are the cheapest to pull forward 
 - **Smart typing.** For example `->` becomes an arrow, and a checked to-do item moves down the list. Each one can be switched off.
 - **Customisable toolbar and sidebar.** Choose the toolbar position (top or bottom), and move buttons between the bar, a hidden list and the plus menu. Hidden buttons still work by shortcut and by typing. The sidebar content can be arranged the same way.
 - **Suggested connections between pages.** Opt-in only. It may use a small model that runs on the device, so nothing leaves it. It must follow the AI rules in `CLAUDE.md` (off means no code and no interface element).
+
+## Editor: richer writing (requested 2026-11-18)
+
+Asked for after looking at another note app's feature list. Each is its own slice. Build order is the owner's to pick. The ones that need a file format chosen first are marked **decide**.
+
+- **Footnotes.** Standard markdown `[^1]` in the text and `[^1]: note` at the end, so other programs read them. A small number in the text jumps to the note and back. Slash item and typing `[^1]`.
+- **Code in many languages.** Fenced code already exists. Add a language name on the block (click it to pick another), colouring by language, a long block that opens folded with "Show all lines", and an optional title. The language is the normal fence label, so other programs read it. **Decide** how a title is written (for example after the language on the fence line).
+- **Copy box.** A block that holds one thing to copy, with a copy button. **Decide** how it is saved so other programs show something sensible (for example a fenced block with its own label).
+- **Math.** Formatted maths in a line (`$a^2$`) and on its own line (`$$ ... $$`), the standard markdown way. Needs a maths renderer that works offline; check its licence and size first. This replaces the older "math blocks" line above.
+- **Table formulas.** Simple sums in a cell: SUM, AVERAGE, and likely MIN, MAX, COUNT. The cell shows the answer and the page keeps the formula. **Decide** the file format: other programs have no formulas, so the formula text and its answer both have to be stored in a way that stays readable in a plain table.
+- **Better table controls.** A bar for the selected cell (add or remove row and column, move them, colour a cell or row, sort by a column, resize a column, align a column left, centre or right). Check first what the table already does.
+- **Different sizes and fonts inside one sentence.** Small, normal and large, and a few fonts (plain, serif, monospace), applied to the selected words. **Decide** the format: it has to be an inline marker that other programs ignore or show as plain text, like the colour markers.
+- **Paragraph alignment.** Centre and right for a whole paragraph, never a single word. **Decide** the format, same reason.
+
+Every one of these keeps the rule that a page opened and not changed is written back byte for byte, and that unknown syntax is kept as written.
 
 ## Organising
 

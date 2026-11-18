@@ -8,7 +8,7 @@ import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance, THEMES } from
 
 const css = fs.readFileSync(new URL("../web/themes.css", import.meta.url), "utf8");
 const themes = {};
-for (const [, name, body] of css.matchAll(/:root\[data-theme="([a-z]+)"\]\s*\{([^}]*)\}/g)) {
+for (const [, name, body] of css.matchAll(/:root\[data-theme="([a-z]+)"\](?:,\s*\.theme-swatch\[data-card="[a-z]+"\])?\s*\{([^}]*)\}/g)) {
   themes[name] = Object.fromEntries([...body.matchAll(/([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
 
@@ -25,7 +25,7 @@ function contrast(a, b) {
 
 test("there is a theme block for every named theme (the system choice has none)", () => {
   assert.deepEqual(Object.keys(themes).sort(), THEMES.filter((t) => t !== "system").sort());
-  assert.equal(Object.keys(themes).length, 9);
+  assert.equal(Object.keys(themes).length, 10);
 });
 
 for (const name of Object.keys(themes)) {

@@ -1,7 +1,7 @@
 // Wires the screens together: settings, the folder, the note list, the editor and saving.
 
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from "./appearance.js";
+import { applyAppearance, DEFAULT_APPEARANCE, followSystem, normalizeAppearance } from "./appearance.js";
 import { writeImage } from "./richblocks.js";
 import { openSettings } from "./settings.js";
 import { checkForUpdate, platformOf, shouldCheck } from "./updates.js";
@@ -675,8 +675,8 @@ async function showWhatsNewOnce(freshInstall) {
 }
 
 function appearanceOf(settings) {
-  const { theme, fontSize, editorWidth, sidebarWidth } = settings;
-  return { theme, fontSize, editorWidth, sidebarWidth };
+  const { theme, lightTheme, darkTheme, fontSize, editorWidth, sidebarWidth } = settings;
+  return { theme, lightTheme, darkTheme, fontSize, editorWidth, sidebarWidth };
 }
 
 async function saveSettings() {
@@ -2413,6 +2413,8 @@ async function start() {
 
   await loadSettings();
   applyAppearance(document.documentElement, app.settings);
+  // In Auto with a chosen card the attribute depends on the system setting, so repaint when it flips.
+  followSystem(() => applyAppearance(document.documentElement, app.settings));
   repaintCanvasBlocks();
   const freshInstall = !app.settings.disclosureAccepted;
   if (freshInstall) {
