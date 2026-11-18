@@ -1,15 +1,25 @@
 // The folder menu under the folder name at the top of the page list: switch to a recent
 // folder, pick another one, or go back to the default one.
 
+import { COLOURS, COLOUR_HEX } from "./foldericons.js";
 import { icon } from "./icons.js";
 import { folderLabel } from "./recent.js";
 import { strings } from "./strings.js";
 
-function item(label, onPick, { current = false, title = "" } = {}) {
+function item(label, onPick, { current = false, title = "", colour = null } = {}) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "menu-item folder-menu-item";
   button.setAttribute("role", "menuitem");
+  // Folders get a small square in their colour (an outline when they have none), so they can be
+  // told apart at a glance. The two actions under the list get none.
+  if (colour !== null) {
+    const dot = document.createElement("span");
+    dot.className = "folder-dot";
+    if (colour !== "none" && COLOUR_HEX[colour]) dot.style.setProperty("--dot", COLOUR_HEX[colour]);
+    else dot.classList.add("folder-dot-empty");
+    button.append(dot);
+  }
   const text = document.createElement("span");
   text.className = "folder-menu-label";
   text.textContent = label;
@@ -27,7 +37,7 @@ function item(label, onPick, { current = false, title = "" } = {}) {
  * Opens the menu under `anchor`. `recent` is a list of paths, `current` the open folder.
  * `onPick(path)`, `onOther()` and `onDefault()` do the work. Returns a function that closes it.
  */
-export function openFolderMenu(anchor, { recent, current, canPick, onPick, onOther, onDefault }) {
+export function openFolderMenu(anchor, { recent, current, colours = {}, onColour, canPick, onPick, onOther, onDefault }) {
   const f = strings.folders;
   const menu = document.createElement("div");
   menu.className = "gutter-menu folder-menu";
@@ -66,7 +76,54 @@ export function openFolderMenu(anchor, { recent, current, canPick, onPick, onOth
     heading.className = "menu-label folder-menu-heading";
     heading.textContent = f.recent;
     menu.append(heading);
-    for (const path of recent) menu.append(item(folderLabel(path), run(() => onPick(path)), { current: path === current, title: path }));
+    for (const path of recent) menu.append(item(folderLabel(path), run(() => onPick(path)), { current: path === current, title: path, colour: colours[path] || "none" }));
+  }
+  // The colour of the open folder: a row of squares, then "No colour". Picking one keeps the
+  // menu open so the result is seen at once.
+  if (current && onColour) {
+    const label = document.createElement("div");
+    label.className = "menu-label folder-menu-heading";
+    label.textContent = f.colourHeading;
+    const grid = document.createElement("div");
+    grid.className = "icon-menu-colours folder-colours";
+    const buttons = new Map();
+    const paint = (now) => {
+      for (const [name, button] of buttons) button.setAttribute("aria-pressed", String(name === now));
+    };
+    const choose = (name) => () => {
+      onColour(name);
+      paint(name);
+      for (const dotEl of menu.querySelectorAll(".folder-menu-item[aria-current] .folder-dot")) {
+        if (name === "none") {
+          dotEl.style.removeProperty("--dot");
+          dotEl.classList.add("folder-dot-empty");
+        } else {
+          dotEl.style.setProperty("--dot", COLOUR_HEX[name]);
+          dotEl.classList.remove("folder-dot-empty");
+        }
+      }
+    };
+    for (const name of COLOURS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "icon-menu-colour";
+      button.dataset.folderColour = name;
+      button.title = strings.folderIcon.colours[name];
+      button.setAttribute("aria-label", strings.folderIcon.colours[name]);
+      button.style.setProperty("--swatch", COLOUR_HEX[name]);
+      button.addEventListener("click", choose(name));
+      grid.append(button);
+      buttons.set(name, button);
+    }
+    const none = document.createElement("button");
+    none.type = "button";
+    none.className = "menu-item icon-menu-none";
+    none.dataset.folderColour = "none";
+    none.textContent = f.colourNone;
+    none.addEventListener("click", choose("none"));
+    buttons.set("none", none);
+    paint(colours[current] || "none");
+    menu.append(label, grid, none);
   }
   const rule = document.createElement("div");
   rule.className = "menu-label folder-menu-heading";

@@ -5,6 +5,7 @@
 // interface turns the code into a sentence from the language file.
 
 mod secure;
+mod tray;
 
 use scalenote_core::atomic::write_atomic;
 use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
@@ -302,6 +303,64 @@ fn export_obsidian_copy(state: State<AppState>) -> Result<ExportReply, String> {
 }
 
 #[derive(Serialize)]
+struct BackupReply {
+    name: String,
+    when: String,
+}
+
+#[derive(Serialize)]
+struct BackupMadeReply {
+    name: String,
+    when: String,
+    files: usize,
+    skipped: usize,
+}
+
+#[derive(Serialize)]
+struct RestoreReply {
+    added: usize,
+    replaced: usize,
+    unchanged: usize,
+    skipped: usize,
+}
+
+/// Makes a plain copy of the vault in the backups folder beside it (see `scalenote_core::backup`).
+/// Not offered on Android, where nothing else could open a copy made in the app's private storage.
+#[tauri::command(async)]
+fn backup_make(state: State<AppState>) -> Result<BackupMadeReply, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "backup", |vault| {
+        let report = scalenote_core::backup::make(vault)?;
+        Ok(BackupMadeReply { name: report.info.name, when: report.info.when, files: report.files, skipped: report.skipped })
+    })
+}
+
+/// The backups of this vault, newest first.
+#[tauri::command(async)]
+fn backup_list(state: State<AppState>) -> Result<Vec<BackupReply>, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "backup list", |vault| {
+        Ok(scalenote_core::backup::list(vault)?.into_iter().map(|b| BackupReply { name: b.name, when: b.when }).collect())
+    })
+}
+
+/// Puts a listed backup back. Nothing is deleted and replaced files are kept first.
+#[tauri::command(async)]
+fn backup_restore(state: State<AppState>, name: String) -> Result<RestoreReply, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "backup restore", |vault| {
+        let report = scalenote_core::backup::restore(vault, &name)?;
+        Ok(RestoreReply { added: report.added, replaced: report.replaced, unchanged: report.unchanged, skipped: report.skipped })
+    })
+}
+
+#[derive(Serialize)]
 struct PageExportReply {
     /// The new folder, for the message that tells the person.
     path: String,
@@ -568,6 +627,8 @@ struct SyncPeerReply {
     added: String,
     last_sync: String,
     last_changed: usize,
+    version: String,
+    older_version: bool,
     has_history: bool,
     wifi_only: bool,
 }
@@ -624,6 +685,8 @@ fn peer_reply(peer: PeerView) -> SyncPeerReply {
         added: peer.added,
         last_sync: peer.last_sync,
         last_changed: peer.last_changed,
+        version: peer.version,
+        older_version: peer.older,
         has_history: peer.has_history,
         wifi_only: peer.wifi_only,
     }
@@ -998,6 +1061,18 @@ fn apply_webview_defaults(is_set: impl Fn(&str) -> bool, mut set: impl FnMut(&st
     }
 }
 
+/// The plugin that writes this program into the computer's login list. It is only used from
+/// our own commands in `tray.rs`; the window's scripts get no permission to call it directly.
+/// Android has no such list, so there the plugin is an empty one.
+#[cfg(desktop)]
+fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None)
+}
+#[cfg(not(desktop))]
+fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("autostart-unused").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -1010,6 +1085,7 @@ pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(autostart_plugin())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
@@ -1034,6 +1110,13 @@ pub fn run() {
             save_attachment,
             read_attachment,
             export_obsidian_copy,
+            tray::tray_set,
+            tray::hide_main_window,
+            tray::autostart_get,
+            tray::autostart_set,
+            backup_make,
+            backup_list,
+            backup_restore,
             export_page,
             get_sync_settings,
             set_sync_settings,

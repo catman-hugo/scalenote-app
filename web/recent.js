@@ -43,3 +43,32 @@ export function folderLabel(path) {
   const last = trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
   return last || String(path);
 }
+
+// A colour per folder, kept in the settings next to the recent list (it is about the computer's
+// folders, not about the notes, so it is not written into the vault). Same care as the list: the
+// file may have been changed by another program, so only known colour names and usable paths stay.
+// Built on a bare object, because a folder may be called "__proto__".
+export const MAX_FOLDER_COLOURS = 50;
+
+export function cleanFolderColours(raw, allowed) {
+  const out = Object.create(null);
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return out;
+  let count = 0;
+  for (const path of Object.keys(raw)) {
+    if (count === MAX_FOLDER_COLOURS) break;
+    const colour = raw[path];
+    if (!usable(path) || typeof colour !== "string" || !allowed.includes(colour)) continue;
+    out[path] = colour;
+    count += 1;
+  }
+  return out;
+}
+
+/** The list with `path` given `colour`, or without a colour when `colour` is "none". */
+export function withFolderColour(list, path, colour, allowed) {
+  const next = cleanFolderColours(list, allowed);
+  if (!usable(path)) return next;
+  if (colour === "none") delete next[path];
+  else if (allowed.includes(colour) && (path in next || Object.keys(next).length < MAX_FOLDER_COLOURS)) next[path] = colour;
+  return next;
+}

@@ -63,7 +63,7 @@ test("look settings from an untrusted file fall back to safe values", () => {
   assert.equal(normalizeAppearance("text").theme, "system");
 });
 
-test("applying the settings sets the theme attribute and removes it for the system choice", () => {
+test("applying the settings sets the theme attribute, also for the system choice", () => {
   const attrs = new Map();
   const props = new Map();
   const root = { style: { fontSize: "", setProperty: (k, v) => props.set(k, v) }, setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k) };
@@ -73,5 +73,5 @@ test("applying the settings sets the theme attribute and removes it for the syst
   assert.equal(props.get("--editor-width"), "60rem");
   assert.equal(props.get("--sidebar-width"), "300px");
   applyAppearance(root, { theme: "system" });
-  assert.equal(attrs.has("data-theme"), false);
+  assert.ok(["light", "dark"].includes(attrs.get("data-theme")));
 });

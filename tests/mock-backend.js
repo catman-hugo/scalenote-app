@@ -106,6 +106,37 @@
       if (window.__failExport) fail(window.__failExport);
       return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
     },
+    // Backups are made by Rust (tested there with real files). The stand-in keeps a list so the
+    // Settings screen can be driven.
+    // The tray and the login list are the computer's own; the stand-in only remembers the calls.
+    tray_set: ({ enabled, showLabel, quitLabel }) => {
+      if (window.__failTray) fail(window.__failTray);
+      window.__tray = { enabled, showLabel, quitLabel };
+    },
+    hide_main_window: () => { window.__hidden = (window.__hidden || 0) + 1; },
+    autostart_get: () => {
+      if (window.__failAutostart) fail(window.__failAutostart);
+      return window.__autostart === true;
+    },
+    autostart_set: ({ enabled }) => {
+      if (window.__failAutostart) fail(window.__failAutostart);
+      window.__autostart = enabled;
+      return enabled;
+    },
+    backup_make: () => {
+      if (window.__failBackup) fail(window.__failBackup);
+      const list = (window.__backups = window.__backups || []);
+      const n = list.length + 1;
+      const made = { name: `2026-11-18 12-00-0${n}`, when: `2026-11-18 12:00:0${n}` };
+      list.unshift(made);
+      return { ...made, files: 4, skipped: window.__skippedBackup || 0 };
+    },
+    backup_list: () => (window.__backups = window.__backups || []).map((b) => ({ ...b })),
+    backup_restore: ({ name }) => {
+      window.__restored = (window.__restored || []).concat(name);
+      if (window.__failBackup) fail(window.__failBackup);
+      return { added: 1, replaced: 2, unchanged: 3, skipped: 0 };
+    },
     // Same shapes as the real commands. The name is cleaned in Rust (tested there); the stand-in
     // only drops what a file name could not hold, so the screen can be driven.
     get_sync_settings: () => {
@@ -131,7 +162,7 @@
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,
-        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, hasHistory: false, wifiOnly: false, ...p })),
+        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, version: "", olderVersion: false, hasHistory: false, wifiOnly: false, ...p })),
         pairingSecondsLeft: syncPairing.secondsLeft,
         events: [...syncPairing.events].reverse(),
       };
@@ -375,5 +406,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

@@ -1195,7 +1195,7 @@ await test("the folder name opens a menu with recent folders, and choosing one s
   await page.click("#vaultButton");
   await page.waitForSelector(".folder-menu");
   const labels = await page.locator(".folder-menu .menu-item").allTextContents();
-  assert.deepEqual(labels, ["ScaleNote", "Work", "gone", "Open another folder", "Use the default folder"]);
+  assert.deepEqual(labels, ["ScaleNote", "Work", "gone", "No colour", "Open another folder", "Use the default folder"]);
   assert.equal(await page.locator('.folder-menu [aria-current="true"]').count(), 1);
   assert.equal(await page.getAttribute("#vaultButton", "aria-expanded"), "true");
   await page.click('.folder-menu .menu-item:has-text("Work")');
@@ -1206,6 +1206,43 @@ await test("the folder name opens a menu with recent folders, and choosing one s
   assert.ok((await files(page))["Page.md"].endsWith("hello edited\n"), "the open page was saved before switching");
   assert.equal(await page.isVisible("#welcome"), false, "no first-run screen");
 }, { settings: FOLDER_SETTINGS });
+
+await test("a folder can be given a colour from the folder menu; it shows beside the name and in the list, and is kept", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 0);
+  await page.click("#vaultButton");
+  await page.click('.folder-menu [data-folder-colour="green"]');
+  assert.equal(await page.locator(".folder-menu").count(), 1, "the menu stays open");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 1);
+  assert.deepEqual((await settingsNow(page)).folderColours, { "/home/alice/Documents/ScaleNote": "green" });
+  await page.keyboard.press("Escape");
+  // Another folder has its own colour; the first keeps its own.
+  await page.click("#vaultButton");
+  await page.click('.folder-menu .menu-item:has-text("Work")');
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).vaultPath === "/home/alice/Work");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 0);
+  await page.click("#vaultButton");
+  await page.click('.folder-menu [data-folder-colour="red"]');
+  assert.equal(await page.locator(".folder-menu .folder-menu-item:not(.folder-dot-empty) .folder-dot:not(.folder-dot-empty)").count(), 2);
+  await page.click('.folder-menu [data-folder-colour="none"]');
+  assert.deepEqual((await settingsNow(page)).folderColours, { "/home/alice/Documents/ScaleNote": "green" });
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 0);
+}, { settings: FOLDER_SETTINGS });
+
+await test("Ctrl+Shift+O opens the folder menu, and a second press does not open another", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.keyboard.press("Control+Shift+O");
+  await page.waitForSelector(".folder-menu");
+  await page.keyboard.press("Control+Shift+O");
+  assert.equal(await page.locator(".folder-menu").count(), 1);
+}, { settings: FOLDER_SETTINGS });
+
+await test("a settings file with bad folder colours is cleaned and the app still starts", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 1);
+  await page.click("#vaultButton");
+  assert.equal(await page.locator('.folder-menu [data-folder-colour][aria-pressed="true"]').getAttribute("data-folder-colour"), "teal");
+}, { settings: { ...FOLDER_SETTINGS, folderColours: { "/home/alice/Documents/ScaleNote": "teal", "/x": "pink", "__proto__": "red", "/y": 5 } } });
 
 await test("Open another folder goes straight to the picker, and Use the default folder works", async (page) => {
   await page.waitForSelector("#vaultButton");
@@ -1247,7 +1284,7 @@ await test("recent folders from a damaged settings file are cleaned, not trusted
   await page.click("#vaultButton");
   const labels = await page.locator(".folder-menu .menu-item").allTextContents();
   assert.deepEqual(labels.slice(0, 2), ["ScaleNote", "Work"]);
-  assert.equal(labels.length, 4, "the bad entries are gone: " + labels);
+  assert.equal(labels.length, 5, "the bad entries are gone: " + labels);
 }, { settings: { ...FOLDER_SETTINGS, recentVaults: [5, null, "", "/home/alice/Work", "/home/alice/Work", "bad\u0000path", { a: 1 }] } });
 
 await test("Settings and What's new close with Escape or by clicking outside the box; the first-run screens do not", async (page) => {
@@ -2041,6 +2078,118 @@ await test("Settings can make a copy for Obsidian, shows where it is, and report
   // Making a copy never touches the page that is open.
   assert.equal((await files(page))["O.md"], "plain\n");
 }, { viewport: { width: 1100, height: 760 } });
+
+await test("the Sync tab explains in three cards where pages live and who can reach them, and makes no promise it cannot keep", async (page) => {
+  await openSeeded(page, "S.md", "plain\n");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#securityCards");
+  const titles = await page.$$eval("#securityCards .security-card-title", (n) => n.map((x) => x.textContent));
+  assert.deepEqual(titles, ["Only on your devices", "Your own home server", "Device to device"]);
+  const text = await page.textContent("#securityCards");
+  assert.match(text, /no ScaleNote account/);
+  assert.match(text, /optional check for a new version/);
+  assert.doesNotMatch(text, /cloud|unhackable|100%|guarantee/i);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("This device: the tray and open-at-login switches start off, change the computer's side, and say so when that fails", async (page) => {
+  await openSeeded(page, "T.md", "plain\n");
+  await openSettingsTab(page, "device");
+  const tray = page.locator("#keepInTray");
+  const login = page.locator("#openAtLogin");
+  await tray.waitFor();
+  await page.waitForFunction(() => !document.getElementById("openAtLogin").disabled);
+  assert.equal(await tray.isChecked(), false);
+  assert.equal(await login.isChecked(), false);
+  assert.equal(await page.evaluate(() => window.__tray), undefined, "nothing is made until it is switched on");
+  await tray.check();
+  await page.waitForFunction(() => window.__tray && window.__tray.enabled === true);
+  assert.deepEqual(await page.evaluate(() => window.__tray), { enabled: true, showLabel: "Show ScaleNote", quitLabel: "Quit" });
+  assert.equal((await settingsNow(page)).keepInTray, true);
+  await login.check();
+  await page.waitForFunction(() => window.__autostart === true);
+  assert.equal(await login.isChecked(), true);
+  await login.uncheck();
+  await page.waitForFunction(() => window.__autostart === false);
+  // A failure puts the switch back and says so.
+  await page.evaluate(() => { window.__failTray = "io"; });
+  await tray.click(); // the switch flips back by itself when the change fails
+  await page.waitForFunction(() => /tray icon could not be changed/.test(document.getElementById("settings").textContent));
+  assert.equal(await tray.isChecked(), true);
+  assert.equal((await settingsNow(page)).keepInTray, true);
+  await page.evaluate(() => { window.__failAutostart = "io"; });
+  await login.click();
+  await page.waitForFunction(() => /sign-in list of this computer could not be changed/.test(document.getElementById("settings").textContent));
+  assert.equal(await login.isChecked(), false);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("a saved tray switch makes the tray again at start; if that fails the switch goes off", async (page) => {
+  await page.waitForFunction(() => window.__tray && window.__tray.enabled === true);
+}, { settings: { ...FOLDER_SETTINGS, keepInTray: true } });
+
+await test("a tray that cannot be made at start turns the saved switch off", async (page) => {
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).keepInTray === false);
+}, { settings: { ...FOLDER_SETTINGS, keepInTray: true }, before: (page) => page.addInitScript(() => { window.__failTray = "io"; }) });
+
+await test("the tray and login switches are not offered on an Android phone", async (page) => {
+  await openSeeded(page, "O.md", "plain\n");
+  await page.click("#toggle");
+  await page.click("#openSettings");
+  await page.waitForSelector('#settings [role="tab"]');
+  await page.click("#settingsTab-device");
+  assert.equal(await page.locator("#keepInTray, #openAtLogin").count(), 0);
+  assert.equal(await page.evaluate(() => window.__tray), undefined);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
+await test("in Auto, the Light card looks the same whichever dark card is chosen (it never turns into True white)", async (page) => {
+  await openSeeded(page, "A.md", "plain\n");
+  await page.click("#openSettings");
+  await page.click('#settings .mode-option[data-mode="auto"]');
+  await page.click('#settings .theme-card[data-theme="light"]');
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--bg").trim());
+  const seen = [];
+  for (const dark of ["dark", "midnight", "forest", "dusk", "black"]) {
+    await page.click(`#settings .theme-card[data-theme="${dark}"]`);
+    seen.push(await bg());
+  }
+  assert.deepEqual([...new Set(seen)], ["#f9f7f4"], "Light's own page colour every time: " + seen);
+}, { viewport: { width: 1100, height: 760 }, scheme: "light" });
+
+await test("Settings can make a backup, lists backups newest first, and restores only after a second press", async (page) => {
+  await openSeeded(page, "B.md", "plain\n");
+  await openSettingsTab(page, "files");
+  const make = page.locator("#backupMake");
+  await make.waitFor();
+  assert.match(await page.textContent("#backupLast"), /No backup yet/);
+  await make.click();
+  await page.waitForFunction(() => /backup is ready: 4 files/.test(document.getElementById("settings").textContent));
+  assert.match(await page.textContent("#backupLast"), /Last backup: 2026-11-18 12:00:01 \(UTC\)/);
+  await make.click();
+  await page.waitForFunction(() => document.querySelectorAll("#backupList li").length === 2);
+  const times = await page.$$eval("#backupList li .setting-label", (n) => n.map((x) => x.textContent));
+  assert.deepEqual(times, ["2026-11-18 12:00:02", "2026-11-18 12:00:01"]);
+  // One press only asks; nothing is restored yet.
+  const restore = page.locator("#backupList li button").first();
+  await restore.click();
+  assert.match(await restore.textContent(), /Click again to restore/);
+  assert.equal(await page.evaluate(() => (window.__restored || []).length), 0);
+  await restore.click();
+  await page.waitForFunction(() => /Restored: 1 put back, 2 replaced/.test(document.getElementById("settings").textContent));
+  assert.deepEqual(await page.evaluate(() => window.__restored), ["2026-11-18 12-00-02"]);
+  // A problem is shown calmly and the button works again.
+  await page.evaluate(() => { window.__failBackup = "io"; });
+  await make.click();
+  await page.waitForFunction(() => /could not read or write/.test(document.getElementById("settings").textContent));
+  assert.equal(await make.isDisabled(), false);
+  assert.equal((await files(page))["B.md"], "plain\n");
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("backups are not offered on an Android phone", async (page) => {
+  await openSeeded(page, "O.md", "plain\n");
+  await page.click("#toggle");
+  await page.click("#openSettings");
+  await page.waitForSelector('#settings [role="tab"]');
+  assert.equal(await page.locator("#backupMake").count(), 0);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
 
 await test("the Obsidian copy button is not offered on an Android phone", async (page) => {
   await openSeeded(page, "O.md", "plain\n");
@@ -7520,6 +7669,28 @@ await test("sync: the first sync shows what it would do and changes nothing unti
   assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 12:00:00 UTC \(3 changed\)/);
 }, { settings: existingUser({ updates: false }) });
 
+await test("the device list shows the last sync time and the device's app version, and says when it is older", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs("old"));
+  await page.evaluate(() => window.__mock.peerPairs("same"));
+  await page.evaluate(() => window.__mock.peerPairs("quiet"));
+  await page.evaluate(() => {
+    const peers = window.__mock.syncPeers();
+    Object.assign(peers[0], { lastSync: "2026-01-01T12:00:00Z", lastChanged: 0, version: "0.5.4", olderVersion: true, hasHistory: true });
+    Object.assign(peers[1], { lastSync: "2026-01-02T08:30:00Z", lastChanged: 2, version: "0.5.5", hasHistory: true });
+  });
+  await page.click("#openSettings");
+  await page.click("#settingsTab-sync");
+  await page.waitForSelector("#pairList .pair-version");
+  const items = await page.locator("#pairList > *").allTextContents();
+  assert.match(items[0], /Last sync: 2026-01-01 12:00:00 UTC(?! \()/, "no '0 changed' after a restart");
+  assert.match(items[0], /App version 0\.5\.4 \(older than this device; update it\)/);
+  assert.match(items[1], /Last sync: 2026-01-02 08:30:00 UTC \(2 changed\)/);
+  assert.match(items[1], /App version 0\.5\.5(?! \()/);
+  assert.match(items[2], /Not synced yet/);
+  assert.doesNotMatch(items[2], /App version/);
+}, { settings: existingUser({ updates: false }) });
+
 await test("sync: Compare shows the plan and runs nothing; an error says what to do; rapid clicking never throws", async (page) => {
   await page.waitForSelector("#newNote");
   await page.evaluate(() => window.__mock.peerPairs());
@@ -8442,7 +8613,7 @@ await test("This device: Reset to defaults needs a second press, restores the lo
   assert.equal(await page.textContent("#settingsReset"), "Press again to reset");
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "sepia", "one press changes nothing");
   await page.click("#settingsReset");
-  await page.waitForFunction(() => !document.documentElement.hasAttribute("data-theme"));
+  await page.waitForFunction(() => document.documentElement.getAttribute("data-theme") === "light");
   const saved = JSON.parse(await page.evaluate(() => window.__mock.getSettings()));
   assert.equal(saved.theme, "system");
   assert.equal(saved.vaultPath, "/vault");
@@ -8579,6 +8750,48 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.waitForSelector(".sync-wifi-only");
       await page.locator(".sync-wifi-row").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-4-wifi-only.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.5.5 (only when SHOTS_DIR is set), in light and dark.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(FOLDER_SETTINGS));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await page.waitForSelector("#vaultButton");
+      if (label === "desktop") {
+        await page.click("#vaultButton");
+        await page.click('.folder-menu [data-folder-colour="green"]');
+        await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-1-folder-colour-menu.png` });
+        await page.keyboard.press("Escape");
+      }
+      if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.click('#settings [role="tab"][id="settingsTab-files"]');
+      if (label === "desktop") {
+        await page.click("#backupMake");
+        await page.waitForFunction(() => /backup is ready/.test(document.getElementById("settings").textContent));
+        await page.click("#backupMake");
+        await page.waitForFunction(() => document.querySelectorAll("#backupList li").length === 2);
+      }
+      await page.locator("#backupMake").scrollIntoViewIfNeeded().catch(() => {});
+      await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-2-backups.png` });
+      // On a phone a settings page covers the list of tabs; Back shows the list again.
+      if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");
+      await page.click('#settings [role="tab"][id="settingsTab-sync"]');
+      await page.locator("#securityCards").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-3-security-cards.png` });
+      if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");
+      await page.click('#settings [role="tab"][id="settingsTab-device"]');
+      await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-4-this-device.png` });
       await context.close();
     }
   }

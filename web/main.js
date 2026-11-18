@@ -9,7 +9,7 @@ import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
 import { renderNotes } from "./whatsnew.js";
 import { openFolderMenu } from "./foldermenu.js";
-import { addRecent, cleanRecent, removeRecent } from "./recent.js";
+import { addRecent, cleanFolderColours, cleanRecent, removeRecent, withFolderColour } from "./recent.js";
 import { backend, BackendError } from "./backend.js";
 import { composeNote, loadNote } from "./compose.js";
 import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
@@ -28,7 +28,7 @@ import { createResolver } from "./wikilinkrules.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
 import { openIconMenu } from "./iconmenu.js";
-import { has, parseIcons, withIcon, withRenamed } from "./foldericons.js";
+import { COLOURS, COLOUR_HEX, has, parseIcons, withIcon, withRenamed } from "./foldericons.js";
 import { openContextMenu } from "./contextmenu.js";
 import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
@@ -62,7 +62,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -169,6 +169,9 @@ async function loadSettings() {
     app.settings = {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
       recentVaults: cleanRecent(parsed.recentVaults),
+      folderColours: cleanFolderColours(parsed.folderColours, COLOURS),
+      // Off unless turned on. Computers only; Android never reads it.
+      keepInTray: parsed.keepInTray === true && !isAndroid,
       disclosureAccepted: parsed.disclosureAccepted === true,
       ...normalizeAppearance(parsed),
       // One switch for both looking for updates and installing them. On unless turned off.
@@ -468,12 +471,151 @@ function obsidianRows() {
   return [textElement("h3", s.obsidianHeading, "setting-heading"), textElement("p", s.obsidianHint, "setting-hint"), make, result];
 }
 
+// Backups of the whole vault. Not offered on Android, for the same reason as the Obsidian copy.
+// Restoring takes two presses and never deletes (see core/src/backup.rs).
+function backupRows() {
+  if (isAndroid) return [];
+  const s = strings.settings;
+  const result = textElement("p", "", "setting-hint");
+  const last = textElement("p", "", "setting-hint");
+  last.id = "backupLast";
+  const list = document.createElement("ul");
+  list.id = "backupList";
+  list.className = "backup-list";
+  const heading = textElement("h4", s.backupListHeading, "setting-subheading");
+
+  const paint = (backups) => {
+    last.textContent = backups.length ? fill(s.backupLast, { when: backups[0].when }) : s.backupNone;
+    heading.hidden = !backups.length;
+    list.replaceChildren(...backups.map(restoreRow));
+  };
+  const refresh = async () => {
+    try {
+      paint(await backend.backupList());
+    } catch (error) {
+      logProblem("backup list failed", error);
+      last.textContent = errorText(error);
+    }
+  };
+  const restoreRow = (backup) => {
+    const item = document.createElement("li");
+    item.className = "setting-row";
+    const button = buttonElement(s.backupRestore, async () => {
+      if (!button.dataset.armed) {
+        button.dataset.armed = "1";
+        button.textContent = s.backupRestoreAsk;
+        setTimeout(() => {
+          delete button.dataset.armed;
+          button.textContent = s.backupRestore;
+        }, 5000);
+        return;
+      }
+      delete button.dataset.armed;
+      button.textContent = s.backupRestore;
+      button.disabled = true;
+      try {
+        const report = await backend.backupRestore(backup.name);
+        result.textContent = fill(s.backupRestoreDone, report) + (report.skipped ? fill(s.backupRestoreSkipped, report) : "");
+      } catch (error) {
+        logProblem("backup restore failed", error);
+        result.textContent = errorText(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    item.append(textElement("span", backup.when, "setting-label"), button);
+    return item;
+  };
+  const make = buttonElement(s.backupButton, async () => {
+    make.disabled = true;
+    result.textContent = s.backupWorking;
+    try {
+      const report = await backend.backupMake();
+      result.textContent = fill(s.backupDone, report) + (report.skipped ? fill(s.backupSkipped, report) : "");
+      await refresh();
+    } catch (error) {
+      logProblem("backup failed", error);
+      result.textContent = errorText(error);
+    } finally {
+      make.disabled = false;
+    }
+  });
+  make.id = "backupMake";
+  refresh();
+  return [textElement("h3", s.backupHeading, "setting-heading"), textElement("p", s.backupHint, "setting-hint"), make, last, result, heading, list];
+}
+
 // History keeps old text, including text deleted since, so there is a way to wipe it. Two clicks,
 // because it cannot be undone.
 // The Sync tab: this device's name and the on/off switch. Both are kept by the Rust side outside
 // the vault. Each change is saved at once and the screen shows what was actually saved (the name
 // is cleaned there), so the person always sees the result. Nothing is sent over a network yet.
 // The "This device" tab: what is about this device alone and not about the notes.
+// The tray and the login list. Both are off until turned on. The tray switch is kept in the
+// settings and applied again at every start; the login switch is only the computer's own list,
+// so what is shown is always what that list says.
+function trayRows() {
+  const s = strings.settings;
+  const status = textElement("p", "", "setting-hint");
+  const tray = document.createElement("input");
+  tray.type = "checkbox";
+  tray.id = "keepInTray";
+  tray.checked = app.settings.keepInTray;
+  tray.addEventListener("change", async () => {
+    const wanted = tray.checked;
+    status.textContent = "";
+    try {
+      await applyTray(wanted);
+      app.settings.keepInTray = wanted;
+      await saveSettings();
+    } catch (error) {
+      logProblem("tray change failed", error);
+      tray.checked = app.settings.keepInTray;
+      status.textContent = s.trayFailed;
+    }
+  });
+  const login = document.createElement("input");
+  login.type = "checkbox";
+  login.id = "openAtLogin";
+  login.disabled = true;
+  login.addEventListener("change", async () => {
+    login.disabled = true;
+    status.textContent = "";
+    try {
+      login.checked = await backend.autostartSet(login.checked);
+    } catch (error) {
+      logProblem("login list change failed", error);
+      login.checked = !login.checked;
+      status.textContent = s.loginFailed;
+    } finally {
+      login.disabled = false;
+    }
+  });
+  // Shows what the computer's list says. If it cannot be read the switch stays off and unusable.
+  backend.autostartGet().then((on) => {
+    login.checked = on === true;
+    login.disabled = false;
+  }).catch((error) => logProblem("login list unreadable", error));
+  const trayRow = document.createElement("label");
+  trayRow.className = "setting-row";
+  trayRow.append(textElement("span", s.keepInTray, "setting-label"), tray);
+  const loginRow = document.createElement("label");
+  loginRow.className = "setting-row";
+  loginRow.append(textElement("span", s.openAtLogin, "setting-label"), login);
+  return [
+    textElement("h3", s.trayHeading, "setting-heading"),
+    trayRow,
+    textElement("p", s.keepInTrayHint, "setting-hint"),
+    loginRow,
+    textElement("p", s.openAtLoginHint, "setting-hint"),
+    status,
+  ];
+}
+
+function applyTray(enabled) {
+  return backend.traySet(enabled, strings.settings.trayShow, strings.settings.trayQuit);
+}
+
 function deviceSettingsRows() {
   const s = strings.settings;
   const box = document.createElement("input");
@@ -488,6 +630,7 @@ function deviceSettingsRows() {
   row.className = "setting-row";
   row.append(textElement("span", s.reopenLast, "setting-label"), box);
   const hint = textElement("p", s.reopenLastHint, "setting-hint");
+  const keepRows = isAndroid ? [] : trayRows();
 
   const reset = document.createElement("button");
   reset.type = "button";
@@ -515,7 +658,7 @@ function deviceSettingsRows() {
     showToast(s.resetDone);
   });
   const resetHint = textElement("p", s.resetHint, "setting-hint");
-  return [row, hint, reset, resetHint];
+  return [row, hint, ...keepRows, reset, resetHint];
 }
 
 function syncSettingsRows() {
@@ -574,9 +717,27 @@ function syncSettingsRows() {
     textElement("p", s.syncNotYet, "setting-hint"),
     textElement("p", s.syncRules, "setting-hint"),
     ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : []),
+    securityCards(),
     status,
     ...pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly } }),
   ];
+}
+
+// Three short cards that say where the pages are, who can reach them and what is encrypted.
+// Plain text only: this is explanation, there is nothing to press.
+function securityCards() {
+  const s = strings.settings;
+  const box = document.createElement("section");
+  box.className = "security-cards";
+  box.id = "securityCards";
+  box.append(textElement("h4", s.securityHeading, "setting-subheading"));
+  for (const card of s.securityCards) {
+    const item = document.createElement("div");
+    item.className = "security-card";
+    item.append(textElement("p", card.title, "security-card-title"), textElement("p", card.text, "setting-hint"));
+    box.append(item);
+  }
+  return box;
 }
 
 function historySettingsRows() {
@@ -786,6 +947,7 @@ async function openVaultFrom(choice) {
   app.settings.recentVaults = addRecent(app.settings.recentVaults, opened.path);
   await saveSettings();
   el("vaultName").textContent = opened.name || strings.appName;
+  paintVaultColour();
   app.expanded = new Set();
   app.selectedFolder = "";
   app.folds = new Map();
@@ -826,10 +988,26 @@ async function openAnotherFolder() {
   if (chosen) await switchFolder(chosen);
 }
 
+// The colour of the open folder shows as a square beside its name at the top of the page list.
+function paintVaultColour() {
+  const colour = app.settings.folderColours[app.settings.vaultPath] || "none";
+  const button = el("vaultButton");
+  if (colour === "none") button.style.removeProperty("--vault-colour");
+  else button.style.setProperty("--vault-colour", COLOUR_HEX[colour]);
+  button.classList.toggle("has-colour", colour !== "none");
+}
+
 function showFolderMenu() {
+  if (isAndroid) return;
   openFolderMenu(el("vaultButton"), {
     recent: app.settings.recentVaults,
     current: app.settings.vaultPath,
+    colours: app.settings.folderColours,
+    onColour: (colour) => {
+      app.settings.folderColours = withFolderColour(app.settings.folderColours, app.settings.vaultPath, colour, COLOURS);
+      paintVaultColour();
+      saveSettings();
+    },
     canPick: !isAndroid,
     onPick: switchFolder,
     onOther: openAnotherFolder,
@@ -1546,6 +1724,16 @@ function openSearch() {
 
 // Ctrl+K opens the search box from anywhere. In the editor with text selected it keeps its
 // older job, adding a link, so that shortcut does not change.
+// Ctrl+Shift+O opens the folder menu from the keyboard, so another folder is two keys away.
+function folderShortcut(event) {
+  const wanted = (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "o";
+  if (!wanted || event.isComposing || isAndroid) return;
+  if (document.querySelector("dialog[open]")) return;
+  event.preventDefault();
+  if (document.querySelector(".folder-menu")) return;
+  showFolderMenu();
+}
+
 function searchShortcut(event) {
   const wanted = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k";
   if (!wanted || event.isComposing) return;
@@ -2231,7 +2419,7 @@ function fillStaticText() {
         drawing: canvasSettingsRows(),
         updates: updateSettingsRows(),
         sync: syncSettingsRows(),
-        files: [...historySettingsRows(), ...obsidianRows()],
+        files: [...historySettingsRows(), ...obsidianRows(), ...backupRows()],
         device: deviceSettingsRows(),
       },
     );
@@ -2278,7 +2466,20 @@ function startFlushTriggers() {
   });
   // Closing the desktop window: wait for the save before the window goes away.
   import("@tauri-apps/api/window")
-    .then(({ getCurrentWindow }) => getCurrentWindow().onCloseRequested(async () => { await flush(); }))
+    .then(({ getCurrentWindow }) => getCurrentWindow().onCloseRequested(async (event) => {
+      await flush();
+      // With the tray on, closing only hides the window; the program keeps running for sync.
+      if (app.settings.keepInTray) {
+        event.preventDefault();
+        try {
+          await backend.hideWindow();
+        } catch (error) {
+          // Could not hide it: close normally rather than leave a window that will not go away.
+          logProblem("hiding the window failed", error);
+          await getCurrentWindow().destroy();
+        }
+      }
+    }))
     .catch((error) => logProblem("close hook missing", error));
 }
 
@@ -2325,6 +2526,7 @@ function wireEvents() {
   el("historyButton").addEventListener("click", openHistoryDialog);
   el("inkButton").addEventListener("click", () => (app.ink && app.ink.active ? stopInk() : startInk()));
   document.addEventListener("keydown", searchShortcut, true);
+  document.addEventListener("keydown", folderShortcut, true);
   document.addEventListener("keydown", findShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
@@ -2416,6 +2618,15 @@ async function start() {
   // In Auto with a chosen card the attribute depends on the system setting, so repaint when it flips.
   followSystem(() => applyAppearance(document.documentElement, app.settings));
   repaintCanvasBlocks();
+  // The tray comes back at every start while it is switched on. If it cannot be made, the switch
+  // is turned off again so closing the window never hides it with no way to get it back.
+  if (app.settings.keepInTray) {
+    applyTray(true).catch(async (error) => {
+      logProblem("tray not started", error);
+      app.settings.keepInTray = false;
+      await saveSettings();
+    });
+  }
   const freshInstall = !app.settings.disclosureAccepted;
   if (freshInstall) {
     await showDisclosure();

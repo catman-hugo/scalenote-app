@@ -151,9 +151,12 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       });
       remove.className = "pair-remove";
       head.append(text, remove);
-      const when = peer.lastSync ? fill(s.pairLastSync, { when: peer.lastSync.replace("T", " ").replace("Z", " UTC"), n: peer.lastChanged }) : peer.hasHistory ? "" : s.pairNeverSynced;
+      const stamp = peer.lastSync.replace("T", " ").replace("Z", " UTC");
+      const when = peer.lastSync ? (peer.lastChanged > 0 ? fill(s.pairLastSync, { when: stamp, n: peer.lastChanged }) : fill(s.pairLastSyncPlain, { when: stamp })) : peer.hasHistory ? "" : s.pairNeverSynced;
       item.append(head);
       if (when) item.append(element("p", when, "setting-hint pair-last"));
+      // The version the device reported at the last sync. An older one is said plainly, since it may lack newer fixes.
+      if (peer.version) item.append(element("p", fill(peer.olderVersion ? s.pairVersionOlder : s.pairVersion, { v: peer.version }), "setting-hint pair-version"));
       item.append(peerControls(peer, { logProblem, paused, wifi, done: afterSync }));
       list.append(item);
     }

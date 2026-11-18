@@ -91,11 +91,10 @@ export function followSystem(redraw) {
 /** Puts the settings on the page. `root` is the <html> element. */
 export function applyAppearance(root, appearance) {
   const a = normalizeAppearance(appearance);
-  // In Auto with the two standard themes there is no attribute, and style.css follows the system's
-  // light or dark setting. With another card chosen for Auto, the attribute is set from the system's setting.
-  const standard = a.theme === "system" && a.lightTheme === "light" && a.darkTheme === "dark";
-  if (standard) root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", effectiveTheme(a, systemIsDark()));
+  // The attribute is always set, also in Auto (then from the system's light or dark setting), so
+  // the Light card always looks like Light. Without it the page fell back to the older built-in
+  // colours in style.css, which are nearly white, so Auto with Light and Dark looked like True white.
+  root.setAttribute("data-theme", effectiveTheme(a, systemIsDark()));
   root.style.fontSize = `${a.fontSize}%`;
   root.style.setProperty("--editor-width", EDITOR_WIDTHS[a.editorWidth]);
   root.style.setProperty("--sidebar-width", `${a.sidebarWidth}px`);

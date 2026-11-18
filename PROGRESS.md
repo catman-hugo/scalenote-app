@@ -2,7 +2,24 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-18; 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-18; 0.5.5 built (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+
+## 0.5.5: built (home server and the six extras), not tried on a real server or device
+
+Branch `feature/v0.5.5-home-server`. Release notes: `docs/release-notes/0.5.5.md`; guide: `docs/home-server.md`; security checklist: `docs/security-checklist-0.5.5.md`.
+
+Done (tried here: 237 Rust tests in the core, 10 new for the server, run against real folders and real loopback connections; the real binary was started, paired by its command and asked to refuse an open data folder):
+- `scalenote-server` (`src-tauri/core/src/server.rs`, `bin/scalenote_server.rs`): `run`, `check` and `pair` commands; config file with one `[vault name]` section per vault; one sync service per vault (own port, key, trust list); a vault that cannot start does not stop the others; refuses to start if the data folder is not private, folders overlap, or ports/names repeat. `Service::on_port` (exact port, no fallback) is the only change to the sync service.
+- Pairing works through a request file in the private data folder that the running server answers with a code file (no socket, no network command).
+- CI: a "Home server (Linux)" job builds the release program, packs it with the config example, service file and guide, starts it once with `check`, and attaches it to tagged releases.
+- Settings window about 80% of the screen on a computer (separate branch and PR).
+
+Not done / untried:
+- Never run on a real home server or for days; restart, power cut, disk-full and Tailscale tests are still to do. The server stops on a kill signal without a goodbye (safe because writes are atomic).
+- Extras built (in this order): (18) last sync time and app version in the device list, (17) the add-only inbox folder, (16) the backup screen (`core/src/backup.rs`, 5 Rust tests; Settings, Files), (15) a colour per folder and Ctrl+Shift+O for the folder menu, (14) three security cards in Settings, Sync, (13) the tray and open at login (`src-tauri/src/tray.rs`, off by default).
+- Review fixes (Copilot, checked by hand): the data folder is checked before it is made; the pairing code is written atomically and never shown empty; the guide no longer suggests pairing one device with two server vaults; phone Settings height. The server's own sync timer was removed: it could never start a sync (only the device that starts a sync saves the history it needs), and devices start every sync anyway.
+- For 0.5.6: tie each pairing to one local folder, so one device can safely use two server vaults.
+- Half done / untried: the tray and the login list are Rust code compiled only by CI (this machine lacks the window toolkit libraries); the interface side is browser-tested with a stand-in. Not tried on Windows, Linux or any device. The window is not started hidden at sign-in. The window-close hook (hide instead of close) cannot be driven in the browser. Server unit file and install guide were written but not tried on a real system.
 
 ## 0.5.4: built, not tried on a phone or tablet
 
