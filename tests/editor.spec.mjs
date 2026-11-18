@@ -2091,6 +2091,55 @@ await test("the Sync tab explains in three cards where pages live and who can re
   assert.doesNotMatch(text, /cloud|unhackable|100%|guarantee/i);
 }, { viewport: { width: 1100, height: 760 } });
 
+await test("This device: the tray and open-at-login switches start off, change the computer's side, and say so when that fails", async (page) => {
+  await openSeeded(page, "T.md", "plain\n");
+  await openSettingsTab(page, "device");
+  const tray = page.locator("#keepInTray");
+  const login = page.locator("#openAtLogin");
+  await tray.waitFor();
+  await page.waitForFunction(() => !document.getElementById("openAtLogin").disabled);
+  assert.equal(await tray.isChecked(), false);
+  assert.equal(await login.isChecked(), false);
+  assert.equal(await page.evaluate(() => window.__tray), undefined, "nothing is made until it is switched on");
+  await tray.check();
+  await page.waitForFunction(() => window.__tray && window.__tray.enabled === true);
+  assert.deepEqual(await page.evaluate(() => window.__tray), { enabled: true, showLabel: "Show ScaleNote", quitLabel: "Quit" });
+  assert.equal((await settingsNow(page)).keepInTray, true);
+  await login.check();
+  await page.waitForFunction(() => window.__autostart === true);
+  assert.equal(await login.isChecked(), true);
+  await login.uncheck();
+  await page.waitForFunction(() => window.__autostart === false);
+  // A failure puts the switch back and says so.
+  await page.evaluate(() => { window.__failTray = "io"; });
+  await tray.click(); // the switch flips back by itself when the change fails
+  await page.waitForFunction(() => /tray icon could not be changed/.test(document.getElementById("settings").textContent));
+  assert.equal(await tray.isChecked(), true);
+  assert.equal((await settingsNow(page)).keepInTray, true);
+  await page.evaluate(() => { window.__failAutostart = "io"; });
+  await login.click();
+  await page.waitForFunction(() => /sign-in list of this computer could not be changed/.test(document.getElementById("settings").textContent));
+  assert.equal(await login.isChecked(), false);
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("a saved tray switch makes the tray again at start; if that fails the switch goes off", async (page) => {
+  await page.waitForFunction(() => window.__tray && window.__tray.enabled === true);
+}, { settings: { ...FOLDER_SETTINGS, keepInTray: true } });
+
+await test("a tray that cannot be made at start turns the saved switch off", async (page) => {
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).keepInTray === false);
+}, { settings: { ...FOLDER_SETTINGS, keepInTray: true }, before: (page) => page.addInitScript(() => { window.__failTray = "io"; }) });
+
+await test("the tray and login switches are not offered on an Android phone", async (page) => {
+  await openSeeded(page, "O.md", "plain\n");
+  await page.click("#toggle");
+  await page.click("#openSettings");
+  await page.waitForSelector('#settings [role="tab"]');
+  await page.click("#settingsTab-device");
+  assert.equal(await page.locator("#keepInTray, #openAtLogin").count(), 0);
+  assert.equal(await page.evaluate(() => window.__tray), undefined);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
 await test("Settings can make a backup, lists backups newest first, and restores only after a second press", async (page) => {
   await openSeeded(page, "B.md", "plain\n");
   await openSettingsTab(page, "files");

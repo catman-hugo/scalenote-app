@@ -62,7 +62,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -170,6 +170,8 @@ async function loadSettings() {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
       recentVaults: cleanRecent(parsed.recentVaults),
       folderColours: cleanFolderColours(parsed.folderColours, COLOURS),
+      // Off unless turned on. Computers only; Android never reads it.
+      keepInTray: parsed.keepInTray === true && !isAndroid,
       disclosureAccepted: parsed.disclosureAccepted === true,
       ...normalizeAppearance(parsed),
       // One switch for both looking for updates and installing them. On unless turned off.
@@ -549,6 +551,71 @@ function backupRows() {
 // the vault. Each change is saved at once and the screen shows what was actually saved (the name
 // is cleaned there), so the person always sees the result. Nothing is sent over a network yet.
 // The "This device" tab: what is about this device alone and not about the notes.
+// The tray and the login list. Both are off until turned on. The tray switch is kept in the
+// settings and applied again at every start; the login switch is only the computer's own list,
+// so what is shown is always what that list says.
+function trayRows() {
+  const s = strings.settings;
+  const status = textElement("p", "", "setting-hint");
+  const tray = document.createElement("input");
+  tray.type = "checkbox";
+  tray.id = "keepInTray";
+  tray.checked = app.settings.keepInTray;
+  tray.addEventListener("change", async () => {
+    const wanted = tray.checked;
+    status.textContent = "";
+    try {
+      await applyTray(wanted);
+      app.settings.keepInTray = wanted;
+      await saveSettings();
+    } catch (error) {
+      logProblem("tray change failed", error);
+      tray.checked = app.settings.keepInTray;
+      status.textContent = s.trayFailed;
+    }
+  });
+  const login = document.createElement("input");
+  login.type = "checkbox";
+  login.id = "openAtLogin";
+  login.disabled = true;
+  login.addEventListener("change", async () => {
+    login.disabled = true;
+    status.textContent = "";
+    try {
+      login.checked = await backend.autostartSet(login.checked);
+    } catch (error) {
+      logProblem("login list change failed", error);
+      login.checked = !login.checked;
+      status.textContent = s.loginFailed;
+    } finally {
+      login.disabled = false;
+    }
+  });
+  // Shows what the computer's list says. If it cannot be read the switch stays off and unusable.
+  backend.autostartGet().then((on) => {
+    login.checked = on === true;
+    login.disabled = false;
+  }).catch((error) => logProblem("login list unreadable", error));
+  const trayRow = document.createElement("label");
+  trayRow.className = "setting-row";
+  trayRow.append(textElement("span", s.keepInTray, "setting-label"), tray);
+  const loginRow = document.createElement("label");
+  loginRow.className = "setting-row";
+  loginRow.append(textElement("span", s.openAtLogin, "setting-label"), login);
+  return [
+    textElement("h3", s.trayHeading, "setting-heading"),
+    trayRow,
+    textElement("p", s.keepInTrayHint, "setting-hint"),
+    loginRow,
+    textElement("p", s.openAtLoginHint, "setting-hint"),
+    status,
+  ];
+}
+
+function applyTray(enabled) {
+  return backend.traySet(enabled, strings.settings.trayShow, strings.settings.trayQuit);
+}
+
 function deviceSettingsRows() {
   const s = strings.settings;
   const box = document.createElement("input");
@@ -563,6 +630,7 @@ function deviceSettingsRows() {
   row.className = "setting-row";
   row.append(textElement("span", s.reopenLast, "setting-label"), box);
   const hint = textElement("p", s.reopenLastHint, "setting-hint");
+  const keepRows = isAndroid ? [] : trayRows();
 
   const reset = document.createElement("button");
   reset.type = "button";
@@ -590,7 +658,7 @@ function deviceSettingsRows() {
     showToast(s.resetDone);
   });
   const resetHint = textElement("p", s.resetHint, "setting-hint");
-  return [row, hint, reset, resetHint];
+  return [row, hint, ...keepRows, reset, resetHint];
 }
 
 function syncSettingsRows() {
@@ -2398,7 +2466,20 @@ function startFlushTriggers() {
   });
   // Closing the desktop window: wait for the save before the window goes away.
   import("@tauri-apps/api/window")
-    .then(({ getCurrentWindow }) => getCurrentWindow().onCloseRequested(async () => { await flush(); }))
+    .then(({ getCurrentWindow }) => getCurrentWindow().onCloseRequested(async (event) => {
+      await flush();
+      // With the tray on, closing only hides the window; the program keeps running for sync.
+      if (app.settings.keepInTray) {
+        event.preventDefault();
+        try {
+          await backend.hideWindow();
+        } catch (error) {
+          // Could not hide it: close normally rather than leave a window that will not go away.
+          logProblem("hiding the window failed", error);
+          await getCurrentWindow().destroy();
+        }
+      }
+    }))
     .catch((error) => logProblem("close hook missing", error));
 }
 
@@ -2537,6 +2618,15 @@ async function start() {
   // In Auto with a chosen card the attribute depends on the system setting, so repaint when it flips.
   followSystem(() => applyAppearance(document.documentElement, app.settings));
   repaintCanvasBlocks();
+  // The tray comes back at every start while it is switched on. If it cannot be made, the switch
+  // is turned off again so closing the window never hides it with no way to get it back.
+  if (app.settings.keepInTray) {
+    applyTray(true).catch(async (error) => {
+      logProblem("tray not started", error);
+      app.settings.keepInTray = false;
+      await saveSettings();
+    });
+  }
   const freshInstall = !app.settings.disclosureAccepted;
   if (freshInstall) {
     await showDisclosure();

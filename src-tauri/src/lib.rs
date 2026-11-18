@@ -5,6 +5,7 @@
 // interface turns the code into a sentence from the language file.
 
 mod secure;
+mod tray;
 
 use scalenote_core::atomic::write_atomic;
 use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
@@ -1060,6 +1061,18 @@ fn apply_webview_defaults(is_set: impl Fn(&str) -> bool, mut set: impl FnMut(&st
     }
 }
 
+/// The plugin that writes this program into the computer's login list. It is only used from
+/// our own commands in `tray.rs`; the window's scripts get no permission to call it directly.
+/// Android has no such list, so there the plugin is an empty one.
+#[cfg(desktop)]
+fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None)
+}
+#[cfg(not(desktop))]
+fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("autostart-unused").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -1072,6 +1085,7 @@ pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(autostart_plugin())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
@@ -1096,6 +1110,10 @@ pub fn run() {
             save_attachment,
             read_attachment,
             export_obsidian_copy,
+            tray::tray_set,
+            tray::hide_main_window,
+            tray::autostart_get,
+            tray::autostart_set,
             backup_make,
             backup_list,
             backup_restore,

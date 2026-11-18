@@ -108,6 +108,21 @@
     },
     // Backups are made by Rust (tested there with real files). The stand-in keeps a list so the
     // Settings screen can be driven.
+    // The tray and the login list are the computer's own; the stand-in only remembers the calls.
+    tray_set: ({ enabled, showLabel, quitLabel }) => {
+      if (window.__failTray) fail(window.__failTray);
+      window.__tray = { enabled, showLabel, quitLabel };
+    },
+    hide_main_window: () => { window.__hidden = (window.__hidden || 0) + 1; },
+    autostart_get: () => {
+      if (window.__failAutostart) fail(window.__failAutostart);
+      return window.__autostart === true;
+    },
+    autostart_set: ({ enabled }) => {
+      if (window.__failAutostart) fail(window.__failAutostart);
+      window.__autostart = enabled;
+      return enabled;
+    },
     backup_make: () => {
       if (window.__failBackup) fail(window.__failBackup);
       const list = (window.__backups = window.__backups || []);
