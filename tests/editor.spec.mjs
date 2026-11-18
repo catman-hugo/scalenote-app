@@ -2042,6 +2042,43 @@ await test("Settings can make a copy for Obsidian, shows where it is, and report
   assert.equal((await files(page))["O.md"], "plain\n");
 }, { viewport: { width: 1100, height: 760 } });
 
+await test("Settings can make a backup, lists backups newest first, and restores only after a second press", async (page) => {
+  await openSeeded(page, "B.md", "plain\n");
+  await openSettingsTab(page, "files");
+  const make = page.locator("#backupMake");
+  await make.waitFor();
+  assert.match(await page.textContent("#backupLast"), /No backup yet/);
+  await make.click();
+  await page.waitForFunction(() => /backup is ready: 4 files/.test(document.getElementById("settings").textContent));
+  assert.match(await page.textContent("#backupLast"), /Last backup: 2026-11-18 12:00:01 \(UTC\)/);
+  await make.click();
+  await page.waitForFunction(() => document.querySelectorAll("#backupList li").length === 2);
+  const times = await page.$$eval("#backupList li .setting-label", (n) => n.map((x) => x.textContent));
+  assert.deepEqual(times, ["2026-11-18 12:00:02", "2026-11-18 12:00:01"]);
+  // One press only asks; nothing is restored yet.
+  const restore = page.locator("#backupList li button").first();
+  await restore.click();
+  assert.match(await restore.textContent(), /Click again to restore/);
+  assert.equal(await page.evaluate(() => (window.__restored || []).length), 0);
+  await restore.click();
+  await page.waitForFunction(() => /Restored: 1 put back, 2 replaced/.test(document.getElementById("settings").textContent));
+  assert.deepEqual(await page.evaluate(() => window.__restored), ["2026-11-18 12-00-02"]);
+  // A problem is shown calmly and the button works again.
+  await page.evaluate(() => { window.__failBackup = "io"; });
+  await make.click();
+  await page.waitForFunction(() => /could not read or write/.test(document.getElementById("settings").textContent));
+  assert.equal(await make.isDisabled(), false);
+  assert.equal((await files(page))["B.md"], "plain\n");
+}, { viewport: { width: 1100, height: 760 } });
+
+await test("backups are not offered on an Android phone", async (page) => {
+  await openSeeded(page, "O.md", "plain\n");
+  await page.click("#toggle");
+  await page.click("#openSettings");
+  await page.waitForSelector('#settings [role="tab"]');
+  assert.equal(await page.locator("#backupMake").count(), 0);
+}, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
 await test("the Obsidian copy button is not offered on an Android phone", async (page) => {
   await openSeeded(page, "O.md", "plain\n");
   await page.click("#toggle"); // on a phone the page list (with Settings) is closed after a page opens

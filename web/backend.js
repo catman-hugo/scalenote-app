@@ -45,6 +45,11 @@ export const backend = {
   // Makes a copy of the vault next to it with the colours turned into plain highlights, for
   // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
   exportObsidianCopy: () => call("export_obsidian_copy"),
+  // Backups of the whole vault. make -> { name, when, files, skipped }; list -> [{ name, when }]
+  // newest first; restore -> { added, replaced, unchanged, skipped }. Not available on Android.
+  backupMake: () => call("backup_make"),
+  backupList: () => call("backup_list"),
+  backupRestore: (name) => call("backup_restore", { name }),
   exportPage: (path, drawing = null) => call("export_page", { path, drawing }),
   // This device's sync name and on/off switch: { name, enabled }. Kept outside the vault.
   getSyncSettings: () => call("get_sync_settings"),

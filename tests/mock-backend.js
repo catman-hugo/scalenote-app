@@ -106,6 +106,22 @@
       if (window.__failExport) fail(window.__failExport);
       return { path: "/home/alice/ScaleNote (Obsidian copy)", notes: 3, changed: 1, files: 2, skipped: window.__skippedExport || 0 };
     },
+    // Backups are made by Rust (tested there with real files). The stand-in keeps a list so the
+    // Settings screen can be driven.
+    backup_make: () => {
+      if (window.__failBackup) fail(window.__failBackup);
+      const list = (window.__backups = window.__backups || []);
+      const n = list.length + 1;
+      const made = { name: `2026-11-18 12-00-0${n}`, when: `2026-11-18 12:00:0${n}` };
+      list.unshift(made);
+      return { ...made, files: 4, skipped: window.__skippedBackup || 0 };
+    },
+    backup_list: () => (window.__backups = window.__backups || []).map((b) => ({ ...b })),
+    backup_restore: ({ name }) => {
+      window.__restored = (window.__restored || []).concat(name);
+      if (window.__failBackup) fail(window.__failBackup);
+      return { added: 1, replaced: 2, unchanged: 3, skipped: 0 };
+    },
     // Same shapes as the real commands. The name is cleaned in Rust (tested there); the stand-in
     // only drops what a file name could not hold, so the screen can be driven.
     get_sync_settings: () => {

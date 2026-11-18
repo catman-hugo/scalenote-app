@@ -302,6 +302,64 @@ fn export_obsidian_copy(state: State<AppState>) -> Result<ExportReply, String> {
 }
 
 #[derive(Serialize)]
+struct BackupReply {
+    name: String,
+    when: String,
+}
+
+#[derive(Serialize)]
+struct BackupMadeReply {
+    name: String,
+    when: String,
+    files: usize,
+    skipped: usize,
+}
+
+#[derive(Serialize)]
+struct RestoreReply {
+    added: usize,
+    replaced: usize,
+    unchanged: usize,
+    skipped: usize,
+}
+
+/// Makes a plain copy of the vault in the backups folder beside it (see `scalenote_core::backup`).
+/// Not offered on Android, where nothing else could open a copy made in the app's private storage.
+#[tauri::command(async)]
+fn backup_make(state: State<AppState>) -> Result<BackupMadeReply, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "backup", |vault| {
+        let report = scalenote_core::backup::make(vault)?;
+        Ok(BackupMadeReply { name: report.info.name, when: report.info.when, files: report.files, skipped: report.skipped })
+    })
+}
+
+/// The backups of this vault, newest first.
+#[tauri::command(async)]
+fn backup_list(state: State<AppState>) -> Result<Vec<BackupReply>, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "backup list", |vault| {
+        Ok(scalenote_core::backup::list(vault)?.into_iter().map(|b| BackupReply { name: b.name, when: b.when }).collect())
+    })
+}
+
+/// Puts a listed backup back. Nothing is deleted and replaced files are kept first.
+#[tauri::command(async)]
+fn backup_restore(state: State<AppState>, name: String) -> Result<RestoreReply, String> {
+    if cfg!(target_os = "android") {
+        return Err("unsupported".to_string());
+    }
+    with_vault(&state, "backup restore", |vault| {
+        let report = scalenote_core::backup::restore(vault, &name)?;
+        Ok(RestoreReply { added: report.added, replaced: report.replaced, unchanged: report.unchanged, skipped: report.skipped })
+    })
+}
+
+#[derive(Serialize)]
 struct PageExportReply {
     /// The new folder, for the message that tells the person.
     path: String,
@@ -1038,6 +1096,9 @@ pub fn run() {
             save_attachment,
             read_attachment,
             export_obsidian_copy,
+            backup_make,
+            backup_list,
+            backup_restore,
             export_page,
             get_sync_settings,
             set_sync_settings,

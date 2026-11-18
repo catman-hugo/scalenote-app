@@ -468,6 +468,80 @@ function obsidianRows() {
   return [textElement("h3", s.obsidianHeading, "setting-heading"), textElement("p", s.obsidianHint, "setting-hint"), make, result];
 }
 
+// Backups of the whole vault. Not offered on Android, for the same reason as the Obsidian copy.
+// Restoring takes two presses and never deletes (see core/src/backup.rs).
+function backupRows() {
+  if (isAndroid) return [];
+  const s = strings.settings;
+  const result = textElement("p", "", "setting-hint");
+  const last = textElement("p", "", "setting-hint");
+  last.id = "backupLast";
+  const list = document.createElement("ul");
+  list.id = "backupList";
+  list.className = "backup-list";
+  const heading = textElement("h4", s.backupListHeading, "setting-subheading");
+
+  const paint = (backups) => {
+    last.textContent = backups.length ? fill(s.backupLast, { when: backups[0].when }) : s.backupNone;
+    heading.hidden = !backups.length;
+    list.replaceChildren(...backups.map(restoreRow));
+  };
+  const refresh = async () => {
+    try {
+      paint(await backend.backupList());
+    } catch (error) {
+      logProblem("backup list failed", error);
+      last.textContent = errorText(error);
+    }
+  };
+  const restoreRow = (backup) => {
+    const item = document.createElement("li");
+    item.className = "setting-row";
+    const button = buttonElement(s.backupRestore, async () => {
+      if (!button.dataset.armed) {
+        button.dataset.armed = "1";
+        button.textContent = s.backupRestoreAsk;
+        setTimeout(() => {
+          delete button.dataset.armed;
+          button.textContent = s.backupRestore;
+        }, 5000);
+        return;
+      }
+      delete button.dataset.armed;
+      button.textContent = s.backupRestore;
+      button.disabled = true;
+      try {
+        const report = await backend.backupRestore(backup.name);
+        result.textContent = fill(s.backupRestoreDone, report) + (report.skipped ? fill(s.backupRestoreSkipped, report) : "");
+      } catch (error) {
+        logProblem("backup restore failed", error);
+        result.textContent = errorText(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    item.append(textElement("span", backup.when, "setting-label"), button);
+    return item;
+  };
+  const make = buttonElement(s.backupButton, async () => {
+    make.disabled = true;
+    result.textContent = s.backupWorking;
+    try {
+      const report = await backend.backupMake();
+      result.textContent = fill(s.backupDone, report) + (report.skipped ? fill(s.backupSkipped, report) : "");
+      await refresh();
+    } catch (error) {
+      logProblem("backup failed", error);
+      result.textContent = errorText(error);
+    } finally {
+      make.disabled = false;
+    }
+  });
+  make.id = "backupMake";
+  refresh();
+  return [textElement("h3", s.backupHeading, "setting-heading"), textElement("p", s.backupHint, "setting-hint"), make, last, result, heading, list];
+}
+
 // History keeps old text, including text deleted since, so there is a way to wipe it. Two clicks,
 // because it cannot be undone.
 // The Sync tab: this device's name and the on/off switch. Both are kept by the Rust side outside
@@ -2231,7 +2305,7 @@ function fillStaticText() {
         drawing: canvasSettingsRows(),
         updates: updateSettingsRows(),
         sync: syncSettingsRows(),
-        files: [...historySettingsRows(), ...obsidianRows()],
+        files: [...historySettingsRows(), ...obsidianRows(), ...backupRows()],
         device: deviceSettingsRows(),
       },
     );
