@@ -2,22 +2,24 @@
    size scale, one spacing scale. Colour has a job: the accent marks the current note,
    the focus ring and the primary button; red-ish marks a failed save. */
 
+/* The colours before the app has started; the same as the Light and Dark cards in themes.css,
+   which take over as soon as the settings are read. */
 :root {
-  --bg: #ffffff;
-  --bg-side: #f6f6f4;
-  --bg-hover: #ebebe8;
-  --bg-code: #f2f2ef;
-  --text: #1f1f1d;
-  --text-soft: #5f5f5a;
-  --line: #dcdcd6;
-  --accent: #5b3fc4;
+  --bg: #f9f7f4;
+  --bg-side: #e8e5e1;
+  --bg-hover: #e2dfdb;
+  --bg-code: #fdfdfc;
+  --text: #1a1816;
+  --text-soft: #5c5854;
+  --line: #cccbc8;
+  --accent: #805c29;
   --accent-text: #ffffff;
-  --accent-soft: #e9e5f8;
+  --accent-soft: #e8e1d8;
   --warn-bg: #fbeeda;
   --warn-text: #5c3a00;
   --bad: #a3231b;
-  --kind-ok: #2f7a3d;
-  --kind-warn: #a15c00;
+  --kind-ok: #296c36;
+  --kind-warn: #8e5100;
   --kind-info: #1f5fa8;
   --highlight: #fbe58a;
 
@@ -46,19 +48,19 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1b1b1a;
-    --bg-side: #232322;
-    --bg-hover: #2e2e2c;
-    --bg-code: #262625;
-    --text: #e9e9e5;
-    --text-soft: #a5a5a0;
-    --line: #3a3a37;
-    --accent: #a898f0;
+    --bg: #181818;
+    --bg-side: #141414;
+    --bg-hover: #202020;
+    --bg-code: #1c1c1c;
+    --text: #e8e6e3;
+    --text-soft: #9b9794;
+    --line: #424242;
+    --accent: #c879ff;
     --accent-text: #15121f;
-    --accent-soft: #34304a;
+    --accent-soft: #382942;
     --warn-bg: #3d3018;
     --warn-text: #f2d9a6;
-    --bad: #f08a80;
+    --bad: #d76a64;
     --kind-ok: #7fd18f;
     --kind-warn: #f0b45a;
     --kind-info: #8fbcf0;

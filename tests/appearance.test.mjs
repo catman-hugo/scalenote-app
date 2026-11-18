@@ -56,10 +56,12 @@ test("the theme shown follows the system in Auto and ignores it otherwise", () =
   assert.equal(effectiveTheme({ theme: "sepia" }, true), "sepia");
 });
 
-test("applying: plain Auto leaves the attribute off, a chosen fixed theme sets it", () => {
+test("applying: Auto always sets the card that matches the system, so Light never falls back to other colours", () => {
   const root = fakeRoot();
-  applyAppearance(root, { theme: "system" });
-  assert.equal(root.attrs.has("data-theme"), false);
+  applyAppearance(root, { theme: "system", lightTheme: "light", darkTheme: "dark" });
+  assert.ok(["light", "dark"].includes(root.attrs.get("data-theme")), "plain Auto also sets light or dark");
+  applyAppearance(root, { theme: "system", lightTheme: "light", darkTheme: "midnight" });
+  assert.ok(["light", "midnight"].includes(root.attrs.get("data-theme")));
   applyAppearance(root, { theme: "black" });
   assert.equal(root.attrs.get("data-theme"), "black");
 });

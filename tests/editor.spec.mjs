@@ -2140,6 +2140,20 @@ await test("the tray and login switches are not offered on an Android phone", as
   assert.equal(await page.evaluate(() => window.__tray), undefined);
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
 
+await test("in Auto, the Light card looks the same whichever dark card is chosen (it never turns into True white)", async (page) => {
+  await openSeeded(page, "A.md", "plain\n");
+  await page.click("#openSettings");
+  await page.click('#settings .mode-option[data-mode="auto"]');
+  await page.click('#settings .theme-card[data-theme="light"]');
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--bg").trim());
+  const seen = [];
+  for (const dark of ["dark", "midnight", "forest", "dusk", "black"]) {
+    await page.click(`#settings .theme-card[data-theme="${dark}"]`);
+    seen.push(await bg());
+  }
+  assert.deepEqual([...new Set(seen)], ["#f9f7f4"], "Light's own page colour every time: " + seen);
+}, { viewport: { width: 1100, height: 760 }, scheme: "light" });
+
 await test("Settings can make a backup, lists backups newest first, and restores only after a second press", async (page) => {
   await openSeeded(page, "B.md", "plain\n");
   await openSettingsTab(page, "files");
@@ -8599,7 +8613,7 @@ await test("This device: Reset to defaults needs a second press, restores the lo
   assert.equal(await page.textContent("#settingsReset"), "Press again to reset");
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "sepia", "one press changes nothing");
   await page.click("#settingsReset");
-  await page.waitForFunction(() => !document.documentElement.hasAttribute("data-theme"));
+  await page.waitForFunction(() => document.documentElement.getAttribute("data-theme") === "light");
   const saved = JSON.parse(await page.evaluate(() => window.__mock.getSettings()));
   assert.equal(saved.theme, "system");
   assert.equal(saved.vaultPath, "/vault");
