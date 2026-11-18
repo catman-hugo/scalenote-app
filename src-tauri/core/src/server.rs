@@ -14,7 +14,6 @@ use crate::sync::service::Service;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 /// A config file larger than this is not a config file.
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
@@ -153,7 +152,23 @@ pub fn read_config(path: &Path) -> Result<Config, String> {
 /// Checks that touch the disk: every vault folder exists, no folder is inside another (or the
 /// same), and the data folder is separate from all of them. Two vaults sharing files would
 /// break the rule that they are apart.
+/// The real path of a folder that may not exist yet: the real path of the nearest folder above it
+/// that does exist, with the missing part added back. This lets the data folder be checked
+/// against the vaults *before* it is created, so keys are never written inside a vault.
+fn real_path(path: &Path) -> Option<PathBuf> {
+    if let Ok(real) = fs::canonicalize(path) {
+        return Some(real);
+    }
+    let name = path.file_name()?;
+    // ".." cannot be resolved without the folder existing, so such a path is not accepted.
+    if name == ".." {
+        return None;
+    }
+    Some(real_path(path.parent()?)?.join(name))
+}
+
 pub fn check_folders(config: &Config) -> Result<(), String> {
+    let data = real_path(&config.data_dir).ok_or_else(|| format!("the data folder cannot be checked: {}", config.data_dir.display()))?;
     let mut real: Vec<(String, PathBuf)> = Vec::new();
     for vault in &config.vaults {
         let path = fs::canonicalize(&vault.folder).map_err(|_| format!("the folder of vault \"{}\" does not exist: {}", vault.name, vault.folder.display()))?;
@@ -187,18 +202,14 @@ pub fn check_folders(config: &Config) -> Result<(), String> {
                 return Err(format!("the inboxes of vaults \"{}\" and \"{other}\" overlap", vault.name));
             }
         }
-        if let Ok(data) = fs::canonicalize(&config.data_dir) {
-            if path.starts_with(&data) || data.starts_with(&path) {
-                return Err(format!("the inbox of vault \"{}\" overlaps the data folder", vault.name));
-            }
+        if path.starts_with(&data) || data.starts_with(&path) {
+            return Err(format!("the inbox of vault \"{}\" overlaps the data folder", vault.name));
         }
         inboxes.push((vault.name.clone(), path));
     }
-    if let Ok(data) = fs::canonicalize(&config.data_dir) {
-        for (name, path) in &real {
-            if data.starts_with(path) || path.starts_with(&data) {
-                return Err(format!("the data folder and the folder of vault \"{name}\" overlap; keys must never sit inside a vault"));
-            }
+    for (name, path) in &real {
+        if data.starts_with(path) || path.starts_with(&data) {
+            return Err(format!("the data folder and the folder of vault \"{name}\" overlap; keys must never sit inside a vault"));
         }
     }
     Ok(())
@@ -294,20 +305,6 @@ impl Runner {
             }
         }
         notes
-    }
-
-    /// One round of automatic syncing for every vault; returns a line per result for the log.
-    pub fn sync_tick(&self, look: Duration) -> Vec<String> {
-        let mut lines = Vec::new();
-        for item in &self.running {
-            for result in item.service.auto_sync_tick(look) {
-                match result.outcome {
-                    Ok(report) => lines.push(format!("vault \"{}\": synced with {}, {} files changed", item.name, result.name, report.changed())),
-                    Err(code) => lines.push(format!("vault \"{}\": sync with {} failed: {code}", item.name, result.name)),
-                }
-            }
-        }
-        lines
     }
 
     /// One pass over every vault's add-only inbox; returns a line per note added or put aside for the log.

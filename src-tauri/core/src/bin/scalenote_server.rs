@@ -74,7 +74,7 @@ fn log(line: &str) {
 
 fn run(config: &Config) -> Result<(), String> {
     server::prepare_data_dir(&config.data_dir)?;
-    // A missing data folder could not be checked for overlap before it was created.
+    // Checked before it was made (see run_command) and once more now that it exists.
     server::check_folders(config)?;
     let (runner, problems) = Runner::start(config);
     for problem in &problems {
@@ -84,7 +84,8 @@ fn run(config: &Config) -> Result<(), String> {
         return Err("no vault could start".into());
     }
     log(&format!("started: {}", runner.names().join(", ")));
-    let mut last_tick = Instant::now();
+    // The server never starts a sync itself: it only answers. Your devices start every sync (by
+    // themselves once they have synced once, or with Sync now), so there is no sync timer here.
     let mut last_inbox = Instant::now();
     loop {
         std::thread::sleep(Duration::from_secs(1));
@@ -94,12 +95,6 @@ fn run(config: &Config) -> Result<(), String> {
         if last_inbox.elapsed() >= Duration::from_secs(5) {
             last_inbox = Instant::now();
             for line in runner.poll_inboxes() {
-                log(&line);
-            }
-        }
-        if last_tick.elapsed() >= Duration::from_secs(20) {
-            last_tick = Instant::now();
-            for line in runner.sync_tick(Duration::from_secs(3)) {
                 log(&line);
             }
         }
@@ -117,7 +112,8 @@ fn pair(config: &Config, name: &str) -> Result<(), String> {
     std::fs::write(dir.join(PAIR_REQUEST), b"").map_err(|e| format!("cannot ask the server: {e}"))?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(10) {
-        if let Ok(code) = std::fs::read_to_string(&code_file) {
+        // An empty read is never shown as a code: keep waiting for the real one.
+        if let Some(code) = std::fs::read_to_string(&code_file).ok().filter(|c| !c.trim().is_empty()) {
             let address = local_address_hint().unwrap_or_else(|| "the server's address".into());
             println!("Pairing is open for vault \"{}\".", vault.name);
             println!("On your device, choose to pair with a device and type:");

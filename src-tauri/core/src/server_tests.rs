@@ -6,6 +6,7 @@ use crate::sync::engine::Outcome;
 use crate::sync::identity::Identity;
 use crate::sync::service::{ping, Service};
 use std::net::TcpListener;
+use std::time::Duration;
 
 struct Dir(PathBuf);
 
@@ -105,6 +106,30 @@ fn folders_that_overlap_or_hold_the_keys_are_refused() {
     assert!(check_folders(&make(&[&a, &inside], &data)).expect_err("nested").contains("overlap"));
     assert!(check_folders(&make(&[&a], &inside)).expect_err("keys in vault").contains("keys"));
     assert!(check_folders(&make(&[&a, &dir.0.join("nope")], &data)).expect_err("missing").contains("does not exist"));
+}
+
+#[test]
+fn a_data_folder_that_does_not_exist_yet_is_still_refused_inside_a_vault_and_nothing_is_made() {
+    let dir = Dir::new("missing-data");
+    let (a, b) = (dir.sub("a"), dir.sub("b"));
+    let make = |data_dir: PathBuf| Config {
+        data_dir,
+        device_name: "S".into(),
+        vaults: vec![VaultConfig { name: "v".into(), folder: a.clone(), port: 5000, inbox: None }],
+    };
+    // Two levels that do not exist yet, inside the vault: refused before anything is created.
+    let hidden = a.join("server-data").join("keys");
+    assert!(check_folders(&make(hidden.clone())).expect_err("keys in vault").contains("keys"));
+    assert!(!a.join("server-data").exists(), "the check creates nothing");
+    // The same through a path with "." in it, and through a link to the vault.
+    assert!(check_folders(&make(a.join(".").join("new-data"))).expect_err("dot").contains("keys"));
+    let link = dir.0.join("link-to-a");
+    std::os::unix::fs::symlink(&a, &link).expect("link");
+    assert!(check_folders(&make(link.join("new-data"))).expect_err("link").contains("keys"));
+    // ".." in a missing part cannot be checked, so it is refused rather than guessed.
+    assert!(check_folders(&make(b.join("missing").join("..").join("..").join("a").join("d"))).is_err());
+    // A missing data folder outside every vault is fine.
+    assert!(check_folders(&make(b.join("data"))).is_ok());
 }
 
 #[cfg(unix)]
