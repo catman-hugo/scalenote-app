@@ -8741,6 +8741,48 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   }
 }
 
+// Screenshots of the screens added in 0.5.5 (only when SHOTS_DIR is set), in light and dark.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(FOLDER_SETTINGS));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await page.waitForSelector("#vaultButton");
+      if (label === "desktop") {
+        await page.click("#vaultButton");
+        await page.click('.folder-menu [data-folder-colour="green"]');
+        await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-1-folder-colour-menu.png` });
+        await page.keyboard.press("Escape");
+      }
+      if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.click('#settings [role="tab"][id="settingsTab-files"]');
+      if (label === "desktop") {
+        await page.click("#backupMake");
+        await page.waitForFunction(() => /backup is ready/.test(document.getElementById("settings").textContent));
+        await page.click("#backupMake");
+        await page.waitForFunction(() => document.querySelectorAll("#backupList li").length === 2);
+      }
+      await page.locator("#backupMake").scrollIntoViewIfNeeded().catch(() => {});
+      await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-2-backups.png` });
+      // On a phone a settings page covers the list of tabs; Back shows the list again.
+      if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");
+      await page.click('#settings [role="tab"][id="settingsTab-sync"]');
+      await page.locator("#securityCards").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-3-security-cards.png` });
+      if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");
+      await page.click('#settings [role="tab"][id="settingsTab-device"]');
+      await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-4-this-device.png` });
+      await context.close();
+    }
+  }
+}
+
 await browser.close();
 server.close();
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");

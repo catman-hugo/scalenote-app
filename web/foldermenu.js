@@ -6,17 +6,20 @@ import { icon } from "./icons.js";
 import { folderLabel } from "./recent.js";
 import { strings } from "./strings.js";
 
-function item(label, onPick, { current = false, title = "", colour = "none" } = {}) {
+function item(label, onPick, { current = false, title = "", colour = null } = {}) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "menu-item folder-menu-item";
   button.setAttribute("role", "menuitem");
-  // A small square in the folder's colour, so folders can be told apart at a glance.
-  const dot = document.createElement("span");
-  dot.className = "folder-dot";
-  if (colour !== "none" && COLOUR_HEX[colour]) dot.style.setProperty("--dot", COLOUR_HEX[colour]);
-  else dot.classList.add("folder-dot-empty");
-  button.append(dot);
+  // Folders get a small square in their colour (an outline when they have none), so they can be
+  // told apart at a glance. The two actions under the list get none.
+  if (colour !== null) {
+    const dot = document.createElement("span");
+    dot.className = "folder-dot";
+    if (colour !== "none" && COLOUR_HEX[colour]) dot.style.setProperty("--dot", COLOUR_HEX[colour]);
+    else dot.classList.add("folder-dot-empty");
+    button.append(dot);
+  }
   const text = document.createElement("span");
   text.className = "folder-menu-label";
   text.textContent = label;

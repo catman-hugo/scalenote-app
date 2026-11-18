@@ -1,4 +1,4 @@
-# Security checklist, version 0.5.5 (home server, first slice)
+# Security checklist, version 0.5.5
 
 Checked by the builder by reading, searches and automatic tests. Not an outside review. Items marked "device" still need a try on a real server. Everything from 0.5.4 still applies.
 
@@ -16,4 +16,10 @@ Checked by the builder by reading, searches and automatic tests. Not an outside 
 | A vault that cannot start (taken port, unreadable key) is left out and reported; the other vaults keep running | Rust test |
 | The example service file runs as its own user with NoNewPrivileges, PrivateTmp, ProtectSystem=strict and ProtectHome, and can write only to the data and vault folders | Reading; server: device |
 | No new dependencies. No new `unwrap()` or `expect()` in the server code outside tests | `Cargo.toml` diff; reading |
+| Backups are plain copies. A restore only accepts a name from the list of backups, so a made-up path cannot reach outside the backups folder; it deletes nothing and keeps each replaced file first; links and hidden entries are skipped; size and depth limits apply | Rust tests (`only_a_listed_backup_can_be_restored_never_a_made_up_path` and others) |
+| The inbox moves only plain, settled `.md` files of at most 1 MiB, valid text, from a folder outside the vaults; it never overwrites, never deletes pages, ignores links and hidden files, and puts rejects in a capped folder | Rust tests (6) |
+| The version a device sends is only digits and dots, at most 20 characters; anything else is dropped | Rust test with hostile text |
+| The folder colours in the settings file are checked against the known colour names and path rules; a folder called `__proto__` is just a key | Node tests |
+| Tray and open at login: off by default; the window's scripts get no permission to call the login plugin directly, only our own commands do; a failed tray start turns the switch off again so the window cannot be hidden with no way back | Reading; browser tests with a stand-in. Rust side compiled by CI only; device: Windows and Linux |
+| New dependency: `tauri-plugin-autostart` 2.7.0 (pinned with `=`) and what it needs (`auto-launch` and a few platform crates); the lockfile only gained packages, no existing package changed version | `Cargo.lock` diff |
 | Open risk | Device: never run for days on a real server; restart, power cut and disk-full tests on the server are still to do. The server stops on a kill signal without a goodbye message (notes are safe because writes are atomic, but a sync in progress is cut and redone). Linux only. No central server exists or is added |
