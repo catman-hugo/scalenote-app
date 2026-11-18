@@ -131,7 +131,8 @@ fn free_name_any(dir: &Path, name: &str) -> PathBuf {
     (2..1000).map(|n| dir.join(format!("{n}-{name}"))).find(|p| !p.exists()).unwrap_or_else(|| dir.join(format!("x-{name}")))
 }
 
-#[cfg(test)]
+// The inbox belongs to the Linux server; its tests use file names Windows does not allow.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

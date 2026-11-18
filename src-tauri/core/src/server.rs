@@ -369,6 +369,8 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.sync_all()
 }
 
-#[cfg(test)]
+// The server is a Linux program (private folder modes, full Unix paths in the config), so its
+// tests run on Unix-like systems only; on Windows they would test rules that do not apply there.
+#[cfg(all(test, unix))]
 #[path = "server_tests.rs"]
 mod tests;
