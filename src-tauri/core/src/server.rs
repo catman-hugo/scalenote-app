@@ -364,9 +364,14 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path)?;
+    let mut temp = path.as_os_str().to_os_string();
+    temp.push(crate::atomic::TEMP_SUFFIX);
+    let temp = PathBuf::from(temp);
+    let mut file = options.open(&temp)?;
     file.write_all(bytes)?;
-    file.sync_all()
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&temp, path)
 }
 
 // The server is a Linux program (private folder modes, full Unix paths in the config), so its
