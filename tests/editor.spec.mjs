@@ -1342,7 +1342,7 @@ await test("there are five text sizes, the smallest is 80 percent, and the icons
   const options = await page.locator("#settings select").nth(0).locator("option").allTextContents();
   assert.deepEqual(options, ["Smallest", "Small", "Normal", "Large", "Largest"]);
   await page.locator("#settings select").nth(0).selectOption("80");
-  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "80%");
+  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "calc(80% * var(--screen-scale, 1))");
   const small = await iconWidth();
   await page.locator("#settings select").nth(0).selectOption("125");
   const large = await iconWidth();
