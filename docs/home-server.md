@@ -31,7 +31,7 @@ The server refuses to start if its data folder can be read by other users, if a 
 3. In ScaleNote on your device: Settings, Sync, pair with a device by address. Type the address and the code.
 4. The first sync shows what it would do and waits for your yes, like between two devices.
 
-A device paired with one vault cannot reach another vault on the same server. To use two vaults on one phone, pair it with each one separately.
+A device paired with one server vault cannot authenticate to another server vault without pairing with it. Do not pair the same app installation with separate vaults yet: paired devices are not bound to a local folder, and sync uses whichever folder the app currently has open. This can mix notes between otherwise separate vaults.
 
 ## The add-only inbox (optional)
 
