@@ -568,6 +568,8 @@ struct SyncPeerReply {
     added: String,
     last_sync: String,
     last_changed: usize,
+    version: String,
+    older_version: bool,
     has_history: bool,
     wifi_only: bool,
 }
@@ -624,6 +626,8 @@ fn peer_reply(peer: PeerView) -> SyncPeerReply {
         added: peer.added,
         last_sync: peer.last_sync,
         last_changed: peer.last_changed,
+        version: peer.version,
+        older_version: peer.older,
         has_history: peer.has_history,
         wifi_only: peer.wifi_only,
     }

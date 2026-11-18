@@ -442,3 +442,62 @@ fn the_automatic_round_does_nothing_and_opens_no_connection_when_nothing_is_due(
     assert!(p.alice.auto_sync_tick(Duration::from_millis(50)).is_empty(), "paused means paused");
     let _ = Duration::from_millis(1);
 }
+
+#[test]
+fn after_a_sync_each_side_shows_the_other_ones_app_version_and_the_last_sync_time() {
+    let p = setup("version");
+    assert_eq!(p.alice.status().peers[0].version, "", "unknown before any sync");
+    assert_eq!(p.alice.status().peers[0].last_sync, "", "never synced");
+    write(&p.va.0, "A.md", "one\n");
+    sync(&p);
+    let seen = &p.alice.status().peers[0];
+    assert_eq!(seen.version, super::service::APP_VERSION);
+    assert!(seen.last_sync.ends_with('Z') && seen.last_sync.len() == 20, "{}", seen.last_sync);
+    // The other side learned Alice's version from the same exchange.
+    assert_eq!(p.bob.status().peers[0].version, super::service::APP_VERSION);
+}
+
+#[test]
+fn the_last_sync_time_is_still_known_after_a_restart() {
+    let p = setup("restart-time");
+    write(&p.va.0, "A.md", "one\n");
+    sync(&p);
+    let before = p.alice.status().peers[0].last_sync.clone();
+    assert!(!before.is_empty());
+    // A new service with the same folders knows nothing live, but the vault's saved list tells it.
+    let again = Service::with_bind(&p._dirs.0 .0, Identity::generate().expect("identity"), "alice", true, "127.0.0.1", 0).expect("service");
+    again.set_vault(Some(p.va.0.clone()));
+    assert_eq!(again.status().peers[0].last_sync, before);
+}
+
+#[test]
+fn a_version_sent_by_another_device_is_only_shown_if_it_is_plain_digits_and_dots() {
+    let p = setup("badversion");
+    let address = format!("127.0.0.1:{}", p.bob.status().listening_port.expect("listening"));
+    for hostile in [&b"<b>1</b>"[..], b"", b"1.2.3.4.5.6.7.8.9.10.11.12.13", &[0xff, 0xfe][..], b"1 2"] {
+        let stream = TcpStream::connect(&address).expect("connect");
+        stream.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+        let identity = Identity::generate().expect("identity");
+        // An unpaired device may not ask this at all; the connection is refused, and nothing is stored.
+        let mut channel = Channel::connect(stream, &identity).expect("channel");
+        let mut message = vec![0x22];
+        message.extend_from_slice(hostile);
+        channel.send(&message).expect("send");
+        let answer = channel.recv().expect("answer");
+        assert_ne!(answer.first(), Some(&0x23), "an unpaired device gets no version answer");
+    }
+    assert_eq!(p.bob.status().peers[0].version, "");
+}
+
+#[test]
+fn older_versions_are_recognised_and_odd_text_is_never_older() {
+    use super::service::is_older;
+    assert!(is_older("0.5.4", "0.5.5"));
+    assert!(is_older("0.4.15", "0.5.0"));
+    assert!(is_older("0.5.9", "0.5.10"), "numbers, not text, are compared");
+    assert!(!is_older("0.5.5", "0.5.5"));
+    assert!(!is_older("0.6.0", "0.5.5"));
+    for odd in ["", "x", "1..2", "1.2.x", "-1"] {
+        assert!(!is_older(odd, "0.5.5"), "{odd:?}");
+    }
+}

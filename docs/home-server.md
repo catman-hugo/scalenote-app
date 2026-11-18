@@ -33,6 +33,16 @@ The server refuses to start if its data folder can be read by other users, if a 
 
 A device paired with one vault cannot reach another vault on the same server. To use two vaults on one phone, pair it with each one separately.
 
+## The add-only inbox (optional)
+
+A script on the server (a backup job, a monitoring check) can leave a note in your vault without any access to your other notes.
+
+1. Make a folder for it outside every vault, for example `/srv/scalenote/inbox-alice`. Let the script's user write to it, and the `scalenote` user read and delete in it (a shared group works).
+2. Add `inbox = /srv/scalenote/inbox-alice` to the vault's section and restart the server.
+3. The script writes a file ending in `.md`. To be safe while it is being written, write it as `.name.tmp` (a name starting with a dot) and rename it when finished.
+
+The server moves each finished note into the vault's `Inbox` folder every few seconds. A name that is taken gets a number (`Report 2.md`); nothing is ever replaced. Only plain, text `.md` files up to 1 MB are taken. Anything else is moved to `.rejected` inside the inbox and a line is written to the log, so nothing is lost and nothing repeats. Links are never followed. The script never touches the vault itself, which is what makes it add-only.
+
 ## Facts to know
 
 - **Backups.** The server is a sync partner, not a backup. If a note is deleted on one device, it goes to the other devices' trash, not to a backup. Copy the vault folders somewhere else too.
@@ -43,4 +53,4 @@ A device paired with one vault cannot reach another vault on the same server. To
 
 ## Not in this version yet
 
-Keeping the program in the tray and opening at login (that is for the desktop app), the colour per project folder, the backup screen, the add-only inbox folder, and showing the last sync time and app version of each paired device. They come in the next slices of 0.5.5.
+The backup screen, the security explanation cards, the colour per project folder, and the tray and open at login (those are in the desktop app, not the server) come in the next slices of 0.5.5.

@@ -42,7 +42,7 @@ fn a_good_config_is_read() {
     // Device names are kept to plain characters (spaces become hyphens), like on every device.
     assert_eq!(config.device_name, "Home-server");
     assert_eq!(config.vaults.len(), 2);
-    assert_eq!(config.vaults[1], VaultConfig { name: "bob".into(), folder: PathBuf::from("/srv/b"), port: 47822 });
+    assert_eq!(config.vaults[1], VaultConfig { name: "bob".into(), folder: PathBuf::from("/srv/b"), port: 47822, inbox: None });
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn folders_that_overlap_or_hold_the_keys_are_refused() {
     let make = |folders: &[&PathBuf], data_dir: &PathBuf| Config {
         data_dir: data_dir.clone(),
         device_name: "S".into(),
-        vaults: folders.iter().enumerate().map(|(i, f)| VaultConfig { name: format!("v{i}"), folder: (*f).clone(), port: 5000 + i as u16 }).collect(),
+        vaults: folders.iter().enumerate().map(|(i, f)| VaultConfig { name: format!("v{i}"), folder: (*f).clone(), port: 5000 + i as u16, inbox: None }).collect(),
     };
     assert!(check_folders(&make(&[&a, &b], &data)).is_ok());
     assert!(check_folders(&make(&[&a, &a], &data)).expect_err("same").contains("overlap"));
@@ -131,7 +131,7 @@ fn config_for(dir: &Dir, names: &[&str]) -> Config {
     Config {
         data_dir: data,
         device_name: "Home server".into(),
-        vaults: names.iter().map(|n| VaultConfig { name: n.to_string(), folder: dir.sub(&format!("vault-{n}")), port: free_port() }).collect(),
+        vaults: names.iter().map(|n| VaultConfig { name: n.to_string(), folder: dir.sub(&format!("vault-{n}")), port: free_port(), inbox: None }).collect(),
     }
 }
 
@@ -249,4 +249,45 @@ fn a_restart_keeps_the_paired_phone_trusted() {
     assert_eq!(again.service("alice").expect("a").status().peers.len(), 1, "the trust list was kept on disk");
     assert!(ping(&phone, &format!("127.0.0.1:{}", config.vaults[0].port)).is_ok());
     again.shutdown();
+}
+
+#[test]
+fn the_inbox_is_read_from_the_config_and_must_be_apart_from_vaults_keys_and_other_inboxes() {
+    let config = parse("data_dir = /d\n[vault a]\nfolder = /a\nport = 5000\ninbox = /i\n").expect("parse");
+    assert_eq!(config.vaults[0].inbox, Some(PathBuf::from("/i")));
+    assert!(parse("data_dir = /d\n[vault a]\nfolder = /a\nport = 5000\ninbox = i\n").is_err(), "a full path is needed");
+    let dir = Dir::new("inboxcheck");
+    let (a, b, data, i1, i2) = (dir.sub("a"), dir.sub("b"), dir.sub("data"), dir.sub("i1"), dir.sub("i2"));
+    let make = |inboxes: [PathBuf; 2]| Config {
+        data_dir: data.clone(),
+        device_name: "S".into(),
+        vaults: vec![
+            VaultConfig { name: "a".into(), folder: a.clone(), port: 5001, inbox: Some(inboxes[0].clone()) },
+            VaultConfig { name: "b".into(), folder: b.clone(), port: 5002, inbox: Some(inboxes[1].clone()) },
+        ],
+    };
+    assert!(check_folders(&make([i1.clone(), i2.clone()])).is_ok());
+    fs::create_dir_all(a.join("x")).expect("x");
+    assert!(check_folders(&make([a.join("x"), i2.clone()])).expect_err("in a vault").contains("scripts must not"));
+    assert!(check_folders(&make([b.clone(), i2.clone()])).expect_err("is a vault").contains("scripts must not"));
+    assert!(check_folders(&make([i1.clone(), i1.clone()])).expect_err("shared").contains("overlap"));
+    assert!(check_folders(&make([data.clone(), i2.clone()])).expect_err("keys").contains("data folder"));
+    assert!(check_folders(&make([dir.0.join("missing"), i2])).expect_err("missing").contains("does not exist"));
+}
+
+#[test]
+fn the_running_server_moves_inbox_notes_into_the_right_vault_only() {
+    let dir = Dir::new("inboxrun");
+    let mut config = config_for(&dir, &["alice", "bob"]);
+    let inbox = dir.sub("inbox-alice");
+    config.vaults[0].inbox = Some(inbox.clone());
+    let (runner, _) = Runner::start(&config);
+    fs::write(inbox.join("Report.md"), "hello\n").expect("write");
+    // The file must be old enough to count as finished; the real pass waits a couple of seconds.
+    std::thread::sleep(Duration::from_millis(2300));
+    let lines = runner.poll_inboxes();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(fs::read_to_string(config.vaults[0].folder.join("Inbox/Report.md")).expect("note"), "hello\n");
+    assert!(!config.vaults[1].folder.join("Inbox").exists());
+    runner.shutdown();
 }

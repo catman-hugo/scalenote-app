@@ -62,7 +62,7 @@ fn check(path: &PathBuf) -> Result<(), String> {
     let config = load(path)?;
     println!("The config is fine: {} vault(s).", config.vaults.len());
     for vault in &config.vaults {
-        println!("  {}  port {}  folder {}", vault.name, vault.port, vault.folder.display());
+        println!("  {}  port {}  folder {}{}", vault.name, vault.port, vault.folder.display(), vault.inbox.as_ref().map(|i| format!("  inbox {}", i.display())).unwrap_or_default());
     }
     Ok(())
 }
@@ -83,10 +83,17 @@ fn run(config: &Config) -> Result<(), String> {
     }
     log(&format!("started: {}", runner.names().join(", ")));
     let mut last_tick = Instant::now();
+    let mut last_inbox = Instant::now();
     loop {
         std::thread::sleep(Duration::from_secs(1));
         for note in runner.poll_pairing() {
             log(&note);
+        }
+        if last_inbox.elapsed() >= Duration::from_secs(5) {
+            last_inbox = Instant::now();
+            for line in runner.poll_inboxes() {
+                log(&line);
+            }
         }
         if last_tick.elapsed() >= Duration::from_secs(20) {
             last_tick = Instant::now();

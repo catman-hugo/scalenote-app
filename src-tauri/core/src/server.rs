@@ -29,6 +29,9 @@ pub struct VaultConfig {
     pub name: String,
     pub folder: PathBuf,
     pub port: u16,
+    /// Optional add-only inbox: a folder scripts can drop `.md` notes in (see `inbox.rs`). It must be
+    /// outside the vault, so a script that can write there still cannot touch a note.
+    pub inbox: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,8 +48,17 @@ pub fn valid_vault_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= MAX_NAME && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
+/// A `[vault]` section while it is being read.
+struct Pending {
+    name: String,
+    folder: Option<PathBuf>,
+    port: Option<u16>,
+    inbox: Option<PathBuf>,
+    line: usize,
+}
+
 /// Reads the config text. The format is a few `key = value` lines, then one `[vault name]`
-/// section per vault with `folder` and `port`. Lines starting with `#` are comments.
+/// section per vault with `folder` and `port` (and, if wanted, `inbox`). Lines starting with `#` are comments.
 ///
 /// ```text
 /// data_dir = /var/lib/scalenote-server
@@ -55,18 +67,19 @@ pub fn valid_vault_name(name: &str) -> bool {
 /// [vault alice]
 /// folder = /srv/scalenote/alice
 /// port = 47821
+/// inbox = /srv/scalenote/inbox-alice
 /// ```
 pub fn parse(text: &str) -> Result<Config, String> {
     let mut data_dir: Option<PathBuf> = None;
     let mut device_name = device::clean_name("Home server");
     let mut vaults: Vec<VaultConfig> = Vec::new();
-    let mut current: Option<(String, Option<PathBuf>, Option<u16>, usize)> = None;
+    let mut current: Option<Pending> = None;
 
-    fn finish(current: &mut Option<(String, Option<PathBuf>, Option<u16>, usize)>, vaults: &mut Vec<VaultConfig>) -> Result<(), String> {
-        if let Some((name, folder, port, line)) = current.take() {
-            let folder = folder.ok_or_else(|| format!("line {line}: vault \"{name}\" has no folder"))?;
-            let port = port.ok_or_else(|| format!("line {line}: vault \"{name}\" has no port"))?;
-            vaults.push(VaultConfig { name, folder, port });
+    fn finish(current: &mut Option<Pending>, vaults: &mut Vec<VaultConfig>) -> Result<(), String> {
+        if let Some(p) = current.take() {
+            let folder = p.folder.ok_or_else(|| format!("line {}: vault \"{}\" has no folder", p.line, p.name))?;
+            let port = p.port.ok_or_else(|| format!("line {}: vault \"{}\" has no port", p.line, p.name))?;
+            vaults.push(VaultConfig { name: p.name, folder, port, inbox: p.inbox });
         }
         Ok(())
     }
@@ -84,7 +97,7 @@ pub fn parse(text: &str) -> Result<Config, String> {
             if !valid_vault_name(name) {
                 return Err(format!("line {number}: a vault name uses a to z, 0 to 9, - and _ (up to {MAX_NAME} characters)"));
             }
-            current = Some((name.to_string(), None, None, number));
+            current = Some(Pending { name: name.to_string(), folder: None, port: None, inbox: None, line: number });
             continue;
         }
         let (key, value) = line.split_once('=').ok_or_else(|| format!("line {number}: expected key = value"))?;
@@ -92,8 +105,9 @@ pub fn parse(text: &str) -> Result<Config, String> {
         match (&mut current, key) {
             (None, "data_dir") => data_dir = Some(absolute(value, number)?),
             (None, "name") => device_name = device::clean_name(value),
-            (Some(vault), "folder") => vault.1 = Some(absolute(value, number)?),
-            (Some(vault), "port") => vault.2 = Some(value.parse::<u16>().ok().filter(|p| *p >= 1024).ok_or_else(|| format!("line {number}: the port must be a number from 1024 to 65535"))?),
+            (Some(vault), "folder") => vault.folder = Some(absolute(value, number)?),
+            (Some(vault), "inbox") => vault.inbox = Some(absolute(value, number)?),
+            (Some(vault), "port") => vault.port = Some(value.parse::<u16>().ok().filter(|p| *p >= 1024).ok_or_else(|| format!("line {number}: the port must be a number from 1024 to 65535"))?),
             _ => return Err(format!("line {number}: unknown setting \"{key}\" here")),
         }
     }
@@ -155,6 +169,31 @@ pub fn check_folders(config: &Config) -> Result<(), String> {
             }
         }
     }
+    // An inbox is where scripts may write, so it must be nowhere near a vault or the keys.
+    let mut inboxes: Vec<(String, PathBuf)> = Vec::new();
+    for vault in &config.vaults {
+        let Some(inbox) = &vault.inbox else { continue };
+        let path = fs::canonicalize(inbox).map_err(|_| format!("the inbox of vault \"{}\" does not exist: {}", vault.name, inbox.display()))?;
+        if !path.is_dir() {
+            return Err(format!("the inbox of vault \"{}\" is not a folder", vault.name));
+        }
+        for (name, vault_path) in &real {
+            if path.starts_with(vault_path) || vault_path.starts_with(&path) {
+                return Err(format!("the inbox of vault \"{}\" overlaps the folder of vault \"{name}\"; scripts must not be able to reach a vault", vault.name));
+            }
+        }
+        for (other, other_path) in &inboxes {
+            if path.starts_with(other_path) || other_path.starts_with(&path) {
+                return Err(format!("the inboxes of vaults \"{}\" and \"{other}\" overlap", vault.name));
+            }
+        }
+        if let Ok(data) = fs::canonicalize(&config.data_dir) {
+            if path.starts_with(&data) || data.starts_with(&path) {
+                return Err(format!("the inbox of vault \"{}\" overlaps the data folder", vault.name));
+            }
+        }
+        inboxes.push((vault.name.clone(), path));
+    }
     if let Ok(data) = fs::canonicalize(&config.data_dir) {
         for (name, path) in &real {
             if data.starts_with(path) || path.starts_with(&data) {
@@ -194,6 +233,7 @@ pub fn prepare_data_dir(path: &Path) -> Result<(), String> {
 struct Running {
     name: String,
     folder: PathBuf,
+    inbox: Option<PathBuf>,
     dir: PathBuf,
     service: Service,
 }
@@ -270,6 +310,22 @@ impl Runner {
         lines
     }
 
+    /// One pass over every vault's add-only inbox; returns a line per note added or put aside for the log.
+    pub fn poll_inboxes(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        for item in &self.running {
+            let Some(inbox) = &item.inbox else { continue };
+            let report = crate::inbox::take(inbox, &item.folder);
+            for name in report.added {
+                lines.push(format!("vault \"{}\": added {}/{name} from the inbox", item.name, crate::inbox::VAULT_INBOX_FOLDER));
+            }
+            for (name, reason) in report.rejected {
+                lines.push(format!("vault \"{}\": inbox file {name} put aside ({reason})", item.name));
+            }
+        }
+        lines
+    }
+
     pub fn shutdown(&self) {
         for item in &self.running {
             item.service.shutdown();
@@ -296,7 +352,7 @@ fn start_one(config: &Config, vault: &VaultConfig) -> Result<Running, String> {
     let shown = device::clean_name(&format!("{} ({})", config.device_name, vault.name));
     let service = Service::on_port(&dir, identity, &shown, settings.enabled, vault.port).map_err(|e| format!("its sync service did not start: {}", e.code()))?;
     service.set_vault(Some(vault.folder.clone()));
-    Ok(Running { name: vault.name.clone(), folder: vault.folder.clone(), dir, service })
+    Ok(Running { name: vault.name.clone(), folder: vault.folder.clone(), inbox: vault.inbox.clone(), dir, service })
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {

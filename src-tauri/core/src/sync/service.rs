@@ -45,6 +45,12 @@ const TRUST_FILE: &str = "sync-peers.txt";
 /// Questions a paired device can ask (more are added with the sync itself in 0.5.3).
 const KIND_PING: u8 = 0x20;
 const KIND_PONG: u8 = 0x21;
+/// "Which version of the app are you?" A paired device asks it after a sync and answers with its own, so
+/// the device list can show who runs an old version. An older app answers "no", which is read as unknown.
+const KIND_HELLO: u8 = 0x22;
+const KIND_HELLO_ACK: u8 = 0x23;
+/// The version of this build, sent to paired devices. Core and app are always given the same number.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventKind {
@@ -96,6 +102,8 @@ struct Live {
     address: Option<String>,
     last_sync: String,
     last_changed: usize,
+    /// The app version the device told us, if it did.
+    version: String,
     /// The vault's change signature right after the last sync, and when that was.
     synced_signature: Option<u64>,
     synced_at: Option<Instant>,
@@ -179,9 +187,14 @@ pub struct PeerView {
     pub name: String,
     pub fingerprint: String,
     pub added: String,
-    /// When this device last synced with it since the app started ("" if not yet).
+    /// When this device last synced with it, in UTC. After a restart it is read from the saved list of
+    /// the vault, so it is not lost ("" if never).
     pub last_sync: String,
     pub last_changed: usize,
+    /// The app version the device reported at the last sync ("" if it never did, for example an older app).
+    pub version: String,
+    /// The device's version is known and is older than this device's.
+    pub older: bool,
     /// There is a saved list for it in the open vault, so the next sync is not a first one.
     pub has_history: bool,
     /// Syncs with this device only on Wi-Fi.
@@ -588,11 +601,34 @@ impl Service {
                 live.last_changed = report.changed();
                 live.synced_signature = Some(signature);
                 live.synced_at = Some(Instant::now());
+                drop(state);
+                self.exchange_version(&peer);
+                return result;
             }
             Ok(Outcome::NeedsApproval(_)) => {}
             Err(_) => record(&mut state, EventKind::SyncFailed, &peer.name),
         }
         result
+    }
+
+    /// Asks a paired device for its app version over a short connection and tells it ours. Best effort:
+    /// any failure (an older app, a device that went away) just leaves the version unknown.
+    fn exchange_version(&self, peer: &Peer) {
+        let known = lock(&self.shared.state).live.get(&peer.public).and_then(|l| l.address.clone());
+        let Some(address) = known else { return };
+        let Ok(mut channel) = self.open(&address, peer) else { return };
+        let mut hello = vec![KIND_HELLO];
+        hello.extend_from_slice(APP_VERSION.as_bytes());
+        if channel.send(&hello).is_err() {
+            return;
+        }
+        if let Ok(answer) = channel.recv() {
+            if answer.first() == Some(&KIND_HELLO_ACK) {
+                if let Some(version) = clean_version(&answer[1..]) {
+                    lock(&self.shared.state).live.entry(peer.public).or_default().version = version;
+                }
+            }
+        }
     }
 
     fn sync_locked(&self, peer: &Peer, root: &Path, own_name: &str, approved: bool, on_progress: &mut dyn FnMut(Progress)) -> Result<Outcome> {
@@ -669,8 +705,10 @@ impl Service {
                     name: p.name.clone(),
                     fingerprint: fingerprint(&p.public),
                     added: p.added.clone(),
-                    last_sync: live.map(|l| l.last_sync.clone()).unwrap_or_default(),
+                    last_sync: live.map(|l| l.last_sync.clone()).filter(|t| !t.is_empty()).or_else(|| state.vault.as_ref().and_then(|root| engine::last_sync_time(root, &p.public))).unwrap_or_default(),
                     last_changed: live.map_or(0, |l| l.last_changed),
+                    version: live.map(|l| l.version.clone()).unwrap_or_default(),
+                    older: live.is_some_and(|l| is_older(&l.version, APP_VERSION)),
                     has_history: state.vault.as_ref().is_some_and(|root| engine::has_history(root, &p.public)),
                     wifi_only: state.wifi_only.contains(&p.public),
                 }
@@ -772,6 +810,21 @@ fn stream_address(address: &str) -> Result<String> {
     Ok(with_port.to_socket_addrs()?.next().ok_or(SyncError::Refused("address not found"))?.to_string())
 }
 
+/// Whether `theirs` is an older version than `ours` ("0.5.4" against "0.5.5"). Unknown or odd text is not older.
+pub fn is_older(theirs: &str, ours: &str) -> bool {
+    let parse = |text: &str| -> Option<Vec<u32>> { text.split('.').map(|part| part.parse().ok()).collect() };
+    match (parse(theirs), parse(ours)) {
+        (Some(a), Some(b)) if !theirs.is_empty() => a < b,
+        _ => false,
+    }
+}
+
+/// A version from another device is shown on screen, so only digits, dots and a short length are accepted.
+fn clean_version(raw: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(raw).ok()?;
+    (!text.is_empty() && text.len() <= 20 && text.bytes().all(|b| b.is_ascii_digit() || b == b'.')).then(|| text.to_string())
+}
+
 fn connect_to(address: &str) -> Result<TcpStream> {
     let with_port = if address.rsplit_once(':').is_some_and(|(_, port)| port.parse::<u16>().is_ok()) { address.to_string() } else { format!("{address}:{DEFAULT_PORT}") };
     let target: SocketAddr = with_port.to_socket_addrs()?.next().ok_or(SyncError::Refused("address not found"))?;
@@ -816,6 +869,14 @@ fn handle_connection(shared: &Shared, stream: TcpStream) -> Result<()> {
                     Err(error)
                 }
             }
+        }
+        Some(KIND_HELLO) if trusted => {
+            if let Some(version) = clean_version(&first[1..]) {
+                lock(&shared.state).live.entry(remote).or_default().version = version;
+            }
+            let mut answer = vec![KIND_HELLO_ACK];
+            answer.extend_from_slice(APP_VERSION.as_bytes());
+            channel.send(&answer)
         }
         Some(KIND_PING) if trusted => {
             let mut answer = vec![KIND_PONG];

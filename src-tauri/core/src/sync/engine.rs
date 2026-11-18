@@ -134,6 +134,14 @@ pub fn has_history(root: &Path, peer_key: &[u8; KEY_LEN]) -> bool {
     root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(peer_key)[..16])).is_file()
 }
 
+/// When the last sync with that device finished, in UTC, as far as the saved list of this vault shows
+/// (the list is rewritten after each sync). `None` if there never was one.
+pub fn last_sync_time(root: &Path, peer_key: &[u8; KEY_LEN]) -> Option<String> {
+    let path = root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(peer_key)[..16]));
+    let seconds = std::fs::metadata(path).ok()?.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    Some(crate::logger::format_utc(seconds))
+}
+
 fn ask<S: Read + Write>(channel: &mut Channel<S>, kind: u8, meta: &[u8], body: &[u8], max_body: u64) -> Result<Blob> {
     send_blob(channel, kind, meta, body)?;
     let answer = recv_blob(channel, max_body)?;

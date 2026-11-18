@@ -15,6 +15,10 @@ name = Home server
 [vault alice]
 folder = /srv/scalenote/alice
 port = 47821
+# Optional add-only inbox. A script that can write here can add notes to the vault (they land in
+# the vault's Inbox folder) but cannot open, change or delete anything in it. The folder must be
+# outside every vault. See docs/home-server.md.
+# inbox = /srv/scalenote/inbox-alice
 
 # [vault bob]
 # folder = /srv/scalenote/bob

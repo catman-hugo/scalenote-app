@@ -131,7 +131,7 @@
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,
-        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, hasHistory: false, wifiOnly: false, ...p })),
+        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, version: "", olderVersion: false, hasHistory: false, wifiOnly: false, ...p })),
         pairingSecondsLeft: syncPairing.secondsLeft,
         events: [...syncPairing.events].reverse(),
       };
@@ -375,5 +375,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

@@ -7520,6 +7520,28 @@ await test("sync: the first sync shows what it would do and changes nothing unti
   assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 12:00:00 UTC \(3 changed\)/);
 }, { settings: existingUser({ updates: false }) });
 
+await test("the device list shows the last sync time and the device's app version, and says when it is older", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs("old"));
+  await page.evaluate(() => window.__mock.peerPairs("same"));
+  await page.evaluate(() => window.__mock.peerPairs("quiet"));
+  await page.evaluate(() => {
+    const peers = window.__mock.syncPeers();
+    Object.assign(peers[0], { lastSync: "2026-01-01T12:00:00Z", lastChanged: 0, version: "0.5.4", olderVersion: true, hasHistory: true });
+    Object.assign(peers[1], { lastSync: "2026-01-02T08:30:00Z", lastChanged: 2, version: "0.5.5", hasHistory: true });
+  });
+  await page.click("#openSettings");
+  await page.click("#settingsTab-sync");
+  await page.waitForSelector("#pairList .pair-version");
+  const items = await page.locator("#pairList > *").allTextContents();
+  assert.match(items[0], /Last sync: 2026-01-01 12:00:00 UTC(?! \()/, "no '0 changed' after a restart");
+  assert.match(items[0], /App version 0\.5\.4 \(older than this device; update it\)/);
+  assert.match(items[1], /Last sync: 2026-01-02 08:30:00 UTC \(2 changed\)/);
+  assert.match(items[1], /App version 0\.5\.5(?! \()/);
+  assert.match(items[2], /Not synced yet/);
+  assert.doesNotMatch(items[2], /App version/);
+}, { settings: existingUser({ updates: false }) });
+
 await test("sync: Compare shows the plan and runs nothing; an error says what to do; rapid clicking never throws", async (page) => {
   await page.waitForSelector("#newNote");
   await page.evaluate(() => window.__mock.peerPairs());
