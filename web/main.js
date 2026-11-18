@@ -9,7 +9,7 @@ import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
 import { renderNotes } from "./whatsnew.js";
 import { openFolderMenu } from "./foldermenu.js";
-import { addRecent, cleanRecent, removeRecent } from "./recent.js";
+import { addRecent, cleanFolderColours, cleanRecent, removeRecent, withFolderColour } from "./recent.js";
 import { backend, BackendError } from "./backend.js";
 import { composeNote, loadNote } from "./compose.js";
 import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
@@ -28,7 +28,7 @@ import { createResolver } from "./wikilinkrules.js";
 import { icon } from "./icons.js";
 import { renderTree } from "./sidebar.js";
 import { openIconMenu } from "./iconmenu.js";
-import { has, parseIcons, withIcon, withRenamed } from "./foldericons.js";
+import { COLOURS, COLOUR_HEX, has, parseIcons, withIcon, withRenamed } from "./foldericons.js";
 import { openContextMenu } from "./contextmenu.js";
 import { openPalette, SEARCH_LIMIT } from "./palette.js";
 import { openTrash } from "./trashdialog.js";
@@ -62,7 +62,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -169,6 +169,7 @@ async function loadSettings() {
     app.settings = {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
       recentVaults: cleanRecent(parsed.recentVaults),
+      folderColours: cleanFolderColours(parsed.folderColours, COLOURS),
       disclosureAccepted: parsed.disclosureAccepted === true,
       ...normalizeAppearance(parsed),
       // One switch for both looking for updates and installing them. On unless turned off.
@@ -860,6 +861,7 @@ async function openVaultFrom(choice) {
   app.settings.recentVaults = addRecent(app.settings.recentVaults, opened.path);
   await saveSettings();
   el("vaultName").textContent = opened.name || strings.appName;
+  paintVaultColour();
   app.expanded = new Set();
   app.selectedFolder = "";
   app.folds = new Map();
@@ -900,10 +902,26 @@ async function openAnotherFolder() {
   if (chosen) await switchFolder(chosen);
 }
 
+// The colour of the open folder shows as a square beside its name at the top of the page list.
+function paintVaultColour() {
+  const colour = app.settings.folderColours[app.settings.vaultPath] || "none";
+  const button = el("vaultButton");
+  if (colour === "none") button.style.removeProperty("--vault-colour");
+  else button.style.setProperty("--vault-colour", COLOUR_HEX[colour]);
+  button.classList.toggle("has-colour", colour !== "none");
+}
+
 function showFolderMenu() {
+  if (isAndroid) return;
   openFolderMenu(el("vaultButton"), {
     recent: app.settings.recentVaults,
     current: app.settings.vaultPath,
+    colours: app.settings.folderColours,
+    onColour: (colour) => {
+      app.settings.folderColours = withFolderColour(app.settings.folderColours, app.settings.vaultPath, colour, COLOURS);
+      paintVaultColour();
+      saveSettings();
+    },
     canPick: !isAndroid,
     onPick: switchFolder,
     onOther: openAnotherFolder,
@@ -1620,6 +1638,16 @@ function openSearch() {
 
 // Ctrl+K opens the search box from anywhere. In the editor with text selected it keeps its
 // older job, adding a link, so that shortcut does not change.
+// Ctrl+Shift+O opens the folder menu from the keyboard, so another folder is two keys away.
+function folderShortcut(event) {
+  const wanted = (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "o";
+  if (!wanted || event.isComposing || isAndroid) return;
+  if (document.querySelector("dialog[open]")) return;
+  event.preventDefault();
+  if (document.querySelector(".folder-menu")) return;
+  showFolderMenu();
+}
+
 function searchShortcut(event) {
   const wanted = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k";
   if (!wanted || event.isComposing) return;
@@ -2399,6 +2427,7 @@ function wireEvents() {
   el("historyButton").addEventListener("click", openHistoryDialog);
   el("inkButton").addEventListener("click", () => (app.ink && app.ink.active ? stopInk() : startInk()));
   document.addEventListener("keydown", searchShortcut, true);
+  document.addEventListener("keydown", folderShortcut, true);
   document.addEventListener("keydown", findShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);

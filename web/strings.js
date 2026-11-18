@@ -87,6 +87,9 @@ export const strings = {
     openOther: "Open another folder",
     useDefault: "Use the default folder",
     missing: "That folder could not be opened, so it was removed from the recent list.",
+    colourHeading: "Colour of this folder",
+    colourNone: "No colour",
+    shortcut: "Ctrl Shift O",
   },
 
   syncLine: {

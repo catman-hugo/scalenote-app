@@ -1195,7 +1195,7 @@ await test("the folder name opens a menu with recent folders, and choosing one s
   await page.click("#vaultButton");
   await page.waitForSelector(".folder-menu");
   const labels = await page.locator(".folder-menu .menu-item").allTextContents();
-  assert.deepEqual(labels, ["ScaleNote", "Work", "gone", "Open another folder", "Use the default folder"]);
+  assert.deepEqual(labels, ["ScaleNote", "Work", "gone", "No colour", "Open another folder", "Use the default folder"]);
   assert.equal(await page.locator('.folder-menu [aria-current="true"]').count(), 1);
   assert.equal(await page.getAttribute("#vaultButton", "aria-expanded"), "true");
   await page.click('.folder-menu .menu-item:has-text("Work")');
@@ -1206,6 +1206,43 @@ await test("the folder name opens a menu with recent folders, and choosing one s
   assert.ok((await files(page))["Page.md"].endsWith("hello edited\n"), "the open page was saved before switching");
   assert.equal(await page.isVisible("#welcome"), false, "no first-run screen");
 }, { settings: FOLDER_SETTINGS });
+
+await test("a folder can be given a colour from the folder menu; it shows beside the name and in the list, and is kept", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 0);
+  await page.click("#vaultButton");
+  await page.click('.folder-menu [data-folder-colour="green"]');
+  assert.equal(await page.locator(".folder-menu").count(), 1, "the menu stays open");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 1);
+  assert.deepEqual((await settingsNow(page)).folderColours, { "/home/alice/Documents/ScaleNote": "green" });
+  await page.keyboard.press("Escape");
+  // Another folder has its own colour; the first keeps its own.
+  await page.click("#vaultButton");
+  await page.click('.folder-menu .menu-item:has-text("Work")');
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).vaultPath === "/home/alice/Work");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 0);
+  await page.click("#vaultButton");
+  await page.click('.folder-menu [data-folder-colour="red"]');
+  assert.equal(await page.locator(".folder-menu .folder-menu-item:not(.folder-dot-empty) .folder-dot:not(.folder-dot-empty)").count(), 2);
+  await page.click('.folder-menu [data-folder-colour="none"]');
+  assert.deepEqual((await settingsNow(page)).folderColours, { "/home/alice/Documents/ScaleNote": "green" });
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 0);
+}, { settings: FOLDER_SETTINGS });
+
+await test("Ctrl+Shift+O opens the folder menu, and a second press does not open another", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  await page.keyboard.press("Control+Shift+O");
+  await page.waitForSelector(".folder-menu");
+  await page.keyboard.press("Control+Shift+O");
+  assert.equal(await page.locator(".folder-menu").count(), 1);
+}, { settings: FOLDER_SETTINGS });
+
+await test("a settings file with bad folder colours is cleaned and the app still starts", async (page) => {
+  await page.waitForSelector("#vaultButton");
+  assert.equal(await page.locator("#vaultButton.has-colour").count(), 1);
+  await page.click("#vaultButton");
+  assert.equal(await page.locator('.folder-menu [data-folder-colour][aria-pressed="true"]').getAttribute("data-folder-colour"), "teal");
+}, { settings: { ...FOLDER_SETTINGS, folderColours: { "/home/alice/Documents/ScaleNote": "teal", "/x": "pink", "__proto__": "red", "/y": 5 } } });
 
 await test("Open another folder goes straight to the picker, and Use the default folder works", async (page) => {
   await page.waitForSelector("#vaultButton");
@@ -1247,7 +1284,7 @@ await test("recent folders from a damaged settings file are cleaned, not trusted
   await page.click("#vaultButton");
   const labels = await page.locator(".folder-menu .menu-item").allTextContents();
   assert.deepEqual(labels.slice(0, 2), ["ScaleNote", "Work"]);
-  assert.equal(labels.length, 4, "the bad entries are gone: " + labels);
+  assert.equal(labels.length, 5, "the bad entries are gone: " + labels);
 }, { settings: { ...FOLDER_SETTINGS, recentVaults: [5, null, "", "/home/alice/Work", "/home/alice/Work", "bad\u0000path", { a: 1 }] } });
 
 await test("Settings and What's new close with Escape or by clicking outside the box; the first-run screens do not", async (page) => {
