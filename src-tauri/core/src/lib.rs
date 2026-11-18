@@ -9,6 +9,7 @@ pub mod atomic;
 pub mod attachments;
 pub mod canvas;
 pub mod foldericons;
+pub mod applock;
 pub mod backup;
 pub mod base64;
 pub mod logger;

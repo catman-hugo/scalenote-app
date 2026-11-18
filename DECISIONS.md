@@ -748,3 +748,17 @@ Context. On a phone the app looked too big next to other phone apps.
 Decision. The page's base text size is the chosen Text size times a screen scale set in CSS by the screen's width in CSS pixels (which already allows for how dense the pixels are): 1 above 480, 0.875 at 480 or less, 0.8125 at 360 or less. The spacing steps shrink at 480 too. Touch targets keep at least 40 pixels. Because it is CSS, it changes by itself when the phone is turned or the window resized.
 Alternatives. A separate Text size default for phones (rejected: the setting would mean different things on each device). Reading the phone's own font setting (rejected: the WebView does not reliably report it).
 Cost. Phone text is a little smaller for everyone; people who want it bigger use Text size.
+
+## 2026-11-18: The app lock keeps people out of the app; it does not encrypt
+
+Context. 0.5.6 adds an optional lock (19). The pages are plain files by design, so they cannot be both locked and readable by Obsidian and other programs.
+Decision. (1) The lock is a gate in the app: a PIN (4 to 12 digits) or passcode (6 to 64 characters), never stored; a salted PBKDF2-SHA256 hash (300,000 rounds, `pbkdf2` 0.12.2) is kept in a private file in the app's own folder. (2) While locked, Rust refuses every command that reads or writes pages, so it is more than a screen over the window. (3) After 5 wrong tries each try waits longer (30 seconds, doubling, at most 15 minutes), kept in the file. (4) It closes again after a chosen time without typing, tapping or clicking (or as soon as the app is left); the open page is saved first. (5) On Android a fingerprint or face can unlock, through `tauri-plugin-biometric` 2.5.0 called from Rust only. (6) A damaged lock file counts as no lock, and there is no "forgot PIN" way in: the settings say so before the lock is turned on.
+Alternatives. Encrypting the vault (rejected: pages would no longer be plain files, and sync, Obsidian and backups would all need the key). Keeping the hash in the system's secure storage (not now: it is only on Windows in this app; a private file is used for the sync key elsewhere too). A recovery code (rejected for now: one more secret to keep, and the files can be read anyway by whoever has the device unlocked).
+Cost. Whoever can read the app's private folder or the vault folder can read the pages without the lock. Forgetting the PIN on Android means the pages in the app cannot be opened there; synced or backed-up copies are the way back.
+
+## 2026-11-18: Zoom is the window's own on computers and the text size on Android
+
+Context. (22) asks for Ctrl +, Ctrl − and Ctrl 0 from 80% to 200%.
+Decision. On a computer the window itself zooms (Tauri's `set_zoom`), so drawings, pictures and pointer positions all scale together. Android's window cannot zoom, so there the text and everything sized by it grow (a `--zoom` factor in the root text size). The zoom is kept in the settings and is separate from Text size. The compact layout by window width is the screen scale added earlier for phones.
+Alternatives. CSS `zoom` everywhere (rejected: drawing positions are measured in different ways by different web views). Only Text size (rejected: icons, pictures and spacing would not grow).
+Cost. On Android, 200% makes text bigger but not every picture.

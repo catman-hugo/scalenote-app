@@ -55,6 +55,15 @@ export const backend = {
   // computer's own login list and answer whether it now holds this program.
   // The zoom of the window (1 is 100%). Computers only; Android's window cannot zoom.
   setZoom: (scale) => call("set_zoom", { scale }),
+  // The app lock (see applock.js and src/lock.rs). lockStatus -> { enabled, locked, kind,
+  // biometric, biometricAvailable }; lockUnlock -> { ok, wait }; lockNow -> whether it locked.
+  lockStatus: () => call("lock_status"),
+  lockSet: (kind, secret, current) => call("lock_set", { kind, secret, current }),
+  lockRemove: (current) => call("lock_remove", { current }),
+  lockUnlock: (secret) => call("lock_unlock", { secret }),
+  lockNow: () => call("lock_now"),
+  lockSetBiometric: (on) => call("lock_set_biometric", { on }),
+  lockBiometricUnlock: (title) => call("lock_biometric_unlock", { title }),
   traySet: (enabled, showLabel, quitLabel) => call("tray_set", { enabled, showLabel, quitLabel }),
   hideWindow: () => call("hide_main_window"),
   autostartGet: () => call("autostart_get"),

@@ -687,7 +687,7 @@ await test("settings: theme, text size, note width and list width apply at once 
   await page.click('#settings .mode-option[data-mode="light"]');
   await page.click('#settings .theme-card[data-theme="sage"]');
   await page.selectOption('#settings select >> nth=0', "125");
-  await page.selectOption('#settings select >> nth=1', "wide");
+  await page.selectOption('#settings select >> nth=2', "wide");
   await page.locator('#settings input[type="range"]').fill("360");
   const look = await page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
@@ -1258,6 +1258,98 @@ await test("About shows the version and build day, its notes, the releases page,
   await page.waitForSelector("#whatsnew[open]");
   assert.match(await page.textContent("#whatsnew h2"), new RegExp(`What's new in ${VERSION.replace(/\./g, "\\.")}`));
 }, { settings: FOLDER_SETTINGS });
+
+// ---------- 0.5.6: app lock ----------
+const seedLock = (lock) => (page) => page.addInitScript((l) => { window.__seedLock = l; }, lock);
+
+await test("the app lock is off at first; turning it on asks for the PIN twice and refuses a short one", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click("#settingsTab-device");
+  await page.waitForSelector("#lockTurnOn");
+  assert.match(await page.textContent("#lockSettings"), /does not encrypt your pages/);
+  await page.click("#lockTurnOn");
+  assert.match(await page.textContent("#lockSettings"), /if you forget it, ScaleNote cannot be opened/);
+  assert.equal(await page.getAttribute("#lockNew", "inputmode"), "numeric", "a PIN gets the number pad");
+  await page.fill("#lockNew", "123");
+  await page.fill("#lockRepeat", "123");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForFunction(() => /Too short/.test(document.getElementById("lockResult").textContent));
+  await page.fill("#lockNew", "4821");
+  await page.fill("#lockRepeat", "4822");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForFunction(() => /do not match/.test(document.getElementById("lockResult").textContent));
+  await page.fill("#lockRepeat", "4821");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForSelector("#lockAfter");
+  assert.equal(await page.evaluate(() => window.__lock.secret), "4821");
+  assert.equal(await page.inputValue("#lockAfter"), "5", "five minutes away by default");
+  await page.selectOption("#lockAfter", "15");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).lockAfter === 15);
+  // A change and turning off need the current PIN.
+  await page.click("#lockTurnOff");
+  await page.fill("#lockCurrent", "0000");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForFunction(() => /current PIN or passcode is not right/.test(document.getElementById("lockResult").textContent));
+  await page.fill("#lockCurrent", "4821");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForSelector("#lockTurnOn");
+  assert.equal(await page.evaluate(() => window.__lock.secret), null);
+  assert.equal(await page.locator("#lockBiometricSetting").count(), 0, "no fingerprint choice on a computer");
+}, { settings: FOLDER_SETTINGS });
+
+await test("with the lock on the app starts locked, opens no pages until the right PIN, and waits after many wrong ones", async (page) => {
+  await page.waitForSelector("#lockScreen[open]");
+  assert.equal(await page.locator(".tree-button").count(), 0, "no page names before unlocking");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#lockScreen[open]").count(), 1, "Esc does not close it");
+  await page.fill("#lockInput", "0000");
+  await page.click("#lockUnlock");
+  await page.waitForFunction(() => /not right/.test(document.getElementById("lockMessage").textContent));
+  assert.equal(await page.inputValue("#lockInput"), "", "the field is emptied");
+  for (let i = 0; i < 4; i++) {
+    await page.fill("#lockInput", "0000");
+    await page.keyboard.press("Enter");
+  }
+  await page.waitForFunction(() => /Try again in \d+ seconds/.test(document.getElementById("lockMessage").textContent));
+  assert.equal(await page.isDisabled("#lockUnlock"), true);
+  // The wait is over (the stand-in lets the right PIN through again).
+  await page.evaluate(() => { document.getElementById("lockUnlock").disabled = false; });
+  await page.fill("#lockInput", "4821");
+  await page.click("#lockUnlock");
+  await page.waitForSelector("#lockScreen", { state: "detached" });
+  await page.waitForSelector('.tree-button[data-path="Page.md"]');
+  assert.equal(await page.evaluate(() => document.body.classList.contains("is-locked")), false);
+}, { settings: FOLDER_SETTINGS, files: { "Page.md": "hello\n" }, before: seedLock({ secret: "4821", kind: "pin" }) });
+
+await test("set to lock when leaving, the app saves the open page and locks as soon as it is hidden", async (page) => {
+  await page.waitForSelector("#lockScreen[open]");
+  await page.fill("#lockInput", "4821");
+  await page.click("#lockUnlock");
+  await page.waitForSelector('.tree-button[data-path="Page.md"]');
+  await page.click('.tree-button[data-path="Page.md"]');
+  await page.click(".note-body p");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" typed");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.waitForSelector("#lockScreen[open]");
+  assert.ok((await files(page))["Page.md"].includes("hello typed"), "saved before locking");
+  assert.equal(await page.evaluate(() => window.__lock.locked), true);
+}, { settings: { ...FOLDER_SETTINGS, lockAfter: 0 }, files: { "Page.md": "hello\n" }, before: seedLock({ secret: "4821", kind: "pin" }) });
+
+await test("a passcode gets a keyboard, and where the device can, a fingerprint or face unlocks", async (page) => {
+  await page.waitForSelector("#lockScreen[open]");
+  assert.equal(await page.getAttribute("#lockInput", "inputmode"), "text");
+  assert.equal(await page.getAttribute("#lockInput", "aria-label"), "Passcode");
+  await page.click("#lockBiometric");
+  await page.waitForFunction(() => /Not recognised/.test(document.getElementById("lockMessage").textContent));
+  await page.evaluate(() => { window.__biometricOk = true; });
+  await page.click("#lockBiometric");
+  await page.waitForSelector("#lockScreen", { state: "detached" });
+}, { settings: FOLDER_SETTINGS, before: async (page) => { await seedLock({ secret: "a long passcode", kind: "passcode", biometric: true })(page); await page.addInitScript(() => { window.__biometricAvailable = true; }); } });
 
 await test("the folder name opens a menu with recent folders, and choosing one switches to it", async (page) => {
   await page.waitForSelector("#vaultButton");
@@ -7571,11 +7663,11 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device"]);
+  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device", "Shortcuts", "About"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
-  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 2, "text size and page width are on Look, next to the theme cards");
+  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 3, "text size, zoom and page width are on Look, next to the theme cards");
   assert.equal(await page.locator("#settings .settings-body:visible .theme-card").count(), 10, "the theme cards are on Look");
   await page.focus("#settingsTab-look");
   await page.keyboard.press("ArrowDown");
@@ -7583,11 +7675,11 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-pages");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
-  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it wraps round");
+  assert.equal(await page.locator("#settings h2").textContent(), "About", "it wraps round");
   await page.click("#settings button.primary");
   await page.waitForSelector("#settings", { state: "hidden" });
   await page.click("#openSettings");
-  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it opens where it was left");
+  assert.equal(await page.locator("#settings h2").textContent(), "About", "it opens where it was left");
 }, { settings: existingUser({ updates: false }) });
 
 await test("Settings has a Sync tab: on by default, the name is kept clean, and both choices are saved and shown as saved", async (page) => {
@@ -7894,7 +7986,7 @@ await test("on a phone Settings is a full-screen list of groups, each opening as
     return { left: d.left, right: d.right, top: d.top, bottom: d.bottom, w: d.width, vw: innerWidth, vh: innerHeight, stacked: rows.every((b, i) => i === 0 || b.top >= rows[i - 1].bottom - 1), count: rows.length, fullWidth: rows.every((b) => b.width > innerWidth * 0.8) };
   });
   assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh + 1 && r.w >= r.vw - 1, JSON.stringify(r));
-  assert.equal(r.count, 7);
+  assert.equal(r.count, 9);
   assert.ok(r.stacked && r.fullWidth, JSON.stringify(r));
   assert.equal(await page.isVisible("#settingsPanel-look"), false);
   if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-list.png` });

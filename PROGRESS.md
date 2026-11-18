@@ -12,12 +12,14 @@ Done (tried here: node tests, the browser tests for PDFs and find, screenshots l
 - Words of PDF pages added as pictures are kept beside each picture (`<picture>.text.json`, `web/imagetext.js`, Rust `write_page_text`/`read_page_text`) and found by Ctrl+F, marked on the picture (`web/imagefind.js`). Picture descriptions are found too.
 - A PDF in a page has side handles to change its width, saved as `![name|600](file.pdf)`.
 - Find in a PDF in a page marks only the found letters.
+- Extras (branch `feature/v0.5.6-extras`, on top of the PDF branch): (19) app lock (`core/src/applock.rs` with 5 tests, `src/lock.rs`, `web/applock.js`; fingerprint/face on Android through `tauri-plugin-biometric`), (20) About tab, (21) Shortcuts tab with a printable sheet (`web/shortcuts.js`), (22) zoom shortcuts and a Zoom setting (window zoom on computers, text zoom on Android); the compact layout by width is the phone sizing below.
 - Phone sizing: root text size is the chosen size times `--screen-scale` (0.875 at 480 CSS px wide or less, 0.8125 at 360 or less), spacing steps shrink too; full-screen Settings keeps clear of the status bar (safe-area padding). Compared with the owner's phone screenshots at the same size (393 x 873, 2.75x).
 
 Not done / untried:
 - PDFs imported as pictures before this change have no words file and are not searchable; nothing adds one afterwards.
 - The Rust commands are only compiled by CI. Not tried in the packaged app or on a device. The phone sizing and the status bar fix are only tried in a phone-sized browser, not on the phone. The width handles were tried with a mouse in the browser tests, not with a finger.
-- Still planned for 0.5.6: the items in `docs/v0.5-plan.md`, and tying each pairing to one local folder.
+- Still planned for 0.5.6: (23) the Linux drawing zoom and finger bug, (24) the flaky tests, (25) the Fedora install check, tying each pairing to one local folder, the 0.5 security checklist and set-up guide, and the tests on every device.
+- Untried: the lock, fingerprint unlock, zoom and tray commands only compiled by CI; never run in the packaged app. Fingerprint unlock not tried on a phone.
 
 ## 0.5.5: built (home server and the six extras), not tried on a real server or device
 

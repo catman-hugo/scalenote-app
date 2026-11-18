@@ -4,6 +4,7 @@
 // real tests. Commands return an error *code* (see `VaultError::code`) as text, and the
 // interface turns the code into a sentence from the language file.
 
+mod lock;
 mod secure;
 mod tray;
 
@@ -40,6 +41,8 @@ struct AppState {
     data_dir: PathBuf,
     /// This device's sync: name, switch, keys, paired devices and the listening service.
     sync: Arc<Manager>,
+    /// True while the app lock is closed: nothing that reads or writes pages answers (lock.rs).
+    locked: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -92,12 +95,14 @@ fn with_vault<T>(
     action: &str,
     work: impl FnOnce(&Vault) -> Result<T, VaultError>,
 ) -> Result<T, String> {
+    lock::refuse_if_locked(state)?;
     let guard = state.vault.lock().map_err(|_| "io".to_string())?;
     let vault = guard.as_ref().ok_or_else(|| "no_vault".to_string())?;
     work(vault).map_err(|error| code(error, state, action))
 }
 
 fn install_vault(state: &AppState, vault: Vault) -> Result<OpenedVault, String> {
+    lock::refuse_if_locked(state)?;
     let removed = vault.clean_up_leftovers();
     let reply = OpenedVault {
         name: vault
@@ -961,6 +966,7 @@ async fn sync_set_on_wifi(on_wifi: bool, state: State<'_, AppState>) -> Result<(
 }
 
 fn vault_root(state: &AppState) -> Result<PathBuf, String> {
+    lock::refuse_if_locked(state)?;
     let guard = state.vault.lock().map_err(|_| "io".to_string())?;
     guard.as_ref().map(|vault| vault.root().to_path_buf()).ok_or_else(|| "no_vault".to_string())
 }
@@ -1054,6 +1060,8 @@ fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>>
         logger,
         settings_file: data_dir.join("settings.json"),
         default_vault,
+        // A lock that is set closes the app at every start.
+        locked: std::sync::atomic::AtomicBool::new(scalenote_core::applock::read(&data_dir.join(scalenote_core::applock::FILE_NAME)).ok().flatten().is_some()),
         data_dir,
         sync,
     })
@@ -1089,6 +1097,17 @@ fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("autostart-unused").build()
 }
 
+/// Fingerprint or face unlock for the app lock. Android only; used from lock.rs, never from
+/// the window's scripts. On a computer an empty plugin stands in its place.
+#[cfg(mobile)]
+fn biometric_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_biometric::init()
+}
+#[cfg(not(mobile))]
+fn biometric_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("biometric-unused").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -1102,6 +1121,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(autostart_plugin())
+        .plugin(biometric_plugin())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
@@ -1128,6 +1148,13 @@ pub fn run() {
             write_page_text,
             read_page_text,
             export_obsidian_copy,
+            lock::lock_status,
+            lock::lock_set,
+            lock::lock_remove,
+            lock::lock_unlock,
+            lock::lock_now,
+            lock::lock_set_biometric,
+            lock::lock_biometric_unlock,
             tray::set_zoom,
             tray::tray_set,
             tray::hide_main_window,

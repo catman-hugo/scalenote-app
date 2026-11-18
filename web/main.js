@@ -5,6 +5,7 @@ import { applyAppearance, DEFAULT_APPEARANCE, followSystem, nextZoom, normalizeA
 import { writeImage } from "./richblocks.js";
 import { openSettingsAt, openSettings } from "./settings.js";
 import { shortcutTables } from "./shortcuts.js";
+import { cleanLockAfter, lockSettingsRows, showLockScreen, watchForLock } from "./applock.js";
 import { checkForUpdate, platformOf, shouldCheck, RELEASE_PAGE } from "./updates.js";
 import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
@@ -60,6 +61,8 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
+  // True while the app lock's screen is shown (applock.js).
+  locked: false,
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
@@ -171,6 +174,8 @@ async function loadSettings() {
       vaultPath: typeof parsed.vaultPath === "string" ? parsed.vaultPath : null,
       recentVaults: cleanRecent(parsed.recentVaults),
       folderColours: cleanFolderColours(parsed.folderColours, COLOURS),
+      // Minutes away before the app lock closes again (only used when a lock is set).
+      lockAfter: cleanLockAfter(parsed.lockAfter),
       // Off unless turned on. Computers only; Android never reads it.
       keepInTray: parsed.keepInTray === true && !isAndroid,
       disclosureAccepted: parsed.disclosureAccepted === true,
@@ -603,6 +608,32 @@ function shortcutsShortcut(event) {
   el("openSettings").click();
 }
 
+// ---------- app lock (applock.js) ----------
+
+async function unlockAtStart() {
+  let status = null;
+  try {
+    status = await backend.lockStatus();
+  } catch (error) {
+    logProblem("lock status unreadable", error);
+  }
+  if (status && status.locked) await showLocked(status);
+  watchForLock({
+    minutes: () => app.settings.lockAfter,
+    // The open page is saved before the lock closes, so nothing typed waits behind it.
+    beforeLock: async () => {
+      if (app.autosave) await app.autosave.flush();
+    },
+    onLocked: showLocked,
+  });
+}
+
+async function showLocked(status) {
+  app.locked = true;
+  await showLockScreen(status);
+  app.locked = false;
+}
+
 // The tray and the login list. Both are off until turned on. The tray switch is kept in the
 // settings and applied again at every start; the login switch is only the computer's own list,
 // so what is shown is always what that list says.
@@ -683,6 +714,13 @@ function deviceSettingsRows() {
   row.append(textElement("span", s.reopenLast, "setting-label"), box);
   const hint = textElement("p", s.reopenLastHint, "setting-hint");
   const keepRows = isAndroid ? [] : trayRows();
+  const lockRows = lockSettingsRows({
+    settings: () => app.settings,
+    save: (patch) => {
+      Object.assign(app.settings, patch);
+      saveSettings();
+    },
+  });
 
   const reset = document.createElement("button");
   reset.type = "button";
@@ -710,7 +748,7 @@ function deviceSettingsRows() {
     showToast(s.resetDone);
   });
   const resetHint = textElement("p", s.resetHint, "setting-hint");
-  return [row, hint, ...keepRows, reset, resetHint];
+  return [row, hint, ...keepRows, lockRows, reset, resetHint];
 }
 
 function syncSettingsRows() {
@@ -2698,7 +2736,7 @@ async function start() {
   app.watcher = watchVault({
     signature: () => backend.vaultSignature(),
     onChange: () => refreshAfterOutsideChange(false),
-    isUsable: () => app.settings.vaultPath !== null,
+    isUsable: () => app.settings.vaultPath !== null && !app.locked,
   });
 
   await loadSettings();
@@ -2715,6 +2753,8 @@ async function start() {
       await saveSettings();
     });
   }
+  // With the app lock on, nothing of the pages is opened before it is unlocked (Rust refuses it).
+  await unlockAtStart();
   const freshInstall = !app.settings.disclosureAccepted;
   if (freshInstall) {
     await showDisclosure();
