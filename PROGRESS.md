@@ -2,7 +2,24 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-17 (plan for 0.5.3 to 0.5.6 changed, see `docs/v0.5-plan.md`); code last changed 2026-11-15, 0.5.2 built (finding devices); tested in a browser and with real sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-17; 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+
+## 0.5.3: built, not tried on two devices
+
+The sync itself. Branch `feature/v0.5.3-sync`. Release notes: `docs/release-notes/0.5.3.md`; security checklist: `docs/security-checklist-0.5.3.md`.
+
+Done (tried here: 226 Rust tests in the core, about 22 of them new for sync with two real services on loopback, including conflicts, hostile paths, a cut connection, 1500 files plus a 20 MB file, the file size limit, a link in the folder, pause and rename; 13 new node tests; 8 new browser tests; screenshots light and dark, desktop and phone, viewed):
+- `sync::files`, `sync::exchange`, `sync::engine`, `sync::watch`, `sync::conflicts`; service additions (Sync now, Compare, pause, rename, automatic sync tick). Every change is a compare-and-set against the hash the other side was seen with.
+- App commands `sync_compare`, `sync_run`, `sync_set_paused`, `sync_rename_peer`, `vault_signature`, `conflicts_list`, `conflict_settle`; a background thread for automatic sync.
+- Extras: (1) status line, (2) Pause and Compare, (3) rename a device, (4) outside changes noticed (the watcher polls a signature of the folder every 4 s), (5) conflict copies screen, (6) network statement.
+
+Not done / untried:
+- Never run between two devices or on a real network. Real discovery, Wi-Fi isolation, Windows and Android are untried.
+- `lib.rs` could not be compiled here (system libraries missing); CI compiles it. Check CI before trusting the commands.
+- Every sync reads and hashes the whole folder (no cache); may be slow for very large folders.
+- A canvas or split view is not reloaded when its file changes outside; folder names that differ only by case are not detected; pause is in memory only.
+- Android discovery (multicast lock) is still planned for 0.5.4.
+- The older screenshot blocks in `tests/editor.spec.mjs` (for example the 0.2 "what's new" one) fail when run with `ONLY_SHOTS`; the 0.5.3 block was run on its own.
 
 ## 0.5.2: built, not tried on two devices
 

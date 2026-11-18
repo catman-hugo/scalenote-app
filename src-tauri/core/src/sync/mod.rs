@@ -7,8 +7,12 @@
 //! these rules, so every rule about not losing a note is tested here, on real folders.
 
 pub mod channel;
+pub mod conflicts;
 pub mod device;
 pub mod discovery;
+pub mod engine;
+pub mod exchange;
+pub mod files;
 pub mod hex;
 pub mod identity;
 pub mod manifest;
@@ -17,6 +21,7 @@ pub mod plan;
 pub mod manager;
 pub mod service;
 pub mod trust;
+pub mod watch;
 
 pub use device::{Device, Loaded, SyncSettings};
 pub use manifest::{FileState, Manifest, Scan, Skip, SkipReason};
@@ -64,6 +69,12 @@ impl SyncError {
             SyncError::Refused("the code is not 8 digits") => "pair_bad_code",
             SyncError::Refused("sync is off") => "sync_off",
             SyncError::Refused("sync is not available") => "sync_unavailable",
+            SyncError::Refused("sync is paused") => "sync_paused",
+            SyncError::Refused("sync is busy") => "sync_busy",
+            SyncError::Refused("no vault is open") => "sync_no_vault",
+            SyncError::Refused("device not found") => "sync_not_found",
+            SyncError::Refused("not the paired device") => "sync_wrong_device",
+            SyncError::Refused("the other device said no") => "sync_peer_refused",
             SyncError::Refused(_) => "pair_refused",
             SyncError::Channel(_) => "pair_failed",
         }
@@ -88,3 +99,9 @@ mod tests_pairing;
 
 #[cfg(test)]
 mod tests_service;
+
+#[cfg(test)]
+mod tests_sync;
+
+#[cfg(test)]
+mod tests_conflicts;

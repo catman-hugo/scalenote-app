@@ -1,0 +1,421 @@
+//! Tests for the sync itself: two real services on loopback, two real folders, the real
+//! encrypted connection. Nothing is faked: the same code path that two devices use.
+
+use super::channel::Channel;
+use super::engine::Outcome;
+use super::exchange::{recv_blob, send_blob, KIND_BYE, KIND_DEL, KIND_LIST, KIND_LISTING, KIND_NO, KIND_PUT};
+use super::identity::Identity;
+use super::service::{EventKind, Service};
+use super::SyncError;
+use std::fs;
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+struct Dir(PathBuf);
+
+impl Dir {
+    fn new(label: &str) -> Dir {
+        let path = std::env::temp_dir().join(format!("sn-sync-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("make test dir");
+        Dir(path)
+    }
+}
+
+impl Drop for Dir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+struct Pair {
+    alice: Service,
+    bob: Service,
+    /// Alice's vault and Bob's vault.
+    va: Dir,
+    vb: Dir,
+    /// How Alice names Bob in `sync_peer`.
+    bob_id: String,
+    _dirs: (Dir, Dir),
+}
+
+fn setup(label: &str) -> Pair {
+    let (da, db) = (Dir::new(&format!("{label}-da")), Dir::new(&format!("{label}-db")));
+    let (va, vb) = (Dir::new(&format!("{label}-va")), Dir::new(&format!("{label}-vb")));
+    let make = |dir: &Dir, name: &str| Service::with_bind(&dir.0, Identity::generate().expect("identity"), name, true, "127.0.0.1", 0).expect("service");
+    let (alice, bob) = (make(&da, "alice"), make(&db, "bob"));
+    let code = bob.start_pairing().expect("code");
+    let address = format!("127.0.0.1:{}", bob.status().listening_port.expect("listening"));
+    alice.join(&address, &code).expect("pair");
+    alice.set_vault(Some(va.0.clone()));
+    bob.set_vault(Some(vb.0.clone()));
+    let bob_id = alice.status().peers[0].id.clone();
+    Pair { alice, bob, va, vb, bob_id, _dirs: (da, db) }
+}
+
+fn write(root: &Path, relative: &str, text: &str) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().expect("parent")).expect("folders");
+    fs::write(path, text).expect("write");
+}
+
+fn read(root: &Path, relative: &str) -> String {
+    fs::read_to_string(root.join(relative)).unwrap_or_else(|_| "<missing>".to_string())
+}
+
+fn sync(pair: &Pair) -> super::engine::Report {
+    match pair.alice.sync_peer(&pair.bob_id, true, &mut |_| {}).expect("sync") {
+        Outcome::Done(report) => report,
+        Outcome::NeedsApproval(_) => panic!("approval was given"),
+    }
+}
+
+fn names(root: &Path) -> Vec<String> {
+    super::manifest::Manifest::scan(root).expect("scan").manifest.files.keys().cloned().collect()
+}
+
+#[test]
+fn the_first_sync_waits_for_a_yes_changes_nothing_and_then_joins_both_vaults() {
+    let p = setup("first");
+    write(&p.va.0, "Alice page.md", "from alice");
+    write(&p.vb.0, "Bob page.md", "from bob");
+    write(&p.vb.0, "School/Notes.md", "deep");
+    let outcome = p.alice.sync_peer(&p.bob_id, false, &mut |_| {}).expect("preview");
+    let Outcome::NeedsApproval(preview) = outcome else { panic!("a first sync must wait") };
+    assert!(preview.first);
+    assert_eq!((preview.summary.push, preview.summary.pull), (1, 2));
+    assert_eq!(names(&p.va.0), vec!["Alice page.md"], "nothing changed here before the yes");
+    assert_eq!(names(&p.vb.0).len(), 2, "nothing changed there either");
+    let report = sync(&p);
+    assert_eq!((report.sent, report.received, report.changed()), (1, 2, 3));
+    assert_eq!(names(&p.va.0), names(&p.vb.0));
+    assert_eq!(read(&p.va.0, "School/Notes.md"), "deep");
+    assert_eq!(read(&p.vb.0, "Alice page.md"), "from alice");
+    // The second sync is not a first one any more and has nothing to do.
+    let Outcome::Done(again) = p.alice.sync_peer(&p.bob_id, false, &mut |_| {}).expect("second") else { panic!("no approval needed twice") };
+    assert_eq!(again.changed(), 0);
+    assert!(p.alice.status().events.iter().any(|e| e.kind == EventKind::Synced && e.changed == 3 && e.name == "bob"), "the sync is in the activity list");
+    // The answering side notes it a moment later, when it sees the goodbye. It counts what it
+    // wrote itself: one file (Alice page), not the two it gave away.
+    let noted = (0..60).any(|_| {
+        std::thread::sleep(Duration::from_millis(50));
+        p.bob.status().events.iter().any(|e| e.kind == EventKind::Synced && e.changed == 1 && e.name == "alice")
+    });
+    assert!(noted, "the other device also notes it");
+}
+
+#[test]
+fn compare_shows_the_plan_and_changes_nothing_anywhere() {
+    let p = setup("compare");
+    write(&p.va.0, "A.md", "a");
+    write(&p.vb.0, "B.md", "b");
+    let preview = p.alice.compare_peer(&p.bob_id).expect("compare");
+    assert_eq!((preview.summary.push, preview.summary.pull), (1, 1));
+    assert_eq!(names(&p.va.0), vec!["A.md"]);
+    assert_eq!(names(&p.vb.0), vec!["B.md"]);
+    assert!(!p.alice.status().peers[0].has_history, "comparing is not a sync");
+}
+
+#[test]
+fn edits_go_across_and_a_delete_goes_to_the_other_devices_trash_and_can_be_restored() {
+    let p = setup("edit");
+    write(&p.va.0, "Plan.md", "v1");
+    write(&p.va.0, "Photo.png", "not really a picture");
+    sync(&p);
+    write(&p.va.0, "Plan.md", "v2 from alice");
+    let r = sync(&p);
+    assert_eq!(r.sent, 1);
+    assert_eq!(read(&p.vb.0, "Plan.md"), "v2 from alice");
+    // Bob deletes a page and a picture; Alice gets them in her trash.
+    fs::remove_file(p.vb.0.join("Plan.md")).expect("delete");
+    fs::remove_file(p.vb.0.join("Photo.png")).expect("delete");
+    let r = sync(&p);
+    assert_eq!(r.deleted_here, 2);
+    assert!(!p.va.0.join("Plan.md").exists() && !p.va.0.join("Photo.png").exists());
+    let vault = crate::vault::Vault::open(&p.va.0).expect("vault");
+    let trash = vault.trash_list().expect("trash");
+    assert_eq!(trash.len(), 2, "both files are in the trash, not gone");
+    let page = trash.iter().find(|t| t.name == "Plan.md").expect("page in trash");
+    vault.restore_from_trash(&page.id).expect("restore");
+    assert_eq!(read(&p.va.0, "Plan.md"), "v2 from alice");
+}
+
+#[test]
+fn a_conflict_keeps_both_versions_on_both_devices_and_loses_no_text() {
+    let p = setup("conflict");
+    write(&p.va.0, "Shared.md", "start");
+    sync(&p);
+    write(&p.va.0, "Shared.md", "alice wrote this");
+    write(&p.vb.0, "Shared.md", "bob wrote that");
+    let r = sync(&p);
+    assert_eq!(r.conflicts, 1);
+    assert_eq!(r.conflict_copies.len(), 1);
+    assert_eq!(names(&p.va.0), names(&p.vb.0), "both devices have the same files");
+    assert_eq!(names(&p.va.0).len(), 2);
+    let texts: Vec<String> = names(&p.va.0).iter().map(|n| read(&p.va.0, n)).collect();
+    assert!(texts.contains(&"alice wrote this".to_string()) && texts.contains(&"bob wrote that".to_string()), "both versions survive: {texts:?}");
+    for name in names(&p.va.0) {
+        assert_eq!(read(&p.va.0, &name), read(&p.vb.0, &name), "{name} is identical on both");
+    }
+    assert!(r.conflict_copies[0].contains("(conflict "), "the copy is named as a conflict copy");
+    // A third sync has nothing left to do.
+    assert_eq!(sync(&p).changed(), 0);
+}
+
+#[test]
+fn an_edit_beats_a_delete_on_the_other_side() {
+    let p = setup("editdelete");
+    write(&p.va.0, "Keep.md", "start");
+    sync(&p);
+    fs::remove_file(p.va.0.join("Keep.md")).expect("delete on alice");
+    write(&p.vb.0, "Keep.md", "bob kept typing");
+    sync(&p);
+    assert_eq!(read(&p.va.0, "Keep.md"), "bob kept typing");
+    assert_eq!(read(&p.vb.0, "Keep.md"), "bob kept typing");
+}
+
+#[test]
+fn a_folder_of_settings_and_a_drawing_sync_too_but_the_settings_never_get_a_copy_file() {
+    let p = setup("settings");
+    write(&p.va.0, ".scalenote/folder-icons.json", "{\"a\":1}");
+    write(&p.va.0, "Page.md", "text");
+    write(&p.va.0, "Page.canvas.json", "{\"ink\":[]}");
+    sync(&p);
+    assert_eq!(read(&p.vb.0, ".scalenote/folder-icons.json"), "{\"a\":1}");
+    assert_eq!(read(&p.vb.0, "Page.canvas.json"), "{\"ink\":[]}");
+    write(&p.va.0, ".scalenote/folder-icons.json", "{\"a\":2}");
+    write(&p.vb.0, ".scalenote/folder-icons.json", "{\"a\":3}");
+    sync(&p);
+    assert_eq!(read(&p.va.0, ".scalenote/folder-icons.json"), read(&p.vb.0, ".scalenote/folder-icons.json"));
+    let hidden: Vec<_> = fs::read_dir(p.va.0.join(".scalenote")).expect("dir").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains("conflict")).collect();
+    assert!(hidden.is_empty(), "no hidden conflict copy: {hidden:?}");
+}
+
+#[test]
+fn pause_stops_both_directions_and_resume_brings_it_back() {
+    let p = setup("pause");
+    write(&p.va.0, "A.md", "a");
+    p.alice.set_paused(true).expect("pause");
+    assert!(p.alice.status().paused);
+    let error = p.alice.sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("paused");
+    assert_eq!(error.code(), "sync_paused");
+    // Bob is paused: Alice's sync is turned away, and nothing changes on either side.
+    p.alice.set_paused(false).expect("resume");
+    p.bob.set_paused(true).expect("pause bob");
+    let error = p.alice.sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("bob paused");
+    assert_eq!(error.code(), "sync_peer_refused");
+    assert!(names(&p.vb.0).is_empty());
+    p.bob.set_paused(false).expect("resume bob");
+    assert_eq!(sync(&p).sent, 1);
+}
+
+#[test]
+fn a_device_that_is_not_paired_or_a_vault_that_is_not_open_gets_nothing() {
+    let p = setup("refuse");
+    write(&p.vb.0, "Secret.md", "private");
+    // A stranger with its own key connects and asks for the list.
+    let port = p.bob.status().listening_port.expect("port");
+    let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let mut stranger = Channel::connect(stream, &Identity::generate().expect("identity")).expect("handshake");
+    send_blob(&mut stranger, KIND_LIST, &[], &[]).expect("ask");
+    // The refusal is a single byte, not a blob; either way it is not a list.
+    let answer = stranger.recv().expect("answer");
+    assert_eq!(answer, vec![super::pairing::KIND_REFUSED], "a stranger is turned away and never gets a list");
+    let _ = KIND_LISTING;
+    // A paired device is told no while no vault is open.
+    p.bob.set_vault(None);
+    let error = p.alice.sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("no vault there");
+    assert_eq!(error.code(), "sync_peer_refused");
+    let error = Service::with_bind(&Dir::new("refuse-x").0, Identity::generate().expect("identity"), "x", true, "127.0.0.1", 0).expect("service").sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("not paired");
+    assert!(matches!(error, SyncError::Refused(_)));
+}
+
+/// A paired device that is hostile or damaged: the rules still hold on the answering side.
+fn paired_channel(p: &Pair) -> Channel<TcpStream> {
+    // Use Alice's real identity to be a trusted caller, but speak the protocol by hand.
+    let port = p.bob.status().listening_port.expect("port");
+    let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream.set_read_timeout(Some(Duration::from_secs(5))).expect("timeout");
+    Channel::connect(stream, p.alice_identity()).expect("handshake")
+}
+
+impl Pair {
+    fn alice_identity(&self) -> &Identity {
+        self.alice.identity_for_tests()
+    }
+}
+
+fn put_meta(expected: &str, content: &[u8], path: &str) -> String {
+    format!("{expected}\n{}\n{path}", super::manifest::hash_bytes(content))
+}
+
+#[test]
+fn paths_that_lead_out_of_the_vault_or_into_hidden_places_are_refused_and_nothing_is_written() {
+    let p = setup("paths");
+    let outside = p.vb.0.parent().expect("parent").join(format!("sn-escape-{}.md", std::process::id()));
+    let _ = fs::remove_file(&outside);
+    for bad in ["../escape.md", "a/../../escape.md", "/etc/escape.md", ".trash/x.md", ".scalenote/other.json", "C:/x.md", "a\\b.md", "x.sn-tmp"] {
+        let mut channel = paired_channel(&p);
+        let body = b"owned";
+        send_blob(&mut channel, KIND_PUT, put_meta("-", body, bad).as_bytes(), body).expect("send");
+        let answer = recv_blob(&mut channel, 1 << 20).expect("answer");
+        assert_eq!(answer.kind, KIND_NO, "{bad} must be refused");
+    }
+    assert!(!outside.exists(), "nothing landed outside the vault");
+    assert!(names(&p.vb.0).is_empty() && fs::read_dir(&p.vb.0).expect("dir").count() == 0, "nothing landed inside either");
+}
+
+#[test]
+fn a_file_that_changed_since_the_plan_is_not_overwritten_or_deleted() {
+    let p = setup("changed");
+    write(&p.vb.0, "Note.md", "typed a moment ago");
+    let mut channel = paired_channel(&p);
+    let old = "0".repeat(64);
+    let body = b"stale plan";
+    send_blob(&mut channel, KIND_PUT, put_meta(&old, body, "Note.md").as_bytes(), body).expect("send");
+    assert_eq!(recv_blob(&mut channel, 1 << 20).expect("answer").kind, super::exchange::KIND_CHANGED);
+    send_blob(&mut channel, KIND_DEL, format!("{old}\nNote.md").as_bytes(), &[]).expect("send");
+    assert_eq!(recv_blob(&mut channel, 1 << 20).expect("answer").kind, super::exchange::KIND_CHANGED);
+    assert_eq!(read(&p.vb.0, "Note.md"), "typed a moment ago");
+    send_blob(&mut channel, KIND_BYE, &[], &[]).expect("bye");
+}
+
+#[test]
+fn damaged_or_oversized_requests_end_the_connection_without_storing_anything() {
+    let p = setup("damaged");
+    // The announced hash does not match the bytes.
+    let mut channel = paired_channel(&p);
+    send_blob(&mut channel, KIND_PUT, put_meta("-", b"other", "X.md").as_bytes(), b"real bytes").expect("send");
+    assert_eq!(recv_blob(&mut channel, 1 << 20).expect("answer").kind, KIND_NO);
+    assert!(!p.vb.0.join("X.md").exists());
+    // A body far bigger than any file is refused before it is read: hand-made head message.
+    let mut channel = paired_channel(&p);
+    let meta = put_meta("-", b"", "Huge.md");
+    let mut head = vec![KIND_PUT];
+    head.extend_from_slice(&(meta.len() as u16).to_be_bytes());
+    head.extend_from_slice(meta.as_bytes());
+    head.extend_from_slice(&(10u64 * 1024 * 1024 * 1024).to_be_bytes());
+    channel.send(&head).expect("send head");
+    assert!(recv_blob(&mut channel, 1 << 20).is_err(), "the connection is dropped");
+    assert!(!p.vb.0.join("Huge.md").exists());
+}
+
+#[test]
+fn a_connection_cut_in_the_middle_of_a_file_leaves_no_half_file_and_the_next_sync_finishes() {
+    let p = setup("cut");
+    write(&p.vb.0, "Existing.md", "must survive");
+    // Send the head of a big PUT and only the first chunk, then hang up.
+    let big = vec![b'x'; 300_000];
+    let mut channel = paired_channel(&p);
+    let meta = put_meta("-", &big, "Big.md");
+    let mut head = vec![KIND_PUT];
+    head.extend_from_slice(&(meta.len() as u16).to_be_bytes());
+    head.extend_from_slice(meta.as_bytes());
+    head.extend_from_slice(&(big.len() as u64).to_be_bytes());
+    channel.send(&head).expect("head");
+    let mut chunk = vec![0x50];
+    chunk.extend_from_slice(&big[..50_000]);
+    channel.send(&chunk).expect("chunk");
+    drop(channel);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!p.vb.0.join("Big.md").exists(), "a file that did not arrive whole is not there");
+    let leftovers: Vec<_> = fs::read_dir(&p.vb.0).expect("dir").flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(leftovers, vec!["Existing.md"], "no temporary file either");
+    write(&p.va.0, "Big.md", &"x".repeat(300_000));
+    sync(&p);
+    assert_eq!(read(&p.vb.0, "Big.md").len(), 300_000);
+    assert_eq!(read(&p.vb.0, "Existing.md"), "must survive");
+}
+
+#[test]
+fn a_big_vault_and_a_big_attachment_arrive_whole() {
+    let p = setup("big");
+    for i in 0..1500 {
+        write(&p.va.0, &format!("Folder {}/Page {i}.md", i % 30), &format!("page number {i}\n"));
+    }
+    let attachment: Vec<u8> = (0..20_000_000u32).map(|i| (i % 251) as u8).collect();
+    fs::write(p.va.0.join("Scan.pdf"), &attachment).expect("attachment");
+    let report = sync(&p);
+    assert_eq!(report.sent, 1501);
+    assert_eq!(names(&p.va.0), names(&p.vb.0));
+    assert_eq!(fs::read(p.vb.0.join("Scan.pdf")).expect("read"), attachment, "the attachment is byte for byte the same");
+    assert_eq!(sync(&p).changed(), 0, "and the next sync sees nothing to do");
+}
+
+#[test]
+fn a_file_over_the_transfer_limit_is_reported_not_moved() {
+    let p = setup("toobig");
+    // A sparse file looks big to the list without needing the disk space.
+    let file = fs::File::create(p.va.0.join("Huge.bin")).expect("file");
+    file.set_len(super::files::MAX_TRANSFER_BYTES + 1).expect("sparse");
+    write(&p.va.0, "Small.md", "fine");
+    let report = sync(&p);
+    assert_eq!(report.too_big, vec!["Huge.bin".to_string()]);
+    assert_eq!(names(&p.vb.0), vec!["Small.md"]);
+}
+
+#[test]
+fn a_linked_folder_is_never_followed_out_of_the_vault() {
+    #[cfg(unix)]
+    {
+        let p = setup("link");
+        let outside = Dir::new("link-outside");
+        write(&outside.0, "Private.md", "not for sync");
+        std::os::unix::fs::symlink(&outside.0, p.va.0.join("Linked")).expect("link");
+        write(&p.va.0, "Real.md", "real");
+        sync(&p);
+        assert_eq!(names(&p.vb.0), vec!["Real.md"]);
+        // And the answering side never writes through a link either.
+        std::os::unix::fs::symlink(&outside.0, p.vb.0.join("Door")).expect("link");
+        let mut channel = paired_channel(&p);
+        let body = b"through the door";
+        send_blob(&mut channel, KIND_PUT, put_meta("-", body, "Door/Written.md").as_bytes(), body).expect("send");
+        assert_eq!(recv_blob(&mut channel, 1 << 20).expect("answer").kind, KIND_NO);
+        assert!(!outside.0.join("Written.md").exists());
+    }
+}
+
+#[test]
+fn rename_a_paired_device_and_removing_it_forgets_the_sync_history() {
+    let p = setup("rename");
+    write(&p.va.0, "A.md", "a");
+    sync(&p);
+    assert!(p.alice.status().peers[0].has_history);
+    p.alice.rename_peer(&p.bob_id, "Bob's tablet!").expect("rename");
+    assert_eq!(p.alice.status().peers[0].name, "Bobs-tablet", "the name is cleaned like any device name");
+    assert!(p.alice.rename_peer("not-a-key", "x").is_err());
+    p.alice.remove_peer(&p.bob_id).expect("remove");
+    assert!(!super::engine::has_history(&p.va.0, &[0u8; 32]));
+    assert!(p.alice.status().peers.is_empty());
+    assert!(names(&p.va.0).contains(&"A.md".to_string()), "removing a device never touches the notes");
+}
+
+#[test]
+fn the_vault_signature_moves_when_something_changes_and_ignores_hidden_things() {
+    let dir = Dir::new("signature");
+    let before = super::watch::signature(&dir.0);
+    write(&dir.0, "A.md", "one");
+    let after_add = super::watch::signature(&dir.0);
+    assert_ne!(before, after_add);
+    write(&dir.0, ".trash/x/item", "hidden");
+    write(&dir.0, ".scalenote/sync-base-x.txt", "hidden");
+    assert_eq!(after_add, super::watch::signature(&dir.0), "hidden folders do not count");
+    write(&dir.0, "A.md", "two!");
+    assert_ne!(after_add, super::watch::signature(&dir.0));
+}
+
+#[test]
+fn the_automatic_round_does_nothing_and_opens_no_connection_when_nothing_is_due() {
+    let p = setup("auto");
+    // No history yet: a first sync is never started by itself.
+    assert!(p.alice.auto_sync_tick(Duration::from_millis(50)).is_empty());
+    write(&p.va.0, "A.md", "a");
+    sync(&p);
+    // Right after a sync with nothing changed: not due either.
+    assert!(p.alice.auto_sync_tick(Duration::from_millis(50)).is_empty());
+    p.alice.set_paused(true).expect("pause");
+    write(&p.va.0, "B.md", "b");
+    assert!(p.alice.auto_sync_tick(Duration::from_millis(50)).is_empty(), "paused means paused");
+    let _ = Duration::from_millis(1);
+}

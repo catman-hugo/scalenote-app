@@ -54,6 +54,18 @@ export const backend = {
   syncJoin: (address, code) => call("sync_join", { address, code }),
   syncFind: () => call("sync_find"),
   syncRemovePeer: (id) => call("sync_remove_peer", { id }),
+  // What a sync with a paired device would do, without doing it.
+  syncCompare: (id) => call("sync_compare", { id }),
+  // Syncs with a paired device. The first sync with a device only reports what it would do
+  // (needsApproval) until `approved` is true.
+  syncRun: (id, approved) => call("sync_run", { id, approved }),
+  syncSetPaused: (paused) => call("sync_set_paused", { paused }),
+  syncRenamePeer: (id, name) => call("sync_rename_peer", { id, name }),
+  // One text that changes when something in the open folder changes.
+  vaultSignature: () => call("vault_signature"),
+  // The copies made when two devices changed the same page, and settling one of them.
+  conflictsList: () => call("conflicts_list"),
+  conflictSettle: (copy, keep) => call("conflict_settle", { copy, keep }),
   setSyncSettings: (patch) => call("set_sync_settings", { name: patch.name ?? null, enabled: patch.enabled ?? null }),
   // Delete moves a page or folder into the hidden trash folder. Returns the trash item.
   trash: (path) => call("trash_entry", { path }),
