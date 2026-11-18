@@ -17,6 +17,8 @@ import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { applyFolds, foldFlags } from "./togglefold.js";
 import { createPageText } from "./pagetext.js";
+import { createNavHistory } from "./navhistory.js";
+import { cleanLastPage, resetSettings } from "./startrules.js";
 import { rewriteLinks } from "./renamelinks.js";
 import { createBacklinks } from "./backlinks.js";
 import { createCover } from "./cover.js";
@@ -44,6 +46,7 @@ import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { PDF_LIMITS } from "./pdfrules.js";
 import { pairingRows } from "./syncpairing.js";
+import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
 import { startSyncLine } from "./syncline.js";
 import { pageAction, sameEntries } from "./syncrules.js";
 import { watchVault } from "./vaultwatch.js";
@@ -56,7 +59,10 @@ const isAndroid = /Android/i.test(navigator.userAgent);
 const el = (id) => document.getElementById(id);
 
 const app = {
-  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
+  nav: createNavHistory(),
+  navigating: false,
+  settings: { vaultPath: null, recentVaults: [], disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -182,11 +188,36 @@ async function loadSettings() {
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
+      // Start on the page that was open last (on unless turned off), and which page that was.
+      reopenLast: parsed.reopenLast !== false,
+      lastPage: cleanLastPage(parsed.lastPage),
+      // Devices that sync only on Wi-Fi (their ids).
+      wifiOnly: cleanWifiOnly(parsed.wifiOnly),
       // The assistant is off. There is no switch for it in this version.
       aiEnabled: false,
     };
   } catch (error) {
     logProblem("settings unreadable", error);
+  }
+}
+
+// ---------- sync on Wi-Fi only ----------
+
+// The list is kept in the settings. The sync service forgets it when the app closes, so it is
+// sent again when a folder opens (see sendWifiOnly).
+async function changeWifiOnly(id, on) {
+  await backend.syncSetWifiOnly(id, on);
+  app.settings.wifiOnly = withWifiOnly(app.settings.wifiOnly, id, on);
+  await saveSettings();
+}
+
+async function sendWifiOnly() {
+  for (const id of app.settings.wifiOnly) {
+    try {
+      await backend.syncSetWifiOnly(id, true);
+    } catch (error) {
+      logProblem("restoring Wi-Fi only failed", error);
+    }
   }
 }
 
@@ -442,6 +473,51 @@ function obsidianRows() {
 // The Sync tab: this device's name and the on/off switch. Both are kept by the Rust side outside
 // the vault. Each change is saved at once and the screen shows what was actually saved (the name
 // is cleaned there), so the person always sees the result. Nothing is sent over a network yet.
+// The "This device" tab: what is about this device alone and not about the notes.
+function deviceSettingsRows() {
+  const s = strings.settings;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.id = "reopenLast";
+  box.checked = app.settings.reopenLast;
+  box.addEventListener("change", () => {
+    app.settings.reopenLast = box.checked;
+    saveSettings();
+  });
+  const row = document.createElement("label");
+  row.className = "setting-row";
+  row.append(textElement("span", s.reopenLast, "setting-label"), box);
+  const hint = textElement("p", s.reopenLastHint, "setting-hint");
+
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.id = "settingsReset";
+  reset.textContent = s.reset;
+  let armed = null;
+  reset.addEventListener("click", async () => {
+    // Two presses, so a stray tap changes nothing; the second must come within five seconds.
+    if (!armed) {
+      reset.textContent = s.resetAsk;
+      armed = setTimeout(() => {
+        armed = null;
+        reset.textContent = s.reset;
+      }, 5000);
+      return;
+    }
+    clearTimeout(armed);
+    armed = null;
+    app.settings = resetSettings(app.settings);
+    applyAppearance(document.documentElement, app.settings);
+    repaintCanvasBlocks();
+    await saveSettings();
+    // Draw the window again so every control shows the reset values.
+    el("openSettings").click();
+    showToast(s.resetDone);
+  });
+  const resetHint = textElement("p", s.resetHint, "setting-hint");
+  return [row, hint, reset, resetHint];
+}
+
 function syncSettingsRows() {
   const s = strings.settings;
   const box = document.createElement("input");
@@ -497,8 +573,9 @@ function syncSettingsRows() {
     textElement("p", s.syncNameHint, "setting-hint"),
     textElement("p", s.syncNotYet, "setting-hint"),
     textElement("p", s.syncRules, "setting-hint"),
+    ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : []),
     status,
-    ...pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true) }),
+    ...pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly } }),
   ];
 }
 
@@ -712,6 +789,7 @@ async function openVaultFrom(choice) {
   app.expanded = new Set();
   app.selectedFolder = "";
   app.folds = new Map();
+  app.nav = createNavHistory();
   await showNoNote();
   await refreshTree();
   // A new folder starts a new baseline for noticing outside changes.
@@ -1313,6 +1391,7 @@ function renameEntryInline(node, button) {
 function remapPaths(oldPath, newPath) {
   const fix = (p) => (p === oldPath || p.startsWith(oldPath + "/") ? newPath + p.slice(oldPath.length) : p);
   app.recent = app.recent.map(fix);
+  app.nav.remap(fix);
   app.expanded = new Set([...app.expanded].map(fix));
   app.selectedFolder = fix(app.selectedFolder);
   if (app.current) app.current.path = fix(app.current.path);
@@ -1494,6 +1573,60 @@ function findShortcut(event) {
   app.find.open(picked && picked.length <= 100 && !picked.includes("\n") ? picked : "");
 }
 
+// ---------- starting on the page that was open last ----------
+
+let lastPageTimer = null;
+
+// The page is written to the settings a moment after it opens, not at once, so clicking quickly
+// through pages does not write the settings file for each one.
+function rememberLastPage(path) {
+  if (!app.settings.vaultPath) return;
+  app.settings.lastPage = { vault: app.settings.vaultPath, path };
+  clearTimeout(lastPageTimer);
+  lastPageTimer = setTimeout(saveSettings, 1500);
+}
+
+// Only at the start of the app (also after Android closed it to free memory), and only when the
+// page is still in this folder. A page that is gone is simply not opened, with no message.
+async function reopenLastPage() {
+  const last = app.settings.lastPage;
+  if (!app.settings.reopenLast || !last || last.vault !== app.settings.vaultPath) return;
+  if (!app.entries.some((entry) => entry.kind === "note" && entry.path === last.path)) return;
+  await openNote(last.path);
+}
+
+// ---------- Back and Forward ----------
+
+// Every page the person opens gets an entry in the browser's own history, carrying its position
+// in `app.nav`. That is what makes the Android back gesture useful: it goes to the page seen
+// before instead of leaving the app, and only leaves from the first page. Back and Forward
+// here use the same history, so the buttons and the gesture always agree.
+function recordVisit(path) {
+  if (!app.navigating) {
+    const position = app.nav.visit(path);
+    if (position === 0) history.replaceState({ nav: 0 }, "");
+    else if (position !== null) history.pushState({ nav: position }, "");
+  }
+  drawNavButtons();
+}
+
+function drawNavButtons() {
+  el("navBack").disabled = !app.nav.canBack();
+  el("navForward").disabled = !app.nav.canForward();
+}
+
+async function goThroughHistory(event) {
+  const path = app.nav.goto(event.state && event.state.nav);
+  if (path === null) return;
+  app.navigating = true;
+  try {
+    await openNote(path);
+  } finally {
+    app.navigating = false;
+    drawNavButtons();
+  }
+}
+
 // ---------- the open note ----------
 
 async function showNoNote() {
@@ -1502,6 +1635,7 @@ async function showNoNote() {
   el("editor").hidden = true;
   el("source").hidden = true;
   el("sourceToggle").hidden = true;
+  el("findButton").hidden = true;
   el("viewButton").hidden = true;
   el("inkButton").hidden = true;
   el("canvasHost").hidden = true;
@@ -1572,6 +1706,8 @@ function showNote(path, note) {
     serialize: (json) => app.editor.markdown.serialize(json),
   });
   app.current = { path, version: note.version, parts };
+  recordVisit(path);
+  rememberLastPage(path);
   app.recent = [path, ...app.recent.filter((p) => p !== path)].slice(0, 20);
   app.lastSavedText = note.text;
   syncLinks();
@@ -1872,6 +2008,7 @@ function applyMode() {
   inkButton.title = strings.ink.button;
   inkButton.setAttribute("aria-pressed", String(inking));
   el("sourceToggle").hidden = !app.current || canvas || split || inking;
+  el("findButton").hidden = !app.current || source || canvas || split;
   const toggle = el("sourceToggle");
   const sourceLabel = document.createElement("span");
   sourceLabel.className = "btn-label";
@@ -2095,14 +2232,41 @@ function fillStaticText() {
         updates: updateSettingsRows(),
         sync: syncSettingsRows(),
         files: [...historySettingsRows(), ...obsidianRows()],
+        device: deviceSettingsRows(),
       },
     );
   });
   el("empty").textContent = strings.editor.noNoteOpen;
   el("title").setAttribute("aria-label", strings.editor.titleLabel);
   el("toggle").replaceChildren(icon("menu"));
+  for (const [id, name, text] of [["navBack", "arrowLeft", strings.navigation.back], ["navForward", "arrowRight", strings.navigation.forward], ["findButton", "search", strings.navigation.find]]) {
+    el(id).replaceChildren(icon(name));
+    el(id).setAttribute("aria-label", text);
+    el(id).title = text;
+  }
   el("toggle").setAttribute("aria-label", strings.sidebar.toggle);
   el("bannerClose").textContent = strings.messages.dismiss;
+}
+
+// Android stops an app that is not on screen, and with it any sync. Coming back after a while,
+// the app says so (on Android only), looks at the folder again and lets the status line catch up,
+// so a person is never left wondering why nothing synced while the phone was in a pocket.
+const AWAY_MS = () => globalThis.__scalenoteAwayMs || 60000;
+
+function startResumeNotice() {
+  let hiddenAt = null;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      hiddenAt = Date.now();
+      return;
+    }
+    const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+    hiddenAt = null;
+    if (away < AWAY_MS() || !app.settings.vaultPath) return;
+    if (isAndroid) showToast(strings.messages.backFromSleep);
+    refreshAfterOutsideChange(false);
+    document.dispatchEvent(new Event("scalenote-sync-changed"));
+  });
 }
 
 function startFlushTriggers() {
@@ -2154,6 +2318,10 @@ function wireEvents() {
   el("openTrash").addEventListener("click", openTrashDialog);
   el("openTags").addEventListener("click", () => openTagsDialog());
   el("favorite").addEventListener("click", toggleFavorite);
+  el("navBack").addEventListener("click", () => app.nav.canBack() && history.back());
+  el("navForward").addEventListener("click", () => app.nav.canForward() && history.forward());
+  el("findButton").addEventListener("click", () => app.find && app.find.open(""));
+  window.addEventListener("popstate", goThroughHistory);
   el("historyButton").addEventListener("click", openHistoryDialog);
   el("inkButton").addEventListener("click", () => (app.ink && app.ink.active ? stopInk() : startInk()));
   document.addEventListener("keydown", searchShortcut, true);
@@ -2235,6 +2403,7 @@ async function start() {
   app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => setShowBacklinks(false) });
   keepCaretVisible();
   startFlushTriggers();
+  startResumeNotice();
   startSyncLine(el("syncLine"));
   app.watcher = watchVault({
     signature: () => backend.vaultSignature(),
@@ -2251,12 +2420,16 @@ async function start() {
     app.settings.disclosureAccepted = true;
     await saveSettings();
   }
+  // Tells the sync service what kind of network this is (and again when it changes).
+  watchNetwork((onWifi) => backend.syncSetOnWifi(onWifi));
   await showWhatsNewOnce(freshInstall);
   // Not awaited: looking for an update must never hold up opening the notes.
   checkQuietly();
   if (app.settings.vaultPath) {
     try {
       await openVaultFrom(app.settings.vaultPath);
+      await reopenLastPage();
+      sendWifiOnly();
       return;
     } catch (error) {
       logProblem("saved folder missing", error);

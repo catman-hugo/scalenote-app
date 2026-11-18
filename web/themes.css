@@ -171,3 +171,26 @@
   --highlight: #4d3d00;
   --kind-info: #8fbcf0;
 }
+
+/* True black: the page itself is #000000, which switches the pixels off on an OLED screen.
+   The sidebar and the cards are only a little lighter so they still read as separate areas. */
+:root[data-theme="black"] {
+  color-scheme: dark;
+  --bg: #000000;
+  --bg-side: #0a0a0a;
+  --bg-hover: #161616;
+  --bg-code: #0d0d0d;
+  --text: #e8e6e3;
+  --text-soft: #9b9794;
+  --line: #2e2e2e;
+  --accent: #c879ff;
+  --accent-text: #15121f;
+  --accent-soft: #2a1f33;
+  --warn-bg: #2e2412;
+  --warn-text: #f2d9a6;
+  --bad: #d76a64;
+  --kind-ok: #7fd18f;
+  --kind-warn: #f0b45a;
+  --highlight: #4d3d00;
+  --kind-info: #8fbcf0;
+}

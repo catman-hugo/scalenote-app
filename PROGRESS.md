@@ -2,7 +2,23 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-17; 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-17; 0.5.4 built (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+
+## 0.5.4: built, not tried on a phone or tablet
+
+Android and the six extras. Branch `feature/v0.5.4-android` (made on top of `feature/v0.5.3-sync`; merge 0.5.3 first). Release notes: `docs/release-notes/0.5.4.md`; security checklist: `docs/security-checklist-0.5.4.md`.
+
+Done (tried here: 227 Rust tests in the core, 1 new for Wi-Fi only; about 30 new node tests; about 12 new browser tests; the Android patch script is tested as text):
+- Android: `scripts/patch-android.mjs` adds three permissions, a `NetworkBridge` (multicast lock while the app is open, `isWifi()`), and the activity holds the lock in `onResume`/`onPause`. A message after the app was in the background for a minute or more, and a hint in the Sync tab.
+- Sync service: Wi-Fi only per device (`set_wifi_only`, `set_on_wifi`), enforced for manual and automatic syncs; new error code `sync_wifi_only`; app commands `sync_set_wifi_only` and `sync_set_on_wifi`.
+- Extras: (7) true black theme; (8) Find button in the top bar; (9) Settings search, "This device" tab, Reset to defaults; (10) Wi-Fi only per device; (11) start on the last page; (12) Back and Forward through the pages seen, joined to the browser history so the Android back gesture uses it.
+
+Not done / untried:
+- Nothing of the Android work has run on a phone or tablet. CI compiles the Kotlin and builds the apk; it cannot show whether the multicast lock lets the phone hear other devices.
+- `lib.rs` is compiled by CI only.
+- Back and Forward: a page renamed or deleted since it was seen shows the normal "not found" message when reached.
+- The Wi-Fi only choice is kept in the settings and sent to the service when a folder opens; it does not survive an app that is killed before the first folder opens (it is sent again at the next start).
+- Phone and tablet screens (extra 7 in the plan) were checked in the browser at phone and tablet widths only.
 
 ## 0.5.3: built, not tried on two devices
 

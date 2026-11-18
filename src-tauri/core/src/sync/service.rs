@@ -21,7 +21,7 @@ use super::pairing::{self, clean_code, CodeBook, KIND_REFUSED, KIND_START};
 use super::trust::{Peer, TrustList};
 use super::{hex, Result, SyncError};
 use crate::logger::format_utc;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -79,6 +79,12 @@ struct State {
     /// The vault that sync works on (the folder the app has open), if any.
     vault: Option<PathBuf>,
     paused: bool,
+    /// Devices this one may sync with only while the phone or computer is on Wi-Fi (or a wired
+    /// network). Kept for this run; the interface sends it again at start.
+    wifi_only: HashSet<[u8; KEY_LEN]>,
+    /// Whether the connection is Wi-Fi or wired right now. Where the system cannot tell, this
+    /// stays true, so nothing is ever blocked by a guess.
+    on_wifi: bool,
     /// What this device knows about each paired device since the app started.
     live: HashMap<[u8; KEY_LEN], Live>,
     syncing: Option<SyncingView>,
@@ -155,6 +161,7 @@ pub struct Status {
     pub listening_port: Option<u16>,
     pub fingerprint: String,
     pub paused: bool,
+    pub on_wifi: bool,
     pub syncing: Option<SyncingView>,
     pub peers: Vec<PeerView>,
     /// Seconds the open code is still good for, or `None` when no code is open.
@@ -174,6 +181,8 @@ pub struct PeerView {
     pub last_changed: usize,
     /// There is a saved list for it in the open vault, so the next sync is not a first one.
     pub has_history: bool,
+    /// Syncs with this device only on Wi-Fi.
+    pub wifi_only: bool,
 }
 
 /// The real network route, unless the service is bound to loopback (tests), where nothing may
@@ -224,7 +233,7 @@ impl Service {
     pub(crate) fn with_bind(dir: &Path, identity: Identity, name: &str, enabled: bool, bind_ip: &'static str, first_port: u16) -> Result<Service> {
         let trust_path = dir.join(TRUST_FILE);
         let trust = TrustList::load(&trust_path)?;
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, live: HashMap::new(), syncing: None };
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None };
         let service = Service { shared: Arc::new(Shared { bind_ip, first_port, identity, trust_path, route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
@@ -456,6 +465,27 @@ impl Service {
 
     /// Changes the name shown for a paired device (only on this device; the other one keeps
     /// calling itself what it likes).
+    /// Limits syncing with one paired device to Wi-Fi (or a wired network).
+    pub fn set_wifi_only(&self, id: &str, only: bool) -> Result<()> {
+        let key = hex::decode::<KEY_LEN>(id).ok_or(SyncError::Refused("not a device id"))?;
+        let mut state = lock(&self.shared.state);
+        if !state.trust.peers().iter().any(|p| p.public == key) {
+            return Err(SyncError::Refused("not a paired device"));
+        }
+        if only {
+            state.wifi_only.insert(key);
+        } else {
+            state.wifi_only.remove(&key);
+        }
+        Ok(())
+    }
+
+    /// Tells the service what kind of network the system is on. Only the interface can ask the
+    /// system, so it reports here; devices set to Wi-Fi only are left alone while this is false.
+    pub fn set_on_wifi(&self, on_wifi: bool) {
+        lock(&self.shared.state).on_wifi = on_wifi;
+    }
+
     pub fn rename_peer(&self, id: &str, name: &str) -> Result<()> {
         let key = hex::decode::<KEY_LEN>(id).ok_or(SyncError::Refused("not a device id"))?;
         let mut state = lock(&self.shared.state);
@@ -478,6 +508,9 @@ impl Service {
             return Err(SyncError::Refused("sync is paused"));
         }
         let peer = state.trust.peers().iter().find(|p| p.public == key).cloned().ok_or(SyncError::Refused("not a paired device"))?;
+        if state.wifi_only.contains(&peer.public) && !state.on_wifi {
+            return Err(SyncError::Refused("only on Wi-Fi"));
+        }
         let root = state.vault.clone().ok_or(SyncError::Refused("no vault is open"))?;
         Ok((peer, root, state.name.clone()))
     }
@@ -599,6 +632,7 @@ impl Service {
             .trust
             .peers()
             .iter()
+            .filter(|p| !state.wifi_only.contains(&p.public) || state.on_wifi)
             .filter(|p| engine::has_history(&root, &p.public))
             .filter(|p| match state.live.get(&p.public) {
                 Some(live) => live.synced_signature != Some(signature) || live.synced_at.map_or(true, |at| at.elapsed() >= RESYNC_AFTER),
@@ -626,6 +660,7 @@ impl Service {
                     last_sync: live.map(|l| l.last_sync.clone()).unwrap_or_default(),
                     last_changed: live.map_or(0, |l| l.last_changed),
                     has_history: state.vault.as_ref().is_some_and(|root| engine::has_history(root, &p.public)),
+                    wifi_only: state.wifi_only.contains(&p.public),
                 }
             })
             .collect();
@@ -634,6 +669,7 @@ impl Service {
             listening_port,
             fingerprint: fingerprint(self.shared.identity.public()),
             paused: state.paused,
+            on_wifi: state.on_wifi,
             syncing: state.syncing.clone(),
             peers,
             pairing_seconds_left: if state.pairing_open && state.codes.is_open(now) { state.codes.seconds_left(now) } else { None },

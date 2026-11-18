@@ -211,6 +211,29 @@ fn pause_stops_both_directions_and_resume_brings_it_back() {
 }
 
 #[test]
+fn wifi_only_blocks_a_device_off_wifi_and_never_blocks_the_others() {
+    let p = setup("wifionly");
+    write(&p.va.0, "A.md", "a");
+    assert!(!p.alice.status().peers[0].wifi_only);
+    p.alice.set_wifi_only(&p.bob_id, true).expect("set");
+    assert!(p.alice.status().peers[0].wifi_only);
+    // On Wi-Fi (or when the system cannot tell) the sync goes ahead.
+    assert!(p.alice.status().on_wifi);
+    // Off Wi-Fi it is refused before any connection is opened, by hand or by the automatic round.
+    p.alice.set_on_wifi(false);
+    let error = p.alice.sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("blocked");
+    assert_eq!(error.code(), "sync_wifi_only");
+    assert!(p.alice.auto_sync_tick(Duration::from_millis(50)).is_empty());
+    assert!(names(&p.vb.0).is_empty());
+    // Switching the limit off lets it through again without Wi-Fi.
+    p.alice.set_wifi_only(&p.bob_id, false).expect("unset");
+    assert_eq!(sync(&p).sent, 1);
+    // A made-up or unpaired id is an error, not a silent no-op.
+    assert!(p.alice.set_wifi_only("zz", true).is_err());
+    assert!(p.alice.set_wifi_only(&"00".repeat(32), true).is_err());
+}
+
+#[test]
 fn a_device_that_is_not_paired_or_a_vault_that_is_not_open_gets_nothing() {
     let p = setup("refuse");
     write(&p.vb.0, "Secret.md", "private");

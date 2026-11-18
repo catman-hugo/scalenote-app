@@ -1,7 +1,7 @@
 // The look settings: theme, text size, editor width and list width. Kept apart from the
 // screens so the rules (what values are allowed, how they reach the page) can be tested.
 
-export const THEMES = ["system", "light", "dark", "sepia", "midnight", "sage", "forest", "lavender", "dusk"];
+export const THEMES = ["system", "light", "dark", "sepia", "midnight", "black", "sage", "forest", "lavender", "dusk"];
 // Percent of the normal text size. Everything is sized in rem, so one number scales the app.
 export const FONT_SIZES = [80, 90, 100, 112, 125];
 // Width of the note column. "full" lets it use all the room.

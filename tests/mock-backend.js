@@ -3,6 +3,7 @@
 // the real interface code can be driven end to end. It is a test aid only.
 (() => {
   const files = new Map(); // path -> text
+  for (const [name, text] of Object.entries(window.__seedFiles || {})) files.set(name, text);
   const folders = new Set([""]);
   let settings = window.__seedSettings || "";
   const logs = [];
@@ -130,7 +131,7 @@
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,
-        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, hasHistory: false, ...p })),
+        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, hasHistory: false, wifiOnly: false, ...p })),
         pairingSecondsLeft: syncPairing.secondsLeft,
         events: [...syncPairing.events].reverse(),
       };
@@ -169,6 +170,7 @@
     },
     sync_run: ({ id, approved }) => {
       window.__runs = [...(window.__runs || []), { id, approved }];
+      if (window.__onWifiNow === false && (syncPairing.peers.find((p) => p.id === id) || {}).wifiOnly) fail("sync_wifi_only");
       if (window.__failSyncRun) fail(window.__failSyncRun);
       const peer = syncPairing.peers.find((p) => p.id === id);
       const preview = window.__syncPreview;
@@ -180,6 +182,13 @@
       return { needsApproval: false, preview: null, report };
     },
     sync_set_paused: ({ paused }) => { syncPairing.paused = paused; },
+    sync_set_wifi_only: ({ id, only }) => {
+      const peer = syncPairing.peers.find((p) => p.id === id);
+      window.__wifiCalls = [...(window.__wifiCalls || []), { id, only }];
+      if (!peer) fail("pair_refused");
+      peer.wifiOnly = only;
+    },
+    sync_set_on_wifi: ({ onWifi }) => { window.__onWifiCalls = [...(window.__onWifiCalls || []), onWifi]; window.__onWifiNow = onWifi; },
     sync_rename_peer: ({ id, name }) => {
       if (window.__failRename) fail("io");
       const peer = syncPairing.peers.find((p) => p.id === id);
@@ -366,5 +375,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { peerPairs: () => { syncPairing.peers.push({ id: "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

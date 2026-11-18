@@ -41,6 +41,8 @@ async function test(name, fn, opts = {}) {
   if (process.env.ONLY && !name.includes(process.env.ONLY)) return; // run the tests whose name contains this text
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}), ...(opts.hasTouch ? { hasTouch: true } : {}) });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
+  // Pages that exist before the app starts (the mock reads them when it loads, so this goes first).
+  if (opts.files) await context.addInitScript((f) => { window.__seedFiles = f; }, opts.files);
   await context.addInitScript({ path: path.join(here, "mock-backend.js") });
   const page = await context.newPage();
   const problems = [];
@@ -7338,7 +7340,7 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files"]);
+  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
@@ -7349,11 +7351,11 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-pages");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
-  assert.equal(await page.locator("#settings h2").textContent(), "Files", "it wraps round");
+  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it wraps round");
   await page.click("#settings button.primary");
   await page.waitForSelector("#settings", { state: "hidden" });
   await page.click("#openSettings");
-  assert.equal(await page.locator("#settings h2").textContent(), "Files", "it opens where it was left");
+  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it opens where it was left");
 }, { settings: existingUser({ updates: false }) });
 
 await test("Settings has a Sync tab: on by default, the name is kept clean, and both choices are saved and shown as saved", async (page) => {
@@ -7645,7 +7647,7 @@ await test("on a phone the Settings tabs sit in a row on top and the box does no
   if (shots) await page.screenshot({ path: `${shots}/v0414-phone-settings-tabs-wrapped.png` });
   // Every tab is on the screen, none is cut off at the edge.
   const edges = await page.evaluate(() => [...document.querySelectorAll('#settings [role="tab"]')].map((t) => { const b = t.getBoundingClientRect(); return [b.left, b.right]; }));
-  assert.equal(edges.length, 6);
+  assert.equal(edges.length, 7);
   assert.ok(edges.every(([l, r]) => l >= 0 && r <= r0.vw), JSON.stringify(edges));
   await page.click("#settingsTab-files");
   assert.equal(await page.locator("#settings h2").textContent(), "Files");
@@ -7990,9 +7992,9 @@ await test("Ctrl+F opens a find bar for the text of the page, counts hits and mo
   assert.equal((await files(page))["Find.md"], "The cat sat. Another Cat came.\n\nA third cat.\n", "finding never changes the page");
 }, ctxOpts);
 
-await test("there is no find button: Ctrl+F is the only way in", async (page) => {
+await test("the Find button in the top bar is the only button for find, and find is not in the command list", async (page) => {
   await findOpen(page, "text\n");
-  assert.equal(await page.locator("#findButton, .find-button, button[aria-label*='Find']").count(), 0);
+  assert.equal(await page.locator("#findButton, .find-button, button[aria-label*='Find']").count(), 1);
   await openPaletteBox(page);
   await page.fill(".palette-input", "Find in this page");
   await page.fill(".palette-input", "Print");
@@ -8296,6 +8298,166 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
   }
 }
 
+// ---------- 0.5.4 ----------
+
+const titleOf = (page) => page.inputValue("#title");
+
+await test("true black theme: the page is #000000 and the setting is saved", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.selectOption("#settings select >> nth=0", "black");
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "black");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".main")).backgroundColor === "rgb(0, 0, 0)" || getComputedStyle(document.body).backgroundColor === "rgb(0, 0, 0)"), true);
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings() || "{}").theme === "black");
+}, { settings: existingUser({ updates: false }) });
+
+await test("Back and Forward go through the pages seen, with the buttons and with the browser history (the Android back gesture)", async (page) => {
+  await page.waitForSelector("#tree .tree-label >> text=/^A$/");
+  assert.equal(await page.isDisabled("#navBack"), true);
+  assert.equal(await page.isDisabled("#navForward"), true);
+  for (const name of ["A", "B", "C"]) {
+    await page.click(`#tree .tree-label >> text=/^${name}$/`);
+    await page.waitForFunction((n) => document.getElementById("title").value === n, name);
+  }
+  assert.equal(await page.isDisabled("#navBack"), false);
+  await page.click("#navBack");
+  await page.waitForFunction(() => document.getElementById("title").value === "B");
+  assert.equal(await page.isDisabled("#navForward"), false);
+  // The system's own back (what the Android gesture does) takes the same path.
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => document.getElementById("title").value === "A");
+  assert.equal(await page.isDisabled("#navBack"), true);
+  await page.click("#navForward");
+  await page.waitForFunction(() => document.getElementById("title").value === "B");
+  // A new page after going back drops what was ahead.
+  await page.click("#tree .tree-label >> text=/^A$/");
+  await page.waitForFunction(() => document.getElementById("title").value === "A");
+  assert.equal(await page.isDisabled("#navForward"), true);
+  // Rapid clicking on the buttons never raises an error.
+  for (let i = 0; i < 6; i++) { await page.click("#navBack", { force: true }).catch(() => {}); await page.click("#navForward", { force: true }).catch(() => {}); }
+}, { settings: existingUser({ updates: false }), files: { "A.md": "---\\n---\\n\\nalpha\\n", "B.md": "---\\n---\\n\\nbeta\\n", "C.md": "---\\n---\\n\\ngamma\\n" } });
+
+await test("the Find button shows only with a page open and opens the find bar", async (page) => {
+  await page.waitForSelector("#newNote");
+  assert.equal(await page.isVisible("#findButton"), false);
+  await page.click("#newNote");
+  await page.waitForSelector("#findButton", { state: "visible" });
+  assert.equal(await page.getAttribute("#findButton", "aria-label"), "Find in this page");
+  await page.click("#findButton");
+  await page.waitForSelector(".find-bar", { state: "visible" });
+  assert.equal(await page.evaluate(() => document.activeElement && document.activeElement.className), "find-input");
+}, { settings: existingUser({ updates: false }) });
+
+await test("the app starts on the page that was open last, unless that is turned off or the page is gone", async (page) => {
+  await page.waitForFunction(() => document.getElementById("title") && document.getElementById("title").value === "Plan", null, { timeout: 8000 });
+  assert.equal(await page.isVisible("#editor"), true);
+}, { settings: existingUser({ updates: false, lastPage: { vault: "/vault", path: "Plan.md" } }), files: { "Plan.md": "---\n---\n\nplan\n" } });
+
+await test("starting on the last page: off means no page, and a missing page or another folder opens nothing", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.waitForTimeout(500);
+  assert.equal(await page.isVisible("#editor"), false);
+}, { settings: existingUser({ updates: false, reopenLast: false, lastPage: { vault: "/vault", path: "Plan.md" } }), files: { "Plan.md": "---\n---\n\nplan\n" } });
+
+await test("starting on the last page: a page that is gone opens nothing and says nothing", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.waitForTimeout(500);
+  assert.equal(await page.isVisible("#editor"), false);
+  assert.equal(await page.isVisible("#banner"), false);
+}, { settings: existingUser({ updates: false, lastPage: { vault: "/vault", path: "Gone.md" } }), files: { "Other.md": "---\n---\n\nx\n" } });
+
+await test("the last page is remembered in the settings a moment after a page opens", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#newNote");
+  await page.waitForFunction(() => { const s = JSON.parse(window.__mock.getSettings() || "{}"); return s.lastPage && s.lastPage.vault === "/vault" && s.lastPage.path.endsWith(".md"); }, null, { timeout: 6000 });
+}, { settings: existingUser({ updates: false }) });
+
+await test("Settings search finds a setting by its words across the tabs and says when nothing matches", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.fill("#settingsSearch", "theme");
+  await page.waitForFunction(() => document.querySelector("#settings h2").textContent === "Search results");
+  assert.equal(await page.locator("#settings .setting-row:visible").count() >= 1, true);
+  assert.match(await page.locator("#settings .settings-body:visible").first().textContent(), /Theme/);
+  await page.fill("#settingsSearch", "zzzzqq");
+  await page.waitForSelector(".settings-nomatch", { state: "visible" });
+  assert.equal(await page.locator("#settings .setting-row:visible").count(), 0);
+  // Escape empties the box first and does not close the window.
+  await page.press("#settingsSearch", "Escape");
+  assert.equal(await page.inputValue("#settingsSearch"), "");
+  assert.equal(await page.isVisible("#settings"), true);
+  assert.equal(await page.isHidden(".settings-nomatch"), true);
+  await page.waitForFunction(() => document.querySelector("#settings h2").textContent !== "Search results");
+  // Odd input never raises an error.
+  for (const text of ["<b>", "\\", "  ", "%", "x".repeat(200)]) await page.fill("#settingsSearch", text);
+}, { settings: existingUser({ updates: false }) });
+
+await test("This device: Reset to defaults needs a second press, restores the look and keeps the folder and paired devices", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs());
+  await page.click("#openSettings");
+  await page.selectOption("#settings select >> nth=0", "sepia");
+  await page.click('#settings [role="tab"][id="settingsTab-device"]');
+  await page.click("#settingsReset");
+  assert.equal(await page.textContent("#settingsReset"), "Press again to reset");
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "sepia", "one press changes nothing");
+  await page.click("#settingsReset");
+  await page.waitForFunction(() => !document.documentElement.hasAttribute("data-theme"));
+  const saved = JSON.parse(await page.evaluate(() => window.__mock.getSettings()));
+  assert.equal(saved.theme, "system");
+  assert.equal(saved.vaultPath, "/vault");
+  assert.equal(saved.disclosureAccepted, true);
+  assert.equal((await page.evaluate(() => window.__mock.getSettings())).includes("lastSeenVersion"), true);
+  await page.click('#settings [role="tab"][id="settingsTab-sync"]');
+  assert.match(await page.textContent("#pairList"), /alice-phone/);
+}, { settings: existingUser({ updates: false, theme: "dark", fontSize: 125 }) });
+
+const WIFI_ID = "c".repeat(64);
+await test("Wi-Fi only: offered where the app can tell the network, saved, sent to the service and refused with a calm message off Wi-Fi", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((id) => window.__mock.peerPairs(id), WIFI_ID);
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector(".sync-wifi-only");
+  await page.check(".sync-wifi-only");
+  await page.waitForFunction((id) => JSON.parse(window.__mock.getSettings() || "{}").wifiOnly?.includes(id), WIFI_ID);
+  assert.deepEqual(await page.evaluate(() => window.__wifiCalls), [{ id: "c".repeat(64), only: true }]);
+  // The page told the service the network kind at start, and tells it again when it changes.
+  assert.equal((await page.evaluate(() => window.__onWifiCalls))[0], true);
+  await page.evaluate(() => { window.__phoneOnWifi = false; });
+  await page.waitForFunction(() => window.__onWifiCalls.includes(false), null, { timeout: 9000 });
+  await page.click("#pairList .sync-now");
+  await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("only on Wi-Fi"));
+  await page.uncheck(".sync-wifi-only");
+  await page.waitForFunction((id) => !JSON.parse(window.__mock.getSettings() || "{}").wifiOnly?.includes(id), WIFI_ID);
+}, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__phoneOnWifi = true; window.ScaleNoteNetwork = { isWifi: () => window.__phoneOnWifi }; }) });
+
+await test("Wi-Fi only is not offered where the app cannot tell the network (computers, browsers)", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs());
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairList .sync-now");
+  assert.equal(await page.locator(".sync-wifi-only").count(), 0);
+}, { settings: existingUser({ updates: false }) });
+
+await test("Android: after the app was in the background for a while it says so and catches up; a short break says nothing", async (page) => {
+  await page.waitForSelector("#newNote");
+  const hideThenShow = (ms) => page.evaluate(async (wait) => {
+    const set = (state) => { Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state }); document.dispatchEvent(new Event("visibilitychange")); };
+    set("hidden");
+    await new Promise((r) => setTimeout(r, wait));
+    set("visible");
+  }, ms);
+  await page.evaluate(() => { globalThis.__scalenoteAwayMs = 300; });
+  await hideThenShow(50);
+  await page.waitForTimeout(200);
+  assert.equal(await page.isVisible(".toast"), false);
+  await hideThenShow(400);
+  await page.waitForSelector(".toast", { state: "visible" });
+  assert.match(await page.textContent(".toast"), /Android may have paused syncing/);
+  await openSettingsTab(page, "sync");
+  assert.match(await page.locator("#settings .settings-body:visible").textContent(), /syncing happens while ScaleNote is open/);
+}, { settings: existingUser({ updates: false }), userAgent: "Mozilla/5.0 (Linux; Android 14; Phone) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36", hasTouch: true });
+
 // Screenshots for the design check of 0.5.3 (only when SHOTS_DIR is set): the first-sync plan,
 // the status line, the paused state and the conflict review, light and dark, desktop and phone.
 if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
@@ -8333,6 +8495,49 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.click("#conflictsOpen");
       await page.waitForSelector(".conflict-item");
       await page.screenshot({ path: `${shots}/v053-${label}-${scheme}-4-conflict-review.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots for the design check of 0.5.4 (only when SHOTS_DIR is set): the true black theme with
+// a page open and the new top bar buttons, Settings search, the This device tab and the Wi-Fi only row.
+if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript(() => { window.ScaleNoteNetwork = { isWifi: () => true }; });
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await start(page);
+      await page.evaluate((id) => window.__mock.peerPairs(id), "d".repeat(64));
+      // Two pages, so Back is on. The button is pressed in the page because on a phone the list is closed.
+      await page.evaluate(() => document.getElementById("newNote").click());
+      await page.waitForSelector("#findButton", { state: "visible" });
+      await page.evaluate(() => document.getElementById("newNote").click());
+      await page.waitForFunction(() => !document.getElementById("navBack").disabled);
+      if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.selectOption("#settings select >> nth=0", "black");
+      await page.click("#settings button.primary");
+      await page.waitForSelector("#settings", { state: "hidden" });
+      // On a phone the list covers the page; the top bar is shown with it closed.
+      if (await page.isVisible("#scrim")) await page.evaluate(() => document.getElementById("toggle").click());
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-1-black-topbar.png` });
+      if (!(await page.isVisible("#openSettings"))) await page.click("#toggle");
+      await page.click("#openSettings");
+      await page.fill("#settingsSearch", "sync");
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-2-settings-search.png` });
+      await page.fill("#settingsSearch", "");
+      await page.click('#settings [role="tab"][id="settingsTab-device"]');
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-3-this-device.png` });
+      await page.click('#settings [role="tab"][id="settingsTab-sync"]');
+      await page.waitForSelector(".sync-wifi-only");
+      await page.locator(".sync-wifi-row").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${shots}/v054-${label}-${scheme}-4-wifi-only.png` });
       await context.close();
     }
   }

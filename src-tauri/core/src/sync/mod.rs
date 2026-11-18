@@ -71,6 +71,7 @@ impl SyncError {
             SyncError::Refused("sync is not available") => "sync_unavailable",
             SyncError::Refused("sync is paused") => "sync_paused",
             SyncError::Refused("sync is busy") => "sync_busy",
+            SyncError::Refused("only on Wi-Fi") => "sync_wifi_only",
             SyncError::Refused("no vault is open") => "sync_no_vault",
             SyncError::Refused("device not found") => "sync_not_found",
             SyncError::Refused("not the paired device") => "sync_wrong_device",
