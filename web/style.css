@@ -1343,7 +1343,7 @@ body.block-dragging .float-bar { visibility: hidden; }
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
-#whatsnew > button { flex: 0 0 auto; align-self: flex-start; }
+#whatsnew > .dialog-actions { flex: 0 0 auto; justify-content: flex-start; flex-wrap: wrap; }
 @media (max-width: 40rem) {
   #whatsnew { padding: var(--space-4); }
 }

@@ -67,7 +67,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -196,6 +196,7 @@ async function loadSettings() {
       // The notes box after an update is shown unless turned off.
       showWhatsNew: parsed.showWhatsNew !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
+      downloadedInApp: typeof parsed.downloadedInApp === "string" ? parsed.downloadedInApp.slice(0, 20) : "",
       lastUpdateCheck: Number.isFinite(parsed.lastUpdateCheck) ? parsed.lastUpdateCheck : 0,
       dismissedUpdate: typeof parsed.dismissedUpdate === "string" ? parsed.dismissedUpdate.slice(0, 20) : "",
       // Start on the page that was open last (on unless turned off), and which page that was.
@@ -236,20 +237,50 @@ async function sendWifiOnly() {
 const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "0.0.0";
 const RELEASE_NOTES = typeof __RELEASE_NOTES__ === "string" ? __RELEASE_NOTES__ : "";
 let offered = null; // the newer release the notice is about
+// How this computer copy was installed ("msi", "deb", …), when it can update itself; null otherwise.
+let selfUpdateKind = null;
+
+// What the download button says: "Update" when the app installs it itself, like other desktop apps.
+function downloadLabel(release, plain, openPage) {
+  if (selfUpdateKind) return strings.update.updateNow;
+  return release.downloadUrl ? plain : openPage;
+}
+
+async function learnSelfUpdate() {
+  if (isAndroid) return;
+  try {
+    selfUpdateKind = await backend.installKind();
+  } catch (error) {
+    logProblem("could not ask how the app was installed", error);
+  }
+}
 
 function fill(text, values) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(values[key]));
 }
 
-function showNotes(title, notes) {
+/**
+ * Shows release notes, only the lines for this system (Android is not told about a Linux fix).
+ * `full` shows the full notes, as on GitHub; otherwise the short list with a button to the
+ * full notes on `page`. A phone always gets the short list.
+ */
+function showNotes(title, notes, { full = false, page = RELEASE_PAGE } = {}) {
   const dialog = el("whatsnew");
   dialog.replaceChildren(textElement("h2", title));
   const body = document.createElement("div");
   body.className = "notes";
-  // The short list for the app (the full notes are for GitHub), and only what matters on this
-  // system: Android is not told about a Linux fix.
-  renderNotes(body, notesFor(appNotes(notes), platformOf(navigator.userAgent)));
-  dialog.append(body, buttonElement(strings.update.close, () => dialog.close(), true));
+  const platform = platformOf(navigator.userAgent);
+  const short = !full || isAndroid;
+  renderNotes(body, notesFor(appNotes(notes, short ? "short" : "full"), platform));
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+  actions.append(buttonElement(strings.update.close, () => dialog.close(), true));
+  if (short) {
+    const more = buttonElement(strings.update.fullNotes, () => openUrlOrWarn(page));
+    more.id = "whatsNewFull";
+    actions.append(more);
+  }
+  dialog.append(body, actions);
   if (!dialog.open) dialog.showModal();
   return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
 }
@@ -257,7 +288,7 @@ function showNotes(title, notes) {
 function showUpdateNotice(release) {
   offered = release;
   el("updateText").textContent = fill(strings.update.available, { version: release.version });
-  el("updateDownload").textContent = release.downloadUrl ? strings.update.download : strings.update.openPage;
+  el("updateDownload").textContent = downloadLabel(release, strings.update.download, strings.update.openPage);
   el("updateNotice").hidden = false;
 }
 
@@ -421,10 +452,10 @@ function updateSettingsRows() {
   const showRelease = (release) => {
     actions.replaceChildren();
     if (!release) return;
-    const download = buttonElement(release.downloadUrl ? s.downloadNow : s.openPage, openDownload, true);
+    const download = buttonElement(downloadLabel(release, s.downloadNow, s.openPage), openDownload, true);
     paintInstallButton(download);
     actions.append(download);
-    if (release.downloadUrl) {
+    if (release.downloadUrl && !selfUpdateKind) {
       actions.append(buttonElement(s.openPage, () => openUrlOrWarn(release.url)), textElement("p", s.downloadHint, "setting-hint"));
     }
   };
@@ -593,7 +624,7 @@ function aboutRows() {
   version.id = "aboutVersion";
   const rows = [version];
   if (BUILD_DATE) rows.push(textElement("p", fill(t.built, { date: BUILD_DATE }), "setting-hint"));
-  const notes = buttonElement(t.whatsNew, () => showNotes(fill(t.whatsNewTitle, { version: APP_VERSION }), RELEASE_NOTES));
+  const notes = buttonElement(t.whatsNew, () => showNotes(fill(t.whatsNewTitle, { version: APP_VERSION }), RELEASE_NOTES, { page: releasePageOf(APP_VERSION) }));
   notes.id = "aboutWhatsNew";
   const all = buttonElement(t.allChanges, () => openUrlOrWarn(RELEASE_PAGE));
   all.id = "aboutAllChanges";
@@ -867,6 +898,9 @@ async function tryOpen(url) {
   }
 }
 
+// The GitHub page of one version (the tag names are "v" and the version).
+const releasePageOf = (version) => `${RELEASE_PAGE}/tag/v${encodeURIComponent(version)}`;
+
 async function openUrlOrWarn(url) {
   if (!(await tryOpen(url))) showBanner(strings.update.openFailed);
 }
@@ -881,7 +915,13 @@ async function openDownload() {
     setInstallState({ kind: "downloading", done: 0, total: 0 });
     return;
   }
+  // Computer app: download, check and install the same kind of file this copy came in.
+  if (!isAndroid && (await installOnComputer(offered.version))) return;
   if (offered.downloadUrl && (await tryOpen(offered.downloadUrl))) {
+    // Remembered so that after this update What's new shows the full notes: the person did not
+    // see them on GitHub. (Opening the release page instead does not count; that is GitHub.)
+    app.settings.downloadedInApp = offered.version;
+    saveSettings();
     // The browser does the downloading and cannot report back, so the buttons rest for a moment:
     // pressing them again would only open the same download again.
     setInstallState({ kind: "browser" });
@@ -892,6 +932,42 @@ async function openDownload() {
 }
 
 const BROWSER_REST_MS = 6000;
+
+/**
+ * Installs `version` from inside the app on a computer (selfupdate.rs). Returns false when this
+ * copy cannot update itself (no key, or not installed from an installer), so the browser is used.
+ * A failed download falls back to the browser too; a refused password just says so.
+ */
+async function installOnComputer(version) {
+  if (!selfUpdateKind) return false;
+  // After the restart What's new shows the full notes: the person did not see them on GitHub.
+  app.settings.downloadedInApp = version;
+  await saveSettings();
+  setInstallState({ kind: "downloading", done: 0, total: 0 });
+  showToast(strings.update.installDesktopStarting);
+  let stop = null;
+  try {
+    stop = await backend.onUpdateProgress(onInstallProgress);
+  } catch (error) {
+    logProblem("could not follow the update download", error);
+  }
+  try {
+    await backend.installUpdate(version);
+  } catch (error) {
+    setInstallState(null);
+    app.settings.downloadedInApp = "";
+    saveSettings();
+    if (error.code === "install") showBanner(strings.update.installDesktopRefused);
+    else {
+      logProblem("in-app update failed", error);
+      showBanner(strings.update.installFailed);
+      openDownloadInBrowser();
+    }
+  } finally {
+    if (stop) stop();
+  }
+  return true;
+}
 
 function onInstallProgress({ done, total }) {
   setInstallState({ kind: "downloading", done, total });
@@ -923,9 +999,13 @@ async function showWhatsNewOnce(freshInstall) {
   if (app.settings.lastSeenVersion === APP_VERSION) return;
   // The version is remembered even when the box is off, so turning it on later does not show old notes.
   const show = !freshInstall && RELEASE_NOTES !== "" && app.settings.showWhatsNew;
+  // Downloaded with the app's own Download button: the full notes (on a computer). Downloaded
+  // from GitHub: the short list, as the full notes were on the page the file came from.
+  const full = app.settings.downloadedInApp === APP_VERSION;
   app.settings.lastSeenVersion = APP_VERSION;
+  app.settings.downloadedInApp = "";
   await saveSettings();
-  if (show) await showNotes(fill(strings.update.whatsNewTitleUpdated, { version: APP_VERSION }), RELEASE_NOTES);
+  if (show) await showNotes(fill(strings.update.whatsNewTitleUpdated, { version: APP_VERSION }), RELEASE_NOTES, { full, page: releasePageOf(APP_VERSION) });
 }
 
 function appearanceOf(settings) {
@@ -2526,7 +2606,8 @@ function fillStaticText() {
   el("updateDownload").addEventListener("click", openDownload);
   paintInstallButton(el("updateDownload"));
   el("updateNotice").append(createInstallBar());
-  el("updateDetails").addEventListener("click", () => offered && showNotes(fill(strings.update.whatsNewTitle, { version: offered.version }), offered.notes));
+  // Before updating, a computer shows the full notes: the person has not been to GitHub.
+  el("updateDetails").addEventListener("click", () => offered && showNotes(fill(strings.update.whatsNewTitle, { version: offered.version }), offered.notes, { full: true, page: offered.url }));
   el("updateLater").addEventListener("click", () => {
     if (offered) app.settings.dismissedUpdate = offered.version;
     el("updateNotice").hidden = true;
@@ -2775,7 +2856,7 @@ async function start() {
   watchNetwork((onWifi) => backend.syncSetOnWifi(onWifi));
   await showWhatsNewOnce(freshInstall);
   // Not awaited: looking for an update must never hold up opening the notes.
-  checkQuietly();
+  learnSelfUpdate().then(checkQuietly);
   if (app.settings.vaultPath) {
     try {
       await openVaultFrom(app.settings.vaultPath);

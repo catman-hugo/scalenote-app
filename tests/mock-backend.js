@@ -110,6 +110,10 @@
     // Settings screen can be driven.
     // The tray and the login list are the computer's own; the stand-in only remembers the calls.
     set_zoom: ({ scale }) => { window.__zoom = scale; },
+    // In-app updates on a computer: a test says which kind of file the app came in, and whether
+    // installing fails. A success never returns in the real app (it closes or restarts).
+    install_kind: () => window.__installKind || null,
+    install_update: ({ version }) => { window.__mock.installed.push(version); if (window.__installFails) fail(window.__installFails); return new Promise(() => {}); },
     // The lock's rules (hash, waits) are Rust's and tested there; this keeps the plain secret
     // so the screens can be driven. A test can start with a lock by setting __seedLock.
     ...(() => {
@@ -445,12 +449,19 @@
     },
   };
   let callbackId = 1;
+  // Callbacks handed over by the app, and which event each one listens to, so a test can send
+  // an event the way Rust would (window.__mock.emit).
+  const callbacks = new Map();
+  const listeners = [];
+  // Tauri's event helper removes a listener through this object.
+  window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
-    transformCallback: () => callbackId++,
-    unregisterCallback: () => {},
+    transformCallback: (fn) => { const id = callbackId++; callbacks.set(id, fn); return id; },
+    unregisterCallback: (id) => callbacks.delete(id),
     convertFileSrc: (p) => p,
     invoke: async (cmd, args) => {
+      if (cmd === "plugin:event|listen") { listeners.push({ event: args.event, handler: args.handler }); return args.handler; }
       if (cmd.startsWith("plugin:event|")) return 1;
       if (cmd === "plugin:dialog|open") return "/picked/folder";
       if (cmd === "plugin:opener|open_url") {
@@ -464,5 +475,5 @@
       return h(args || {});
     },
   };
-  window.__mock = { syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = { emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

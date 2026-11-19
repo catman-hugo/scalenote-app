@@ -40,28 +40,31 @@ test("a system word inside a sentence is not a marker, and empty or odd input is
   assert.equal(notesFor("- Linux: x".repeat(2000), "android").length >= 0, true);
 });
 
-test("the 0.5.6 notes: Android is not told about Linux or Ctrl zoom, Windows not about fingerprints", async () => {
+test("the 0.5.6 notes: full and short, each for its own system, and GitHub sees every full line", async () => {
   const text = await readFile(new URL("../docs/release-notes/0.5.6.md", import.meta.url), "utf8");
-  const android = notesFor(appNotes(text), "android");
-  assert.doesNotMatch(android, /Linux|Ctrl/);
-  assert.match(android, /fingerprint/);
-  const windows = notesFor(appNotes(text), "windows");
-  assert.doesNotMatch(windows, /fingerprint|Linux|Android|phone/i);
-  assert.match(windows, /Ctrl/);
-  assert.match(notesFor(appNotes(text), "linux"), /Touch drawing works/);
-  // GitHub keeps the full detail: the visible part has whole sentences about the lock and Linux.
+  const phone = notesFor(appNotes(text, "short"), "android");
+  assert.doesNotMatch(phone, /Linux|Ctrl|forgotten PIN/);
+  assert.match(phone, /Fingerprint/);
+  const windowsShort = notesFor(appNotes(text, "short"), "windows");
+  assert.match(windowsShort, /Ctrl \+ and Ctrl/);
+  assert.doesNotMatch(windowsShort, /fingerprint|Linux|Android|phone|forgotten PIN|<!--/i);
+  const windowsFull = notesFor(appNotes(text, "full"), "windows");
+  assert.match(windowsFull, /forgotten PIN cannot be recovered/);
+  assert.doesNotMatch(windowsFull, /fingerprint|Linux|Android|phone|<!--/i);
+  assert.match(notesFor(appNotes(text, "full"), "linux"), /^- Two fingers on a drawing/m);
+  assert.match(notesFor(appNotes(text, "short"), "linux"), /^- Touch drawing works/m);
   const visible = text.replace(/<!--[\s\S]*?-->/g, "");
-  assert.match(visible, /forgotten PIN cannot be recovered/);
-  assert.match(visible, /On Linux, two fingers/);
-  assert.doesNotMatch(appNotes(text), /forgotten PIN/);
+  for (const words of [/forgotten PIN/, /Linux: Two fingers/, /Android: \*\*Fingerprint/, /Computers: \*\*Zoom/]) assert.match(visible, words);
 });
 
-test("the app shows only the In the app part, or the notes without comments when there is none", () => {
+test("the short list is the In the app part; the full notes are everything outside comments", () => {
   const file = "Full words here.\n\n<!-- In the app\n## New\n- Short.\n-->\n";
-  assert.equal(appNotes(file), "## New\n- Short.\n");
-  assert.equal(appNotes("## New\n- Long line. <!-- a note -->\n"), "## New\n- Long line. \n");
-  assert.equal(appNotes(""), "");
-  assert.equal(appNotes(undefined), "");
+  assert.equal(appNotes(file, "short"), "## New\n- Short.\n");
+  assert.equal(appNotes(file, "full"), "Full words here.\n\n\n");
+  // Without a short list the full notes are shown, never a comment.
+  assert.equal(appNotes("## New\n- Long line. <!-- a note -->\n", "short"), "## New\n- Long line. \n");
+  assert.equal(appNotes("", "full"), "");
+  assert.equal(appNotes(undefined, "short"), "");
   // A comment that is never closed does not hide or break anything.
-  assert.equal(appNotes("- One.\n<!-- In the app\n- Two."), "- One.\n<!-- In the app\n- Two.");
+  assert.equal(appNotes("- One.\n<!-- In the app\n- Two.", "short"), "- One.\n<!-- In the app\n- Two.");
 });
