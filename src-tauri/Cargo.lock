@@ -3121,7 +3121,7 @@ dependencies = [
 
 [[package]]
 name = "scalenote"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "keyring",
  "scalenote-core",
@@ -3137,7 +3137,7 @@ dependencies = [
 
 [[package]]
 name = "scalenote-core"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "getrandom 0.3.4",
  "hmac",

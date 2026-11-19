@@ -2,9 +2,9 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-18; 0.5.6 in progress (PDF find and width fixes); 0.5.5 built (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-19; 0.5.6 built and ready to release (version set to 0.5.6); 0.5.5 released (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
 
-## 0.5.6: in progress
+## 0.5.6: built, ready to release
 
 Branch `fix/pdf-find-and-width` (fixes reported while testing 0.5.5). Release notes: `docs/release-notes/0.5.6.md`; security checklist: `docs/security-checklist-0.5.6.md`.
 
