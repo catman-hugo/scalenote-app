@@ -769,3 +769,21 @@ Context. On Linux two fingers on the drawing zoomed the whole window and a finge
 Decision. The canvas sheet always, and the draw-over-text layer while it is on, cancel `touchstart` and `touchmove` (`web/touchhold.js`). The drawing code keeps using pointer events, which arrive before the touch events and are not affected. The text itself never cancels touches, so a finger scrolls a page as usual.
 Alternatives. A setting in the Linux web view to turn its gestures off (none exists that a Tauri app can set). Handling touch events instead of pointer events (rejected: two input paths to keep in step).
 Cost. Inside the drawing, the system's own long-press and scrolling never happen; the drawing code already does panning and zooming itself.
+
+## 2026-11-19: Each paired device belongs to one notes folder
+
+Context. Pairing was between devices, and a sync used whatever notes folder was open. A phone paired with two vaults on a home server could copy one folder's pages into the other (found in the 0.5.5 review).
+Decision. Each paired device is tied to one folder on this device, kept in `sync-folders.txt` in the app's own folder (never synced): the folder open at pairing, or for a pairing made earlier the folder of its next finished sync. A sync in another folder is refused before anything is read, on whichever side notices; the answering side says why (`other-folder`), older apps just see a refusal. A pairing can be moved to the open folder on purpose; its first sync there then shows what it would do and waits for a yes. A damaged folder list counts as empty, so pairings fall back to being tied at their next sync rather than stopping sync.
+Alternatives. One pairing per folder with its own key (rejected: a new key per folder means pairing again for every folder). Asking which folder at every sync (rejected: automatic sync cannot ask).
+Cost. A device used with two folders on this device needs pairing once per folder (as the guide says), or moving the pairing between them.
+
+## 2026-11-19: Manual sync and pairing are closed while the app lock is on
+
+Context. The 0.5 security check found that pairing, comparing, syncing by hand and changing paired devices still answered while the lock was closed. Starting a pairing there would let someone pair their own device and receive the pages.
+Decision. Those commands refuse while locked, like every command that reads or writes pages. Automatic sync keeps running inside Rust, so pages stay in step while the screen is locked.
+Cost. None noticed: the interface never calls them while the lock screen shows.
+
+## 2026-11-19: The Fedora install check moves to v0.8
+
+Context. (25) planned a CI job installing the `.rpm` in a Fedora container. Fedora can already install the `.rpm`, and the AppImage works too.
+Decision. Moved to v0.8, as first wished on 2026-11-11. Until then one person installing the `.rpm` at the 0.5 release is the check.

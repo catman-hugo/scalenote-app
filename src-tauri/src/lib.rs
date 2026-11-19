@@ -632,6 +632,8 @@ fn get_sync_settings(state: State<AppState>) -> Result<SyncSettingsReply, String
 
 #[tauri::command]
 fn set_sync_settings(name: Option<String>, enabled: Option<bool>, state: State<AppState>) -> Result<SyncSettingsReply, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let saved = state.sync.update(name.as_deref(), enabled).map_err(|error| {
         state.logger.log(Level::Warn, &format!("save sync settings failed: {error}"));
         error.code().to_string()
@@ -768,6 +770,8 @@ async fn sync_status(state: State<'_, AppState>) -> Result<SyncStatusReply, Stri
 /// the screen is closed, the code runs out or the attempts are used up.
 #[tauri::command]
 async fn sync_start_pairing(state: State<'_, AppState>) -> Result<String, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.start_pairing())).await?;
     result.map_err(|error| sync_failed(&state.logger, "start pairing", error))
@@ -784,6 +788,8 @@ async fn sync_stop_pairing(state: State<'_, AppState>) -> Result<(), String> {
 /// other device's name.
 #[tauri::command]
 async fn sync_join(address: String, code: String, state: State<'_, AppState>) -> Result<String, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.join(&address, &code))).await?;
     result.map(|peer| peer.name).map_err(|error| sync_failed(&state.logger, "pairing", error))
@@ -804,6 +810,8 @@ fn nearby_reply(found: Nearby) -> NearbyReply {
 /// not have to be typed. A found device is only an address to try; the code still decides.
 #[tauri::command]
 async fn sync_find(state: State<'_, AppState>) -> Result<Vec<NearbyReply>, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.find_nearby(std::time::Duration::from_millis(2500)))).await?;
     result
@@ -813,6 +821,8 @@ async fn sync_find(state: State<'_, AppState>) -> Result<Vec<NearbyReply>, Strin
 
 #[tauri::command]
 async fn sync_remove_peer(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.remove_peer(&id))).await?;
     result.map_err(|error| sync_failed(&state.logger, "remove device", error))
@@ -921,6 +931,8 @@ struct SyncRunReply {
 /// What a sync with one paired device would change. Changes nothing on either device.
 #[tauri::command]
 async fn sync_compare(id: String, state: State<'_, AppState>) -> Result<PreviewReply, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.compare_peer(&id))).await?;
     result.map(preview_reply).map_err(|error| sync_failed(&state.logger, "compare", error))
@@ -930,6 +942,8 @@ async fn sync_compare(id: String, state: State<'_, AppState>) -> Result<PreviewR
 /// until `approved` is true.
 #[tauri::command]
 async fn sync_run(id: String, approved: bool, state: State<'_, AppState>) -> Result<SyncRunReply, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.sync_peer(&id, approved, &mut |_| {}))).await?;
     match result {
@@ -948,6 +962,8 @@ async fn sync_set_paused(paused: bool, state: State<'_, AppState>) -> Result<(),
 
 #[tauri::command]
 async fn sync_rename_peer(id: String, name: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.rename_peer(&id, &name))).await?;
     result.map_err(|error| sync_failed(&state.logger, "rename device", error))
@@ -955,6 +971,8 @@ async fn sync_rename_peer(id: String, name: String, state: State<'_, AppState>) 
 
 #[tauri::command]
 async fn sync_set_wifi_only(id: String, only: bool, state: State<'_, AppState>) -> Result<(), String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.set_wifi_only(&id, only))).await?;
     result.map_err(|error| sync_failed(&state.logger, "wifi only", error))

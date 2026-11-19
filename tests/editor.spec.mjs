@@ -22,8 +22,14 @@ const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/cs
 // The same policy as src-tauri/tauri.conf.json, so a violation here would also happen there.
 const CSP = JSON.parse(fs.readFileSync(path.join(here, "..", "src-tauri", "tauri.conf.json"), "utf8")).app.security.csp;
 let networkRequests = 0;
+const networkFiles = [];
 const server = http.createServer((req, res) => {
-  networkRequests++;
+  // The browser itself now and then asks for /favicon.ico outside the page, past the interception.
+  // It is not an app file and a few of them cannot pile up, so it is not counted.
+  if (req.url !== "/favicon.ico") {
+    networkRequests++;
+    if (networkFiles.length < 5) networkFiles.push(req.url);
+  }
   const file = path.join(dist, req.url === "/" ? "index.html" : req.url.split("?")[0]);
   if (!file.startsWith(dist) || !fs.existsSync(file)) { res.writeHead(404).end(); return; }
   res.writeHead(200, { "content-type": types[path.extname(file)] || "application/octet-stream", "content-security-policy": CSP });
@@ -9136,7 +9142,7 @@ server.close();
 // Nothing should have gone over the local network (see serveApp); if something did, the
 // Windows connection pile-up could come back, so it counts as a failure.
 if (networkRequests > 0) {
-  console.log(`FAIL - ${networkRequests} file(s) were loaded over the network instead of being handed over directly`);
+  console.log(`FAIL - ${networkRequests} file(s) were loaded over the network instead of being handed over directly: ${networkFiles.join(", ")}`);
   failures++;
 }
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");
