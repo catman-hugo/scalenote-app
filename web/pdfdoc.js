@@ -125,6 +125,30 @@ export async function openPdf(bytes) {
         page.cleanup();
       }
     },
+    /**
+     * The words of page `n` with the box each piece sits in, for keeping beside an imported
+     * picture of the page (see imagetext.js). Resolves to `{ width, height, items }`, the
+     * boxes in the page's own size (scale 1), y from the top. Rotated text gets the box of its
+     * start; that is good enough to mark a found word.
+     */
+    async pageTextBoxes(n) {
+      const page = await doc.getPage(n);
+      try {
+        const viewport = page.getViewport({ scale: 1 });
+        const content = await page.getTextContent();
+        const items = [];
+        for (const item of content.items) {
+          if (typeof item.str !== "string" || !item.str.trim() || !Array.isArray(item.transform)) continue;
+          const t = lib.Util.transform(viewport.transform, item.transform);
+          const size = Math.hypot(t[2], t[3]);
+          items.push({ text: item.str.slice(0, TEXT_LIMITS.itemChars), x: t[4], y: t[5] - size, w: (item.width || 0) * viewport.scale, h: size });
+          if (items.length >= TEXT_LIMITS.itemsPerPage) break;
+        }
+        return { width: viewport.width, height: viewport.height, items };
+      } finally {
+        page.cleanup();
+      }
+    },
     /** The text pieces of page `n` (cut to the TEXT_LIMITS), for searching. */
     async pageText(n) {
       const page = await doc.getPage(n);

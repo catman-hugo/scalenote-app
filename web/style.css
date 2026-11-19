@@ -44,6 +44,9 @@
 
   --radius: 4px;
   --sidebar-width: 280px;
+  /* How much smaller everything is on a small screen (see the phone block below). The chosen
+     text size in Settings is multiplied by it, so 100% on a phone is a little smaller. */
+  --screen-scale: 1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1032,9 +1035,13 @@ body.block-dragging .float-bar { visibility: hidden; }
 /* The handles show while the picture is selected or one of them has the focus. A square of
    10 px is drawn; the invisible area around it is the target for a finger. */
 .image-handle,
+.pdf-width-handle,
 .image-reset { display: none; }
 .image-block.ProseMirror-selectednode .image-handle,
-.image-block:focus-within .image-handle {
+.image-block:focus-within .image-handle,
+.pdf-block.ProseMirror-selectednode .pdf-width-handle,
+.pdf-block:hover .pdf-width-handle,
+.pdf-block:focus-within .pdf-width-handle {
   display: block;
   position: absolute;
   width: 10px;
@@ -1046,7 +1053,11 @@ body.block-dragging .float-bar { visibility: hidden; }
   box-sizing: border-box;
   touch-action: none;
 }
-.image-handle::before { content: ""; position: absolute; inset: -11px; }
+.image-handle::before,
+.pdf-width-handle::before { content: ""; position: absolute; inset: -11px; }
+.pdf-width-handle { top: 50%; cursor: ew-resize; }
+.pdf-width-handle-w { left: 0; }
+.pdf-width-handle-e { left: 100%; }
 .image-handle-nw { left: 0; top: 0; cursor: nwse-resize; }
 .image-handle-n { left: 50%; top: 0; cursor: ns-resize; }
 .image-handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
@@ -1246,6 +1257,21 @@ body.block-dragging .float-bar { visibility: hidden; }
 @media (max-width: 640px) {
   #settings.settings-dialog { min-height: 0; }
 }
+/* Phones: the screen is measured (its width in CSS pixels, which already counts in how dense
+   its pixels are), and text and spacing get smaller in two steps, so a phone shows about as
+   much as other phone apps. Touch targets stay at least 40 pixels high. */
+@media (max-width: 480px) {
+  :root {
+    --screen-scale: 0.875;
+    --space-3: 10px;
+    --space-4: 12px;
+    --space-5: 18px;
+    --space-6: 28px;
+  }
+}
+@media (max-width: 360px) {
+  :root { --screen-scale: 0.8125; }
+}
 #settings[open].settings-dialog { display: block; }
 .settings-layout { display: flex; height: 100%; }
 .settings-tabs { display: flex; flex-direction: column; gap: var(--space-1); flex: 0 0 12rem; padding: var(--space-4) var(--space-3); border-right: 1px solid var(--line); background: var(--bg-side); overflow-y: auto; }
@@ -1277,10 +1303,11 @@ body.block-dragging .float-bar { visibility: hidden; }
 .swatch-accent { display: block; width: 30%; height: 6px; background: var(--accent); }
 @media (max-width: 640px) {
   /* On a phone the settings fill the screen: first a list of the groups, then one group as its own page. */
-  #settings.settings-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0; }
+  /* It covers the whole screen, so it keeps clear of the clock and the system bars itself. */
+  #settings.settings-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .settings-layout { flex-direction: column; }
   .settings-tabs { flex: 1 1 auto; flex-direction: column; border-right: 0; border-bottom: 0; padding: var(--space-2) var(--space-3); gap: 0; }
-  .settings-tab { padding: var(--space-3); border-bottom: 1px solid var(--line); border-radius: 0; min-height: 48px; }
+  .settings-tab { padding: var(--space-3); border-bottom: 1px solid var(--line); border-radius: 0; min-height: 44px; }
   .settings-tab[aria-selected="true"] { background: transparent; border-color: transparent; border-bottom-color: var(--line); font-weight: 400; }
   .settings-main { padding: var(--space-3); flex: 0 0 auto; }
   .settings-back { display: none; }
@@ -1894,7 +1921,8 @@ button.danger:hover { background: var(--bg-hover); }
 @media (max-width: 700px) {
   .topbar { flex-wrap: wrap; gap: var(--space-1) var(--space-2); padding-left: var(--space-3); padding-right: var(--space-3); }
   .topbar > button { flex: none; }
-  .title { flex: 1 1 5rem; }
+  /* In pixels, not text units: smaller phone text must not make the title's room smaller too. */
+  .title { flex: 1 1 max(5rem, 96px); }
 }
 
 /* ---------- folder icon menu ---------- */
@@ -1955,6 +1983,8 @@ button.danger:hover { background: var(--bg-hover); }
 
 /* ---------- a PDF in the page (pdfblock.js) and the question box (pdfimport.js) ---------- */
 .pdf-block { margin: var(--space-3) 0; }
+/* The box is in the middle of the page; a saved width makes it narrower, never wider. */
+.pdf-block-inner { position: relative; max-width: 100%; margin: 0 auto; }
 .pdf-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
 .pdf-block-title { flex: 1 1 6rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdf-block-count { flex: none; }
@@ -2009,6 +2039,16 @@ button.danger:hover { background: var(--bg-hover); }
 .pdf-text .markedContent { display: contents; }
 .pdf-text ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
 .pdf-hit { background: var(--find-hit, rgba(255, 200, 0, 0.45)); }
+/* Found words on a picture (imported PDF pages) and in its description; see imagefind.js. */
+.image-find-layer { position: absolute; inset: 0; pointer-events: none; }
+.image-find-hit { position: absolute; background: rgba(255, 224, 102, 0.55); border-radius: 1px; }
+.image-find-hit.find-hit-current { background: rgba(255, 159, 28, 0.55); outline: 1px solid var(--accent); }
+.image-alt-marks .find-hit { color: transparent; background: rgba(255, 224, 102, 0.5); }
+.image-alt-marks .find-hit-current { background: rgba(255, 159, 28, 0.55); }
+.image-caption { position: relative; }
+.image-alt-marks { position: absolute; z-index: 0; box-sizing: border-box; border-style: solid; border-color: transparent; color: transparent; white-space: pre; overflow: hidden; pointer-events: none; }
+.image-alt-marks[hidden] { display: none; }
+.image-alt.has-find-marks { position: relative; z-index: 1; background: transparent; }
 .pdf-hit-current { background: var(--find-current, rgba(255, 140, 0, 0.6)); outline: 1px solid var(--accent); }
 .pdf-page-failed { background: var(--bg-side); border-style: dashed; }
 .pdf-block-message { margin: 0; padding: var(--space-3); color: var(--text-soft); border: 1px dashed var(--line); border-radius: var(--radius); }

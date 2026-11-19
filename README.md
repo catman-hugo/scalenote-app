@@ -6,7 +6,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
 
 ## Current progress
 
-*Last updated: 2026-11-18 (extras built). This section is updated with every change to the app.*
+*Last updated: 2026-11-18 (0.5.6 started). This section is updated with every change to the app.*
 
 - **Latest version: 0.5.5 (the home server program and six extras, tried on one computer only; the tray and open at login are only compiled by the build service).** Before that 0.5.4. Android support for sync and six extras. Tried on one computer only; nothing has run on a phone or tablet yet, and sync has not been tried between two real devices.
 - **Done in 0.5 (sync between your own devices):**
@@ -15,7 +15,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
   - 0.5.2: "Find devices", so the address does not have to be typed. A device only announces itself while its pairing code is showing.
   - 0.5.3: the sync. Only changed files are sent, the first sync asks first, a page changed on both devices is kept in both versions, deleted pages go to the other device's trash. Also a status line, Pause and Compare, renaming a device, noticing changes made by other programs, and a conflict copies screen.
   - 0.5.4: Android: the phone can find other devices while the app is open, the back gesture goes to the previous page, and sync can be limited to Wi-Fi per device. Also Back and Forward buttons, a Find button, a true black theme, Settings search and Reset to defaults, and the app starts on the page you had open last. Themes are cards under an Auto/Light/Dark switch, and Settings is a full-screen list on a phone.
-- **Being built next: 0.5.6, hardening and release of 0.5.** The 0.5.5 server program and extras (backups, colour per folder, security cards, tray and open at login, inbox, device list details) are built; see [docs/home-server.md](docs/home-server.md). Then the multi-day test of the server and the real-device checks.
+- **Being built now: 0.5.6, hardening and release of 0.5.** First done: Find now finds words in PDF pages added as pictures and in picture descriptions, a PDF in a page can be made narrower, and Find in a PDF marks only the letters typed. On a phone, text and spacing are smaller, and Settings no longer sits under the status bar. Still to come: the rest of the 0.5.6 plan and the multi-day test of the server and the real-device checks.
 - **After that in 0.5:** each of the two coming releases also gets some extra features (for example a backup screen, a true-black theme and an optional app lock). The browser client moved to a later release. The full plan is in [docs/v0.5-plan.md](docs/v0.5-plan.md).
 - **Not tried on real devices yet:** the home server on a real server,  syncing between two devices on a real network, pairing and finding on two devices, the Android phone finding other devices and syncing, printing and export from the packaged app, selecting PDF text by touch.
 - **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).

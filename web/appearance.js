@@ -95,7 +95,9 @@ export function applyAppearance(root, appearance) {
   // the Light card always looks like Light. Without it the page fell back to the older built-in
   // colours in style.css, which are nearly white, so Auto with Light and Dark looked like True white.
   root.setAttribute("data-theme", effectiveTheme(a, systemIsDark()));
-  root.style.fontSize = `${a.fontSize}%`;
+  // The chosen size times the screen's own scale (style.css makes it smaller on a phone). The
+  // browser works this out again whenever the window changes size or the phone is turned.
+  root.style.fontSize = `calc(${a.fontSize}% * var(--screen-scale, 1))`;
   root.style.setProperty("--editor-width", EDITOR_WIDTHS[a.editorWidth]);
   root.style.setProperty("--sidebar-width", `${a.sidebarWidth}px`);
 }

@@ -2,6 +2,7 @@
 // to markdown lives in richblocks.js; this file is only how they look and behave on screen.
 
 import { HANDLES, keyDelta, resizeBy } from "./imagesize.js";
+import { attachImageFinder } from "./imagefind.js";
 import { Node } from "@tiptap/core";
 import { liftEmptyBlock } from "@tiptap/pm/commands";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -232,7 +233,8 @@ export const ImageBlock = Node.create({
   atom: true,
   draggable: false,
   addOptions() {
-    return { load: async () => { throw new Error("no loader"); } };
+    // `words(path)` gives the text of the words kept beside an imported PDF page (imagetext.js).
+    return { load: async () => { throw new Error("no loader"); }, words: async () => { throw new Error("no words"); } };
   },
   addAttributes() {
     return {
@@ -250,7 +252,7 @@ export const ImageBlock = Node.create({
     return ["figure", { "data-image-block": "" }, node.attrs.path];
   },
   addNodeView() {
-    const { load } = this.options;
+    const { load, words } = this.options;
     return ({ node, getPos, editor }) => {
       let current = node;
       const dom = make("figure", "image-block");
@@ -383,8 +385,20 @@ export const ImageBlock = Node.create({
 
       alt.addEventListener("input", () => setAttrs(editor, getPos, current, { alt: alt.value.replace(/[\[\]\n]/g, " ") }));
       show();
+      const finding = attachImageFinder({
+        dom,
+        sizer,
+        alt,
+        attrs: () => current.attrs,
+        pos: () => {
+          const at = typeof getPos === "function" ? getPos() : -1;
+          return typeof at === "number" ? at : -1;
+        },
+        load: words,
+      });
       return {
         dom,
+        destroy: () => finding.destroy(),
         update(updated) {
           if (updated.type !== current.type) return false;
           current = updated;

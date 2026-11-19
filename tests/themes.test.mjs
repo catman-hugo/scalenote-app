@@ -69,7 +69,7 @@ test("applying the settings sets the theme attribute, also for the system choice
   const root = { style: { fontSize: "", setProperty: (k, v) => props.set(k, v) }, setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k) };
   applyAppearance(root, { theme: "lavender", fontSize: 125, editorWidth: "wide", sidebarWidth: 300 });
   assert.equal(attrs.get("data-theme"), "lavender");
-  assert.equal(root.style.fontSize, "125%");
+  assert.equal(root.style.fontSize, "calc(125% * var(--screen-scale, 1))");
   assert.equal(props.get("--editor-width"), "60rem");
   assert.equal(props.get("--sidebar-width"), "300px");
   applyAppearance(root, { theme: "system" });

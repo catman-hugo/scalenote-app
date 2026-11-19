@@ -358,6 +358,16 @@
       return { pages, truncated: false };
     },
     read_attachment: ({ path }) => { if (!attachments.has(path)) fail("not_found"); return `data:${path.endsWith(".pdf") ? "application/pdf" : path.endsWith(".jpg") ? "image/jpeg" : "image/png"};base64,` + attachments.get(path); },
+    // Page words beside a picture. The real rules (only beside an existing picture) are tested in Rust.
+    write_page_text: ({ picture, text }) => {
+      if (!attachments.has(picture)) fail("not_found");
+      (window.__pageTexts = window.__pageTexts || new Map()).set(picture, text);
+    },
+    read_page_text: ({ picture }) => {
+      const kept = window.__pageTexts && window.__pageTexts.get(picture);
+      if (kept === undefined) fail("not_found");
+      return kept;
+    },
     create_note: ({ parent, title }) => { const p = unique(parent, title, ".md", (x) => files.has(x)); files.set(p, ""); return p; },
     create_folder: ({ parent, name }) => { const p = unique(parent, name, "", (x) => folders.has(x)); folders.add(p); return p; },
     move_entry: ({ path, newParent }) => {

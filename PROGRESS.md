@@ -2,7 +2,22 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-18; 0.5.5 built (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-18; 0.5.6 in progress (PDF find and width fixes); 0.5.5 built (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+
+## 0.5.6: in progress
+
+Branch `fix/pdf-find-and-width` (fixes reported while testing 0.5.5). Release notes: `docs/release-notes/0.5.6.md`; security checklist: `docs/security-checklist-0.5.6.md`.
+
+Done (tried here: node tests, the browser tests for PDFs and find, screenshots light and dark):
+- Words of PDF pages added as pictures are kept beside each picture (`<picture>.text.json`, `web/imagetext.js`, Rust `write_page_text`/`read_page_text`) and found by Ctrl+F, marked on the picture (`web/imagefind.js`). Picture descriptions are found too.
+- A PDF in a page has side handles to change its width, saved as `![name|600](file.pdf)`.
+- Find in a PDF in a page marks only the found letters.
+- Phone sizing: root text size is the chosen size times `--screen-scale` (0.875 at 480 CSS px wide or less, 0.8125 at 360 or less), spacing steps shrink too; full-screen Settings keeps clear of the status bar (safe-area padding). Compared with the owner's phone screenshots at the same size (393 x 873, 2.75x).
+
+Not done / untried:
+- PDFs imported as pictures before this change have no words file and are not searchable; nothing adds one afterwards.
+- The Rust commands are only compiled by CI. Not tried in the packaged app or on a device. The phone sizing and the status bar fix are only tried in a phone-sized browser, not on the phone. The width handles were tried with a mouse in the browser tests, not with a finger.
+- Still planned for 0.5.6: the items in `docs/v0.5-plan.md`, and tying each pairing to one local folder.
 
 ## 0.5.5: built (home server and the six extras), not tried on a real server or device
 

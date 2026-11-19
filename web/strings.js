@@ -675,6 +675,8 @@ export const strings = {
       pageLabel: "Page {page}",
       missing: "This PDF could not be shown. The file is missing or is not a PDF.",
       failed: "This PDF could not be read. It may be damaged or protected with a password.",
+      widthLeft: "Width of the PDF, left side. Use the arrow keys to change it.",
+      widthRight: "Width of the PDF, right side. Use the arrow keys to change it.",
     },
   },
 

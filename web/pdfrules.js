@@ -1,6 +1,8 @@
 // The plain rules of PDF import: what a file may be, how big a page picture gets, what the
 // pictures are called. No browser or library in here, so all of it can be tested alone.
 
+import { findAll } from "./findrules.js";
+
 export const PDF_LIMITS = {
   // The Rust side refuses a bigger PDF too (MAX_PDF_BYTES); this only gives a friendly answer first.
   bytes: 25 * 1024 * 1024,
@@ -21,27 +23,19 @@ export const TEXT_LIMITS = { itemsPerPage: 20_000, itemChars: 500, pageChars: 20
 
 /**
  * Finds `query` in the words of each page. `pages` is a list of pages, each a list of the text
- * pieces pdf.js reports (a word, a line); resolves to `[{ page, piece, offset }]` in reading
- * order, one entry per hit, never more than TEXT_LIMITS.hits. Case is ignored. A hit that is
- * split over two pieces is not found; that is rare for ordinary text and keeps the marked
- * words on screen exactly the ones that were counted.
+ * pieces pdf.js reports (a word, a line); returns `[{ page, piece, start, end }]` in reading
+ * order, one entry per hit, never more than TEXT_LIMITS.hits. `start` and `end` are the letters
+ * of the hit inside its piece, so only those are marked. Case is ignored. A hit that is split
+ * over two pieces is not found; that is rare for ordinary text and keeps the marked words on
+ * screen exactly the ones that were counted.
  */
 export function findInPages(pages, query) {
-  const needle = String(query || "").trim().toLowerCase();
   const hits = [];
-  if (!needle) return hits;
   for (let i = 0; i < pages.length; i++) {
     const pieces = pages[i] || [];
     for (let j = 0; j < pieces.length; j++) {
-      const hay = String(pieces[j]).toLowerCase();
-      let from = 0;
-      for (;;) {
-        const at = hay.indexOf(needle, from);
-        if (at === -1) break;
-        hits.push({ page: i + 1, piece: j, offset: at });
-        if (hits.length >= TEXT_LIMITS.hits) return hits;
-        from = at + needle.length;
-      }
+      for (const hit of findAll(String(pieces[j]), query, TEXT_LIMITS.hits - hits.length)) hits.push({ page: i + 1, piece: j, start: hit.start, end: hit.end });
+      if (hits.length >= TEXT_LIMITS.hits) return hits;
     }
   }
   return hits;
@@ -114,4 +108,19 @@ export function roundEstimate(seconds) {
   const rounded = Math.max(5, Math.ceil(seconds / 5) * 5);
   if (rounded < 60) return { minutes: 0, seconds: rounded };
   return { minutes: Math.max(1, Math.round(seconds / 60)), seconds: 0 };
+}
+
+/** The narrowest a PDF shown in a page can be made, in pixels. */
+export const MIN_PDF_WIDTH = 240;
+
+/**
+ * The width of a PDF in a page after its side handle was dragged `dx` pixels. The box stays in
+ * the middle, so it grows by twice the distance (like a picture). `side` is 1 for the right
+ * handle and -1 for the left one; `room` is the width the page has. Returns null for "as wide as
+ * the page" (nothing is written then), otherwise whole pixels between MIN_PDF_WIDTH and `room`.
+ */
+export function pdfWidthAfter(start, dx, side, room) {
+  const wanted = start + 2 * side * dx;
+  if (wanted >= room - 1) return null;
+  return Math.round(Math.max(MIN_PDF_WIDTH, Math.min(room, wanted)));
 }

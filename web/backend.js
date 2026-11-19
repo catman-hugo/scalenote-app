@@ -42,6 +42,9 @@ export const backend = {
   saveAttachment: (name, data) => call("save_attachment", { name, data }),
   // Returns the picture as a data: address.
   readAttachment: (path) => call("read_attachment", { path }),
+  // The words of an imported PDF page, kept beside its picture (see imagetext.js).
+  writePageText: (picture, text) => call("write_page_text", { picture, text }),
+  readPageText: (picture) => call("read_page_text", { picture }),
   // Makes a copy of the vault next to it with the colours turned into plain highlights, for
   // Obsidian. Returns { path, notes, changed, files, skipped }. Not available on Android.
   exportObsidianCopy: () => call("export_obsidian_copy"),

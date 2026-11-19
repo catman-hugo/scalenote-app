@@ -9,7 +9,7 @@
 import { FIND_LIMIT, orderHits } from "./findrules.js";
 import { collectHits, setFindMarks } from "./findmarks.js";
 import { flipFold, isFoldedAt } from "./togglefold.js";
-import { pdfFinders } from "./pdfblock.js";
+import { allFinders } from "./finders.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -97,7 +97,7 @@ export function createPageFind({ editor, after, onClose = () => {} }) {
       setFindMarks(ed, state.text, -1);
       unfold(ed, block.pos);
       block.finder.reveal(hit.index);
-      if (scroll) block.finder.dom.scrollIntoView({ block: "center", inline: "nearest" });
+      if (scroll) ((block.finder.target && block.finder.target()) || block.finder.dom).scrollIntoView({ block: "center", inline: "nearest" });
     }
     showStatus(false);
   }
@@ -125,7 +125,7 @@ export function createPageFind({ editor, after, onClose = () => {} }) {
     }
     showStatus(true);
     const text = collectHits(ed.state.doc, word).map((hit) => ({ ...hit, pos: hit.from }));
-    const pdf = pdfFinders()
+    const pdf = allFinders()
       .map((finder) => ({ finder, pos: finder.pos() }))
       .filter((block) => block.pos >= 0)
       .sort((a, b) => a.pos - b.pos);

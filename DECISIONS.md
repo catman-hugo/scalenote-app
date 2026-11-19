@@ -734,3 +734,17 @@ Cost. A backup doubles the disk space used until the person deletes old ones (no
 Addendum 2026-11-18 (review). The server only answers syncs and never starts one. Only the device that starts a sync saves the history that automatic syncing needs, so a server timer could never start a sync, and devices start every sync anyway. Saving the history on the answering side would need the other device to send its list, a protocol change that is not worth it for now. Pairings are not yet tied to a local folder, so one device must not be paired with two server vaults; tying them is planned for 0.5.6.
 
 Addendum 2026-11-18 (themes). In Auto the theme attribute is now always set from the system's light or dark setting. Leaving it off for Auto with Light and Dark made the page use the older built-in colours in style.css, which are nearly white, so Light looked like True white. Those built-in colours now equal the Light and Dark cards, so the moment before the settings are read looks the same too.
+
+## 2026-11-18: Words of imported PDF pages are kept beside each picture; a PDF in a page keeps a width
+
+Context. PDF pages added as pictures could not be found with Ctrl+F, and a PDF in a page could only be made taller, not narrower.
+Decision. (1) While a PDF is added as pictures, the words of each page and where they sit are read once and written to `<picture>.text.json` next to the picture (format 1: `{ "format": 1, "items": [[text, x, y, w, h]] }`, positions as parts of the picture's size). The note is not changed, so Obsidian sees the same picture link; the file syncs like any other. Find marks hits as boxes on the picture, sized by measured letter widths. (2) Picture descriptions are searched too; they are drawn behind the description box because an input box cannot hold marks. (3) A PDF in a page keeps a width written Obsidian-style after its name (`![name|600](file.pdf)`), like pictures. This replaces the earlier rule that a PDF has no size: a name that already ended in `|300` now becomes a width of 300 (it is written back the same). (4) Find in a PDF marks only the found letters.
+Alternatives. Keeping the whole PDF beside the pictures and reading its words at search time (rejected: doubles the space used). Putting the words in the note, for example in a comment (rejected: changes the file Obsidian shows and makes notes huge). Running text recognition on the pictures (rejected: large, slow, and the PDF already has its words).
+Cost. PDFs added as pictures before this change are not searchable until added again. The box over a word is close but not exact, because the letter widths of the PDF's own font are not known.
+
+## 2026-11-18: Text and spacing follow the screen's width
+
+Context. On a phone the app looked too big next to other phone apps.
+Decision. The page's base text size is the chosen Text size times a screen scale set in CSS by the screen's width in CSS pixels (which already allows for how dense the pixels are): 1 above 480, 0.875 at 480 or less, 0.8125 at 360 or less. The spacing steps shrink at 480 too. Touch targets keep at least 40 pixels. Because it is CSS, it changes by itself when the phone is turned or the window resized.
+Alternatives. A separate Text size default for phones (rejected: the setting would mean different things on each device). Reading the phone's own font setting (rejected: the WebView does not reliably report it).
+Cost. Phone text is a little smaller for everyone; people who want it bigger use Text size.

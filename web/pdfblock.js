@@ -9,7 +9,7 @@
 
 import { Node } from "@tiptap/core";
 import { bytesOfDataUrl, openPdf, wasCancelled } from "./pdfdoc.js";
-import { findInPages, pdfTitle } from "./pdfrules.js";
+import { findInPages, pdfTitle, pdfWidthAfter } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -19,9 +19,7 @@ function make(tag, className, text) {
   return node;
 }
 
-// Every PDF block on screen, so the page's find bar can ask each one for its hits.
-const finders = new Set();
-export const pdfFinders = () => [...finders];
+import { addFinder, removeFinder } from "./finders.js";
 
 const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
 
@@ -41,6 +39,8 @@ export const PdfBlock = Node.create({
     return {
       alt: { default: "", rendered: false },
       path: { default: "", rendered: false },
+      // A width in pixels, or null for the page's full width. Written as `name|width`.
+      width: { default: null, rendered: false },
     };
   },
   parseHTML() {
@@ -52,7 +52,7 @@ export const PdfBlock = Node.create({
   addNodeView() {
     const { load } = this.options;
     const t = strings.pdf.block;
-    return ({ node, getPos }) => {
+    return ({ node, getPos, editor }) => {
       let current = node;
       const dom = make("figure", "pdf-block");
       const head = make("figcaption", "pdf-block-head");
@@ -65,7 +65,65 @@ export const PdfBlock = Node.create({
       scroll.setAttribute("aria-label", t.surface);
       const message = make("p", "pdf-block-message");
       message.hidden = true;
-      dom.append(head, scroll, message);
+      // The box sits in the middle of the page; its width can be dragged at either side.
+      const inner = make("div", "pdf-block-inner");
+      const handles = [-1, 1].map((side) => {
+        const handle = make("span", `pdf-width-handle pdf-width-handle-${side < 0 ? "w" : "e"}`);
+        handle.dataset.side = String(side);
+        handle.tabIndex = 0;
+        handle.setAttribute("role", "button");
+        handle.setAttribute("aria-label", side < 0 ? t.widthLeft : t.widthRight);
+        return handle;
+      });
+      inner.append(head, scroll, message, ...handles);
+      dom.append(inner);
+
+      const paintWidth = (width) => {
+        inner.style.width = width ? `${width}px` : "";
+      };
+      const saveWidth = (width) => {
+        if (!editor || !editor.isEditable || typeof getPos !== "function") return;
+        const at = getPos();
+        if (typeof at !== "number") return;
+        editor.view.dispatch(editor.state.tr.setNodeMarkup(at, undefined, { ...current.attrs, width }));
+      };
+      const room = () => dom.clientWidth || inner.offsetWidth;
+      let drag = null;
+      handles.forEach((handle) => {
+        const side = Number(handle.dataset.side);
+        handle.addEventListener("pointerdown", (event) => {
+          if (!editor || !editor.isEditable || event.button > 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          handle.setPointerCapture?.(event.pointerId);
+          const box = inner.getBoundingClientRect();
+          const scale = inner.offsetWidth > 0 ? box.width / inner.offsetWidth : 1;
+          drag = { id: event.pointerId, x: event.clientX, start: inner.offsetWidth, scale: scale > 0 ? scale : 1, result: current.attrs.width };
+        });
+        handle.addEventListener("pointermove", (event) => {
+          if (!drag || event.pointerId !== drag.id) return;
+          drag.result = pdfWidthAfter(drag.start, (event.clientX - drag.x) / drag.scale, side, room());
+          paintWidth(drag.result);
+        });
+        handle.addEventListener("pointerup", (event) => {
+          if (!drag || event.pointerId !== drag.id) return;
+          const done = drag;
+          drag = null;
+          if (done.result !== current.attrs.width) saveWidth(done.result);
+        });
+        // A pointer taken away leaves the box as it was.
+        handle.addEventListener("pointercancel", () => {
+          drag = null;
+          paintWidth(current.attrs.width);
+        });
+        handle.addEventListener("keydown", (event) => {
+          const step = event.key === "ArrowRight" ? 10 : event.key === "ArrowLeft" ? -10 : 0;
+          if (!step || !editor || !editor.isEditable) return;
+          event.preventDefault();
+          saveWidth(pdfWidthAfter(inner.offsetWidth, step / 2, side, room()));
+        });
+      });
+      paintWidth(current.attrs.width);
 
       // One generation per time the file is (re)loaded; work for an older one is dropped.
       let generation = 0;
@@ -141,22 +199,45 @@ export const PdfBlock = Node.create({
       // The page's find bar (pagefind.js) drives this: it asks for the hits of a word, and then
       // for one hit to be the current one. The hits are worked out from the text of every page
       // (read once, then kept) and marked on the words of the pages that are drawn.
+      // Only the letters of a hit are marked, not the whole piece of text they are in: the
+      // piece's words are split into plain text and marked parts. The words are put back as they
+      // were when the marks go. The pieces stay transparent text, so selecting still works.
       function mark(s, page) {
         if (!page.textDivs) return;
-        for (const div of page.textDivs) div.classList.remove("pdf-hit", "pdf-hit-current");
         const find = s.find;
-        if (!find) return;
-        find.hits.forEach((hit, k) => {
-          if (hit.page !== page.n) return;
-          const div = page.textDivs[hit.piece];
-          if (!div) return;
-          div.classList.add("pdf-hit");
-          if (k === find.current) {
-            div.classList.add("pdf-hit-current");
-            if (find.scrollTo === k) {
-              find.scrollTo = -1;
-              centre(div);
-            }
+        const byPiece = new Map();
+        if (find) {
+          find.hits.forEach((hit, k) => {
+            if (hit.page !== page.n) return;
+            if (!byPiece.has(hit.piece)) byPiece.set(hit.piece, []);
+            byPiece.get(hit.piece).push({ ...hit, k });
+          });
+        }
+        page.textDivs.forEach((div, i) => {
+          if (div.dataset.words === undefined) {
+            if (!byPiece.has(i)) return;
+            div.dataset.words = div.textContent;
+          }
+          const words = div.dataset.words;
+          const hits = byPiece.get(i) || [];
+          const parts = [];
+          let at = 0;
+          let current = null;
+          for (const hit of hits) {
+            if (hit.start < at || hit.end > words.length) continue;
+            if (hit.start > at) parts.push(document.createTextNode(words.slice(at, hit.start)));
+            const part = make("span", hit.k === find.current ? "pdf-hit pdf-hit-current" : "pdf-hit");
+            part.textContent = words.slice(hit.start, hit.end);
+            parts.push(part);
+            if (hit.k === find.current) current = { part, k: hit.k };
+            at = hit.end;
+          }
+          if (at < words.length) parts.push(document.createTextNode(words.slice(at)));
+          div.replaceChildren(...parts);
+          if (!hits.length) delete div.dataset.words;
+          if (current && find.scrollTo === current.k) {
+            find.scrollTo = -1;
+            centre(current.part);
           }
         });
       }
@@ -228,7 +309,7 @@ export const PdfBlock = Node.create({
           if (session) reveal(session, k);
         },
       };
-      finders.add(finder);
+      addFinder(finder);
 
       // Resolves when the PDF has been opened (or has failed), so a search started while it is
       // still loading waits for it instead of finding nothing.
@@ -328,16 +409,17 @@ export const PdfBlock = Node.create({
           if (updated.type !== current.type) return false;
           const moved = updated.attrs.path !== current.attrs.path;
           current = updated;
+          if (!drag) paintWidth(current.attrs.width);
           if (moved) void start();
           else showTitle();
           return true;
         },
         // Scrolling, dragging the scroll bar and pressing keys in the box belong to the box,
         // not to the editor.
-        stopEvent: (event) => scroll.contains(event.target),
+        stopEvent: (event) => scroll.contains(event.target) || handles.some((h) => h.contains(event.target)),
         ignoreMutation: () => true,
         destroy() {
-          finders.delete(finder);
+          removeFinder(finder);
           generation++;
           stopSession();
         },
