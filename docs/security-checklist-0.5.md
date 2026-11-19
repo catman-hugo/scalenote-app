@@ -67,6 +67,7 @@ Checked by the builder by reading, searches and automatic tests. Not an outside 
 | Tray and open at login are off by default; the window's scripts cannot call the login plugin directly | Reading; device |
 | Window zoom accepts only 80% to 200% | Reading |
 | The page's security policy is unchanged; no inline styles; every sentence comes from the language file; the assistant is off and absent | Browser tests under the policy |
+| Updates from inside the app (computers): only files whose signature matches the public key in `tauri.conf.json` are installed; the address is built from this repository's releases and a version of digits, letters, dots and dashes only; the window's scripts cannot call the updater plugin directly; a copy that does not know how it was installed is never given an installer by guess | Rust unit test of the version check; script tests of `latest.json`; browser tests; reading of the updater plugin's source (2.14.1) |
 | Dependencies are pinned to exact versions; each new one was checked against its documentation and the lock file only gained packages | `Cargo.lock` and `package-lock.json` diffs per version |
 
 ## Open risks
@@ -76,4 +77,5 @@ Checked by the builder by reading, searches and automatic tests. Not an outside 
 - **Linux and Android keys:** on Linux and Android the device key is a private file, not the system's secure storage.
 - **The local network sees some things:** anyone on it can see that two devices talk and what they are called, and can try a pairing code (3 tries per code, and only while one is showing).
 - **The server stops on a kill signal without saying goodbye.** Pages are safe because every write is atomic, but a sync in progress is cut and done again.
+- **The update signing key:** whoever holds the private key (a GitHub secret and the owner's own copy) can sign an update every installed computer copy accepts. Losing it means one update by hand. On Linux a .deb or .rpm update runs the package manager with the computer password (pkexec), like installing it by hand. Not tried on a real computer yet; the Rust side is only compiled by CI.
 - **Sync goes on while locked, by design:** after the app locks itself again with a folder open, automatic sync continues. Pages stay in step, but a device paired earlier also keeps receiving changes while the screen is locked.
