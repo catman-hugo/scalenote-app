@@ -3311,6 +3311,7 @@ dependencies = [
  "keyring",
  "scalenote-core",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
