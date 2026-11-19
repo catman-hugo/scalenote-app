@@ -21,7 +21,15 @@ const shots = process.env.SHOTS_DIR || "";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png" };
 // The same policy as src-tauri/tauri.conf.json, so a violation here would also happen there.
 const CSP = JSON.parse(fs.readFileSync(path.join(here, "..", "src-tauri", "tauri.conf.json"), "utf8")).app.security.csp;
+let networkRequests = 0;
+const networkFiles = [];
 const server = http.createServer((req, res) => {
+  // The browser itself now and then asks for /favicon.ico outside the page, past the interception.
+  // It is not an app file and a few of them cannot pile up, so it is not counted.
+  if (req.url !== "/favicon.ico") {
+    networkRequests++;
+    if (networkFiles.length < 5) networkFiles.push(req.url);
+  }
   const file = path.join(dist, req.url === "/" ? "index.html" : req.url.split("?")[0]);
   if (!file.startsWith(dist) || !fs.existsSync(file)) { res.writeHead(404).end(); return; }
   res.writeHead(200, { "content-type": types[path.extname(file)] || "application/octet-stream", "content-security-policy": CSP });
@@ -35,6 +43,24 @@ const url = `http://127.0.0.1:${server.address().port}/`;
 const GITHUB = "https://api.github.com/repos/catman-hugo/scalenote-app/releases?per_page=20";
 // CHROME_PATH lets a machine without Playwright's own browser use an installed Chrome.
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
+
+// The app's files are handed to the browser straight from the test, not over the local network.
+// Each test opens a fresh browser that loads every file, and Windows keeps a closed connection
+// around for a while, so over a full run they piled up and a random page load failed with
+// ERR_NO_BUFFER_SPACE. Answering here opens no connection at all. The server above stays only
+// for anything that is not caught here. Every new browser, also in the screenshot blocks, gets it.
+function serveApp(route) {
+  const address = new URL(route.request().url());
+  const file = path.join(dist, address.pathname === "/" ? "index.html" : decodeURIComponent(address.pathname));
+  if (!file.startsWith(dist) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return route.fulfill({ status: 404, body: "" });
+  return route.fulfill({ status: 200, headers: { "content-type": types[path.extname(file)] || "application/octet-stream", "content-security-policy": CSP }, body: fs.readFileSync(file) });
+}
+const openContext = browser.newContext.bind(browser);
+browser.newContext = async (options) => {
+  const context = await openContext(options);
+  await context.route(`${url}**`, serveApp);
+  return context;
+};
 let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
@@ -687,7 +713,7 @@ await test("settings: theme, text size, note width and list width apply at once 
   await page.click('#settings .mode-option[data-mode="light"]');
   await page.click('#settings .theme-card[data-theme="sage"]');
   await page.selectOption('#settings select >> nth=0', "125");
-  await page.selectOption('#settings select >> nth=1', "wide");
+  await page.selectOption('#settings select >> nth=2', "wide");
   await page.locator('#settings input[type="range"]').fill("360");
   const look = await page.evaluate(() => ({
     theme: document.documentElement.dataset.theme,
@@ -697,7 +723,7 @@ await test("settings: theme, text size, note width and list width apply at once 
     bg: getComputedStyle(document.body).backgroundColor,
   }));
   assert.equal(look.theme, "sage");
-  assert.equal(look.size, "calc(125% * var(--screen-scale, 1))");
+  assert.equal(look.size, "calc(125% * var(--screen-scale, 1) * var(--zoom, 1))");
   assert.equal(look.side, "360px");
   assert.equal(look.bodyWidth, "1200px"); // 60rem at 125% text size
   assert.equal(look.bg, "rgb(248, 250, 247)");
@@ -1201,6 +1227,156 @@ await test("the text and spacing get smaller on a phone-sized screen and grow ba
   assert.equal(await size(), 17.5);
 }, { settings: FOLDER_SETTINGS, viewport: { width: 390, height: 800 } });
 
+await test("Ctrl + and Ctrl - zoom the window a step at a time between 80% and 200%, Ctrl 0 goes back, and it is kept", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.waitForFunction(() => window.__zoom === 1);
+  await page.keyboard.press("Control+Equal");
+  await page.waitForFunction(() => window.__zoom === 1.1);
+  assert.match(await page.textContent(".toast"), /Zoom 110%/);
+  assert.equal((await settingsNow(page)).zoom, 110);
+  for (let i = 0; i < 10; i++) await page.keyboard.press("Control+Equal");
+  await page.waitForFunction(() => window.__zoom === 2);
+  await page.keyboard.press("Control+Minus");
+  await page.waitForFunction(() => window.__zoom === 1.75);
+  for (let i = 0; i < 12; i++) await page.keyboard.press("Control+Minus");
+  await page.waitForFunction(() => window.__zoom === 0.8);
+  await page.keyboard.press("Control+0");
+  await page.waitForFunction(() => window.__zoom === 1);
+  assert.equal((await settingsNow(page)).zoom, 100);
+  // The same from Settings, and the text size is not touched by it.
+  await page.click("#openSettings");
+  await page.selectOption('#settings label:has-text("Zoom") select', "150");
+  await page.waitForFunction(() => window.__zoom === 1.5);
+  assert.equal((await settingsNow(page)).fontSize, 100);
+}, { settings: FOLDER_SETTINGS });
+
+await test("on Android, where the window cannot zoom, the zoom makes the text bigger instead", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => document.documentElement.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true })));
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--zoom").trim() === "1.1");
+  assert.equal(await page.evaluate(() => window.__zoom), undefined, "the window zoom is not asked for");
+}, { settings: FOLDER_SETTINGS, userAgent: ANDROID_UA, viewport: { width: 412, height: 860 } });
+
+await test("Ctrl / opens Settings on the Shortcuts tab, which lists real shortcuts and prints them on their own", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.keyboard.press("Control+Slash");
+  await page.waitForSelector("#settingsPanel-shortcuts:not([hidden])");
+  const text = await page.textContent("#settingsPanel-shortcuts");
+  for (const keys of ["Ctrl K", "Ctrl F", "Ctrl Shift O", "Ctrl /", "Ctrl 0", "Ctrl B", "Ctrl Alt 1 … 6"]) assert.ok(text.includes(keys), keys);
+  await page.evaluate(() => { window.print = () => { window.__printed = { sheet: Boolean(document.getElementById("printSheet")), only: document.body.classList.contains("print-sheet"), title: document.querySelector("#printSheet h1").textContent }; window.dispatchEvent(new Event("afterprint")); }; });
+  await page.click("#printShortcuts");
+  assert.deepEqual(await page.evaluate(() => window.__printed), { sheet: true, only: true, title: "ScaleNote keyboard shortcuts" });
+  assert.equal(await page.locator("#printSheet").count(), 0, "the sheet is taken away after printing");
+  assert.equal(await page.evaluate(() => document.body.classList.contains("print-sheet")), false);
+}, { settings: FOLDER_SETTINGS });
+
+await test("About shows the version and build day, its notes, the releases page, and how the app is made", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click("#settingsTab-about");
+  assert.equal(await page.textContent("#aboutVersion"), `ScaleNote ${VERSION}`);
+  assert.match(await page.textContent("#settingsPanel-about"), /Built on \d{4}-\d{2}-\d{2}/);
+  assert.match(await page.textContent("#settingsPanel-about"), /written by AI tools/);
+  await page.click("#aboutAllChanges");
+  await page.waitForFunction(() => window.__mock.opened.length === 1);
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), ["https://github.com/catman-hugo/scalenote-app/releases"]);
+  await page.click("#aboutWhatsNew");
+  await page.waitForSelector("#whatsnew[open]");
+  assert.match(await page.textContent("#whatsnew h2"), new RegExp(`What's new in ${VERSION.replace(/\./g, "\\.")}`));
+}, { settings: FOLDER_SETTINGS });
+
+// ---------- 0.5.6: app lock ----------
+const seedLock = (lock) => (page) => page.addInitScript((l) => { window.__seedLock = l; }, lock);
+
+await test("the app lock is off at first; turning it on asks for the PIN twice and refuses a short one", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click("#settingsTab-device");
+  await page.waitForSelector("#lockTurnOn");
+  assert.match(await page.textContent("#lockSettings"), /does not encrypt your pages/);
+  await page.click("#lockTurnOn");
+  assert.match(await page.textContent("#lockSettings"), /if you forget it, ScaleNote cannot be opened/);
+  assert.equal(await page.getAttribute("#lockNew", "inputmode"), "numeric", "a PIN gets the number pad");
+  await page.fill("#lockNew", "123");
+  await page.fill("#lockRepeat", "123");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForFunction(() => /Too short/.test(document.getElementById("lockResult").textContent));
+  await page.fill("#lockNew", "4821");
+  await page.fill("#lockRepeat", "4822");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForFunction(() => /do not match/.test(document.getElementById("lockResult").textContent));
+  await page.fill("#lockRepeat", "4821");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForSelector("#lockAfter");
+  assert.equal(await page.evaluate(() => window.__lock.secret), "4821");
+  assert.equal(await page.inputValue("#lockAfter"), "5", "five minutes away by default");
+  await page.selectOption("#lockAfter", "15");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).lockAfter === 15);
+  // A change and turning off need the current PIN.
+  await page.click("#lockTurnOff");
+  await page.fill("#lockCurrent", "0000");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForFunction(() => /current PIN or passcode is not right/.test(document.getElementById("lockResult").textContent));
+  await page.fill("#lockCurrent", "4821");
+  await page.click('#lockSettings button[type="submit"]');
+  await page.waitForSelector("#lockTurnOn");
+  assert.equal(await page.evaluate(() => window.__lock.secret), null);
+  assert.equal(await page.locator("#lockBiometricSetting").count(), 0, "no fingerprint choice on a computer");
+}, { settings: FOLDER_SETTINGS });
+
+await test("with the lock on the app starts locked, opens no pages until the right PIN, and waits after many wrong ones", async (page) => {
+  await page.waitForSelector("#lockScreen[open]");
+  assert.equal(await page.locator(".tree-button").count(), 0, "no page names before unlocking");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#lockScreen[open]").count(), 1, "Esc does not close it");
+  await page.fill("#lockInput", "0000");
+  await page.click("#lockUnlock");
+  await page.waitForFunction(() => /not right/.test(document.getElementById("lockMessage").textContent));
+  assert.equal(await page.inputValue("#lockInput"), "", "the field is emptied");
+  for (let i = 0; i < 4; i++) {
+    await page.fill("#lockInput", "0000");
+    await page.keyboard.press("Enter");
+  }
+  await page.waitForFunction(() => /Try again in \d+ seconds/.test(document.getElementById("lockMessage").textContent));
+  assert.equal(await page.isDisabled("#lockUnlock"), true);
+  // The wait is over (the stand-in lets the right PIN through again).
+  await page.evaluate(() => { document.getElementById("lockUnlock").disabled = false; });
+  await page.fill("#lockInput", "4821");
+  await page.click("#lockUnlock");
+  await page.waitForSelector("#lockScreen", { state: "detached" });
+  await page.waitForSelector('.tree-button[data-path="Page.md"]');
+  assert.equal(await page.evaluate(() => document.body.classList.contains("is-locked")), false);
+}, { settings: FOLDER_SETTINGS, files: { "Page.md": "hello\n" }, before: seedLock({ secret: "4821", kind: "pin" }) });
+
+await test("set to lock when leaving, the app saves the open page and locks as soon as it is hidden", async (page) => {
+  await page.waitForSelector("#lockScreen[open]");
+  await page.fill("#lockInput", "4821");
+  await page.click("#lockUnlock");
+  await page.waitForSelector('.tree-button[data-path="Page.md"]');
+  await page.click('.tree-button[data-path="Page.md"]');
+  await page.click(".note-body p");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" typed");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.waitForSelector("#lockScreen[open]");
+  assert.ok((await files(page))["Page.md"].includes("hello typed"), "saved before locking");
+  assert.equal(await page.evaluate(() => window.__lock.locked), true);
+}, { settings: { ...FOLDER_SETTINGS, lockAfter: 0 }, files: { "Page.md": "hello\n" }, before: seedLock({ secret: "4821", kind: "pin" }) });
+
+await test("a passcode gets a keyboard, and where the device can, a fingerprint or face unlocks", async (page) => {
+  await page.waitForSelector("#lockScreen[open]");
+  assert.equal(await page.getAttribute("#lockInput", "inputmode"), "text");
+  assert.equal(await page.getAttribute("#lockInput", "aria-label"), "Passcode");
+  await page.click("#lockBiometric");
+  await page.waitForFunction(() => /Not recognised/.test(document.getElementById("lockMessage").textContent));
+  await page.evaluate(() => { window.__biometricOk = true; });
+  await page.click("#lockBiometric");
+  await page.waitForSelector("#lockScreen", { state: "detached" });
+}, { settings: FOLDER_SETTINGS, before: async (page) => { await seedLock({ secret: "a long passcode", kind: "passcode", biometric: true })(page); await page.addInitScript(() => { window.__biometricAvailable = true; }); } });
+
 await test("the folder name opens a menu with recent folders, and choosing one switches to it", async (page) => {
   await page.waitForSelector("#vaultButton");
   await page.evaluate(() => window.__mock.files.set("Page.md", "hello\n"));
@@ -1342,7 +1518,7 @@ await test("there are five text sizes, the smallest is 80 percent, and the icons
   const options = await page.locator("#settings select").nth(0).locator("option").allTextContents();
   assert.deepEqual(options, ["Smallest", "Small", "Normal", "Large", "Largest"]);
   await page.locator("#settings select").nth(0).selectOption("80");
-  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "calc(80% * var(--screen-scale, 1))");
+  assert.equal(await page.evaluate(() => document.documentElement.style.fontSize || getComputedStyle(document.documentElement).fontSize), "calc(80% * var(--screen-scale, 1) * var(--zoom, 1))");
   const small = await iconWidth();
   await page.locator("#settings select").nth(0).selectOption("125");
   const large = await iconWidth();
@@ -4638,6 +4814,33 @@ await test("on a phone the canvas toolbar fits the window and the sheet fills th
   assert.ok(titleWidth >= 90, `the page title is still readable (title ${titleWidth}; ${bar})`);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
 
+// A touch the way a finger sends it, on the element at `selector`; says whether the page cancelled
+// it (then the web view's own scrolling and zooming do not run, which matters on Linux).
+const touchCancelled = (page, selector, type = "touchstart", fingers = 1) => page.evaluate(({ selector, type, fingers }) => {
+  const target = document.querySelector(selector);
+  const box = target.getBoundingClientRect();
+  const touches = Array.from({ length: fingers }, (_, i) => new Touch({ identifier: i + 1, target, clientX: box.x + 40 + i * 60, clientY: box.y + 40 }));
+  const event = new TouchEvent(type, { touches, targetTouches: touches, changedTouches: touches, cancelable: true, bubbles: true });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+}, { selector, type, fingers });
+
+await test("on the drawing sheet every touch is cancelled, so the Linux web view cannot zoom the window or scroll the page", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  for (const [type, fingers] of [["touchstart", 1], ["touchmove", 1], ["touchstart", 2], ["touchmove", 2]]) {
+    assert.equal(await touchCancelled(page, ".canvas-surface", type, fingers), true, `${type} with ${fingers} finger(s)`);
+  }
+  // Fingers still pan the sheet (pointer events are not affected).
+  const before = await sheetBox(page);
+  const x = before.x + 200;
+  const y = before.y + 200;
+  await page.dispatchEvent(".canvas-surface", "pointerdown", { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x, clientY: y, buttons: 1 });
+  await page.dispatchEvent(".canvas-surface", "pointermove", { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x + 80, clientY: y, buttons: 1 });
+  await page.dispatchEvent(".canvas-surface", "pointerup", { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x + 80, clientY: y });
+  assert.equal(await page.evaluate(() => window.scrollX + window.scrollY), 0, "the window itself did not move");
+}, { hasTouch: true, settings: existingUser({ updates: false }) });
+
 // ---------- 0.4.1: highlighter, shapes, sticky notes, lasso, pen button ----------
 
 const SHAPE_LABELS = ["Line", "Arrow", "Rectangle", "Ellipse"];
@@ -6543,6 +6746,21 @@ const startInk = async (page) => {
   await page.click("#inkButton");
   await page.waitForSelector(".ink-bar:not([hidden])");
 };
+await test("drawing over the text cancels touches only while drawing; with it off, a finger scrolls the page as usual", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.files.set("Sketch.md", "One\n\nTwo\n"));
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Sketch.md"]');
+  await page.waitForSelector(".note-body");
+  await startInk(page);
+  assert.equal(await touchCancelled(page, ".ink-surface", "touchstart"), true);
+  assert.equal(await touchCancelled(page, ".ink-surface", "touchmove", 2), true);
+  await page.click("#inkButton");
+  await page.waitForFunction(() => !document.querySelector(".ink-surface").classList.contains("ink-drawing"));
+  assert.equal(await touchCancelled(page, ".ink-surface", "touchstart"), false, "off: nothing is held");
+  assert.equal(await touchCancelled(page, ".note-body", "touchmove"), false, "the text itself never holds a finger");
+}, { hasTouch: true, settings: existingUser({ updates: false }) });
+
 // Where the n-th block of the text is, in page coordinates.
 const blockBox = (page, n) => page.evaluate((i) => {
   const r = document.querySelector("#editor .note-body").children[i].getBoundingClientRect();
@@ -7513,11 +7731,11 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device"]);
+  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device", "Shortcuts", "About"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
-  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 2, "text size and page width are on Look, next to the theme cards");
+  assert.equal(await page.locator('#settings .settings-body:visible select').count(), 3, "text size, zoom and page width are on Look, next to the theme cards");
   assert.equal(await page.locator("#settings .settings-body:visible .theme-card").count(), 10, "the theme cards are on Look");
   await page.focus("#settingsTab-look");
   await page.keyboard.press("ArrowDown");
@@ -7525,11 +7743,11 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-pages");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
-  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it wraps round");
+  assert.equal(await page.locator("#settings h2").textContent(), "About", "it wraps round");
   await page.click("#settings button.primary");
   await page.waitForSelector("#settings", { state: "hidden" });
   await page.click("#openSettings");
-  assert.equal(await page.locator("#settings h2").textContent(), "This device", "it opens where it was left");
+  assert.equal(await page.locator("#settings h2").textContent(), "About", "it opens where it was left");
 }, { settings: existingUser({ updates: false }) });
 
 await test("Settings has a Sync tab: on by default, the name is kept clean, and both choices are saved and shown as saved", async (page) => {
@@ -7710,6 +7928,31 @@ await test("the device list shows the last sync time and the device's app versio
   assert.doesNotMatch(items[2], /App version/);
 }, { settings: existingUser({ updates: false }) });
 
+await test("each paired device shows the notes folder it belongs to; one tied to another folder can be moved here with two presses", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs("laptop"));
+  await page.evaluate(() => window.__mock.peerPairs("server"));
+  await page.evaluate(() => {
+    const peers = window.__mock.syncPeers();
+    Object.assign(peers[0], { folder: "/vault", otherFolder: false, hasHistory: true });
+    Object.assign(peers[1], { folder: "C:\\Users\\alice\\School notes", otherFolder: true });
+  });
+  await page.click("#openSettings");
+  await page.click("#settingsTab-sync");
+  await page.waitForSelector("#pairList .pair-folder");
+  const items = await page.locator("#pairList > *").allTextContents();
+  assert.match(items[0], /Syncs with your notes folder \u201cvault\u201d\./);
+  assert.doesNotMatch(items[0], /instead/);
+  assert.match(items[1], /\u201cSchool notes\u201d, which is not open now, so it does not sync/);
+  const move = page.locator("#pairList > *").nth(1).locator(".pair-move");
+  await move.click();
+  assert.equal(await page.evaluate(() => (window.__tiedHere || []).length), 0, "one press only asks");
+  await page.locator("#pairList > *").nth(1).locator(".pair-move").click();
+  await page.waitForFunction(() => (window.__tiedHere || []).length === 1);
+  await page.waitForFunction(() => document.querySelectorAll("#pairList .pair-move").length === 0);
+  assert.match((await page.locator("#pairList > *").allTextContents())[1], /Syncs with your notes folder \u201cvault\u201d\./);
+}, { settings: existingUser({ updates: false }) });
+
 await test("sync: Compare shows the plan and runs nothing; an error says what to do; rapid clicking never throws", async (page) => {
   await page.waitForSelector("#newNote");
   await page.evaluate(() => window.__mock.peerPairs());
@@ -7836,7 +8079,7 @@ await test("on a phone Settings is a full-screen list of groups, each opening as
     return { left: d.left, right: d.right, top: d.top, bottom: d.bottom, w: d.width, vw: innerWidth, vh: innerHeight, stacked: rows.every((b, i) => i === 0 || b.top >= rows[i - 1].bottom - 1), count: rows.length, fullWidth: rows.every((b) => b.width > innerWidth * 0.8) };
   });
   assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh + 1 && r.w >= r.vw - 1, JSON.stringify(r));
-  assert.equal(r.count, 7);
+  assert.equal(r.count, 9);
   assert.ok(r.stacked && r.fullWidth, JSON.stringify(r));
   assert.equal(await page.isVisible("#settingsPanel-look"), false);
   if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-list.png` });
@@ -8896,5 +9139,11 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
 
 await browser.close();
 server.close();
+// Nothing should have gone over the local network (see serveApp); if something did, the
+// Windows connection pile-up could come back, so it counts as a failure.
+if (networkRequests > 0) {
+  console.log(`FAIL - ${networkRequests} file(s) were loaded over the network instead of being handed over directly: ${networkFiles.join(", ")}`);
+  failures++;
+}
 console.log(failures ? `${failures} test(s) FAILED` : "all browser tests passed");
 process.exit(failures ? 1 : 0);

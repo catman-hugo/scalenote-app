@@ -53,6 +53,17 @@ export const backend = {
   // The tray icon and "open at login" (computers only). trayEnabled makes or removes the tray
   // icon; hideWindow hides the window while the tray is on; autostartGet/Set read and change the
   // computer's own login list and answer whether it now holds this program.
+  // The zoom of the window (1 is 100%). Computers only; Android's window cannot zoom.
+  setZoom: (scale) => call("set_zoom", { scale }),
+  // The app lock (see applock.js and src/lock.rs). lockStatus -> { enabled, locked, kind,
+  // biometric, biometricAvailable }; lockUnlock -> { ok, wait }; lockNow -> whether it locked.
+  lockStatus: () => call("lock_status"),
+  lockSet: (kind, secret, current) => call("lock_set", { kind, secret, current }),
+  lockRemove: (current) => call("lock_remove", { current }),
+  lockUnlock: (secret) => call("lock_unlock", { secret }),
+  lockNow: () => call("lock_now"),
+  lockSetBiometric: (on) => call("lock_set_biometric", { on }),
+  lockBiometricUnlock: (title) => call("lock_biometric_unlock", { title }),
   traySet: (enabled, showLabel, quitLabel) => call("tray_set", { enabled, showLabel, quitLabel }),
   hideWindow: () => call("hide_main_window"),
   autostartGet: () => call("autostart_get"),
@@ -77,6 +88,8 @@ export const backend = {
   syncSetPaused: (paused) => call("sync_set_paused", { paused }),
   syncRenamePeer: (id, name) => call("sync_rename_peer", { id, name }),
   syncSetWifiOnly: (id, only) => call("sync_set_wifi_only", { id, only }),
+  // Ties a paired device to the notes folder open now; a paired device belongs to one folder.
+  syncTieToOpenFolder: (id) => call("sync_tie_to_open_folder", { id }),
   syncSetOnWifi: (onWifi) => call("sync_set_on_wifi", { onWifi }),
   // One text that changes when something in the open folder changes.
   vaultSignature: () => call("vault_signature"),

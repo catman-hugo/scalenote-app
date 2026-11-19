@@ -116,6 +116,26 @@ pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Zooms the whole window (1.0 is 100%), so text, pictures and drawings grow together. The
+/// interface keeps the value in its settings and sends it again at every start.
+#[tauri::command]
+pub fn set_zoom(app: AppHandle, scale: f64) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        // The interface only offers 80% to 200%; anything else is refused, never guessed at.
+        if !scale.is_finite() || !(0.8..=2.0).contains(&scale) {
+            return Err("invalid_path".to_string());
+        }
+        let window = app.get_webview_window("main").ok_or_else(|| "not_found".to_string())?;
+        window.set_zoom(scale).map_err(|_| "io".to_string())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, scale);
+        Err("unsupported".to_string())
+    }
+}
+
 /// Whether the computer's own list of programs to start at login holds this one.
 #[tauri::command]
 pub fn autostart_get(app: AppHandle) -> Result<bool, String> {

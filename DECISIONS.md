@@ -748,3 +748,42 @@ Context. On a phone the app looked too big next to other phone apps.
 Decision. The page's base text size is the chosen Text size times a screen scale set in CSS by the screen's width in CSS pixels (which already allows for how dense the pixels are): 1 above 480, 0.875 at 480 or less, 0.8125 at 360 or less. The spacing steps shrink at 480 too. Touch targets keep at least 40 pixels. Because it is CSS, it changes by itself when the phone is turned or the window resized.
 Alternatives. A separate Text size default for phones (rejected: the setting would mean different things on each device). Reading the phone's own font setting (rejected: the WebView does not reliably report it).
 Cost. Phone text is a little smaller for everyone; people who want it bigger use Text size.
+
+## 2026-11-18: The app lock keeps people out of the app; it does not encrypt
+
+Context. 0.5.6 adds an optional lock (19). The pages are plain files by design, so they cannot be both locked and readable by Obsidian and other programs.
+Decision. (1) The lock is a gate in the app: a PIN (4 to 12 digits) or passcode (6 to 64 characters), never stored; a salted PBKDF2-SHA256 hash (300,000 rounds, `pbkdf2` 0.12.2) is kept in a private file in the app's own folder. (2) While locked, Rust refuses every command that reads or writes pages, so it is more than a screen over the window. (3) After 5 wrong tries each try waits longer (30 seconds, doubling, at most 15 minutes), kept in the file. (4) It closes again after a chosen time without typing, tapping or clicking (or as soon as the app is left); the open page is saved first. (5) On Android a fingerprint or face can unlock, through `tauri-plugin-biometric` 2.5.0 called from Rust only. (6) A damaged lock file counts as no lock, and there is no "forgot PIN" way in: the settings say so before the lock is turned on.
+Alternatives. Encrypting the vault (rejected: pages would no longer be plain files, and sync, Obsidian and backups would all need the key). Keeping the hash in the system's secure storage (not now: it is only on Windows in this app; a private file is used for the sync key elsewhere too). A recovery code (rejected for now: one more secret to keep, and the files can be read anyway by whoever has the device unlocked).
+Cost. Whoever can read the app's private folder or the vault folder can read the pages without the lock. Forgetting the PIN on Android means the pages in the app cannot be opened there; synced or backed-up copies are the way back.
+
+## 2026-11-18: Zoom is the window's own on computers and the text size on Android
+
+Context. (22) asks for Ctrl +, Ctrl − and Ctrl 0 from 80% to 200%.
+Decision. On a computer the window itself zooms (Tauri's `set_zoom`), so drawings, pictures and pointer positions all scale together. Android's window cannot zoom, so there the text and everything sized by it grow (a `--zoom` factor in the root text size). The zoom is kept in the settings and is separate from Text size. The compact layout by window width is the screen scale added earlier for phones.
+Alternatives. CSS `zoom` everywhere (rejected: drawing positions are measured in different ways by different web views). Only Text size (rejected: icons, pictures and spacing would not grow).
+Cost. On Android, 200% makes text bigger but not every picture.
+
+## 2026-11-18: Drawing surfaces cancel touch events themselves
+
+Context. On Linux two fingers on the drawing zoomed the whole window and a finger scrolled the page. The surfaces already had `touch-action: none`, which the Chromium web views (Windows, Android) obey and the Linux one (WebKitGTK) does not: it runs its own gestures for any touch the page did not cancel.
+Decision. The canvas sheet always, and the draw-over-text layer while it is on, cancel `touchstart` and `touchmove` (`web/touchhold.js`). The drawing code keeps using pointer events, which arrive before the touch events and are not affected. The text itself never cancels touches, so a finger scrolls a page as usual.
+Alternatives. A setting in the Linux web view to turn its gestures off (none exists that a Tauri app can set). Handling touch events instead of pointer events (rejected: two input paths to keep in step).
+Cost. Inside the drawing, the system's own long-press and scrolling never happen; the drawing code already does panning and zooming itself.
+
+## 2026-11-19: Each paired device belongs to one notes folder
+
+Context. Pairing was between devices, and a sync used whatever notes folder was open. A phone paired with two vaults on a home server could copy one folder's pages into the other (found in the 0.5.5 review).
+Decision. Each paired device is tied to one folder on this device, kept in `sync-folders.txt` in the app's own folder (never synced): the folder open at pairing, or for a pairing made earlier the folder of its next finished sync. A sync in another folder is refused before anything is read, on whichever side notices; the answering side says why (`other-folder`), older apps just see a refusal. A pairing can be moved to the open folder on purpose; its first sync there then shows what it would do and waits for a yes. A damaged folder list counts as empty, so pairings fall back to being tied at their next sync rather than stopping sync.
+Alternatives. One pairing per folder with its own key (rejected: a new key per folder means pairing again for every folder). Asking which folder at every sync (rejected: automatic sync cannot ask).
+Cost. A device used with two folders on this device needs pairing once per folder (as the guide says), or moving the pairing between them.
+
+## 2026-11-19: Manual sync and pairing are closed while the app lock is on
+
+Context. The 0.5 security check found that pairing, comparing, syncing by hand and changing paired devices still answered while the lock was closed. Starting a pairing there would let someone pair their own device and receive the pages.
+Decision. Those commands refuse while locked, like every command that reads or writes pages. Automatic sync keeps running inside Rust, so pages stay in step while the screen is locked.
+Cost. None noticed: the interface never calls them while the lock screen shows.
+
+## 2026-11-19: The Fedora install check moves to v0.8
+
+Context. (25) planned a CI job installing the `.rpm` in a Fedora container. Fedora can already install the `.rpm`, and the AppImage works too.
+Decision. Moved to v0.8, as first wished on 2026-11-11. Until then one person installing the `.rpm` at the 0.5 release is the check.

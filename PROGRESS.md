@@ -2,9 +2,9 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-18; 0.5.6 in progress (PDF find and width fixes); 0.5.5 built (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-19; 0.5.6 built and ready to release (version set to 0.5.6); 0.5.5 released (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
 
-## 0.5.6: in progress
+## 0.5.6: built, ready to release
 
 Branch `fix/pdf-find-and-width` (fixes reported while testing 0.5.5). Release notes: `docs/release-notes/0.5.6.md`; security checklist: `docs/security-checklist-0.5.6.md`.
 
@@ -12,12 +12,20 @@ Done (tried here: node tests, the browser tests for PDFs and find, screenshots l
 - Words of PDF pages added as pictures are kept beside each picture (`<picture>.text.json`, `web/imagetext.js`, Rust `write_page_text`/`read_page_text`) and found by Ctrl+F, marked on the picture (`web/imagefind.js`). Picture descriptions are found too.
 - A PDF in a page has side handles to change its width, saved as `![name|600](file.pdf)`.
 - Find in a PDF in a page marks only the found letters.
+- Extras (branch `feature/v0.5.6-extras`, on top of the PDF branch): (19) app lock (`core/src/applock.rs` with 5 tests, `src/lock.rs`, `web/applock.js`; fingerprint/face on Android through `tauri-plugin-biometric`), (20) About tab, (21) Shortcuts tab with a printable sheet (`web/shortcuts.js`), (22) zoom shortcuts and a Zoom setting (window zoom on computers, text zoom on Android); the compact layout by width is the phone sizing below.
+- (23) Linux drawing zoom and finger bug: the Linux web view (WebKitGTK) ignores CSS `touch-action` and runs its own pinch zoom and scrolling for touches that are not cancelled in script. The canvas sheet and the draw-over-text layer (while on) now cancel touchstart and touchmove (`web/touchhold.js`); pointer events still arrive. Two browser tests fail on the old code and pass now. Not tried on a Linux touch screen (WebKit could not be downloaded here). A touchpad pinch on Linux is a different path and was not looked at.
+- (24) Unreliable tests, checked against every failed CI run kept by GitHub (42 runs since 2026-11-04): the search-box test last failed on 2026-11-07 (race fixed then, see 0.4.x); the discovery flood test last failed on 2026-11-15 (fixed that evening); the restart sync-time test and the phone title test were fixed today. What was left was Windows only: `net::ERR_NO_BUFFER_SPACE` on a random browser test (7 times, up to today). Cause: every test opens a new browser that loads every file over a local connection, and Windows keeps closed connections around, so they ran out over a full run. The test browsers now get the files handed over directly (`serveApp` in `tests/editor.spec.mjs`), and the run fails if any file goes over the network. Full suite here: 412 passed, nothing over the network, 579 s.
+- Each paired device is tied to one notes folder (`core/src/sync/folders.rs`, 3 unit tests and 2 sync tests with real folders, one of them a phone with two "server vaults"): set at pairing, or at the first finished sync for older pairings; a sync in another folder is refused on both sides (a "no" with the reason `other-folder`; older apps just see a "no"); Settings, Sync shows the folder and can move a pairing (two presses). The install guide's warning became steps.
+- Security checklist for the whole 0.5 line (`docs/security-checklist-0.5.md`): npm audit and cargo audit clean (6 warnings inside Tauri's GTK stack), no unwrap/expect, no personal details. It found that pairing and manual sync commands still answered while the app lock was closed; they now refuse (automatic sync keeps running by design).
+- Setup guide (`docs/setup-guide.md`), linked from the README.
+- (25) the Fedora install check moved to v0.8 (the owner's choice).
 - Phone sizing: root text size is the chosen size times `--screen-scale` (0.875 at 480 CSS px wide or less, 0.8125 at 360 or less), spacing steps shrink too; full-screen Settings keeps clear of the status bar (safe-area padding). Compared with the owner's phone screenshots at the same size (393 x 873, 2.75x).
 
 Not done / untried:
 - PDFs imported as pictures before this change have no words file and are not searchable; nothing adds one afterwards.
 - The Rust commands are only compiled by CI. Not tried in the packaged app or on a device. The phone sizing and the status bar fix are only tried in a phone-sized browser, not on the phone. The width handles were tried with a mouse in the browser tests, not with a finger.
-- Still planned for 0.5.6: the items in `docs/v0.5-plan.md`, and tying each pairing to one local folder.
+- Still planned for 0.5.6: nothing to build; the owner tests on his devices after every update.
+- Untried: the lock, fingerprint unlock, zoom and tray commands only compiled by CI; never run in the packaged app. Fingerprint unlock not tried on a phone.
 
 ## 0.5.5: built (home server and the six extras), not tried on a real server or device
 

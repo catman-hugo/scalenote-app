@@ -146,6 +146,10 @@ fn ask<S: Read + Write>(channel: &mut Channel<S>, kind: u8, meta: &[u8], body: &
     send_blob(channel, kind, meta, body)?;
     let answer = recv_blob(channel, max_body)?;
     if answer.kind == KIND_NO {
+        // An app since 0.5.6 says why when this device is tied to another folder there.
+        if answer.meta == super::exchange::NO_OTHER_FOLDER {
+            return Err(SyncError::Refused("the other device has it with another folder"));
+        }
         return Err(SyncError::Refused("the other device said no"));
     }
     Ok(answer)

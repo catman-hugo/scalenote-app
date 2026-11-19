@@ -13,6 +13,7 @@ pub mod discovery;
 pub mod engine;
 pub mod exchange;
 pub mod files;
+pub mod folders;
 pub mod hex;
 pub mod identity;
 pub mod manifest;
@@ -76,6 +77,8 @@ impl SyncError {
             SyncError::Refused("device not found") => "sync_not_found",
             SyncError::Refused("not the paired device") => "sync_wrong_device",
             SyncError::Refused("the other device said no") => "sync_peer_refused",
+            SyncError::Refused("paired with another folder") => "sync_other_folder",
+            SyncError::Refused("the other device has it with another folder") => "sync_peer_other_folder",
             SyncError::Refused(_) => "pair_refused",
             SyncError::Channel(_) => "pair_failed",
         }

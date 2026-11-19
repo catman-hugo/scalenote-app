@@ -11,6 +11,7 @@
 // - A pen's eraser end erases for as long as it is held. The barrel button does what the
 //   "Pen button" setting says: erase (the default), select with a loop, or nothing.
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
+import { holdTouches } from "./touchhold.js";
 import {
   DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
   arrowHead, boundsOf, boxOf, canAddItem, canMove, drawnWidth, ellipseOutline, emptyCanvas, tidyStroke,
@@ -1096,6 +1097,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
   }
 
   surface.addEventListener("pointerdown", onDown);
+  // Every finger on the sheet is the sheet's (pan, zoom, or draw with Finger draws on).
+  holdTouches(surface);
   surface.addEventListener("pointermove", onMove);
   surface.addEventListener("pointerup", onUp);
   surface.addEventListener("pointercancel", onUp);

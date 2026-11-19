@@ -1,6 +1,6 @@
 [package]
 name = "scalenote"
-version = "0.5.5"
+version = "0.5.6"
 description = "ScaleNote: a local-first markdown note app."
 edition = "2021"
 rust-version = "1.77"
@@ -23,6 +23,8 @@ tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-opener = "=2.7.2"
 scalenote-core = { path = "core" }
 serde = { version = "=1.0.229", features = ["derive"] }
+# Wipes a typed PIN or passcode from memory after it was checked (already used by the core).
+zeroize = "=1.8.2"
 
 # The system's secure storage for the sync key. Windows only for now (Credential Manager);
 # other systems keep the key in a private file in the app's own folder (see src/secure.rs).
@@ -33,3 +35,8 @@ keyring = { version = "=3.6.3", default-features = false, features = ["windows-n
 # no such list on Android. Exact version, like every dependency here.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "=2.7.0"
+
+# Fingerprint or face unlock for the app lock (0.5.6). Android only; on a computer there is
+# nothing to use it with. Exact version, like every dependency here.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-biometric = "=2.5.0"

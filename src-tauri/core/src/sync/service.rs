@@ -18,6 +18,7 @@ use super::engine::{self, Outcome, Pair, Preview, Progress, Report};
 use super::exchange::{self, is_sync_kind, KIND_NO};
 use super::identity::{fingerprint, Identity, KEY_LEN};
 use super::pairing::{self, clean_code, CodeBook, KIND_REFUSED, KIND_START};
+use super::folders::FolderBook;
 use super::trust::{Peer, TrustList};
 use super::{hex, Result, SyncError};
 use crate::logger::format_utc;
@@ -41,6 +42,8 @@ const SYNC_TIMEOUT: Duration = Duration::from_secs(120);
 /// With nothing changed here, a paired device is still synced again after this long.
 const RESYNC_AFTER: Duration = Duration::from_secs(300);
 const TRUST_FILE: &str = "sync-peers.txt";
+/// Which notes folder each paired device belongs to (folders.rs). Never synced.
+const FOLDERS_FILE: &str = "sync-folders.txt";
 
 /// Questions a paired device can ask (more are added with the sync itself in 0.5.3).
 const KIND_PING: u8 = 0x20;
@@ -94,6 +97,8 @@ struct State {
     /// What this device knows about each paired device since the app started.
     live: HashMap<[u8; KEY_LEN], Live>,
     syncing: Option<SyncingView>,
+    /// The notes folder each paired device belongs to (folders.rs).
+    folders: FolderBook,
 }
 
 #[derive(Default)]
@@ -134,6 +139,7 @@ struct Shared {
     strict_port: bool,
     identity: Identity,
     trust_path: PathBuf,
+    folders_path: PathBuf,
     /// Where discovery notes go and are listened for (loopback only in tests).
     route: Mutex<Route>,
     state: Mutex<State>,
@@ -199,6 +205,10 @@ pub struct PeerView {
     pub has_history: bool,
     /// Syncs with this device only on Wi-Fi.
     pub wifi_only: bool,
+    /// The notes folder on this device it belongs to ("" when not tied yet).
+    pub folder: String,
+    /// It belongs to a folder other than the one open now, so it does not sync until that one is open.
+    pub other_folder: bool,
 }
 
 /// The real network route, unless the service is bound to loopback (tests), where nothing may
@@ -258,8 +268,10 @@ impl Service {
     fn build(dir: &Path, identity: Identity, name: &str, enabled: bool, bind_ip: &'static str, first_port: u16, strict_port: bool) -> Result<Service> {
         let trust_path = dir.join(TRUST_FILE);
         let trust = TrustList::load(&trust_path)?;
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None };
-        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
+        let folders_path = dir.join(FOLDERS_FILE);
+        let folders = FolderBook::load(&folders_path);
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders };
+        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
     }
@@ -466,6 +478,9 @@ impl Service {
                 if let Some(root) = &state.vault {
                     engine::forget_base(root, &key);
                 }
+                if state.folders.untie(&key) {
+                    let _ = state.folders.save(&self.shared.folders_path);
+                }
                 record(&mut state, EventKind::Removed, name.as_deref().unwrap_or(""));
                 true
             } else {
@@ -474,6 +489,25 @@ impl Service {
         };
         self.refresh()?;
         Ok(removed)
+    }
+
+    /// Ties a paired device to the folder open now, instead of the one it had. Its next sync
+    /// here is a first one (it shows what it would change and waits for a yes), unless this
+    /// folder already has a sync history with it.
+    pub fn tie_to_open_folder(&self, id: &str) -> Result<()> {
+        let key = hex::decode::<KEY_LEN>(id).ok_or(SyncError::Refused("not a device id"))?;
+        let mut state = lock(&self.shared.state);
+        if !state.trust.contains(&key) {
+            return Err(SyncError::Refused("not a paired device"));
+        }
+        let root = state.vault.clone().ok_or(SyncError::Refused("no vault is open"))?;
+        let mut updated = state.folders.clone();
+        if !updated.tie(key, &root) {
+            return Err(SyncError::Refused("paired with another folder"));
+        }
+        updated.save(&self.shared.folders_path)?;
+        state.folders = updated;
+        Ok(())
     }
 
     /// The vault that sync works on: the folder the app has open. `None` when there is none.
@@ -537,6 +571,9 @@ impl Service {
             return Err(SyncError::Refused("only on Wi-Fi"));
         }
         let root = state.vault.clone().ok_or(SyncError::Refused("no vault is open"))?;
+        if !state.folders.allows(&peer.public, &root) {
+            return Err(SyncError::Refused("paired with another folder"));
+        }
         Ok((peer, root, state.name.clone()))
     }
 
@@ -594,6 +631,7 @@ impl Service {
         state.syncing = None;
         match &result {
             Ok(Outcome::Done(report)) => {
+                tie_if_untied(&self.shared, &mut state, peer.public, &root);
                 record_changed(&mut state, EventKind::Synced, &peer.name, report.changed());
                 let signature = super::watch::signature(&root);
                 let live = state.live.entry(peer.public).or_default();
@@ -682,6 +720,7 @@ impl Service {
             .iter()
             .filter(|p| !state.wifi_only.contains(&p.public) || state.on_wifi)
             .filter(|p| engine::has_history(&root, &p.public))
+            .filter(|p| state.folders.allows(&p.public, &root))
             .filter(|p| match state.live.get(&p.public) {
                 Some(live) => live.synced_signature != Some(signature) || live.synced_at.map_or(true, |at| at.elapsed() >= RESYNC_AFTER),
                 None => true,
@@ -711,6 +750,8 @@ impl Service {
                     older: live.is_some_and(|l| is_older(&l.version, APP_VERSION)),
                     has_history: state.vault.as_ref().is_some_and(|root| engine::has_history(root, &p.public)),
                     wifi_only: state.wifi_only.contains(&p.public),
+                    folder: state.folders.folder_of(&p.public).and_then(|f| f.to_str()).unwrap_or("").to_string(),
+                    other_folder: state.vault.as_ref().is_some_and(|root| !state.folders.allows(&p.public, root)),
                 }
             })
             .collect();
@@ -759,8 +800,22 @@ fn trust_peer(shared: &Shared, peer: Peer) -> Result<()> {
     // Saved first: if the file cannot be written, nobody is trusted that is not on disk.
     updated.save(&shared.trust_path)?;
     state.trust = updated;
+    // A new pairing belongs to the folder open now. With none open it is tied at its first sync.
+    if let Some(root) = state.vault.clone() {
+        if state.folders.tie(peer.public, &root) {
+            let _ = state.folders.save(&shared.folders_path);
+        }
+    }
     record(&mut state, EventKind::Paired, &peer.name);
     Ok(())
+}
+
+/// A pairing made before folders were tied (0.5.6) belongs to the folder of its first finished
+/// sync. Saving is best effort: if it fails the device stays untied, as before.
+fn tie_if_untied(shared: &Shared, state: &mut State, key: [u8; KEY_LEN], root: &Path) {
+    if state.folders.folder_of(&key).is_none() && state.folders.tie(key, root) {
+        let _ = state.folders.save(&shared.folders_path);
+    }
 }
 
 /// The answering side of a sync: only for a paired device, only when this device has a vault
@@ -768,11 +823,17 @@ fn trust_peer(shared: &Shared, peer: Peer) -> Result<()> {
 fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>, remote: &[u8; KEY_LEN]) -> Result<()> {
     channel.stream().set_read_timeout(Some(SYNC_TIMEOUT))?;
     channel.stream().set_write_timeout(Some(SYNC_TIMEOUT))?;
-    let (root, allowed, peer_name) = {
+    let (root, allowed, peer_name, other_folder) = {
         let state = lock(&shared.state);
         let name = state.trust.peers().iter().find(|p| &p.public == remote).map(|p| p.name.clone()).unwrap_or_default();
-        (state.vault.clone(), !state.paused && state.enabled, name)
+        let other = state.vault.as_ref().is_some_and(|root| !state.folders.allows(remote, root));
+        (state.vault.clone(), !state.paused && state.enabled, name, other)
     };
+    if other_folder {
+        // Tied to another folder here: say why, change nothing.
+        let _ = exchange::send_blob(channel, KIND_NO, exchange::NO_OTHER_FOLDER, &[]);
+        return Err(SyncError::Refused("paired with another folder"));
+    }
     let guard = match shared.session.try_lock() {
         Ok(guard) => Some(guard),
         Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
@@ -787,6 +848,7 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
     let mut state = lock(&shared.state);
     match &result {
         Ok(changed) => {
+            tie_if_untied(shared, &mut state, *remote, &root);
             record_changed(&mut state, EventKind::Synced, &peer_name, *changed);
             let signature = super::watch::signature(&root);
             let live = state.live.entry(*remote).or_default();

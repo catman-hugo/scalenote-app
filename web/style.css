@@ -1901,7 +1901,31 @@ button.danger:hover { background: var(--bg-hover); }
 .history-dialog .dialog-actions { flex-wrap: wrap; }
 
 /* Printing and "save as PDF": the page title and the page itself, on white, with no controls. */
+#printSheet { display: none; }
+/* The lock screen covers everything with the page colour; nothing of the app shows through. */
+.lock-screen { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; padding: 0; background: var(--bg); box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.lock-screen::backdrop { background: var(--bg); }
+.lock-form { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); width: min(20rem, calc(100% - 2 * var(--space-4))); margin: 18vh auto 0; text-align: center; }
+.lock-logo { width: 48px; height: 48px; margin: 0 auto; }
+.lock-title { margin: 0; font-size: var(--text-l); }
+.lock-input { font-size: var(--text-l); text-align: center; letter-spacing: 0.15em; }
+.lock-message { margin: 0; min-height: 1.5em; color: var(--text-soft); font-size: var(--text-s); }
+.lock-settings, .lock-settings-body, .lock-form-inline { display: flex; flex-direction: column; gap: var(--space-2); }
+.lock-form-buttons { display: flex; gap: var(--space-2); }
+.lock-warning { color: var(--text); }
+body.is-locked .toast { display: none; }
+.about-version { margin: 0; font-size: var(--text-l); font-weight: 600; }
+.shortcut-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.shortcut-table { width: 100%; border-collapse: collapse; font-size: var(--text-s); }
+.shortcut-table td { padding: var(--space-1) 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.shortcut-table td:last-child { text-align: right; padding-left: var(--space-3); white-space: nowrap; }
+.shortcut-table kbd { font-family: var(--mono); font-size: var(--text-s); padding: 1px var(--space-1); border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-side); }
+
 @media print {
+  /* Printing the shortcut list: only the sheet, nothing of the app around it. */
+  body.print-sheet > :not(#printSheet) { display: none !important; }
+  body.print-sheet #printSheet { display: block; padding: 0; }
+  #printSheet .shortcut-table td, #printSheet kbd { border-color: #999; background: none; color: #000; }
   :root, body { background: #fff; color: #000; height: auto; overflow: visible; }
   .sidebar, .banner, .toast, .job-card, dialog, .backlinks, .topbar > :not(#title), #empty, .source, .canvas-host, .ink-layer, .ink-bar, .ink-menus, .find-bar { display: none !important; }
   .app, .main, .panes, .editor { display: block; height: auto; overflow: visible; background: #fff; }
@@ -2085,6 +2109,7 @@ button.danger:hover { background: var(--bg-hover); }
 .dialog ul.pair-list, .pair-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; font-size: var(--text-s); }
 .pair-list li { padding: var(--space-1) 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .pair-remove, .pair-use { flex: none; white-space: nowrap; }
+.pair-move { margin-top: var(--space-1); }
 .pair-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .pair-code-box { margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); }
 .pair-code { margin: var(--space-2) 0; font-size: var(--text-l, 1.5rem); font-weight: 600; letter-spacing: 0.1em; font-variant-numeric: tabular-nums; }

@@ -11,6 +11,7 @@
 // - Like the canvas view, a pen or a mouse draws and a finger scrolls the page, unless "Finger
 //   draws" is on. The bar sits above the text instead of floating over it, so it never covers
 //   the first lines, and it looks and works like the toolbar of the canvas.
+import { holdTouches } from "./touchhold.js";
 import { DrawingHistory, LIMITS, PEN_COLOURS, PEN_WIDTHS, canAddItem, drawnWidth, nearestWidthStop, widthAt } from "./canvasrules.js";
 import { blockTag, findBlock, inkFromScreen, inkToScreen, lineTouched, splitByBlock } from "./textink.js";
 import { icon } from "./icons.js";
@@ -574,6 +575,10 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     changed();
   }
   surface.addEventListener("pointerdown", onDown);
+  // While drawing over the text the layer moves the page itself for a finger (see onDown), so
+  // the web view's own scrolling and zooming must not run as well. When the layer is off it
+  // takes no touches at all.
+  holdTouches(surface, () => state.active);
   surface.addEventListener("pointermove", onMove);
   surface.addEventListener("pointerup", () => finish(false));
   surface.addEventListener("pointercancel", () => finish(true));

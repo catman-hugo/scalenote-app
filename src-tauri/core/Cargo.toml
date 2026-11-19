@@ -1,6 +1,6 @@
 [package]
 name = "scalenote-core"
-version = "0.5.5"
+version = "0.5.6"
 description = "Vault logic with no window or web view in it, so it can be tested anywhere."
 edition = "2021"
 rust-version = "1.77"
@@ -22,6 +22,9 @@ snow = { version = "=0.10.0", default-features = false, features = ["default-res
 spake2 = "=0.4.0"
 hmac = "=0.12.1"
 zeroize = "=1.8.2"
+# The app lock (0.5.6): the PIN or passcode is never stored, only a slow salted hash of it
+# (PBKDF2 with SHA-256, from the same RustCrypto family as sha2 and hmac above).
+pbkdf2 = { version = "=0.12.2", default-features = false, features = ["hmac"] }
 
 [[bin]]
 # Used only by the tests. It writes a note over and over so a test can kill it

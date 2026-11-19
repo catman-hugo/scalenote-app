@@ -4,6 +4,7 @@
 // real tests. Commands return an error *code* (see `VaultError::code`) as text, and the
 // interface turns the code into a sentence from the language file.
 
+mod lock;
 mod secure;
 mod tray;
 
@@ -40,6 +41,8 @@ struct AppState {
     data_dir: PathBuf,
     /// This device's sync: name, switch, keys, paired devices and the listening service.
     sync: Arc<Manager>,
+    /// True while the app lock is closed: nothing that reads or writes pages answers (lock.rs).
+    locked: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -92,12 +95,14 @@ fn with_vault<T>(
     action: &str,
     work: impl FnOnce(&Vault) -> Result<T, VaultError>,
 ) -> Result<T, String> {
+    lock::refuse_if_locked(state)?;
     let guard = state.vault.lock().map_err(|_| "io".to_string())?;
     let vault = guard.as_ref().ok_or_else(|| "no_vault".to_string())?;
     work(vault).map_err(|error| code(error, state, action))
 }
 
 fn install_vault(state: &AppState, vault: Vault) -> Result<OpenedVault, String> {
+    lock::refuse_if_locked(state)?;
     let removed = vault.clean_up_leftovers();
     let reply = OpenedVault {
         name: vault
@@ -627,6 +632,8 @@ fn get_sync_settings(state: State<AppState>) -> Result<SyncSettingsReply, String
 
 #[tauri::command]
 fn set_sync_settings(name: Option<String>, enabled: Option<bool>, state: State<AppState>) -> Result<SyncSettingsReply, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let saved = state.sync.update(name.as_deref(), enabled).map_err(|error| {
         state.logger.log(Level::Warn, &format!("save sync settings failed: {error}"));
         error.code().to_string()
@@ -647,6 +654,10 @@ struct SyncPeerReply {
     older_version: bool,
     has_history: bool,
     wifi_only: bool,
+    /// The notes folder on this device it belongs to ("" when not tied yet).
+    folder: String,
+    /// It belongs to another folder than the open one, so it does not sync now.
+    other_folder: bool,
 }
 
 #[derive(Serialize)]
@@ -705,6 +716,8 @@ fn peer_reply(peer: PeerView) -> SyncPeerReply {
         older_version: peer.older,
         has_history: peer.has_history,
         wifi_only: peer.wifi_only,
+        folder: peer.folder.clone(),
+        other_folder: peer.other_folder,
     }
 }
 
@@ -757,6 +770,8 @@ async fn sync_status(state: State<'_, AppState>) -> Result<SyncStatusReply, Stri
 /// the screen is closed, the code runs out or the attempts are used up.
 #[tauri::command]
 async fn sync_start_pairing(state: State<'_, AppState>) -> Result<String, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.start_pairing())).await?;
     result.map_err(|error| sync_failed(&state.logger, "start pairing", error))
@@ -773,6 +788,8 @@ async fn sync_stop_pairing(state: State<'_, AppState>) -> Result<(), String> {
 /// other device's name.
 #[tauri::command]
 async fn sync_join(address: String, code: String, state: State<'_, AppState>) -> Result<String, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.join(&address, &code))).await?;
     result.map(|peer| peer.name).map_err(|error| sync_failed(&state.logger, "pairing", error))
@@ -793,6 +810,8 @@ fn nearby_reply(found: Nearby) -> NearbyReply {
 /// not have to be typed. A found device is only an address to try; the code still decides.
 #[tauri::command]
 async fn sync_find(state: State<'_, AppState>) -> Result<Vec<NearbyReply>, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.find_nearby(std::time::Duration::from_millis(2500)))).await?;
     result
@@ -802,6 +821,8 @@ async fn sync_find(state: State<'_, AppState>) -> Result<Vec<NearbyReply>, Strin
 
 #[tauri::command]
 async fn sync_remove_peer(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.remove_peer(&id))).await?;
     result.map_err(|error| sync_failed(&state.logger, "remove device", error))
@@ -910,6 +931,8 @@ struct SyncRunReply {
 /// What a sync with one paired device would change. Changes nothing on either device.
 #[tauri::command]
 async fn sync_compare(id: String, state: State<'_, AppState>) -> Result<PreviewReply, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.compare_peer(&id))).await?;
     result.map(preview_reply).map_err(|error| sync_failed(&state.logger, "compare", error))
@@ -919,6 +942,8 @@ async fn sync_compare(id: String, state: State<'_, AppState>) -> Result<PreviewR
 /// until `approved` is true.
 #[tauri::command]
 async fn sync_run(id: String, approved: bool, state: State<'_, AppState>) -> Result<SyncRunReply, String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.sync_peer(&id, approved, &mut |_| {}))).await?;
     match result {
@@ -937,6 +962,8 @@ async fn sync_set_paused(paused: bool, state: State<'_, AppState>) -> Result<(),
 
 #[tauri::command]
 async fn sync_rename_peer(id: String, name: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.rename_peer(&id, &name))).await?;
     result.map_err(|error| sync_failed(&state.logger, "rename device", error))
@@ -944,9 +971,20 @@ async fn sync_rename_peer(id: String, name: String, state: State<'_, AppState>) 
 
 #[tauri::command]
 async fn sync_set_wifi_only(id: String, only: bool, state: State<'_, AppState>) -> Result<(), String> {
+    // Closed while the app lock is on (see lock.rs); automatic sync keeps running in Rust.
+    lock::refuse_if_locked(&state)?;
     let sync = state.sync.clone();
     let result = blocking(move || running(&sync).and_then(|service| service.set_wifi_only(&id, only))).await?;
     result.map_err(|error| sync_failed(&state.logger, "wifi only", error))
+}
+
+/// Ties a paired device to the notes folder open now (see core sync/folders.rs).
+#[tauri::command]
+async fn sync_tie_to_open_folder(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    lock::refuse_if_locked(&state)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.tie_to_open_folder(&id))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "tie to folder", error))
 }
 
 /// The interface tells the service whether the system is on Wi-Fi (see `Service::set_on_wifi`).
@@ -961,6 +999,7 @@ async fn sync_set_on_wifi(on_wifi: bool, state: State<'_, AppState>) -> Result<(
 }
 
 fn vault_root(state: &AppState) -> Result<PathBuf, String> {
+    lock::refuse_if_locked(state)?;
     let guard = state.vault.lock().map_err(|_| "io".to_string())?;
     guard.as_ref().map(|vault| vault.root().to_path_buf()).ok_or_else(|| "no_vault".to_string())
 }
@@ -1054,6 +1093,8 @@ fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>>
         logger,
         settings_file: data_dir.join("settings.json"),
         default_vault,
+        // A lock that is set closes the app at every start.
+        locked: std::sync::atomic::AtomicBool::new(scalenote_core::applock::read(&data_dir.join(scalenote_core::applock::FILE_NAME)).ok().flatten().is_some()),
         data_dir,
         sync,
     })
@@ -1089,6 +1130,17 @@ fn autostart_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("autostart-unused").build()
 }
 
+/// Fingerprint or face unlock for the app lock. Android only; used from lock.rs, never from
+/// the window's scripts. On a computer an empty plugin stands in its place.
+#[cfg(mobile)]
+fn biometric_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_biometric::init()
+}
+#[cfg(not(mobile))]
+fn biometric_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("biometric-unused").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -1102,6 +1154,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(autostart_plugin())
+        .plugin(biometric_plugin())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
@@ -1128,6 +1181,14 @@ pub fn run() {
             write_page_text,
             read_page_text,
             export_obsidian_copy,
+            lock::lock_status,
+            lock::lock_set,
+            lock::lock_remove,
+            lock::lock_unlock,
+            lock::lock_now,
+            lock::lock_set_biometric,
+            lock::lock_biometric_unlock,
+            tray::set_zoom,
             tray::tray_set,
             tray::hide_main_window,
             tray::autostart_get,
@@ -1149,6 +1210,7 @@ pub fn run() {
             sync_set_paused,
             sync_rename_peer,
             sync_set_wifi_only,
+            sync_tie_to_open_folder,
             sync_set_on_wifi,
             vault_signature,
             conflicts_list,

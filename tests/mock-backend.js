@@ -109,6 +109,46 @@
     // Backups are made by Rust (tested there with real files). The stand-in keeps a list so the
     // Settings screen can be driven.
     // The tray and the login list are the computer's own; the stand-in only remembers the calls.
+    set_zoom: ({ scale }) => { window.__zoom = scale; },
+    // The lock's rules (hash, waits) are Rust's and tested there; this keeps the plain secret
+    // so the screens can be driven. A test can start with a lock by setting __seedLock.
+    ...(() => {
+      const lock = { secret: null, kind: "pin", locked: false, biometric: false, wrong: 0 };
+      window.__lock = lock;
+      // A test's starting lock is read at the first question, so its own start script may run later.
+      let seeded = false;
+      const seed = () => {
+        if (seeded) return;
+        seeded = true;
+        if (window.__seedLock) Object.assign(lock, window.__seedLock, { locked: true });
+      };
+      const shape = (kind, secret) => {
+        if (kind === "pin" && !/^[0-9]*$/.test(secret)) fail("lock_pin_digits");
+        if (secret.length < (kind === "pin" ? 4 : 6)) fail("lock_too_short");
+      };
+      return {
+        lock_status: () => { seed(); return { enabled: lock.secret !== null, locked: lock.secret !== null && lock.locked, kind: lock.kind, biometric: lock.biometric, biometricAvailable: Boolean(window.__biometricAvailable) }; },
+        lock_set: ({ kind, secret, current }) => { seed();
+          if (lock.locked) fail("locked");
+          if (lock.secret !== null && current !== lock.secret) fail("lock_wrong");
+          shape(kind, secret);
+          Object.assign(lock, { secret, kind });
+        },
+        lock_remove: ({ current }) => { seed();
+          if (lock.locked) fail("locked");
+          if (current !== lock.secret) fail("lock_wrong");
+          lock.secret = null;
+        },
+        lock_unlock: ({ secret }) => { seed();
+          if (secret === lock.secret) { lock.locked = false; lock.wrong = 0; return { ok: true, wait: 0 }; }
+          lock.wrong++;
+          return { ok: false, wait: lock.wrong >= 5 ? 30 : 0 };
+        },
+        lock_now: () => { seed(); if (lock.secret === null) return false; lock.locked = true; return true; },
+        lock_set_biometric: ({ on }) => { seed(); if (!window.__biometricAvailable) fail("unsupported"); lock.biometric = on; return true; },
+        lock_biometric_unlock: () => { seed(); if (!window.__biometricOk) return false; lock.locked = false; return true; },
+      };
+    })(),
     tray_set: ({ enabled, showLabel, quitLabel }) => {
       if (window.__failTray) fail(window.__failTray);
       window.__tray = { enabled, showLabel, quitLabel };
@@ -162,7 +202,7 @@
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,
-        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, version: "", olderVersion: false, hasHistory: false, wifiOnly: false, ...p })),
+        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, version: "", olderVersion: false, hasHistory: false, wifiOnly: false, folder: "", otherFolder: false, ...p })),
         pairingSecondsLeft: syncPairing.secondsLeft,
         events: [...syncPairing.events].reverse(),
       };
@@ -213,6 +253,14 @@
       return { needsApproval: false, preview: null, report };
     },
     sync_set_paused: ({ paused }) => { syncPairing.paused = paused; },
+    // The folder rules are Rust's (tested there); this only records the move.
+    sync_tie_to_open_folder: ({ id }) => {
+      const peer = syncPairing.peers.find((p) => p.id === id);
+      if (!peer) fail("pair_refused");
+      window.__tiedHere = [...(window.__tiedHere || []), id];
+      peer.otherFolder = false;
+      peer.folder = "/vault";
+    },
     sync_set_wifi_only: ({ id, only }) => {
       const peer = syncPairing.peers.find((p) => p.id === id);
       window.__wifiCalls = [...(window.__wifiCalls || []), { id, only }];

@@ -506,3 +506,87 @@ fn older_versions_are_recognised_and_odd_text_is_never_older() {
         assert!(!is_older(odd, "0.5.5"), "{odd:?}");
     }
 }
+
+// ---------- 0.5.6: each paired device belongs to one notes folder ----------
+
+#[test]
+fn an_older_pairing_is_tied_at_its_first_sync_and_then_only_syncs_in_that_folder_on_either_side() {
+    let p = setup("folders-old");
+    write(&p.va.0, "A.md", "from alice\n");
+    // Paired before any folder was open: not tied yet, so the old behaviour (one sync ties it).
+    assert_eq!(p.alice.status().peers[0].folder, "");
+    sync(&p);
+    let tied = p.alice.status().peers[0].clone();
+    assert_eq!(tied.folder, p.va.0.to_str().expect("path"));
+    assert!(!tied.other_folder);
+    assert_eq!(read(&p.vb.0, "A.md"), "from alice\n");
+
+    // Alice opens another folder: the sync is refused here and nothing moves either way.
+    let other = Dir::new("folders-old-va2");
+    write(&other.0, "Private.md", "never to bob\n");
+    p.alice.set_vault(Some(other.0.clone()));
+    assert!(p.alice.status().peers[0].other_folder);
+    let error = p.alice.sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("refused");
+    assert_eq!(error.code(), "sync_other_folder");
+    assert_eq!(p.alice.compare_peer(&p.bob_id).err().expect("compare refused").code(), "sync_other_folder");
+    assert_eq!(read(&p.vb.0, "Private.md"), "<missing>");
+    assert!(p.alice.auto_sync_tick(Duration::from_millis(50)).is_empty(), "never started automatically either");
+
+    // Back in the right folder, but now Bob has another folder open: Bob refuses and says why.
+    p.alice.set_vault(Some(p.va.0.clone()));
+    let bob_other = Dir::new("folders-old-vb2");
+    p.bob.set_vault(Some(bob_other.0.clone()));
+    let error = p.alice.sync_peer(&p.bob_id, true, &mut |_| {}).err().expect("bob refuses");
+    assert_eq!(error.code(), "sync_peer_other_folder");
+    assert!(names(&bob_other.0).is_empty(), "nothing written into Bob's other folder");
+    p.bob.set_vault(Some(p.vb.0.clone()));
+    sync(&p);
+}
+
+#[test]
+fn a_device_paired_while_a_folder_is_open_belongs_to_it_and_two_server_vaults_never_mix() {
+    // Alice is the phone; Bob and Carol stand for two vaults on a home server.
+    let (da, db, dc) = (Dir::new("mix-da"), Dir::new("mix-db"), Dir::new("mix-dc"));
+    let (school, personal) = (Dir::new("mix-school"), Dir::new("mix-personal"));
+    let (server_school, server_personal) = (Dir::new("mix-s-school"), Dir::new("mix-s-personal"));
+    let make = |dir: &Dir, name: &str| Service::with_bind(&dir.0, Identity::generate().expect("identity"), name, true, "127.0.0.1", 0).expect("service");
+    let (alice, bob, carol) = (make(&da, "phone"), make(&db, "school-vault"), make(&dc, "personal-vault"));
+    bob.set_vault(Some(server_school.0.clone()));
+    carol.set_vault(Some(server_personal.0.clone()));
+    let join = |host: &Service| {
+        let code = host.start_pairing().expect("code");
+        let address = format!("127.0.0.1:{}", host.status().listening_port.expect("listening"));
+        alice.join(&address, &code).expect("pair").public
+    };
+    alice.set_vault(Some(school.0.clone()));
+    let bob_id = super::hex::encode(&join(&bob));
+    alice.set_vault(Some(personal.0.clone()));
+    let carol_id = super::hex::encode(&join(&carol));
+    let peers = alice.status().peers;
+    let folder_of = |id: &str| peers.iter().find(|p| p.id == id).expect("peer").folder.clone();
+    assert_eq!(folder_of(&bob_id), school.0.to_str().expect("path"));
+    assert_eq!(folder_of(&carol_id), personal.0.to_str().expect("path"));
+
+    write(&personal.0, "Diary.md", "personal\n");
+    write(&school.0, "Lecture.md", "school\n");
+    // With the personal folder open, only the personal vault syncs.
+    assert!(matches!(alice.sync_peer(&carol_id, true, &mut |_| {}).expect("carol"), Outcome::Done(_)));
+    assert_eq!(alice.sync_peer(&bob_id, true, &mut |_| {}).err().expect("bob refused").code(), "sync_other_folder");
+    alice.set_vault(Some(school.0.clone()));
+    assert!(matches!(alice.sync_peer(&bob_id, true, &mut |_| {}).expect("bob"), Outcome::Done(_)));
+    assert_eq!(read(&server_personal.0, "Diary.md"), "personal\n");
+    assert_eq!(read(&server_school.0, "Lecture.md"), "school\n");
+    assert_eq!(read(&server_school.0, "Diary.md"), "<missing>", "the vaults never mix");
+    assert_eq!(read(&server_personal.0, "Lecture.md"), "<missing>");
+
+    // A pairing can be moved to the open folder on purpose, and the ties survive a restart.
+    alice.tie_to_open_folder(&carol_id).expect("move");
+    assert!(!alice.status().peers.iter().find(|p| p.id == carol_id).expect("carol").other_folder);
+    drop(alice);
+    let again = Service::with_bind(&da.0, Identity::generate().expect("identity"), "phone", true, "127.0.0.1", 0).expect("restart");
+    let peers = again.status().peers;
+    assert!(peers.iter().all(|p| p.folder == school.0.to_str().expect("path")), "kept after a restart: {peers:?}");
+    // Unpairing forgets the tie too.
+    again.remove_peer(&bob_id).expect("remove");
+    assert!(!fs::read_to_string(da.0.join("sync-folders.txt")).expect("file").contains(&bob_id));
+}

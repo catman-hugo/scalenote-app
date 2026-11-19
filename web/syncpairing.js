@@ -13,6 +13,12 @@ import { strings } from "./strings.js";
 
 const POLL_MS = 1000;
 
+// The last part of a folder path, for showing ("C:\\Users\\bob\\Notes" and "/home/bob/Notes" both give "Notes").
+function folderName(path) {
+  const parts = String(path).split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || String(path);
+}
+
 function fill(template, values) {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
 }
@@ -72,6 +78,8 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   let knownPeers = null;
   let timer = null;
   let removing = null;
+  // The device whose "move to this folder" button was pressed once (a second press does it).
+  let moving = null;
   let paused = false;
   let lastStatus = null;
 
@@ -157,6 +165,33 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       if (when) item.append(element("p", when, "setting-hint pair-last"));
       // The version the device reported at the last sync. An older one is said plainly, since it may lack newer fixes.
       if (peer.version) item.append(element("p", fill(peer.olderVersion ? s.pairVersionOlder : s.pairVersion, { v: peer.version }), "setting-hint pair-version"));
+      // Each paired device belongs to one notes folder here. Shown by its folder name; when it
+      // is another folder than the open one, the device does not sync now, and it can be moved.
+      if (peer.folder) {
+        const name = folderName(peer.folder);
+        const line = element("p", fill(peer.otherFolder ? s.pairFolderOther : s.pairFolder, { folder: name }), "setting-hint pair-folder");
+        line.title = peer.folder;
+        item.append(line);
+        if (peer.otherFolder) {
+          const move = button(moving === peer.id ? s.pairMoveConfirm : s.pairMove, async () => {
+            if (moving !== peer.id) {
+              moving = peer.id;
+              showPeers(peers);
+              return;
+            }
+            moving = null;
+            try {
+              await backend.syncTieToOpenFolder(peer.id);
+              await refresh();
+            } catch (error) {
+              logProblem("moving a paired device to this folder failed", error);
+              message.textContent = errorSentence(error);
+            }
+          });
+          move.className = "pair-move";
+          item.append(move);
+        }
+      }
       item.append(peerControls(peer, { logProblem, paused, wifi, done: afterSync }));
       list.append(item);
     }
