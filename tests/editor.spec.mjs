@@ -8991,6 +8991,23 @@ await test("the back gesture closes an open window (Settings, Trash, What's new)
   await page.waitForFunction(() => document.getElementById("title").value === "B");
 }, { settings: existingUser({ updates: false }), files: { "A.md": "---\\n---\\n\\nalpha\\n", "B.md": "---\\n---\\n\\nbeta\\n", "C.md": "---\\n---\\n\\ngamma\\n" } });
 
+for (const [system, userAgent, shown, hidden] of [
+  ["Android", ANDROID_UA, /fingerprint/, /Linux|Ctrl|Shortcuts/],
+  ["Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", /Ctrl/, /fingerprint|Linux|phone/],
+]) {
+  await test(`What's new on ${system} shows only the notes for ${system}`, async (page) => {
+    await page.waitForSelector("#newNote");
+    await page.click("#openSettings");
+    await page.click("#settingsTab-about");
+    await page.click('#settingsPanel-about button:has-text("What\'s new")');
+    await page.waitForSelector("#whatsnew[open]");
+    const text = await page.locator("#whatsnew .notes").innerText();
+    assert.match(text, shown);
+    assert.doesNotMatch(text, hidden);
+    assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
+  }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent });
+}
+
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
   await page.waitForSelector("#newNote");
   assert.equal(await page.isVisible("#findButton"), false);

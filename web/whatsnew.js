@@ -20,6 +20,51 @@ function make(tag, text) {
 // shown at the second level, which is enough for release notes.
 const indentOf = (line) => /^\s*/.exec(line)[0].replace(/\t/g, "  ").length;
 
+// A release note line can start with the systems it is about, such as "Android:" or
+// "Linux and Windows:". "Computers" means every system that is not Android (the browser too).
+// Older versions of the app simply show the words, which still read well, and so does GitHub.
+const SYSTEMS = { android: ["android"], windows: ["windows"], linux: ["linux"], computers: ["windows", "linux", "other"] };
+const FOR_SYSTEMS = /^(\s*[-*]\s+)((?:android|windows|linux|computers)(?:(?:\s*,\s*|\s+and\s+)(?:android|windows|linux|computers))*):\s*(.*)$/i;
+
+/**
+ * The notes as they matter on `platform` ("android", "windows", "linux" or "other", see
+ * updates.js): lines for other systems are left out (with any sub-points or continuation lines
+ * under them), the system words are taken off the lines that stay, and a heading left with
+ * nothing under it goes too.
+ */
+export function notesFor(markdown, platform) {
+  const kept = [];
+  let skipping = false;
+  for (const line of String(markdown || "").replace(/\r/g, "").split("\n")) {
+    const marked = FOR_SYSTEMS.exec(line);
+    if (marked) {
+      const names = marked[2].toLowerCase().split(/\s*,\s*|\s+and\s+/);
+      skipping = !names.some((name) => SYSTEMS[name].includes(platform));
+      if (!skipping) kept.push(marked[1] + marked[3].charAt(0).toUpperCase() + marked[3].slice(1));
+      continue;
+    }
+    // Indented lines belong to the bullet above them.
+    if (skipping && line.trim() !== "" && indentOf(line) >= 2) continue;
+    skipping = false;
+    kept.push(line);
+  }
+  // Blank lines left where a part was taken out are folded into one.
+  const text = dropEmptyHeadings(kept).join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n+$/, "\n");
+  return text.trim() === "" ? "" : text;
+}
+
+function dropEmptyHeadings(lines) {
+  const isHeading = (line) => /^#{1,6}\s/.test(line);
+  return lines.filter((line, at) => {
+    if (!isHeading(line)) return true;
+    for (const next of lines.slice(at + 1)) {
+      if (isHeading(next)) return false;
+      if (next.trim() !== "") return true;
+    }
+    return false;
+  });
+}
+
 /**
  * Fills `container` with a plain-text view of simple markdown: headings, bullet lists with one
  * level of sub-points, paragraphs. An indented line under a bullet continues that bullet.

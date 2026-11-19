@@ -792,7 +792,8 @@ Decision. Moved to v0.8, as first wished on 2026-11-11. Until then one person in
 
 Context. The 0.5.6 What's new box was a wall of text: too much to read inside the app and too tall on a phone.
 Decision. From now on every release note line names one change in a few words, one short sentence at most, under "New" and "Fixed". Details belong in PROGRESS.md and the docs, not in What's new.
-Cost. Less explanation in the app; the setup guide and docs carry it.
+Each system sees only its own lines: a line can start with "Android:", "Windows:", "Linux:" or "Computers:" (every system but Android), or a pair such as "Linux and Windows:". The app leaves out lines for other systems, takes the word off the rest and drops a heading left empty (`notesFor` in `web/whatsnew.js`). Lines without a word are for everyone. Plain words were picked over hidden marks so that older versions of the app, which show the notes of a new version in the update notice, and the GitHub release page still read well.
+Cost. Less explanation in the app; the setup guide and docs carry it. A note true on every system but worded for one (fingerprint on Android) needs two lines.
 
 ## 2026-11-19: Open windows are steps of the back gesture
 

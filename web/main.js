@@ -9,7 +9,7 @@ import { cleanLockAfter, lockSettingsRows, showLockScreen, watchForLock } from "
 import { checkForUpdate, platformOf, shouldCheck, RELEASE_PAGE } from "./updates.js";
 import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
-import { renderNotes } from "./whatsnew.js";
+import { notesFor, renderNotes } from "./whatsnew.js";
 import { backThroughLayers, closeOnBack, whenSettled } from "./backlayers.js";
 import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanFolderColours, cleanRecent, removeRecent, withFolderColour } from "./recent.js";
@@ -246,7 +246,8 @@ function showNotes(title, notes) {
   dialog.replaceChildren(textElement("h2", title));
   const body = document.createElement("div");
   body.className = "notes";
-  renderNotes(body, notes);
+  // Only what matters on this system: Android is not told about a Linux fix.
+  renderNotes(body, notesFor(notes, platformOf(navigator.userAgent)));
   dialog.append(body, buttonElement(strings.update.close, () => dialog.close(), true));
   if (!dialog.open) dialog.showModal();
   return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
