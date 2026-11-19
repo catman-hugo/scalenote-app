@@ -1324,11 +1324,15 @@ body.block-dragging .float-bar { visibility: hidden; }
    between them scroll. The height follows the real screen (dvh, with vh for older webviews), so the
    box never runs off a phone. A line above and below the notes shows where the scrolling part is. */
 #whatsnew { max-width: min(52rem, calc(100% - 2 * var(--space-4))); box-sizing: border-box; }
+/* On a phone the app draws under the clock and the system bars, so the box is centred in the space
+   between them (top and bottom) and never taller than that space. */
 #whatsnew[open] {
   display: flex;
   flex-direction: column;
+  top: env(safe-area-inset-top, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
   max-height: calc(100vh - 2 * var(--space-4));
-  max-height: calc(100dvh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
 }
 #whatsnew .notes {
   flex: 1 1 auto;

@@ -8887,6 +8887,127 @@ await test("Back and Forward go through the pages seen, with the buttons and wit
   for (let i = 0; i < 6; i++) { await page.click("#navBack", { force: true }).catch(() => {}); await page.click("#navForward", { force: true }).catch(() => {}); }
 }, { settings: existingUser({ updates: false }), files: { "A.md": "---\\n---\\n\\nalpha\\n", "B.md": "---\\n---\\n\\nbeta\\n", "C.md": "---\\n---\\n\\ngamma\\n" } });
 
+await test("the phone back gesture steps out of a Settings group to the list, then closes Settings, and never leaves an extra step", async (page) => {
+  await page.waitForSelector("#newNote");
+  const view = () => page.evaluate(() => document.querySelector("#settings .settings-layout").dataset.view);
+  const layer = () => page.evaluate(() => (history.state && history.state.layer) || 0);
+  await page.click("#openSettings");
+  await page.waitForSelector("#settings[open]");
+  await page.click("#settingsTab-look");
+  assert.equal(await view(), "page");
+  await page.waitForFunction(() => history.state && history.state.layer === 2);
+  // The system's back (what the Android gesture does) goes back to the list, Settings stays open.
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => document.querySelector("#settings .settings-layout").dataset.view === "list");
+  assert.equal(await page.isVisible("#settings"), true);
+  assert.equal(await page.isVisible("#settingsTab-pages"), true);
+  // Back again closes Settings.
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#settings", { state: "hidden" });
+  assert.equal(await layer(), 0);
+  // The Back button inside Settings and the Close button take their history entries with them.
+  await page.click("#openSettings");
+  await page.click("#settingsTab-files");
+  await page.waitForFunction(() => history.state && history.state.layer === 2);
+  await page.click(".settings-back");
+  await page.waitForFunction(() => history.state && history.state.layer === 1);
+  await page.click("#settingsTab-about");
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await page.waitForFunction(() => !(history.state && history.state.layer));
+  // What's new (from About) is short, fits the screen, and back closes it before Settings.
+  await page.click("#openSettings");
+  await page.click("#settingsTab-about");
+  await page.click('#settingsPanel-about button:has-text("What\'s new")');
+  await page.waitForSelector("#whatsnew[open]");
+  const box = await page.evaluate(() => { const b = document.getElementById("whatsnew").getBoundingClientRect(); return { top: b.top, bottom: b.bottom, vh: innerHeight }; });
+  assert.ok(box.top >= 0 && box.bottom <= box.vh, JSON.stringify(box));
+  if (shots) {
+    await page.screenshot({ path: `${shots}/v056-phone-whatsnew-light.png`});
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+    await page.screenshot({ path: `${shots}/v056-phone-whatsnew-dark.png` });
+  }
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#whatsnew", { state: "hidden" });
+  assert.equal(await view(), "page");
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => document.querySelector("#settings .settings-layout").dataset.view === "list");
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#settings", { state: "hidden" });
+  // Rapid opening and backing never raises an error or leaves Settings in a wrong state.
+  for (let i = 0; i < 4; i++) {
+    await page.click("#openSettings");
+    await page.click("#settingsTab-look");
+    await page.evaluate(() => { history.back(); history.back(); });
+    await page.waitForSelector("#settings", { state: "hidden" });
+  }
+  await page.waitForFunction(() => !(history.state && history.state.layer));
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }) });
+
+await test("the back gesture closes an open window (Settings, Trash, What's new) without changing the page, and page history still works after", async (page) => {
+  await page.waitForSelector("#tree .tree-label >> text=/^A$/");
+  for (const name of ["A", "B"]) {
+    await page.click(`#tree .tree-label >> text=/^${name}$/`);
+    await page.waitForFunction((n) => document.getElementById("title").value === n, name);
+  }
+  // On a wide screen a Settings group is not a step of its own: back closes Settings at once.
+  await page.click("#openSettings");
+  await page.click("#settingsTab-look");
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#settings", { state: "hidden" });
+  assert.equal(await page.inputValue("#title"), "B");
+  await page.click("#openTrash");
+  await page.waitForSelector("#trash[open]");
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#trash", { state: "hidden" });
+  assert.equal(await page.inputValue("#title"), "B");
+  // What's new opened from Settings, About sits on top: back closes it first, then Settings.
+  await page.click("#openSettings");
+  await page.click("#settingsTab-about");
+  await page.click('#settingsPanel-about button:has-text("What\'s new")');
+  await page.waitForSelector("#whatsnew[open]");
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#whatsnew", { state: "hidden" });
+  assert.equal(await page.isVisible("#settings"), true);
+  await page.evaluate(() => history.back());
+  await page.waitForSelector("#settings", { state: "hidden" });
+  assert.equal(await page.inputValue("#title"), "B");
+  // Closed with its own button, a window leaves nothing behind: the next back goes to page A.
+  await page.click("#openSettings");
+  await page.waitForFunction(() => history.state && history.state.layer === 1);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await page.waitForFunction(() => !(history.state && history.state.layer));
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => document.getElementById("title").value === "A");
+  await page.click("#navForward");
+  await page.waitForFunction(() => document.getElementById("title").value === "B");
+  // A page picked from a window that then closes still gets its own step.
+  await page.click("#openSettings");
+  await page.click("#settings button.primary");
+  await page.click("#tree .tree-label >> text=/^C$/");
+  await page.waitForFunction(() => document.getElementById("title").value === "C");
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => document.getElementById("title").value === "B");
+}, { settings: existingUser({ updates: false }), files: { "A.md": "---\\n---\\n\\nalpha\\n", "B.md": "---\\n---\\n\\nbeta\\n", "C.md": "---\\n---\\n\\ngamma\\n" } });
+
+for (const [system, userAgent, shown, hidden] of [
+  ["Android", ANDROID_UA, /fingerprint/, /Linux|Ctrl|Shortcuts/],
+  ["Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", /Ctrl/, /fingerprint|Linux|phone/],
+]) {
+  await test(`What's new on ${system} shows only the notes for ${system}`, async (page) => {
+    await page.waitForSelector("#newNote");
+    await page.click("#openSettings");
+    await page.click("#settingsTab-about");
+    await page.click('#settingsPanel-about button:has-text("What\'s new")');
+    await page.waitForSelector("#whatsnew[open]");
+    const text = await page.locator("#whatsnew .notes").innerText();
+    assert.match(text, shown);
+    assert.doesNotMatch(text, hidden);
+    assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
+  }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent });
+}
+
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
   await page.waitForSelector("#newNote");
   assert.equal(await page.isVisible("#findButton"), false);
