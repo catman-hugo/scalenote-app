@@ -571,6 +571,7 @@ export const strings = {
   update: {
     available: "ScaleNote {version} is available.",
     download: "Download",
+    updateNow: "Update",
     openPage: "Open release page",
     details: "What's new",
     later: "Not now",
@@ -583,9 +584,12 @@ export const strings = {
     installReady: "Downloaded. Android asks you to confirm the install.",
     installAllow: "Allow ScaleNote to install apps in the settings that just opened, then press Download again.",
     installFailed: "The update could not be installed from here. Your browser will download it instead.",
+    installDesktopStarting: "Updating. ScaleNote restarts by itself when it is done.",
+    installDesktopRefused: "The update was downloaded but not installed (the password was not given). Press Download to try again.",
     openFailed: "The download page could not be opened. You can find the new version on the ScaleNote releases page on GitHub.",
     whatsNewTitle: "What's new in ScaleNote {version}",
     whatsNewTitleUpdated: "ScaleNote was updated to {version}",
+    fullNotes: "Full notes on GitHub",
     close: "Close",
   },
 

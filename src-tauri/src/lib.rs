@@ -6,6 +6,7 @@
 
 mod lock;
 mod secure;
+mod selfupdate;
 mod tray;
 
 use scalenote_core::atomic::write_atomic;
@@ -1141,6 +1142,17 @@ fn biometric_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("biometric-unused").build()
 }
 
+/// Installing updates from inside the app (selfupdate.rs). Computers only: Android installs the
+/// downloaded file with its own installer. Used from Rust only, never from the window's scripts.
+#[cfg(desktop)]
+fn updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry, tauri_plugin_updater::Config> {
+    tauri_plugin_updater::Builder::new().build()
+}
+#[cfg(not(desktop))]
+fn updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("updater-unused").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -1155,6 +1167,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(autostart_plugin())
         .plugin(biometric_plugin())
+        .plugin(updater_plugin())
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
@@ -1189,6 +1202,8 @@ pub fn run() {
             lock::lock_set_biometric,
             lock::lock_biometric_unlock,
             tray::set_zoom,
+            selfupdate::install_kind,
+            selfupdate::install_update,
             tray::tray_set,
             tray::hide_main_window,
             tray::autostart_get,

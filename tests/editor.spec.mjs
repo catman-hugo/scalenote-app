@@ -927,7 +927,7 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
   await page.waitForSelector("#whatsnew[open]");
   const m = await page.evaluate(() => {
     const d = document.querySelector("#whatsnew").getBoundingClientRect();
-    const b = document.querySelector("#whatsnew > button").getBoundingClientRect();
+    const b = document.querySelector("#whatsnew .dialog-actions button").getBoundingClientRect();
     const n = document.querySelector("#whatsnew .notes");
     return { top: d.top, bottom: d.bottom, left: d.left, right: d.right, buttonBottom: b.bottom, scrolls: n.scrollHeight > n.clientHeight, notesHeight: n.clientHeight, view: [innerWidth, innerHeight] };
   });
@@ -938,7 +938,7 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
   if (mustScroll) assert.ok(m.scrolls, "on a short screen the notes scroll inside the box: " + JSON.stringify(m));
   const atEnd = await page.evaluate(() => { const n = document.querySelector("#whatsnew .notes"); n.scrollTop = n.scrollHeight; return n.scrollTop + n.clientHeight >= n.scrollHeight - 1; });
   assert.ok(atEnd, "the end of the notes can be reached");
-  await page.click("#whatsnew > button");
+  await page.click("#whatsnew .dialog-actions button");
   assert.equal(await page.isVisible("#whatsnew"), false);
 }, { viewport, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
 
@@ -995,6 +995,58 @@ await test("on Android the Download button opens the apk file straight away", as
   await page.click("#updateDownload");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_arm64-debug.apk`]);
 }, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: ANDROID_UA });
+
+// The computer app installs updates itself when it knows how it was installed (selfupdate.rs).
+const installedFrom = (kind, fails) => async (page) => {
+  await page.addInitScript(([k, f]) => { window.__installKind = k; window.__installFails = f; }, [kind, fails || ""]);
+  await githubReturns(WITH_FILES)(page);
+};
+
+await test("an installed computer app downloads and installs the update itself, with a progress bar", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  // Like other desktop apps, the button says Update: no browser, no files to open.
+  assert.equal((await page.textContent("#updateDownload")).trim(), "Update");
+  await page.click("#updateDownload");
+  await page.waitForFunction(() => window.__mock.installed.length === 1);
+  assert.deepEqual(await page.evaluate(() => window.__mock.installed), ["9.9.9"]);
+  // Nothing went to the browser, and after the restart What's new will show the full notes.
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), []);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).downloadedInApp, "9.9.9");
+  await page.evaluate(() => window.__mock.emit("update-progress", { done: 5 * 1024 * 1024, total: 10 * 1024 * 1024 }));
+  await page.waitForFunction(() => /50%/.test(document.querySelector("#updateNotice .install-bar-text").textContent));
+  // While it runs the Download button rests, so rapid clicks start nothing more.
+  assert.equal(await page.isDisabled("#updateDownload"), true);
+}, { settings: existingUser(), before: installedFrom("msi"), userAgent: WINDOWS_UA });
+
+await test("a failed in-app download says so and lets the browser download the file instead", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDownload");
+  await page.waitForFunction(() => window.__mock.opened.length === 1);
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`${FILES9}/ScaleNote_9.9.9_x64_en-US.msi`]);
+  assert.match(await page.textContent("#banner"), /could not be installed from here/);
+  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).downloadedInApp, "");
+}, { settings: existingUser(), before: installedFrom("msi", "download"), userAgent: WINDOWS_UA });
+
+await test("when the Linux password is not given, the app says so and nothing goes to the browser", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  // Linux has no single file to offer the browser, but an installed copy updates itself.
+  assert.equal((await page.textContent("#updateDownload")).trim(), "Update");
+  await page.click("#updateDownload");
+  await page.waitForFunction(() => /password was not given/.test(document.getElementById("banner").textContent));
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), []);
+  assert.equal(await page.isDisabled("#updateDownload"), false);
+}, { settings: existingUser(), before: installedFrom("deb", "install"), userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36" });
+
+await test("on a computer the Download button remembers the version, so after that update What's new shows the full notes", async (page) => {
+  await page.waitForSelector("#updateNotice:not([hidden])");
+  await page.click("#updateDetails");
+  await page.waitForSelector("#whatsnew[open]");
+  // Before updating, the notes are the full ones: the person has not been to GitHub.
+  assert.equal(await page.isVisible("#whatsNewFull"), false);
+  await page.click("#whatsnew button");
+  await page.click("#updateDownload");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "9.9.9");
+}, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: WINDOWS_UA });
 
 // The Android app has a native installer object. This stands in for it: it records the address and
 // the test plays the part of the native side by calling the same two functions it calls.
@@ -8991,22 +9043,59 @@ await test("the back gesture closes an open window (Settings, Trash, What's new)
   await page.waitForFunction(() => document.getElementById("title").value === "B");
 }, { settings: existingUser({ updates: false }), files: { "A.md": "---\\n---\\n\\nalpha\\n", "B.md": "---\\n---\\n\\nbeta\\n", "C.md": "---\\n---\\n\\ngamma\\n" } });
 
-for (const [system, userAgent, shown, hidden] of [
-  ["Android", ANDROID_UA, /fingerprint/, /Linux|Ctrl|Shortcuts/],
-  ["Windows", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", /Ctrl/, /fingerprint|Linux|phone/],
-]) {
-  await test(`What's new on ${system} shows only the notes for ${system}`, async (page) => {
-    await page.waitForSelector("#newNote");
-    await page.click("#openSettings");
-    await page.click("#settingsTab-about");
-    await page.click('#settingsPanel-about button:has-text("What\'s new")');
-    await page.waitForSelector("#whatsnew[open]");
-    const text = await page.locator("#whatsnew .notes").innerText();
-    assert.match(text, shown);
-    assert.doesNotMatch(text, hidden);
-    assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
-  }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent });
-}
+// What's new: a phone and the About page get the short list with a button to GitHub; a computer
+// that downloaded the update with the app's own Download button gets the full notes. Each only
+// for its own system.
+const whatsNewText = (page) => page.locator("#whatsnew .notes").innerText();
+const openAboutNotes = async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#openSettings");
+  await page.click("#settingsTab-about");
+  await page.click("#aboutWhatsNew");
+  await page.waitForSelector("#whatsnew[open]");
+};
+await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
+  await openAboutNotes(page);
+  const text = await whatsNewText(page);
+  assert.match(text, /Fingerprint or face unlock/);
+  assert.doesNotMatch(text, /Linux|Ctrl|Shortcuts|forgotten PIN|<!--|-->/);
+  assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
+  await page.click("#whatsNewFull");
+  assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA });
+
+await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
+  await openAboutNotes(page);
+  const text = await whatsNewText(page);
+  assert.match(text, /Zoom with Ctrl \+ and Ctrl/);
+  assert.doesNotMatch(text, /fingerprint|Linux|phone|forgotten PIN|<!--/i);
+  assert.equal(await page.isVisible("#whatsNewFull"), true);
+}, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
+
+await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
+  await page.waitForSelector("#whatsnew[open]");
+  const text = await whatsNewText(page);
+  assert.match(text, /forgotten PIN cannot be recovered[\s\S]*Ctrl \+ and Ctrl/);
+  assert.doesNotMatch(text, /fingerprint|Linux|Android|phone|<!--/i);
+  assert.equal(await page.isVisible("#whatsNewFull"), false);
+  await page.click("#whatsnew button");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
+}, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: WINDOWS_UA });
+
+await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
+  await page.waitForSelector("#whatsnew[open]");
+  const text = await whatsNewText(page);
+  assert.match(text, /Zoom with Ctrl/);
+  assert.doesNotMatch(text, /forgotten PIN|fingerprint|Linux/i);
+  assert.equal(await page.isVisible("#whatsNewFull"), true);
+}, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
+
+await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
+  await page.waitForSelector("#whatsnew[open]");
+  const text = await whatsNewText(page);
+  assert.match(text, /Back button works in Settings/);
+  assert.doesNotMatch(text, /forgotten PIN|Ctrl|Linux/);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
   await page.waitForSelector("#newNote");

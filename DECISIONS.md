@@ -788,15 +788,23 @@ Cost. None noticed: the interface never calls them while the lock screen shows.
 Context. (25) planned a CI job installing the `.rpm` in a Fedora container. Fedora can already install the `.rpm`, and the AppImage works too.
 Decision. Moved to v0.8, as first wished on 2026-11-11. Until then one person installing the `.rpm` at the 0.5 release is the check.
 
-## 2026-11-19: Release notes are a few words per line
+## 2026-11-19: Full release notes on GitHub, a short What's new in the app
 
-Context. The 0.5.6 What's new box was a wall of text: too much to read inside the app and too tall on a phone.
-Decision. From now on every release note line names one change in a few words, one short sentence at most, under "New" and "Fixed". Details belong in PROGRESS.md and the docs, not in What's new.
-Each system sees only its own lines: a line can start with "Android:", "Windows:", "Linux:" or "Computers:" (every system but Android), or a pair such as "Linux and Windows:". The app leaves out lines for other systems, takes the word off the rest and drops a heading left empty (`notesFor` in `web/whatsnew.js`). Lines without a word are for everyone. Plain words were picked over hidden marks so that older versions of the app, which show the notes of a new version in the update notice, and the GitHub release page still read well.
-Cost. Less explanation in the app; the setup guide and docs carry it. A note true on every system but worded for one (fingerprint on Android) needs two lines.
+Context. The 0.5.6 What's new box was a wall of text on a phone. The GitHub release page should keep the full detail, and someone who downloaded from that page has already read it.
+Decision. `docs/release-notes/<version>.md` holds both. The visible part is the full notes for every system, pasted into the GitHub release as before. At the end, inside an HTML comment starting with `<!-- In the app`, comes the short list: every line one change in a few words, one short sentence at most, under "New" and "Fixed". GitHub does not show comments (`appNotes` in `web/whatsnew.js`). The app shows the short list with a button to the full notes on GitHub, except on a computer right after an update made with the app's own Download button (and in the update notice's Details before downloading), where it shows the full notes. A phone always gets the short list.
+Each system sees only its own lines: a line can start with "Android:", "Windows:", "Linux:" or "Computers:" (every system but Android), or a pair such as "Linux and Windows:". The app leaves out lines for other systems, takes the word off the rest and drops a heading left empty (`notesFor`). Lines without a word are for everyone. On GitHub the words stay, so the page says which system each line is about.
+Cost. Two lists to write per version. Versions up to 0.5.6 show the whole GitHub text in their update notice, comment included.
 
 ## 2026-11-19: Open windows are steps of the back gesture
 
 Context. On Android the back gesture walks the browser history. Settings and other windows added no entry, so back from inside Settings left the app.
 Decision. An open window (and, on a phone, an open Settings group) adds one history entry (`web/backlayers.js`). Back takes the top one away; closing a window another way takes its entry back, and page entries wait for that. The first-run screens and the lock screen are left out: they need an answer.
 Cost. One more module touching history; the page Back and Forward wait a moment after a window closes.
+
+## 2026-11-19: The computer app updates itself with Tauri's signed updater
+
+Context. Download in the computer app only opened the installer in the browser. The owner wants the app to know how it was installed and install the same kind of file itself.
+Decision. Tauri's updater plugin (`tauri-plugin-updater` =2.14.1), used from Rust only (`src/selfupdate.rs`). The kind of install is read from the program (Tauri writes it in when packing: msi, nsis, deb, rpm, AppImage). Each release gets `latest.json` with one entry per kind (`scripts/latest-json.mjs`) and no entry without a kind, so a portable copy or a hand-made build is never given an installer by guess; those keep the browser route. Every file is signed in CI with a private key held as a GitHub secret and checked against the public key in `tauri.conf.json` (the owner chose signed updates over trusting the download alone). On Linux a .deb or .rpm is installed with pkexec; the app restarts afterwards. Windows installers close the app and start it again themselves.
+The key pair was made for the owner outside the repository; only the public half is in the code, and the private key and its password exist only as GitHub secrets and in the owner's own safe copy (he asked that they never appear in the code).
+Cost. A key that must not be lost (`docs/update-signing.md`). Only versions built with the public key in place can update themselves, so the first in-app update is from the re-released 0.5.6 to the next version. The Rust side is only compiled by CI and not tried on a real computer.
+

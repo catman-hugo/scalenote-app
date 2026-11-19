@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 
 export class BackendError extends Error {
   constructor(code) {
@@ -55,6 +56,13 @@ export const backend = {
   // computer's own login list and answer whether it now holds this program.
   // The zoom of the window (1 is 100%). Computers only; Android's window cannot zoom.
   setZoom: (scale) => call("set_zoom", { scale }),
+  // Updating from inside the app, computers only (selfupdate.rs). The kind of file this copy came
+  // in ("msi", "nsis", "deb", "rpm", "appimage"), or null when it cannot update itself.
+  installKind: () => call("install_kind"),
+  // Downloads, checks and installs `version`; the app then closes or restarts, so on success this
+  // never resolves. Progress arrives through onUpdateProgress as { done, total } in bytes.
+  installUpdate: (version) => call("install_update", { version }),
+  onUpdateProgress: (handler) => listen("update-progress", (event) => handler(event.payload || {})),
   // The app lock (see applock.js and src/lock.rs). lockStatus -> { enabled, locked, kind,
   // biometric, biometricAvailable }; lockUnlock -> { ok, wait }; lockNow -> whether it locked.
   lockStatus: () => call("lock_status"),

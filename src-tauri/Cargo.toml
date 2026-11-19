@@ -23,6 +23,8 @@ tauri-plugin-dialog = "=2.8.4"
 tauri-plugin-opener = "=2.7.2"
 scalenote-core = { path = "core" }
 serde = { version = "=1.0.229", features = ["derive"] }
+# Tauri's generated context writes the plugin settings (the update key) as JSON values.
+serde_json = "=1.0.154"
 # Wipes a typed PIN or passcode from memory after it was checked (already used by the core).
 zeroize = "=1.8.2"
 
@@ -35,6 +37,9 @@ keyring = { version = "=3.6.3", default-features = false, features = ["windows-n
 # no such list on Android. Exact version, like every dependency here.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "=2.7.0"
+# Installs a new version from inside the app (0.5.6), in the same kind of file the app came in,
+# after checking its signature. Desktop only, like the line above.
+tauri-plugin-updater = "=2.14.1"
 
 # Fingerprint or face unlock for the app lock (0.5.6). Android only; on a computer there is
 # nothing to use it with. Exact version, like every dependency here.
