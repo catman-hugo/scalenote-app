@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { notesFor } from "../web/whatsnew.js";
+import { appNotes, notesFor } from "../web/whatsnew.js";
 
 const notes = [
   "## New",
@@ -42,11 +42,26 @@ test("a system word inside a sentence is not a marker, and empty or odd input is
 
 test("the 0.5.6 notes: Android is not told about Linux or Ctrl zoom, Windows not about fingerprints", async () => {
   const text = await readFile(new URL("../docs/release-notes/0.5.6.md", import.meta.url), "utf8");
-  const android = notesFor(text, "android");
+  const android = notesFor(appNotes(text), "android");
   assert.doesNotMatch(android, /Linux|Ctrl/);
   assert.match(android, /fingerprint/);
-  const windows = notesFor(text, "windows");
+  const windows = notesFor(appNotes(text), "windows");
   assert.doesNotMatch(windows, /fingerprint|Linux|Android|phone/i);
   assert.match(windows, /Ctrl/);
-  assert.match(notesFor(text, "linux"), /Touch drawing works/);
+  assert.match(notesFor(appNotes(text), "linux"), /Touch drawing works/);
+  // GitHub keeps the full detail: the visible part has whole sentences about the lock and Linux.
+  const visible = text.replace(/<!--[\s\S]*?-->/g, "");
+  assert.match(visible, /forgotten PIN cannot be recovered/);
+  assert.match(visible, /On Linux, two fingers/);
+  assert.doesNotMatch(appNotes(text), /forgotten PIN/);
+});
+
+test("the app shows only the In the app part, or the notes without comments when there is none", () => {
+  const file = "Full words here.\n\n<!-- In the app\n## New\n- Short.\n-->\n";
+  assert.equal(appNotes(file), "## New\n- Short.\n");
+  assert.equal(appNotes("## New\n- Long line. <!-- a note -->\n"), "## New\n- Long line. \n");
+  assert.equal(appNotes(""), "");
+  assert.equal(appNotes(undefined), "");
+  // A comment that is never closed does not hide or break anything.
+  assert.equal(appNotes("- One.\n<!-- In the app\n- Two."), "- One.\n<!-- In the app\n- Two.");
 });

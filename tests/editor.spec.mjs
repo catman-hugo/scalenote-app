@@ -9005,6 +9005,8 @@ for (const [system, userAgent, shown, hidden] of [
     assert.match(text, shown);
     assert.doesNotMatch(text, hidden);
     assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
+    // Only the short list: the full sentences are for the GitHub release page.
+    assert.doesNotMatch(text, /forgotten PIN|In the app|-->/);
   }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent });
 }
 

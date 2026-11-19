@@ -6,7 +6,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
 
 ## Current progress
 
-*Last updated: 2026-11-19 (0.5.6 re-release: shorter What's new that only lists what matters on your system, phone back button in Settings). This section is updated with every change to the app.*
+*Last updated: 2026-11-19 (0.5.6 re-release: a short What's new in the app that only lists what matters on your system, full notes on GitHub, phone back button in Settings). This section is updated with every change to the app.*
 
 - **Latest version: 0.5.6, the last release of 0.5.** Before that 0.5.5 (the home server program and six extras) and 0.5.4. Android support for sync and six extras. Tried on one computer only; nothing has run on a phone or tablet yet, and sync has not been tried between two real devices.
 - **Done in 0.5 (sync between your own devices):**

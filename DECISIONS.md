@@ -788,12 +788,12 @@ Cost. None noticed: the interface never calls them while the lock screen shows.
 Context. (25) planned a CI job installing the `.rpm` in a Fedora container. Fedora can already install the `.rpm`, and the AppImage works too.
 Decision. Moved to v0.8, as first wished on 2026-11-11. Until then one person installing the `.rpm` at the 0.5 release is the check.
 
-## 2026-11-19: Release notes are a few words per line
+## 2026-11-19: Full release notes on GitHub, a short list in the app
 
-Context. The 0.5.6 What's new box was a wall of text: too much to read inside the app and too tall on a phone.
-Decision. From now on every release note line names one change in a few words, one short sentence at most, under "New" and "Fixed". Details belong in PROGRESS.md and the docs, not in What's new.
-Each system sees only its own lines: a line can start with "Android:", "Windows:", "Linux:" or "Computers:" (every system but Android), or a pair such as "Linux and Windows:". The app leaves out lines for other systems, takes the word off the rest and drops a heading left empty (`notesFor` in `web/whatsnew.js`). Lines without a word are for everyone. Plain words were picked over hidden marks so that older versions of the app, which show the notes of a new version in the update notice, and the GitHub release page still read well.
-Cost. Less explanation in the app; the setup guide and docs carry it. A note true on every system but worded for one (fingerprint on Android) needs two lines.
+Context. The 0.5.6 What's new box was a wall of text: too much to read inside the app and too tall on a phone. The GitHub release page should keep its full detail.
+Decision. `docs/release-notes/<version>.md` holds both. The visible part is the full notes, pasted into the GitHub release as before. At the end, inside an HTML comment starting with `<!-- In the app`, comes the short list: every line one change in a few words, one short sentence at most, under "New" and "Fixed". GitHub does not show comments; the app shows only that part (`appNotes` in `web/whatsnew.js`), also in the update notice of later versions.
+Each system sees only its own short lines: a line can start with "Android:", "Windows:", "Linux:" or "Computers:" (every system but Android), or a pair such as "Linux and Windows:". The app leaves out lines for other systems, takes the word off the rest and drops a heading left empty (`notesFor`). Lines without a word are for everyone.
+Cost. Two lists to write per version. Versions up to 0.5.6 show the whole GitHub text in their update notice, comment included, so the short list shows there under the full notes once.
 
 ## 2026-11-19: Open windows are steps of the back gesture
 

@@ -20,6 +20,18 @@ function make(tag, text) {
 // shown at the second level, which is enough for release notes.
 const indentOf = (line) => /^\s*/.exec(line)[0].replace(/\t/g, "  ").length;
 
+// A release notes file holds two lists: the full notes, shown on GitHub, and a short list for the
+// app inside an HTML comment that starts with "<!-- In the app" (GitHub does not show comments).
+// The app shows only the short list when there is one, and never shows any other comment.
+const IN_APP = /<!--\s*In the app[^\n]*\n([\s\S]*?)-->/i;
+
+/** The part of a release notes file meant for the app (see above). */
+export function appNotes(markdown) {
+  const text = String(markdown || "");
+  const short = IN_APP.exec(text);
+  return short ? short[1] : text.replace(/<!--[\s\S]*?-->/g, "");
+}
+
 // A release note line can start with the systems it is about, such as "Android:" or
 // "Linux and Windows:". "Computers" means every system that is not Android (the browser too).
 // Older versions of the app simply show the words, which still read well, and so does GitHub.
