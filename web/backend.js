@@ -88,6 +88,8 @@ export const backend = {
   syncSetPaused: (paused) => call("sync_set_paused", { paused }),
   syncRenamePeer: (id, name) => call("sync_rename_peer", { id, name }),
   syncSetWifiOnly: (id, only) => call("sync_set_wifi_only", { id, only }),
+  // Ties a paired device to the notes folder open now; a paired device belongs to one folder.
+  syncTieToOpenFolder: (id) => call("sync_tie_to_open_folder", { id }),
   syncSetOnWifi: (onWifi) => call("sync_set_on_wifi", { onWifi }),
   // One text that changes when something in the open folder changes.
   vaultSignature: () => call("vault_signature"),

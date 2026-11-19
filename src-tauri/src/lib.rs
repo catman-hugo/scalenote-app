@@ -652,6 +652,10 @@ struct SyncPeerReply {
     older_version: bool,
     has_history: bool,
     wifi_only: bool,
+    /// The notes folder on this device it belongs to ("" when not tied yet).
+    folder: String,
+    /// It belongs to another folder than the open one, so it does not sync now.
+    other_folder: bool,
 }
 
 #[derive(Serialize)]
@@ -710,6 +714,8 @@ fn peer_reply(peer: PeerView) -> SyncPeerReply {
         older_version: peer.older,
         has_history: peer.has_history,
         wifi_only: peer.wifi_only,
+        folder: peer.folder.clone(),
+        other_folder: peer.other_folder,
     }
 }
 
@@ -954,6 +960,15 @@ async fn sync_set_wifi_only(id: String, only: bool, state: State<'_, AppState>) 
     result.map_err(|error| sync_failed(&state.logger, "wifi only", error))
 }
 
+/// Ties a paired device to the notes folder open now (see core sync/folders.rs).
+#[tauri::command]
+async fn sync_tie_to_open_folder(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    lock::refuse_if_locked(&state)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.tie_to_open_folder(&id))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "tie to folder", error))
+}
+
 /// The interface tells the service whether the system is on Wi-Fi (see `Service::set_on_wifi`).
 #[tauri::command]
 async fn sync_set_on_wifi(on_wifi: bool, state: State<'_, AppState>) -> Result<(), String> {
@@ -1177,6 +1192,7 @@ pub fn run() {
             sync_set_paused,
             sync_rename_peer,
             sync_set_wifi_only,
+            sync_tie_to_open_folder,
             sync_set_on_wifi,
             vault_signature,
             conflicts_list,

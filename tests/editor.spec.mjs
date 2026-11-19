@@ -7922,6 +7922,31 @@ await test("the device list shows the last sync time and the device's app versio
   assert.doesNotMatch(items[2], /App version/);
 }, { settings: existingUser({ updates: false }) });
 
+await test("each paired device shows the notes folder it belongs to; one tied to another folder can be moved here with two presses", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs("laptop"));
+  await page.evaluate(() => window.__mock.peerPairs("server"));
+  await page.evaluate(() => {
+    const peers = window.__mock.syncPeers();
+    Object.assign(peers[0], { folder: "/vault", otherFolder: false, hasHistory: true });
+    Object.assign(peers[1], { folder: "C:\\Users\\alice\\School notes", otherFolder: true });
+  });
+  await page.click("#openSettings");
+  await page.click("#settingsTab-sync");
+  await page.waitForSelector("#pairList .pair-folder");
+  const items = await page.locator("#pairList > *").allTextContents();
+  assert.match(items[0], /Syncs with your notes folder \u201cvault\u201d\./);
+  assert.doesNotMatch(items[0], /instead/);
+  assert.match(items[1], /\u201cSchool notes\u201d, which is not open now, so it does not sync/);
+  const move = page.locator("#pairList > *").nth(1).locator(".pair-move");
+  await move.click();
+  assert.equal(await page.evaluate(() => (window.__tiedHere || []).length), 0, "one press only asks");
+  await page.locator("#pairList > *").nth(1).locator(".pair-move").click();
+  await page.waitForFunction(() => (window.__tiedHere || []).length === 1);
+  await page.waitForFunction(() => document.querySelectorAll("#pairList .pair-move").length === 0);
+  assert.match((await page.locator("#pairList > *").allTextContents())[1], /Syncs with your notes folder \u201cvault\u201d\./);
+}, { settings: existingUser({ updates: false }) });
+
 await test("sync: Compare shows the plan and runs nothing; an error says what to do; rapid clicking never throws", async (page) => {
   await page.waitForSelector("#newNote");
   await page.evaluate(() => window.__mock.peerPairs());

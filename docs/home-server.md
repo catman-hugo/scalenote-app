@@ -33,7 +33,12 @@ The server refuses to start if its data folder can be read by other users, if a 
 
 The server never starts a sync itself; it only answers. Your devices start each sync: by themselves once they have synced with the server once and can find it on the network, or with Sync now.
 
-A device paired with one server vault cannot authenticate to another server vault without pairing with it. Do not pair the same app installation with separate vaults yet: paired devices are not bound to a local folder, and sync uses whichever folder the app currently has open. This can mix notes between otherwise separate vaults.
+A device paired with one server vault cannot reach another server vault without pairing with it too. To use two server vaults on one phone (since 0.5.6):
+
+1. In ScaleNote, open the notes folder that belongs with the first server vault, and pair with that vault.
+2. Open the notes folder for the second server vault, and pair with that one.
+
+Each pairing belongs to the notes folder that was open when you paired; Settings, Sync shows which. A sync only happens while that folder is open, so the vaults never mix. A pairing made before 0.5.6 belongs to the folder of its next sync. To move a pairing to another folder, open that folder and use "Sync it with this folder instead" in Settings, Sync; the next sync then shows what it would change and waits for your yes.
 
 ## The add-only inbox (optional)
 

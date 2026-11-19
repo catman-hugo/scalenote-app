@@ -31,6 +31,9 @@ pub const KIND_FILE: u8 = 0x42;
 pub const KIND_MISSING: u8 = 0x43;
 pub const KIND_CHANGED: u8 = 0x44;
 pub const KIND_NO: u8 = 0x45;
+/// The reason sent with a "no" when the asking device is tied to another folder on this one
+/// (see folders.rs). Older apps send a "no" without a reason; both mean the sync did not happen.
+pub const NO_OTHER_FOLDER: &[u8] = b"other-folder";
 
 const KIND_CHUNK: u8 = 0x50;
 /// A note (path and hashes) is never longer than this.

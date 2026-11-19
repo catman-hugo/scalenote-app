@@ -202,7 +202,7 @@
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,
-        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, version: "", olderVersion: false, hasHistory: false, wifiOnly: false, ...p })),
+        peers: syncPairing.peers.map((p) => ({ lastSync: "", lastChanged: 0, version: "", olderVersion: false, hasHistory: false, wifiOnly: false, folder: "", otherFolder: false, ...p })),
         pairingSecondsLeft: syncPairing.secondsLeft,
         events: [...syncPairing.events].reverse(),
       };
@@ -253,6 +253,14 @@
       return { needsApproval: false, preview: null, report };
     },
     sync_set_paused: ({ paused }) => { syncPairing.paused = paused; },
+    // The folder rules are Rust's (tested there); this only records the move.
+    sync_tie_to_open_folder: ({ id }) => {
+      const peer = syncPairing.peers.find((p) => p.id === id);
+      if (!peer) fail("pair_refused");
+      window.__tiedHere = [...(window.__tiedHere || []), id];
+      peer.otherFolder = false;
+      peer.folder = "/vault";
+    },
     sync_set_wifi_only: ({ id, only }) => {
       const peer = syncPairing.peers.find((p) => p.id === id);
       window.__wifiCalls = [...(window.__wifiCalls || []), { id, only }];
