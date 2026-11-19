@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-19; 0.5.6 built and ready to release (version set to 0.5.6); 0.5.5 released (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-19; 0.5.6 released, then fixed for a re-release (shorter What's new, phone back gesture in Settings); 0.5.5 released (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
 
 ## 0.5.6: built, ready to release
 
@@ -19,6 +19,7 @@ Done (tried here: node tests, the browser tests for PDFs and find, screenshots l
 - Security checklist for the whole 0.5 line (`docs/security-checklist-0.5.md`): npm audit and cargo audit clean (6 warnings inside Tauri's GTK stack), no unwrap/expect, no personal details. It found that pairing and manual sync commands still answered while the app lock was closed; they now refuse (automatic sync keeps running by design).
 - Setup guide (`docs/setup-guide.md`), linked from the README.
 - (25) the Fedora install check moved to v0.8 (the owner's choice).
+- Re-release fixes (branch `fix/short-notes-and-back`, from the owner's phone test of the first 0.5.6): the release notes are cut to a few words per line (rule in DECISIONS.md); the What's new box keeps clear of the status bar; the phone back gesture now closes Settings and other windows (and steps from a Settings group back to the list) instead of leaving the app (`web/backlayers.js`, 2 browser tests). Full suite here: 415 passed. Not tried on the phone.
 - Phone sizing: root text size is the chosen size times `--screen-scale` (0.875 at 480 CSS px wide or less, 0.8125 at 360 or less), spacing steps shrink too; full-screen Settings keeps clear of the status bar (safe-area padding). Compared with the owner's phone screenshots at the same size (393 x 873, 2.75x).
 
 Not done / untried:

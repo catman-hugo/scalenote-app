@@ -10,6 +10,7 @@ import { checkForUpdate, platformOf, shouldCheck, RELEASE_PAGE } from "./updates
 import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
 import { renderNotes } from "./whatsnew.js";
+import { backThroughLayers, closeOnBack, whenSettled } from "./backlayers.js";
 import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanFolderColours, cleanRecent, removeRecent, withFolderColour } from "./recent.js";
 import { backend, BackendError } from "./backend.js";
@@ -1909,11 +1910,15 @@ async function reopenLastPage() {
 // in `app.nav`. That is what makes the Android back gesture useful: it goes to the page seen
 // before instead of leaving the app, and only leaves from the first page. Back and Forward
 // here use the same history, so the buttons and the gesture always agree.
+// Open windows such as Settings add their own entries on top (backlayers.js), so the gesture
+// closes them first. A page entry waits until a window that just closed has taken its entry back.
 function recordVisit(path) {
   if (!app.navigating) {
     const position = app.nav.visit(path);
-    if (position === 0) history.replaceState({ nav: 0 }, "");
-    else if (position !== null) history.pushState({ nav: position }, "");
+    whenSettled(() => {
+      if (position === 0) history.replaceState({ nav: 0 }, "");
+      else if (position !== null) history.pushState({ nav: position }, "");
+    });
   }
   drawNavButtons();
 }
@@ -1924,6 +1929,7 @@ function drawNavButtons() {
 }
 
 async function goThroughHistory(event) {
+  if (backThroughLayers(event)) return;
   const path = app.nav.goto(event.state && event.state.nav);
   if (path === null) return;
   app.navigating = true;
@@ -2641,8 +2647,8 @@ function wireEvents() {
   el("openTrash").addEventListener("click", openTrashDialog);
   el("openTags").addEventListener("click", () => openTagsDialog());
   el("favorite").addEventListener("click", toggleFavorite);
-  el("navBack").addEventListener("click", () => app.nav.canBack() && history.back());
-  el("navForward").addEventListener("click", () => app.nav.canForward() && history.forward());
+  el("navBack").addEventListener("click", () => whenSettled(() => app.nav.canBack() && history.back()));
+  el("navForward").addEventListener("click", () => whenSettled(() => app.nav.canForward() && history.forward()));
   el("findButton").addEventListener("click", () => app.find && app.find.open(""));
   window.addEventListener("popstate", goThroughHistory);
   el("historyButton").addEventListener("click", openHistoryDialog);
@@ -2657,6 +2663,8 @@ function wireEvents() {
   el("vaultButton").addEventListener("click", showFolderMenu);
   // Settings and What's new can be closed by clicking outside the box (or Escape, or Close).
   // The first-run screens cannot: they need an answer.
+  // The phone's back gesture closes these the way Escape does. The first-run screens are left out.
+  for (const id of ["settings", "whatsnew", "trash", "tags", "historyBox", "palette", "pdfBox"]) closeOnBack(el(id));
   for (const id of ["settings", "whatsnew", "trash", "tags", "palette"]) {
     const dialog = el(id);
     dialog.addEventListener("click", (event) => {

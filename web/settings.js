@@ -3,6 +3,7 @@
 
 import { DARK_THEMES, EDITOR_WIDTHS, FONT_SIZES, LIGHT_THEMES, ZOOMS, SIDEBAR_MAX, SIDEBAR_MIN, SIDEBAR_STEP, modeOf, normalizeAppearance, pickMode, pickTheme } from "./appearance.js";
 import { strings } from "./strings.js";
+import { addLayer } from "./backlayers.js";
 
 function make(tag, className, text) {
   const node = document.createElement(tag);
@@ -149,12 +150,26 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const heading = make("h2");
   // On a phone the tabs are a full-screen list and a tab opens as its own page with a Back button.
   // style.css reads data-view; on a wide screen the attribute has no effect.
+  // On a phone an open group is a layer of its own (backlayers.js), so the back gesture returns
+  // to the list instead of closing Settings. On a wide screen there is no list to go back to.
+  let leaveGroup = null;
+  const phone = window.matchMedia("(max-width: 640px)");
+  const setView = (view) => {
+    layout.dataset.view = view;
+    if (view === "page" && !leaveGroup && phone.matches) {
+      leaveGroup = addLayer(() => {
+        leaveGroup = null;
+        layout.dataset.view = "list";
+      });
+    } else if (view === "list" && leaveGroup) {
+      leaveGroup();
+      leaveGroup = null;
+    }
+  };
   layout.dataset.view = asked ? "page" : "list";
   const back = make("button", "settings-back", s.back);
   back.type = "button";
-  back.addEventListener("click", () => {
-    layout.dataset.view = "list";
-  });
+  back.addEventListener("click", () => setView("list"));
   const buttons = new Map();
   const panels = new Map();
 
@@ -177,7 +192,7 @@ export function openSettings(dialog, current, onChange, groups = {}) {
     button.setAttribute("aria-controls", `settingsPanel-${id}`);
     button.addEventListener("click", () => {
       show(id);
-      layout.dataset.view = "page";
+      setView("page");
     });
     buttons.set(id, button);
     nav.append(button);
@@ -214,7 +229,7 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const filter = () => {
     const wanted = search.value.trim().toLowerCase();
     nav.classList.toggle("is-searching", wanted !== "");
-    if (wanted) layout.dataset.view = "page";
+    if (wanted) setView("page");
     if (!wanted) {
       for (const rows of tabs.map(([, r]) => r)) rows.forEach((row) => row.classList.remove("search-miss"));
       nothing.hidden = true;

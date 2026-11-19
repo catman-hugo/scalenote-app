@@ -4,6 +4,7 @@
 
 import { BackendError, backend } from "./backend.js";
 import { strings } from "./strings.js";
+import { closeOnBack } from "./backlayers.js";
 
 function fill(template, values) {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
@@ -42,6 +43,7 @@ export async function openConflictReview({ logProblem, onSettled }) {
   dialog.append(element("h2", text.conflictsHeading), element("p", text.conflictsHint, "setting-hint"), body, close);
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
+  closeOnBack(dialog);
   dialog.showModal();
 
   async function draw(message) {

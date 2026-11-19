@@ -6,7 +6,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
 
 ## Current progress
 
-*Last updated: 2026-11-19 (0.5.6 ready to release). This section is updated with every change to the app.*
+*Last updated: 2026-11-19 (0.5.6 re-release: shorter What's new, phone back button in Settings). This section is updated with every change to the app.*
 
 - **Latest version: 0.5.6, the last release of 0.5.** Before that 0.5.5 (the home server program and six extras) and 0.5.4. Android support for sync and six extras. Tried on one computer only; nothing has run on a phone or tablet yet, and sync has not been tried between two real devices.
 - **Done in 0.5 (sync between your own devices):**
@@ -16,10 +16,10 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
   - 0.5.3: the sync. Only changed files are sent, the first sync asks first, a page changed on both devices is kept in both versions, deleted pages go to the other device's trash. Also a status line, Pause and Compare, renaming a device, noticing changes made by other programs, and a conflict copies screen.
   - 0.5.4: Android: the phone can find other devices while the app is open, the back gesture goes to the previous page, and sync can be limited to Wi-Fi per device. Also Back and Forward buttons, a Find button, a true black theme, Settings search and Reset to defaults, and the app starts on the page you had open last. Themes are cards under an Auto/Light/Dark switch, and Settings is a full-screen list on a phone.
   - 0.5.5: the home server program for Linux, backups, a colour per folder, security cards, tray and open at login, and the device list with last sync time and app version.
-  - 0.5.6: an optional app lock (PIN or passcode, fingerprint on Android), each paired device tied to one notes folder, Find in PDF pages added as pictures, narrower PDFs, zoom, Shortcuts and About pages, smaller text on phones, fingers on drawings fixed on Linux, a [setup guide](docs/setup-guide.md) and a [security checklist for all of 0.5](docs/security-checklist-0.5.md).
+  - 0.5.6: an optional app lock (PIN or passcode, fingerprint on Android), each paired device tied to one notes folder, Find in PDF pages added as pictures, narrower PDFs, zoom, Shortcuts and About pages, smaller text on phones, the phone back button closing Settings and other windows instead of the app, fingers on drawings fixed on Linux, a [setup guide](docs/setup-guide.md) and a [security checklist for all of 0.5](docs/security-checklist-0.5.md).
 - **Next: 0.6.** The plan for it is not written yet.
 - **The 0.5 plan** is in [docs/v0.5-plan.md](docs/v0.5-plan.md). The browser client moved to a later release, the Fedora install check to v0.8.
-- **Not tried on real devices yet:** the app lock and fingerprint unlock, the tray and open at login, the home server on a real server, syncing between two devices on a real network, pairing and finding on two devices, the Android phone finding other devices and syncing, printing and export from the packaged app, selecting PDF text by touch.
+- **Not tried on real devices yet:** the phone back button in Settings, the app lock and fingerprint unlock, the tray and open at login, the home server on a real server, syncing between two devices on a real network, pairing and finding on two devices, the Android phone finding other devices and syncing, printing and export from the packaged app, selecting PDF text by touch.
 - **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).
 
 ## About the AI in this project
