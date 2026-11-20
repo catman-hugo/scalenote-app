@@ -139,6 +139,10 @@ export const strings = {
     allChanges: "All versions and their changes",
     allChangesHint: "Opens the list of releases on GitHub in your browser.",
     howMade: "How ScaleNote is made",
+    copyLog: "Copy the app's log",
+    copyLogHint: "Copies what ScaleNote noted down recently (times, errors, how long things took) so you can paste it in a message when something goes wrong. It holds no page text, but can hold page and file names.",
+    logCopied: "Log copied.",
+    logCopyFailed: "The log could not be copied.",
   },
 
   shortcuts: {

@@ -112,6 +112,7 @@
     set_zoom: ({ scale }) => { window.__zoom = scale; },
     // In-app updates on a computer: a test says which kind of file the app came in, and whether
     // installing fails. A success never returns in the real app (it closes or restarts).
+    log_tail: () => "2026-11-20T08:00:00Z INFO ui: example line\n",
     install_kind: () => window.__installKind || null,
     install_update: ({ version }) => { window.__mock.installed.push(version); if (window.__installFails) fail(window.__installFails); return new Promise(() => {}); },
     // The lock's rules (hash, waits) are Rust's and tested there; this keeps the plain secret

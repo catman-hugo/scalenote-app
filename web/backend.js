@@ -126,6 +126,7 @@ export const backend = {
   historyKeepNow: (path) => call("history_keep_now", { path }),
   historyClear: () => call("history_clear"),
   log: (level, message) => call("log_line", { level, message }).catch(() => {}),
+  logTail: () => call("log_tail"),
   getSettings: () => call("get_settings"),
   setSettings: (json) => call("set_settings", { json }),
   // Returns the chosen folder path, or null when the user cancels.

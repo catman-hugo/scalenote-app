@@ -31,15 +31,23 @@ test("the block under the first point is chosen, the nearest one in the gaps", (
   assert.equal(blockAtY([], 5), -1);
 });
 
-test("points are kept as fractions of the block, so a different width moves them with the text", () => {
-  const wide = { left: 100, top: 200, width: 400, height: 40 };
-  const narrow = { left: 50, top: 300, width: 200, height: 80 };
+test("ink keeps its shape and its place from the block's corner on a wider or narrower page", () => {
+  const wide = { left: 100, top: 200, width: 400, height: 40, em: 16 };
+  const narrow = { left: 50, top: 300, width: 200, height: 80, em: 16 };
   const stroke = { tool: "pen", color: "ink", width: 4, points: [[150, 210, 0.5], [450, 230, 1]] };
   const saved = inkFromScreen(stroke, wide, { block: 3, tag: "p:Hi" });
   assert.deepEqual(saved.points, [[0.125, 0.25, 0.5], [0.875, 0.75, 1]]);
   assert.deepEqual(saved.anchor, { block: 3, tag: "p:Hi" });
+  assert.deepEqual(saved.size, [400, 40, 16], "the block's size and text size when drawn are kept");
   assert.deepEqual(inkToScreen(saved, wide), stroke.points, "back on the same box: same place");
-  assert.deepEqual(inkToScreen(saved, narrow), [[75, 320, 0.5], [225, 360, 1]], "narrower and taller box: same spot on the words");
+  // The text is the same size, so the ink is too: same distance from the block's corner.
+  assert.deepEqual(inkToScreen(saved, narrow), [[100, 310, 0.5], [400, 330, 1]], "narrower box: same size and shape");
+  // Bigger text (a zoom on a phone): the ink grows with it, the same amount both ways.
+  assert.deepEqual(inkToScreen(saved, { ...narrow, em: 32 }), [[150, 320, 0.5], [750, 360, 1]]);
+  // Ink from before 0.5.7 has no size and is drawn as it always was.
+  const old = { ...saved };
+  delete old.size;
+  assert.deepEqual(inkToScreen(old, narrow), [[75, 320, 0.5], [225, 360, 1]], "old ink: fractions of width and height");
   assert.deepEqual(fromFractions(...toFractions(7, 9, wide), wide), [7, 9]);
 });
 
@@ -137,4 +145,21 @@ test("a stroke absurdly far below a block is pulled in so the saved file is stil
   const canvas = empty2();
   canvas.ink.push(piece);
   assert.equal(parse2(serialize2(canvas)).problem, undefined);
+});
+
+test("a tablet stroke shown on a wider computer page is not stretched, and the size is saved", () => {
+  // A word written on a tablet: a 300 px wide paragraph of 3 lines.
+  const tablet = { left: 0, top: 0, width: 300, height: 90, em: 16 };
+  const stroke = { tool: "pen", color: "ink", width: 4, points: [[30, 30, 1], [90, 30, 1], [90, 60, 1]] };
+  const saved = inkFromScreen(stroke, tablet, { block: 0, tag: "p:x" });
+  // On the computer the same paragraph is 600 px wide and one line high.
+  const back = inkToScreen(saved, { left: 0, top: 0, width: 600, height: 30, em: 16 });
+  assert.deepEqual(back.map(([x, y]) => [x, y]), [[30, 30], [90, 30], [90, 60]], "exactly as drawn");
+  const canvas = empty2();
+  canvas.ink.push(saved);
+  const read = parse2(serialize2(canvas));
+  assert.deepEqual(read.canvas.ink[0].size, [300, 90, 16]);
+  const bad = JSON.parse(serialize2(canvas));
+  bad.ink[0].size = [0, -1, 16];
+  assert.equal(parse2(JSON.stringify(bad)).problem, "broken", "a nonsense size makes it read-only, never half kept");
 });

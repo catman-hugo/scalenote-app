@@ -6862,22 +6862,27 @@ await test("a pen stroke over a paragraph is saved with the paragraph it belongs
   assert.ok((await inkPixels(page, second)) > 50, "the stroke is on screen");
 }, ctxOpts);
 
-await test("ink stays on its words when the window is narrower", async (page) => {
+await test("ink moves with its paragraph and keeps its size and shape when the window is narrower", async (page) => {
   await inkVault(page);
   await startInk(page);
   const wide = await blockBox(page, 1);
+  const drawnAt = wide.h * 0.25;
   await inkPen(page, horizontalLine(wide, 0.25));
   await page.setViewportSize({ width: 560, height: 700 });
   await page.waitForTimeout(250);
   const narrow = await blockBox(page, 1);
   assert.ok(narrow.h > wide.h, "the paragraph is taller now");
-  const alpha = await page.evaluate(() => 0);
-  void alpha;
-  // The line was a quarter down the paragraph: it is now a quarter down the taller paragraph.
-  const quarter = { x: narrow.x, y: narrow.y + narrow.h * 0.25 - 4, w: narrow.w, h: 8 };
-  assert.ok((await inkPixels(page, quarter)) > 30, "the ink moved with the paragraph");
-  const oldPlace = { x: wide.x, y: wide.y + wide.h * 0.25 - 4, w: Math.min(wide.w, narrow.w), h: 8 };
-  if (Math.abs(oldPlace.y - quarter.y) > 12) assert.equal(await inkPixels(page, oldPlace), 0, "and left the old place");
+  // The text did not get smaller, so neither did the ink: it is the same distance below the top
+  // of its paragraph as when it was drawn (not stretched down to a quarter of the taller one).
+  const same = { x: narrow.x, y: narrow.y + drawnAt - 4, w: narrow.w, h: 8 };
+  assert.ok((await inkPixels(page, same)) > 30, "the ink moved with the paragraph, at its own height");
+  const stretched = { x: narrow.x, y: narrow.y + narrow.h * 0.25 - 4, w: narrow.w, h: 8 };
+  if (Math.abs(stretched.y - same.y) > 12) assert.equal(await inkPixels(page, stretched), 0, "and was not stretched");
+  // The file keeps the size of the paragraph when it was drawn.
+  await page.waitForFunction(() => window.__mock.canvases.has("Sketch.md"));
+  const saved = await savedDrawing(page);
+  assert.equal(saved.ink[0].size.length, 3);
+  assert.ok(Math.abs(saved.ink[0].size[0] - wide.w) < 2, "the paragraph's width when drawn");
 }, ctxOpts);
 
 await test("a finger moves the page and leaves no mark, unless Finger draws is on", async (page) => {
@@ -7554,6 +7559,9 @@ await test("Pages as images makes one picture per page with an empty line after 
   const stored = await page.evaluate(() => [...window.__mock.attachments.entries()].map(([k, v]) => [k, v.slice(0, 4)]));
   assert.equal(stored.length, 3);
   assert.ok(stored.every(([k, head]) => k.endsWith(".jpg") && head === "/9j/"), "each is a real JPEG");
+  // How long each step took goes to the app's log, to find what is slow on a phone.
+  const logs = await page.evaluate(() => window.__mock.logs);
+  assert.ok(logs.some((line) => /^info pdf import: 3 of 3 pages in [\d.]+ s \(open [\d.]+, painting [\d.]+, jpeg [\d.]+, saving [\d.]+, words [\d.]+; page \d+x\d+ px\)$/.test(line)), JSON.stringify(logs));
   // A page can be typed under: the line after a picture is an empty paragraph.
   await page.click(".image-block:nth-of-type(1) .image-img");
   assert.equal(await page.locator(".image-block").count(), 3);
@@ -9054,11 +9062,20 @@ const openAboutNotes = async (page) => {
   await page.click("#aboutWhatsNew");
   await page.waitForSelector("#whatsnew[open]");
 };
+await test("About copies the app's log so it can be sent from a phone", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.click("#openSettings");
+  await page.click("#settingsTab-about");
+  await page.click("#aboutCopyLog");
+  await page.waitForFunction(async () => (await navigator.clipboard.readText()).includes("ui: example line"));
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA });
+
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Fingerprint or face unlock/);
-  assert.doesNotMatch(text, /Linux|Ctrl|Shortcuts|forgotten PIN|<!--|-->/);
+  assert.match(text, /PDF import is timed in the log/);
+  assert.doesNotMatch(text, /Updated from inside|squashed|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9067,15 +9084,15 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Zoom with Ctrl \+ and Ctrl/);
-  assert.doesNotMatch(text, /fingerprint|Linux|phone|forgotten PIN|<!--/i);
+  assert.match(text, /Updated from inside the app/);
+  assert.doesNotMatch(text, /PDF import is timed|squashed|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /forgotten PIN cannot be recovered[\s\S]*Ctrl \+ and Ctrl/);
+  assert.match(text, /checked that it comes from ScaleNote's own builds[\s\S]*stretched sideways and squashed/);
   assert.doesNotMatch(text, /fingerprint|Linux|Android|phone|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
@@ -9085,16 +9102,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Zoom with Ctrl/);
-  assert.doesNotMatch(text, /forgotten PIN|fingerprint|Linux/i);
+  assert.match(text, /Updated from inside the app/);
+  assert.doesNotMatch(text, /squashed|PDF import is timed/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Back button works in Settings/);
-  assert.doesNotMatch(text, /forgotten PIN|Ctrl|Linux/);
+  assert.match(text, /Pen writing keeps its shape/);
+  assert.doesNotMatch(text, /squashed|Updated from inside/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {

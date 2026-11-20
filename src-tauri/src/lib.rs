@@ -598,6 +598,17 @@ fn log_line(level: String, message: String, state: State<AppState>) {
     state.logger.log(Level::from_name(&level), &format!("ui: {message}"));
 }
 
+/// The last part of the app's log, for About, "Copy the app's log". Closed while the app is
+/// locked, like everything else about this device.
+#[tauri::command]
+fn log_tail(state: State<AppState>) -> Result<String, String> {
+    lock::refuse_if_locked(&state)?;
+    Ok(state.logger.tail(LOG_TAIL_BYTES))
+}
+
+/// About 300 lines: enough to see what happened recently, small enough to paste in a message.
+const LOG_TAIL_BYTES: usize = 32 * 1024;
+
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> String {
     std::fs::read_to_string(&state.settings_file).unwrap_or_default()
@@ -1055,9 +1066,14 @@ fn conflict_settle(copy: String, keep: String, state: State<AppState>) -> Result
 /// service whether a paired device is due. The service itself decides, and does nothing (not
 /// even listen on the network) when nothing is due, when sync is off or paused, or when no
 /// folder is open.
+///
+/// It looks every 5 seconds, so an edit reaches the other device within about 10 to 15 seconds
+/// (5 here, at most 3 to find the device, the sync itself, and the other device noticing the new
+/// files, see vaultwatch.js). A look costs one walk over the file names and nothing on the
+/// network, so it is cheap; it was every 20 seconds until 0.5.7, which felt like no sync at all.
 fn start_auto_sync(app: tauri::AppHandle) {
     std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(20));
+        std::thread::sleep(std::time::Duration::from_secs(5));
         let state = app.state::<AppState>();
         let Some(service) = state.sync.service() else { return };
         for result in service.auto_sync_tick(std::time::Duration::from_secs(3)) {
@@ -1243,6 +1259,7 @@ pub fn run() {
             history_keep_now,
             history_clear,
             log_line,
+            log_tail,
             get_settings,
             set_settings
         ])

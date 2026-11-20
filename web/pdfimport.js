@@ -75,12 +75,26 @@ export async function storePdf(file) {
 export async function importPages(file, { progress = () => {}, stopped = () => false } = {}) {
   const problem = checkPdf(file);
   if (problem) throw fail(problem === "unsupported_type" ? "unsupported_pdf" : problem);
+  // How long each step took, written to the app's log at the end (About, "Copy the app's log"),
+  // because a phone was found much slower than a computer and the cause has to be measured on
+  // the phone itself. The steps overlap (see the two lanes above), so they add up to more than
+  // the whole.
+  const clock = { started: performance.now(), open: 0, paint: 0, jpeg: 0, save: 0, words: 0, pixels: "" };
+  const timed = async (step, work) => {
+    const start = performance.now();
+    try {
+      return await work();
+    } finally {
+      clock[step] += performance.now() - start;
+    }
+  };
   let pdf;
   try {
-    pdf = await openPdf(new Uint8Array(await file.arrayBuffer()));
+    pdf = await timed("open", async () => openPdf(new Uint8Array(await file.arrayBuffer())));
   } catch {
     throw fail("pdf_failed");
   }
+  let finished = 0;
   const canvases = [document.createElement("canvas"), document.createElement("canvas")];
   try {
     if (pdf.pages > PDF_LIMITS.importPages) throw fail("pdf_too_many_pages");
@@ -96,13 +110,14 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
     // rejected promise is never left without someone listening.
     const save = async (canvas, page) => {
       try {
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", PDF_LIMITS.jpegQuality));
+        const blob = await timed("jpeg", () => new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", PDF_LIMITS.jpegQuality)));
         if (!blob) throw fail("pdf_failed");
         const picture = new File([blob], pageFileName(file.name, page, total), { type: "image/jpeg" });
-        const path = await storePicture(picture);
-        await keepWords(path, page);
+        const path = await timed("save", () => storePicture(picture));
+        await timed("words", () => keepWords(path, page));
         made[page - 1] = { path, alt: fill(strings.pdf.pageAlt, { page, name: title }) };
         done++;
+        finished = done;
         progress(done, total);
       } catch (error) {
         failure = failure || (error && error.code ? error : fail("pdf_failed"));
@@ -133,7 +148,8 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
       if (failure) break;
       const canvas = canvases[(page - 1) % 2];
       try {
-        await pdf.render(page, canvas);
+        await timed("paint", () => pdf.render(page, canvas));
+        if (!clock.pixels) clock.pixels = `${canvas.width}x${canvas.height}`;
       } catch {
         failure = failure || fail("pdf_failed");
         break;
@@ -144,6 +160,7 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
     if (failure) throw failure;
     return cancelled ? null : made;
   } finally {
+    logTimes(clock, finished, pdf.pages);
     // Free the page memory at once; a long PDF's last page would otherwise stay in memory.
     for (const canvas of canvases) {
       canvas.width = 0;
@@ -151,6 +168,15 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
     }
     await pdf.destroy();
   }
+}
+
+function logTimes(clock, done, total) {
+  const seconds = (ms) => (ms / 1000).toFixed(1);
+  const whole = performance.now() - clock.started;
+  backend.log(
+    "info",
+    `pdf import: ${done} of ${total} pages in ${seconds(whole)} s (open ${seconds(clock.open)}, painting ${seconds(clock.paint)}, jpeg ${seconds(clock.jpeg)}, saving ${seconds(clock.save)}, words ${seconds(clock.words)}; page ${clock.pixels || "-"} px)`,
+  );
 }
 
 /**

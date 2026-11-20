@@ -67,6 +67,26 @@ impl Logger {
         }
     }
 
+    /// The last lines of the log, at most `max_bytes` of them, starting at a whole line. Used by
+    /// About, "Copy the app's log", so the owner can send what happened on a device that has no
+    /// way to open files (a phone). The log holds no page text (see the messages written to it).
+    /// An unreadable or missing log gives an empty text.
+    pub fn tail(&self, max_bytes: usize) -> String {
+        let Ok(_guard) = self.lock.lock() else {
+            return String::new();
+        };
+        let Ok(bytes) = fs::read(&self.file) else {
+            return String::new();
+        };
+        if bytes.len() <= max_bytes {
+            return String::from_utf8_lossy(&bytes).into_owned();
+        }
+        let cut = &bytes[bytes.len() - max_bytes..];
+        // Start after the first line break, so the text never starts in the middle of a line.
+        let start = cut.iter().position(|&b| b == b'\n').map_or(0, |at| at + 1);
+        String::from_utf8_lossy(&cut[start..]).into_owned()
+    }
+
     fn rotate_if_needed(&self) {
         let size = fs::metadata(&self.file).map(|m| m.len()).unwrap_or(0);
         if size < self.max_bytes {
@@ -144,6 +164,23 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sn-log-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn the_tail_is_the_last_whole_lines() {
+        let dir = scratch("tail");
+        let logger = Logger::new(&dir, 1_000_000, 2);
+        assert_eq!(logger.tail(100), "", "no log yet");
+        for n in 0..50 {
+            logger.log(Level::Info, &format!("line {n}"));
+        }
+        let all = logger.tail(1_000_000);
+        assert_eq!(all.lines().count(), 50);
+        let tail = logger.tail(120);
+        assert!(tail.len() <= 120);
+        assert!(tail.ends_with("line 49\n"));
+        assert_eq!(tail.lines().next().map(|line| line.len()), all.lines().last().map(|line| line.len()), "the first line is whole, as long as the others");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
