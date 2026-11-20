@@ -819,6 +819,7 @@ Cost. Where text wraps differently, ink cannot stay on every word; it did not be
 Context. Adding a PDF as pictures is instant on a computer and about 2 seconds a page on the phone. The same code runs on both, so the slow step could be painting, JPEG, saving across to Rust, or reading the words.
 Decision. Time each step and write it to the log, and add "Copy the app's log" to About so the owner can send it from the phone. Change the import once the numbers are in.
 Cost. One more round before it is faster.
+Result (same day). The phone's log showed the JPEG step taking about 5 seconds a page (0.2 s for 8 pages on a laptop); everything else was fast. Pages are now made with `toDataURL` instead of `toBlob`, see PROGRESS.md.
 
 ## 2026-11-20: Sync over Tailscale finds the address by itself
 
