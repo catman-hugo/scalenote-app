@@ -293,3 +293,28 @@ fn errors_have_codes_the_interface_can_turn_into_sentences() {
     assert_eq!(SyncError::Refused("anything else").code(), "pair_refused");
     assert_eq!(SyncError::Channel("x").code(), "pair_failed");
 }
+
+#[test]
+fn a_paired_devices_tailscale_address_from_its_greeting_is_kept_and_an_unpaired_one_is_not() {
+    let (dir_a, dir_b) = (Dir::new("ts-a"), Dir::new("ts-b"));
+    let alice = device(&dir_a, "alice-laptop");
+    let bob = device(&dir_b, "bob-phone");
+    pair(&alice, &bob);
+    let bob_id = alice.status().peers[0].id.clone();
+    let bob_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&bob_id).expect("key");
+    // An older app greets with its version alone: nothing about Tailscale.
+    super::service::read_hello_for_test(&alice, bob_key, b"0.5.6");
+    assert_eq!(alice.status().peers[0].tailscale, "");
+    assert_eq!(alice.status().peers[0].version, "0.5.6");
+    super::service::read_hello_for_test(&alice, bob_key, b"0.5.7 ts=100.101.102.103:47821");
+    let peer = &alice.status().peers[0];
+    assert_eq!((peer.version.as_str(), peer.tailscale.as_str()), ("0.5.7", "100.101.102.103"));
+    // A device that is not paired cannot plant an address.
+    super::service::read_hello_for_test(&alice, [7u8; super::identity::KEY_LEN], b"0.5.7 ts=100.64.0.9:47821");
+    assert!(!fs::read_to_string(dir_a.0.join("sync-tailscale.txt")).expect("file").contains("100.64.0.9"));
+    // Kept across a restart, and forgotten with the device.
+    let restarted = Service::with_bind(&dir_a.0, Identity::generate().expect("identity"), "alice-laptop", true, "127.0.0.1", 0).expect("restart");
+    assert_eq!(restarted.status().peers[0].tailscale, "100.101.102.103");
+    assert!(restarted.remove_peer(&bob_id).expect("remove"));
+    assert!(!fs::read_to_string(dir_a.0.join("sync-tailscale.txt")).expect("file").contains("100.101.102.103"));
+}

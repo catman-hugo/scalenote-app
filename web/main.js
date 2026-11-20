@@ -10,6 +10,7 @@ import { checkForUpdate, platformOf, shouldCheck, RELEASE_PAGE } from "./updates
 import { startInstall } from "./apkinstall.js";
 import { createInstallBar, isInstallBusy, paintInstallButton, setInstallState } from "./installbar.js";
 import { appNotes, notesFor, renderNotes } from "./whatsnew.js";
+import { cleanPagePrefs, movePages, prefsOf, rememberPage } from "./pageprefs.js";
 import { backThroughLayers, closeOnBack, whenSettled } from "./backlayers.js";
 import { openFolderMenu } from "./foldermenu.js";
 import { addRecent, cleanFolderColours, cleanRecent, removeRecent, withFolderColour } from "./recent.js";
@@ -48,7 +49,7 @@ import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { PDF_LIMITS } from "./pdfrules.js";
-import { pairingRows } from "./syncpairing.js";
+import { pairingRows, privacyRows } from "./syncpairing.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
 import { startSyncLine } from "./syncline.js";
 import { pageAction, sameEntries } from "./syncrules.js";
@@ -67,7 +68,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, showBacklinks: true, showCovers: false, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -184,9 +185,8 @@ async function loadSettings() {
       // One switch for both looking for updates and installing them. On unless turned off.
       updates: parsed.updates !== false,
       // The "Linked from" list under pages. On unless turned off.
-      showBacklinks: parsed.showBacklinks !== false,
+      pageViews: cleanPagePrefs(parsed.pageViews),
       // Covers are off until turned on.
-      showCovers: parsed.showCovers === true,
       // What the side button of a pen does on the canvas.
       penButton: PEN_BUTTONS.includes(parsed.penButton) ? parsed.penButton : "erase",
       // The view a page opens in: its text, its drawing, or both side by side.
@@ -312,11 +312,34 @@ async function checkQuietly() {
 
 // ---------- covers ----------
 
-// Draws the cover area for the open page, or nothing at all when covers are off.
+// Draws the cover of the open page, or nothing when it has none.
 function drawCover() {
   if (!app.cover) return;
-  if (!app.settings.showCovers || !app.current) return app.cover.hide();
+  if (!app.current) return app.cover.hide();
   app.cover.show(readCover(app.current.parts.front));
+}
+
+const currentCover = () => (app.current ? readCover(app.current.parts.front) : null);
+
+// ---------- what each page remembers on this device (pageprefs.js) ----------
+
+// The view and "Linked from" of a page: as it was left, or Settings' "Open pages in" and off.
+const pagePrefs = (path) => prefsOf(app.settings.pageViews, path, { view: app.settings.openIn, linkedFrom: false });
+
+function rememberForPage(path, patch) {
+  app.settings.pageViews = rememberPage(app.settings.pageViews, path, patch);
+  saveSettings();
+}
+
+// After a view was chosen by hand (the View menu or its shortcuts), the page remembers it.
+async function chooseView(run) {
+  await run();
+  if (app.current) rememberForPage(app.current.path, { view: app.mode === "canvas" || app.mode === "split" ? app.mode : "text" });
+}
+
+function setLinkedFrom(path, on) {
+  rememberForPage(path, { linkedFrom: on });
+  if (app.current && app.current.path === path) loadBacklinks(path);
 }
 
 // Writes a new properties block into the open page and saves it like any other change.
@@ -351,23 +374,6 @@ function removeCover() {
   if (app.current) applyCoverFront(withoutCover(app.current.parts.front));
 }
 
-function setShowCovers(on) {
-  app.settings.showCovers = on;
-  saveSettings();
-  drawCover();
-}
-
-function coverSettingsRows() {
-  const s = strings.settings;
-  const box = document.createElement("input");
-  box.type = "checkbox";
-  box.checked = app.settings.showCovers;
-  const row = document.createElement("label");
-  row.className = "setting-row";
-  row.append(textElement("span", s.showCovers, "setting-label"), box);
-  box.addEventListener("change", () => setShowCovers(box.checked));
-  return [row, textElement("p", s.showCoversHint, "setting-hint")];
-}
 
 const PEN_BUTTONS = ["erase", "select", "none"];
 const OPEN_IN = ["text", "canvas", "split"];
@@ -416,26 +422,9 @@ function canvasSettingsRows() {
   const snapRow = document.createElement("label");
   snapRow.className = "setting-row";
   snapRow.append(textElement("span", s.snapShapes, "setting-label"), snap);
-  return [textElement("h3", s.canvasHeading, "setting-heading"), openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint")];
+  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint")];
 }
 
-function setShowBacklinks(on) {
-  app.settings.showBacklinks = on;
-  saveSettings();
-  if (app.current) loadBacklinks(app.current.path);
-}
-
-function backlinkSettingsRows() {
-  const s = strings.settings;
-  const box = document.createElement("input");
-  box.type = "checkbox";
-  box.checked = app.settings.showBacklinks;
-  const row = document.createElement("label");
-  row.className = "setting-row";
-  row.append(textElement("span", s.showBacklinks, "setting-label"), box);
-  box.addEventListener("change", () => setShowBacklinks(box.checked));
-  return [row, textElement("p", s.showBacklinksHint, "setting-hint")];
-}
 
 function updateSettingsRows() {
   const s = strings.settings;
@@ -628,19 +617,35 @@ function aboutRows() {
   notes.id = "aboutWhatsNew";
   const all = buttonElement(t.allChanges, () => openUrlOrWarn(RELEASE_PAGE));
   all.id = "aboutAllChanges";
+  // The answer shows on the button itself for a moment: a toast would sit behind Settings.
+  let copyReset = 0;
   const copyLog = buttonElement(t.copyLog, async () => {
+    let done = false;
     try {
       await navigator.clipboard.writeText(await backend.logTail());
-      showToast(t.logCopied);
+      done = true;
     } catch (error) {
       logProblem("log copy failed", error);
-      showToast(t.logCopyFailed);
     }
+    copyLog.textContent = done ? t.logCopied : t.logCopyFailed;
+    clearTimeout(copyReset);
+    copyReset = setTimeout(() => {
+      copyLog.textContent = t.copyLog;
+    }, 2000);
   });
   copyLog.id = "aboutCopyLog";
   rows.push(notes, all, textElement("p", t.allChangesHint, "setting-hint"), copyLog, textElement("p", t.copyLogHint, "setting-hint"), textElement("h3", t.howMade, "setting-heading"));
   for (const point of strings.disclosure.points) rows.push(textElement("p", point, "setting-hint"));
   return rows;
+}
+
+// Ctrl P prints the open page (or saves it as PDF from the print window). The app's window does
+// not do this by itself, so the Shortcuts list promised something that did nothing until 0.5.8.
+function printShortcut(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "p" || event.isComposing) return;
+  if (document.querySelector("dialog[open]") || !app.current) return;
+  event.preventDefault();
+  void printCurrentPage();
 }
 
 // Ctrl / opens Settings on the Shortcuts tab.
@@ -842,19 +847,15 @@ function syncSettingsRows() {
       logProblem("reading sync settings failed", error);
       status.textContent = s.syncLoadFailed;
     });
-  return [
-    textElement("h3", s.syncHeading, "setting-heading"),
-    row,
-    textElement("p", s.syncOnHint, "setting-hint"),
-    nameRow,
-    textElement("p", s.syncNameHint, "setting-hint"),
-    textElement("p", s.syncNotYet, "setting-hint"),
-    textElement("p", s.syncRules, "setting-hint"),
-    ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : []),
-    securityCards(),
-    status,
-    ...pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly } }),
-  ];
+  // The paired devices and the buttons come first; this device's switch and name further down.
+  const deviceRows = [row, nameRow, status, ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : [])];
+  return pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly }, deviceRows });
+}
+
+// The Privacy tab (0.5.8): what sync does with your pages and everything the app contacts.
+// Explanation only, moved out of the Sync tab so that one is buttons and devices.
+function privacySettingsRows() {
+  return [securityCards(), textElement("p", strings.settings.syncNotYet, "setting-hint"), textElement("p", strings.settings.syncRules, "setting-hint"), ...privacyRows()];
 }
 
 // Three short cards that say where the pages are, who can reach them and what is encrypted.
@@ -1643,8 +1644,8 @@ function loadBacklinks(path) {
   clearTimeout(app.backlinkTimer);
   const run = ++app.backlinkRun;
   app.backlinks.clear();
-  // Turned off: the pages are not searched at all.
-  if (!app.settings.showBacklinks) return;
+  // Off for this page (the default): the pages are not searched at all.
+  if (!pagePrefs(path).linkedFrom) return;
   app.backlinkTimer = setTimeout(async () => {
     try {
       const result = await backend.backlinks(path);
@@ -1681,10 +1682,30 @@ function drawTree() {
   );
 }
 
-// The menu for one entry: Rename, Move to when there is somewhere to move it, and Delete.
+// The page's own items, in its View menu and its right-click menu: add, change or remove the
+// cover, and show or hide "Linked from". For a page that is not open, the cover items open it
+// first, since the cover is written into the page.
+function pageItems(path) {
+  const c = strings.pageMenu;
+  const open = app.current && app.current.path === path;
+  const withPage = (run) => async () => {
+    if (!open) await openNote(path);
+    if (app.current && app.current.path === path) await run();
+  };
+  const items = [];
+  if (open && currentCover()) items.push({ label: c.changeCover, run: chooseCover }, { label: c.removeCover, run: removeCover });
+  else items.push({ label: c.addCover, run: withPage(chooseCover) });
+  const linked = pagePrefs(path).linkedFrom;
+  items.push({ label: c.linkedFrom, current: linked, run: () => setLinkedFrom(path, !linked) });
+  return items;
+}
+
+// The menu for one entry: Rename, Move to when there is somewhere to move it, and Delete. A page
+// also gets its own items (cover, Linked from).
 function openEntryMenu(node, x, y, button) {
   const c = strings.contextMenu;
   const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
+  if (node.kind !== "folder" && /\.md$/i.test(node.path)) items.push(...pageItems(node.path));
   items.push({ label: node.kind === "folder" ? c.icon : c.colour, run: () => openFolderIconMenu(node, x, y, button) });
   const targets = moveTargets(node.path);
   if (targets.length) {
@@ -1788,6 +1809,9 @@ function remapPaths(oldPath, newPath) {
   if (app.current) app.current.path = fix(app.current.path);
   app.folds = new Map([...app.folds].map(([path, flags]) => [fix(path), flags]));
   if (app.pageInEditor) app.pageInEditor = fix(app.pageInEditor);
+  // What the moved pages remember goes along (pageprefs.js).
+  app.settings.pageViews = movePages(app.settings.pageViews, oldPath, newPath);
+  saveSettings();
 }
 
 
@@ -2068,8 +2092,9 @@ async function openNote(path) {
   try {
     const note = await backend.readNote(path);
     showNote(path, note);
-    // A page opens in the view chosen in Settings. Text is the plain page, as before.
-    if (app.settings.openIn !== "text") await enterCanvas(app.settings.openIn);
+    // A page opens in the view it was left in on this device, or the one chosen in Settings.
+    const view = pagePrefs(path).view;
+    if (view !== "text") await enterCanvas(view);
   } catch (error) {
     logProblem("open note failed", error);
     showBanner(errorText(error));
@@ -2132,7 +2157,7 @@ function showNote(path, note) {
   drawHistoryButton();
   loadBacklinks(path);
   // A page that has ink shows it over the text; a page without costs one small read.
-  if (app.settings.openIn === "text") void loadInk(path, false);
+  if (pagePrefs(path).view === "text") void loadInk(path, false);
 }
 
 // ---------- canvas (drawing) ----------
@@ -2142,7 +2167,15 @@ function showNote(path, note) {
 function ensureCanvasView() {
   if (app.canvasView) return app.canvasView;
   app.canvasView = createCanvasView(el("canvasHost"), {
-    onChange: () => app.canvasSave.touch(),
+    // In the split view the canvas blocks in the text show each change at once (0.5.8), and
+    // follow the pen while it draws, instead of waiting for the drawing to be saved.
+    onChange: () => {
+      app.canvasSave.touch();
+      repaintCanvasBlocks();
+    },
+    onLive: () => {
+      if (app.mode === "split") repaintCanvasBlocks();
+    },
     onNotice: (text) => showToast(text),
     penButton: () => app.settings.penButton,
     snapShapes: () => app.settings.snapShapes,
@@ -2238,8 +2271,7 @@ async function leaveCanvas() {
 }
 
 async function toggleCanvas() {
-  if (app.mode === "canvas") await leaveCanvas();
-  else await enterCanvas("canvas");
+  await chooseView(() => (app.mode === "canvas" ? leaveCanvas() : enterCanvas("canvas")));
 }
 
 // The View button opens a menu of the ways to show this page. The names are the places you
@@ -2254,17 +2286,14 @@ function openViewMenu() {
   ];
   const here = app.mode === "canvas" || app.mode === "split" ? app.mode : "text";
   const rect = button.getBoundingClientRect();
-  openContextMenu(
-    Math.max(8, Math.min(rect.left, window.innerWidth - 168)),
-    rect.bottom + 4,
-    places.map(([name, label, run]) => ({ label, run, current: name === here })),
-    { returnFocus: button, label: c.viewMenuLabel },
-  );
+  // The view, then what this page shows: its cover and its "Linked from" list (0.5.8, per page).
+  const items = places.map(([name, label, run]) => ({ label, run: () => chooseView(run), current: name === here }));
+  if (app.current) items.push(...pageItems(app.current.path));
+  openContextMenu(Math.max(8, Math.min(rect.left, window.innerWidth - 168)), rect.bottom + 4, items, { returnFocus: button, label: c.viewMenuLabel });
 }
 
 async function toggleSplit() {
-  if (app.mode === "split") await leaveCanvas();
-  else await enterCanvas("split");
+  await chooseView(() => (app.mode === "split" ? leaveCanvas() : enterCanvas("split")));
 }
 
 // ---------- drawing over the text ----------
@@ -2272,7 +2301,7 @@ async function toggleSplit() {
 // The ink of a page is kept in the same drawing file as the canvas (as `ink`), so it is read and
 // saved by the same code. The canvas view object holds the drawing in memory for both; the ink
 // layer only draws it over the text and adds strokes to it.
-const inkDrawing = () => (app.canvasView && app.inkPath && app.current ? { canvas: app.canvasView.canvas, readOnly: app.canvasView.readOnly } : null);
+const inkDrawing = () => (app.canvasView && app.inkPath && app.current ? { canvas: app.canvasView.canvas, readOnly: app.canvasView.readOnly, live: app.canvasView.liveItems() } : null);
 
 // Reads the drawing of the open page for the text view. Without `force` it is only used when it
 // already holds ink (a page nobody drew on costs nothing); with `force` an empty drawing is made
@@ -2634,10 +2663,10 @@ function fillStaticText() {
         saveSettings();
       },
       {
-        pages: [...coverSettingsRows(), ...backlinkSettingsRows()],
         drawing: canvasSettingsRows(),
         updates: updateSettingsRows(),
         sync: syncSettingsRows(),
+        privacy: privacySettingsRows(),
         files: [...historySettingsRows(), ...obsidianRows(), ...backupRows()],
         device: deviceSettingsRows(),
         shortcuts: shortcutRows(),
@@ -2750,6 +2779,7 @@ function wireEvents() {
   document.addEventListener("keydown", folderShortcut, true);
   document.addEventListener("keydown", zoomShortcut, true);
   document.addEventListener("keydown", shortcutsShortcut, true);
+  document.addEventListener("keydown", printShortcut, true);
   document.addEventListener("keydown", findShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
@@ -2825,11 +2855,10 @@ async function start() {
   app.cover = createCover(el("editor"), {
     loadImage: (path) => backend.readAttachment(pathForVault(path)),
     loadWords: (path) => backend.readPageText(pathForVault(path)),
-    onAdd: chooseCover,
     onChange: chooseCover,
     onRemove: removeCover,
   });
-  app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => setShowBacklinks(false) });
+  app.backlinks = createBacklinks(el("editor"), { open: (path) => openNote(path), hide: () => app.current && setLinkedFrom(app.current.path, false) });
   keepCaretVisible();
   startFlushTriggers();
   startResumeNotice();

@@ -2,9 +2,28 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-20; 0.5.7 built (quicker sync, pen ink keeps its shape, PDF import timing, Copy the app's log; first in-app update); 0.5.6 released (in-app updates for computers, signing key set up); 0.5.5 released (home server program and all six extras); sync tried by the owner between a computer and a tablet: it works with Sync now.
+Last updated: 2026-11-20; 0.5.8 built (Settings cleanup, per-page cover, Linked from and view, sync over Tailscale, faster PDF import on phones, Ctrl P); 0.5.7 released (quicker sync, pen ink keeps its shape, PDF import timing, Copy the app's log; first in-app update); 0.5.6 released (in-app updates for computers, signing key set up); 0.5.5 released (home server program and all six extras); sync tried by the owner between a computer and a tablet: it works with Sync now.
 
-## 0.5.7: built (from the owner's device test of 0.5.6, 2026-11-20)
+## 0.5.8: built (from the owner's tests and Settings review, 2026-11-20)
+
+Branch `feature/v0.5.8`. Release notes: `docs/release-notes/0.5.8.md`. Two commits came from after the 0.5.7 release (Tailscale, PDF import).
+
+Done (tried here: npm test 333 passed, Rust core 272 passed, full browser suite 432 passed after one test was updated for the tab order):
+- Sync over Tailscale (asked 2026-11-20: sync works on home Wi-Fi but not on eduroam, which keeps devices apart and drops discovery). `core/src/sync/tailscale.rs` finds this device's Tailscale address (an address in 100.64.0.0/10 on a connection named like Tailscale's: "Tailscale", `tailscale0`, or the VPN `tun` on Android, so a mobile network's 100.64 address is not taken for it; `if-addrs` =0.15.0). The greeting after each sync carries `ts=<address:port>`; the other device keeps it in `sync-tailscale.txt` (paired devices only; forgotten on remove). When a device is not heard on the network, Sync now and the automatic round try its kept Tailscale address (the automatic round only after a 3-second connection check, so a device that is off costs no failed sync). Settings, Sync shows this device's Tailscale address or what Tailscale is for; the pairing code shows it as "From another network", and each paired device shows its own. 4 unit tests, 1 service test, 2 browser tests. Not tried with Tailscale anywhere: only parsing and the kept list are tested; whether Windows' firewall lets connections in on the Tailscale connection is unknown.
+- Faster PDF import on the phone: the owner's logs for the same 8-page PDF (`pdf import: …`) showed the phone 27.1 s against 1.5 s on a Linux laptop, and the JPEG step 43.4 s against 0.2 s (the steps overlap, so they add up to more than the whole); painting, saving and reading the words were as fast as on the laptop. Chromium makes a `toBlob` picture in the main thread's idle moments, which a busy phone has few of. Pages are now made with `toDataURL` (at once, and already the base64 that saving needs) in `web/pdfimport.js`; a browser test checks `toBlob` is not used. Not tried on the phone yet: the next log will show it.
+- Settings cleanup, from the owner's review of every tab: tick boxes are 20 px and sit in front of their words (`.setting-row:has(> input[type=checkbox])` in style.css); the Pages tab is gone; Drawing no longer repeats its heading; Sync is reordered (paired devices as cards first, then Pair a device and Enter a code, whose fields only show when asked, Pause and conflict copies, then this device's switch, name, fingerprint and Tailscale address, then activity), with the long explanations cut or moved to a new Privacy tab (the three security cards, the sync rules, "What ScaleNote contacts").
+- Per page, on this device only (`web/pageprefs.js`, 3 unit tests): each page reopens in the view it was left in (only views chosen by hand are remembered; "Open pages in" is for pages never opened), and "Linked from" is shown per page, off until switched on (the global setting is gone). Kept in the settings as `pageViews`, at most 1000 pages, moved along when a page or folder is renamed or moved.
+- Covers per page: a page with a cover shows it; Add cover, Change cover and Remove cover are in the page's View menu and its right-click menu (which opens the page first). The setting for all pages is gone, and a page without a cover shows nothing.
+- Ctrl P prints the open page (it was listed in Shortcuts but did nothing).
+- Privacy is the last tab, after About (the owner's choice).
+- Canvas regions (from the owner's video): each region has a grip left of its top corner, drawn in screen pixels; a press on it moves the region with any tool, and selects it so its corners resize it, also with any tool (`regionGesture` in `web/canvasview.js`). "Scale" was taken as resizing by the corners; the drawing inside a region is not scaled.
+- In the split view the canvas blocks in the text repaint after each change and, while a pen line or shape is still being drawn, at most once a frame with the line in it (`onLive`, `liveItems`, `paintRegion(..., { live })`).
+- "Copy the app's log" shows "Copied!" on the button for 2 seconds: a toast was hidden behind the Settings window.
+
+Not done / untried:
+- Nothing tried on a device. Tailscale is not tried anywhere. The grip and corners were tried with a mouse in the browser tests, not with a pen or finger.
+
+## 0.5.7: released 2026-11-20 (from the owner's device test of 0.5.6)
 
 Branch `fix/sync-ink-pdf-0.5.7`. Release notes: `docs/release-notes/0.5.7.md`.
 
@@ -16,7 +35,6 @@ Done (tried here: npm test 330 passed, Rust core 267 passed, full browser suite 
 - Adding a PDF as pictures writes how long each step took to the log (`pdf import: … (open, painting, jpeg, saving, words; page size)`), and About has "Copy the app's log" (`log_tail`, the last 32 KB, closed while locked; `Logger::tail` with a Rust test). Purpose: the owner copies the log on the phone after an import, so the slow step is measured, not guessed.
 
 Not done / untried:
-- The PDF import on the phone is not faster yet: waiting for the timing from the owner's phone.
 - Nothing tried on a device. Automatic sync speed, the ink on a tablet and a computer, and copying the log on Android are untried.
 - The in-app update from 0.5.6 to 0.5.7 is the first real one.
 

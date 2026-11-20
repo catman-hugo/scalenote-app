@@ -6,9 +6,9 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
 
 ## Current progress
 
-*Last updated: 2026-11-20 (0.5.7: quicker sync, pen writing keeps its shape, PDF import timing and Copy the app's log). This section is updated with every change to the app.*
+*Last updated: 2026-11-20 (0.5.8: Settings cleanup, per-page cover, Linked from and view, canvas region handles, sync over Tailscale, faster PDF import on phones, Ctrl P). This section is updated with every change to the app.*
 
-- **Latest version: 0.5.7**, fixes from the first test of sync between a computer and a tablet. Before that 0.5.6 (app lock, zoom, updates from inside the computer app) and 0.5.5 (the home server program). Sync between a computer and a tablet was tried by the owner and works.
+- **Latest version: 0.5.8**: Tailscale sync, a cleaner Settings and per-page options. Before that 0.5.7, fixes from the first test of sync between a computer and a tablet. Before that 0.5.6 (app lock, zoom, updates from inside the computer app) and 0.5.5 (the home server program). Sync between a computer and a tablet was tried by the owner and works.
 - **Done in 0.5 (sync between your own devices):**
   - 0.5.0: the groundwork. The app can work out what two copies of your notes would need to become the same. Nothing is sent. Adding a PDF as pictures runs in the background.
   - 0.5.1: pairing. Two devices trust each other after a one-time code. Paired devices can be listed and removed.
@@ -16,11 +16,12 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
   - 0.5.3: the sync. Only changed files are sent, the first sync asks first, a page changed on both devices is kept in both versions, deleted pages go to the other device's trash. Also a status line, Pause and Compare, renaming a device, noticing changes made by other programs, and a conflict copies screen.
   - 0.5.4: Android: the phone can find other devices while the app is open, the back gesture goes to the previous page, and sync can be limited to Wi-Fi per device. Also Back and Forward buttons, a Find button, a true black theme, Settings search and Reset to defaults, and the app starts on the page you had open last. Themes are cards under an Auto/Light/Dark switch, and Settings is a full-screen list on a phone.
   - 0.5.5: the home server program for Linux, backups, a colour per folder, security cards, tray and open at login, and the device list with last sync time and app version.
-  - 0.5.7: sync looks for changes every 5 seconds (an edit arrives in about 10 to 15 seconds), pen writing over text keeps its shape on a wider or narrower screen, and the PDF import on a phone is timed in the log, which About can now copy.
+  - 0.5.8: sync over Tailscale for networks such as eduroam (the address is found and shared by itself), much faster PDF import on phones, a cleaner Settings (devices first on Sync, a Privacy tab, bigger tick boxes), a cover and "Linked from" per page, pages that reopen in the view they were left in, canvas regions that can be moved and resized by a grip, a /canvas block that follows the pen in the split view, and Ctrl P to print.
+  - 0.5.7: sync looks for changes every 5 seconds (an edit arrives in about 10 to 15 seconds), pen writing over text keeps its shape on a wider or narrower screen, and the app's log can be copied from About.
   - 0.5.6: an optional app lock (PIN or passcode, fingerprint on Android), each paired device tied to one notes folder, Find in PDF pages added as pictures, narrower PDFs, zoom, Shortcuts and About pages, smaller text on phones, updates from inside the computer app (signed), the phone back button closing Settings and other windows instead of the app, fingers on drawings fixed on Linux, a [setup guide](docs/setup-guide.md) and a [security checklist for all of 0.5](docs/security-checklist-0.5.md).
-- **Next:** a faster PDF import on phones once the timing is in, then **0.6**: offline choices per item on the phone and tablet, sharing into ScaleNote from other apps, and quick capture. The detailed plan is not written yet.
+- **Next: 0.6**: offline choices per item on the phone and tablet, sharing into ScaleNote from other apps, and quick capture. The detailed plan is not written yet.
 - **The 0.5 plan** is in [docs/v0.5-plan.md](docs/v0.5-plan.md). The browser client moved to a later release, the Fedora install check to v0.8.
-- **Not tried on real devices yet:** updating from inside the computer app (first try: 0.5.6 to 0.5.7), automatic sync without pressing Sync now, pen writing on a tablet seen on a computer, the phone back button in Settings, the app lock and fingerprint unlock, the tray and open at login, the home server on a real server, the Android phone syncing, printing and export from the packaged app, selecting PDF text by touch.
+- **Not tried on real devices yet:** updating from inside the computer app (first try: 0.5.6 to 0.5.7), automatic sync without pressing Sync now, sync over Tailscale, pen writing on a tablet seen on a computer, the phone back button in Settings, the app lock and fingerprint unlock, the tray and open at login, the home server on a real server, the Android phone syncing, printing and export from the packaged app, selecting PDF text by touch.
 - **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).
 
 ## About the AI in this project

@@ -1748,6 +1748,9 @@ await test("on a phone the note list is open at the start", async (page) => {
 // ---------- 0.2.4: the right-click menu and renaming in the page list ----------
 
 const ctxOpts = { settings: existingUser({ updates: false }) };
+// "Linked from" is per page and off until switched on (0.5.8); these pages have it on.
+const LINKED_ON = Object.fromEntries(["Plan.md", "Home.md", "Blank.md", "Biology/Cells.md"].map((path) => [path, { linkedFrom: true, at: 1 }]));
+const linksOn = { settings: existingUser({ updates: false, pageViews: LINKED_ON }) };
 const treeNames = (page) => page.evaluate(() => [...document.querySelectorAll(".tree-label")].map((n) => n.textContent));
 async function withFolderAndPage(page) {
   await page.waitForSelector("#newNote");
@@ -2324,9 +2327,9 @@ await test("Settings can make a copy for Obsidian, shows where it is, and report
   assert.equal((await files(page))["O.md"], "plain\n");
 }, { viewport: { width: 1100, height: 760 } });
 
-await test("the Sync tab explains in three cards where pages live and who can reach them, and makes no promise it cannot keep", async (page) => {
+await test("the Privacy tab explains in three cards where pages live and who can reach them, and makes no promise it cannot keep", async (page) => {
   await openSeeded(page, "S.md", "plain\n");
-  await openSettingsTab(page, "sync");
+  await openSettingsTab(page, "privacy");
   await page.waitForSelector("#securityCards");
   const titles = await page.$$eval("#securityCards .security-card-title", (n) => n.map((x) => x.textContent));
   assert.deepEqual(titles, ["Only on your devices", "Your own home server", "Device to device"]);
@@ -2879,7 +2882,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Colour", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
@@ -3267,7 +3270,7 @@ await test("a page lists the pages that link to it, and clicking one opens it", 
   await page.waitForFunction(() => document.querySelector("#title").value === "Home");
   await page.waitForSelector(".backlinks .backlinks-note");
   assert.equal(await page.textContent(".backlinks-note"), "No other page links here.");
-}, ctxOpts);
+}, linksOn);
 
 await test("when looking for links fails, the page says so calmly", async (page) => {
   await linksVault(page);
@@ -3275,7 +3278,7 @@ await test("when looking for links fails, the page says so calmly", async (page)
   await openLinked(page, "Plan.md");
   await page.waitForSelector(".backlinks .backlinks-note");
   assert.match(await page.textContent(".backlinks-note"), /Could not look for links/);
-}, { ...ctxOpts, allow: [/./] });
+}, { ...linksOn, allow: [/./] });
 
 await test("clicking quickly through pages asks for links only for the page that stays open", async (page) => {
   await linksVault(page);
@@ -3285,7 +3288,7 @@ await test("clicking quickly through pages asks for links only for the page that
   await page.waitForFunction(() => document.querySelector("#title").value === "Blank");
   await page.waitForTimeout(700);
   assert.equal(await page.evaluate(() => window.__backlinkCalls), 1);
-}, ctxOpts);
+}, linksOn);
 
 await test("links inside bold or italic text, or a page of thousands of links, never lose text", async (page) => {
   await linksVault(page);
@@ -3307,36 +3310,39 @@ await test("links inside bold or italic text, or a page of thousands of links, n
   assert.equal((await files(page))["Many.md"], `${many}\n\nend\n`, "and is not changed by opening it");
 }, ctxOpts);
 
-await test("the Linked from list can be hidden, stays hidden without searching, and comes back from Settings", async (page) => {
+await test("Linked from is per page: hidden on one page it stays hidden there, and the View menu or a right-click shows it again", async (page) => {
   await linksVault(page);
   await openLinked(page, "Plan.md");
   await page.waitForSelector(".backlinks .backlink");
   await page.click(".backlinks-head button");
   assert.equal(await page.isVisible(".backlinks"), false);
-  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showBacklinks, false);
+  const views = () => JSON.parse(window.__mock.getSettings()).pageViews;
+  assert.equal((await page.evaluate(views))["Plan.md"].linkedFrom, false);
   await page.evaluate(() => { window.__backlinkCalls = 0; });
   await openLinked(page, "Home.md");
+  await page.waitForSelector(".backlinks .backlinks-note");
   await openLinked(page, "Plan.md");
   await page.waitForTimeout(600);
-  assert.equal(await page.evaluate(() => window.__backlinkCalls), 0, "no search while it is off");
+  assert.equal(await page.evaluate(() => window.__backlinkCalls), 1, "searched for Home, which still shows it, not for Plan");
   assert.equal(await page.isVisible(".backlinks"), false);
-  await openSettingsTab(page, "pages");
-  await page.waitForSelector("#settings[open]");
-  const box = page.locator('#settings .setting-row:has-text("Linked from") input');
-  assert.equal(await box.isChecked(), false);
-  await box.check();
+  // On the page itself: the View menu ticks it on again.
+  await page.click("#viewButton");
+  await page.click('.context-menu button:has-text("Linked from")');
   await page.waitForSelector(".backlinks .backlink");
-  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showBacklinks, true);
-}, ctxOpts);
+  // By right-clicking a page that is not open: it is remembered for when it opens.
+  await page.click('.tree-button[data-path="Home.md"]', { button: "right" });
+  await page.click('.context-menu button:has-text("Linked from")');
+  assert.equal((await page.evaluate(views))["Home.md"].linkedFrom, false);
+}, linksOn);
 
-await test("with the Linked from list switched off in the settings, it is not shown or searched for", async (page) => {
+await test("a page that never had Linked from switched on does not show it or search for it", async (page) => {
   await linksVault(page);
   await page.evaluate(() => { window.__backlinkCalls = 0; });
   await openLinked(page, "Plan.md");
   await page.waitForTimeout(600);
   assert.equal(await page.evaluate(() => window.__backlinkCalls), 0);
   assert.equal(await page.isVisible(".backlinks"), false);
-}, { settings: existingUser({ updates: false, showBacklinks: false }) });
+}, ctxOpts);
 
 await test("a finger tap on a link follows it", async (page) => {
   await linksVault(page);
@@ -3822,7 +3828,7 @@ if (shots && !process.env.SHOTS_ONLY) {
 
 // ---------- 0.3.5: covers ----------
 
-const coversOn = { settings: existingUser({ updates: false, showCovers: true }) };
+const coversOn = { settings: existingUser({ updates: false }) };
 async function coversVault(page) {
   await page.waitForSelector("#newNote");
   await page.evaluate((png) => {
@@ -3841,31 +3847,38 @@ const openCover = async (page, name) => {
   await page.waitForFunction((n) => document.querySelector("#title").value === n.replace(/\.md$/, ""), name);
   await page.waitForSelector("#editor .note-body");
 };
+// A cover is added from the page's View menu (0.5.8); Change and Remove are also on the cover.
 const pickCover = async (page, buttonText, file) => {
   const chooser = page.waitForEvent("filechooser");
-  await page.locator(".cover-actions button", { hasText: buttonText }).click();
+  if (buttonText === "Add cover") {
+    await page.click("#viewButton");
+    await page.click('.context-menu button:has-text("Add cover")');
+  } else await page.locator(".cover-actions button", { hasText: buttonText }).click();
   await (await chooser).setFiles(file);
 };
 
-await test("covers are off by default: no picture, no Add cover button, and a switch in Settings turns them on and off", async (page) => {
+await test("a cover is set per page, from the page's View menu or by right-clicking it, with no setting for all pages", async (page) => {
   await coversVault(page);
   const before = (await files(page))["Has cover.md"];
   await openCover(page, "Has cover.md");
-  assert.equal(await page.locator(".cover, .cover-image, .cover-actions").count(), 0, "no cover element exists at all");
-  assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /Add cover|Change cover|Remove cover/);
-  await openSettingsTab(page, "pages");
-  await page.waitForSelector("#settings[open]");
-  const box = page.locator('#settings .setting-row:has-text("covers") input');
-  assert.equal(await box.isChecked(), false);
-  await box.check();
   await page.waitForSelector(".cover-image img[src]");
-  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showCovers, true);
-  await box.uncheck();
-  assert.equal(await page.locator(".cover, .cover-image, .cover-actions").count(), 0);
-  assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).showCovers, false);
-  await page.click("#settings button.primary");
-  await openCover(page, "Plain.md");
-  assert.equal((await files(page))["Has cover.md"], before, "a page with a cover, opened with covers off, is not changed");
+  // On the page itself: the View menu offers to change or remove this page's cover.
+  await page.click("#viewButton");
+  const items = await page.$$eval(".context-menu button", (b) => b.map((x) => x.textContent.trim()));
+  assert.ok(items.includes("Change cover") && items.includes("Remove cover") && !items.includes("Add cover"), JSON.stringify(items));
+  await page.keyboard.press("Escape");
+  // Right-clicking another page that has none: Add cover opens it and asks for a picture.
+  await page.click('.tree-button[data-path="Plain.md"]', { button: "right" });
+  const chooser = page.waitForEvent("filechooser");
+  await page.click('.context-menu button:has-text("Add cover")');
+  await (await chooser).setFiles({ name: "Mine.png", mimeType: "image/png", buffer: PNG });
+  await page.waitForFunction(() => document.querySelector("#title").value === "Plain");
+  await page.waitForSelector(".cover-image img[src]");
+  await page.waitForFunction(() => window.__mock.files.get("Plain.md").includes("cover: attachments/Mine.png"));
+  assert.equal((await files(page))["Has cover.md"], before, "the other page is not touched");
+  // There is no Pages tab with a switch for all pages any more.
+  await page.click("#openSettings");
+  assert.equal(await page.locator("#settingsTab-pages").count(), 0);
 }, ctxOpts);
 
 await test("a page with a cover shows it, and opening and closing it changes nothing", async (page) => {
@@ -3876,8 +3889,7 @@ await test("a page with a cover shows it, and opening and closing it changes not
   assert.equal(await page.evaluate(() => document.querySelector(".cover-image img").naturalWidth), 1);
   assert.deepEqual(await page.locator(".cover-actions button").allTextContents(), ["Change cover", "Remove cover"]);
   await openCover(page, "Plain.md");
-  assert.deepEqual(await page.locator(".cover-actions button").allTextContents(), ["Add cover"]);
-  assert.equal(await page.locator(".cover-image").count(), 0);
+  assert.equal(await page.locator(".cover").count(), 0, "a page without a cover shows nothing, not even an Add cover button");
   await page.waitForTimeout(900);
   assert.equal((await files(page))["Has cover.md"], before);
 }, coversOn);
@@ -3895,8 +3907,7 @@ await test("a cover can be added, changed and removed, and only its line in the 
   await page.locator(".cover-actions button", { hasText: "Remove cover" }).click();
   await page.waitForFunction(() => !window.__mock.files.get("Plain.md").includes("cover:"));
   assert.match((await files(page))["Plain.md"], /^---\nid: [0-9a-f-]+\n---\n\nHello\n$/);
-  assert.equal(await page.locator(".cover-image").count(), 0);
-  assert.deepEqual(await page.locator(".cover-actions button").allTextContents(), ["Add cover"]);
+  assert.equal(await page.locator(".cover").count(), 0);
   assert.ok(await page.evaluate(() => window.__mock.attachments.has("attachments/Second.png")), "the picture file stays in the vault");
 }, coversOn);
 
@@ -4224,7 +4235,7 @@ if (shots && !process.env.SHOTS_ONLY) {
   for (const scheme of ["light", "dark"]) {
     for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
       const context = await browser.newContext({ viewport, colorScheme: scheme });
-      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, showCovers: true }));
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify({ vaultPath: "/vault", disclosureAccepted: true, lastSeenVersion: VERSION, updates: false, pageViews: { "Plan.md": { linkedFrom: true, at: 1 } } }));
       await context.addInitScript({ path: path.join(here, "mock-backend.js") });
       const page = await context.newPage();
       await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
@@ -4613,7 +4624,8 @@ async function canvasVault(page, drawing) {
 const viewChoices = async (page) => {
   await page.click("#viewButton");
   await page.waitForSelector(".context-menu button");
-  const names = await page.$$eval(".context-menu button", (b) => b.map((x) => x.textContent.trim() + (x.getAttribute("aria-checked") === "true" ? " (here)" : "")));
+  // Only the views: the page's own items (cover, Linked from) follow them in the same menu.
+  const names = await page.$$eval(".context-menu button", (b) => b.filter((x) => /^(Text|Canvas|Split)$/.test(x.textContent.trim())).map((x) => x.textContent.trim() + (x.getAttribute("aria-checked") === "true" ? " (here)" : "")));
   await page.keyboard.press("Escape");
   await page.waitForSelector(".context-menu", { state: "detached" });
   return names;
@@ -5914,7 +5926,7 @@ await test("a folder starts with the plain folder icon, and a page offers Colour
   await withFolderAndPage(page);
   assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
   await rightClick(page, "Plan.md");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Colour", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Delete"]);
 }, ctxOpts);
 
 await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
@@ -7435,6 +7447,62 @@ await test("drawing on the full canvas keeps the regions, and shows the block's 
   assert.equal(saved.frames[0].id, "abc123xy");
 });
 
+// ---------- 0.5.8: moving a region by its grip, and the block following the pen ----------
+
+await test("a region has a grip that moves it with the pen in hand, and then its corners change its size", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([]));
+  await openCanvas(page);
+  // An empty drawing shows the sheet's corner at 24, 24 at scale 1: the region starts there and
+  // its grip sits just to its left.
+  const box = await sheetBox(page);
+  await page.mouse.move(box.x + 10, box.y + 36);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 110, box.y + 86, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md") || "{}").frames?.[0]?.x === 100);
+  let frame = (await savedDrawing(page)).frames[0];
+  assert.deepEqual([frame.x, frame.y, frame.w, frame.h], [100, 50, 480, 320]);
+  assert.equal((await savedDrawing(page)).items.length, 0, "the pen drew nothing");
+  // The region is selected now: its bottom right corner changes its size, still with the pen.
+  await page.mouse.move(box.x + 24 + 580, box.y + 24 + 370);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 24 + 500, box.y + 24 + 350, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Sketch.md")).frames[0].w === 400);
+  frame = (await savedDrawing(page)).frames[0];
+  assert.deepEqual([frame.x, frame.y, frame.w, frame.h], [100, 50, 400, 300]);
+  assert.equal((await savedDrawing(page)).items.length, 0);
+  if (shots) {
+    await drawLine(page, [160, 120], [380, 220]);
+    await page.screenshot({ path: `${shots}/v058-light-region-grip.png` });
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+    await page.mouse.move(box.x + 300, box.y + 300);
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: `${shots}/v058-dark-region-grip.png` });
+  }
+}, { viewport: { width: 1280, height: 900 } });
+
+await test("in the split view the canvas block in the text shows a line while it is still being drawn", async (page) => {
+  await start(page);
+  await blockVault(page, drawingWith([]));
+  await view(page, "Split");
+  await page.waitForSelector("#canvasHost:not([hidden]) .canvas-surface");
+  await page.waitForSelector(".canvas-block-surface:not([hidden])");
+  assert.equal(await blockInk(page), 0, "nothing drawn yet");
+  const box = await sheetBox(page);
+  await page.mouse.move(box.x + 60, box.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 200, box.y + 120, { steps: 10 });
+  await page.waitForFunction(() => {
+    const surface = document.querySelector(".canvas-block-surface");
+    const data = surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data;
+    for (let i = 4; i < data.length; i += 4) if (data[i] !== data[0]) return true;
+    return false;
+  });
+  await page.mouse.up();
+});
+
 // ---------- 0.4.12: PDF import ----------
 
 // A small real PDF: `count` pages of 300 x 400 points, each with a black box and the words "Page N".
@@ -7559,21 +7627,20 @@ await test("Pages as images makes one picture per page with an empty line after 
   const stored = await page.evaluate(() => [...window.__mock.attachments.entries()].map(([k, v]) => [k, v.slice(0, 4)]));
   assert.equal(stored.length, 3);
   assert.ok(stored.every(([k, head]) => k.endsWith(".jpg") && head === "/9j/"), "each is a real JPEG");
+  // The pictures are made with toDataURL: toBlob was measured at about 5 s a page on a phone.
+  assert.equal(await page.evaluate(() => window.__toBlobCalls), 0, "toBlob is not used");
   // How long each step took goes to the app's log, to find what is slow on a phone.
   const logs = await page.evaluate(() => window.__mock.logs);
   assert.ok(logs.some((line) => /^info pdf import: 3 of 3 pages in [\d.]+ s \(open [\d.]+, painting [\d.]+, jpeg [\d.]+, saving [\d.]+, words [\d.]+; page \d+x\d+ px\)$/.test(line)), JSON.stringify(logs));
   // A page can be typed under: the line after a picture is an empty paragraph.
   await page.click(".image-block:nth-of-type(1) .image-img");
   assert.equal(await page.locator(".image-block").count(), 3);
-});
+}, { before: (page) => page.addInitScript(() => { window.__toBlobCalls = 0; const real = HTMLCanvasElement.prototype.toBlob; HTMLCanvasElement.prototype.toBlob = function counted(...args) { window.__toBlobCalls++; return real.apply(this, args); }; }) });
 
 // ---------- a PDF added as pictures runs in the background ----------
 // Saving each picture is slowed down a little so the import is still running while the test
 // does other things.
-const slowPictures = (ms = 120) => (page) => page.addInitScript((delay) => {
-  const real = HTMLCanvasElement.prototype.toBlob;
-  HTMLCanvasElement.prototype.toBlob = function slow(callback, ...rest) { setTimeout(() => real.call(this, callback, ...rest), delay); };
-}, ms);
+const slowPictures = (ms = 120) => (page) => page.addInitScript((delay) => { window.__saveDelay = delay; }, ms);
 const startPagesImport = async (page, count = 8) => {
   await slashPdf(page, pdfFile(count));
   await pdfChoice(page, "Pages as images");
@@ -7786,12 +7853,72 @@ await test("/canvas is offered inside a callout and makes a region whose block i
 });
 
 // ---------- 0.4.14: Settings in tabs ----------
+// ---------- 0.5.8: settings cleanup, per page memory, Ctrl P ----------
+
+await test("each page reopens in the view it was left in; a page never opened uses Open pages in", async (page) => {
+  await openSeeded(page, "A.md", "alpha\n");
+  await seed(page, "B.md", "beta\n");
+  await page.click("#newFolder");
+  await page.click("#viewButton");
+  await page.click('.context-menu button:has-text("Split")');
+  await page.waitForFunction(() => document.body.dataset.mode === "split" || document.querySelector("#canvasHost:not([hidden])"));
+  await page.click('.tree-button[data-path="B.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "B");
+  assert.equal(await page.isHidden("#canvasHost"), true, "B was never left in a view: it opens as text");
+  await page.click('.tree-button[data-path="A.md"]');
+  await page.waitForFunction(() => document.querySelector("#title").value === "A");
+  await page.waitForSelector("#canvasHost:not([hidden])");
+  const views = JSON.parse(await page.evaluate(() => window.__mock.getSettings())).pageViews;
+  assert.equal(views["A.md"].view, "split");
+  assert.equal(views["B.md"], undefined, "only a view chosen by hand is remembered");
+});
+
+await test("Ctrl P prints the open page", async (page) => {
+  await openSeeded(page, "P.md", "print me\n");
+  await page.evaluate(() => { window.__prints = 0; window.print = () => { window.__prints++; }; });
+  await page.locator(".note-body p").click();
+  await page.keyboard.press("Control+p");
+  await page.waitForFunction(() => window.__prints === 1);
+});
+
+await test("the Sync tab shows the paired devices first, then the pair buttons; the code fields only after Enter a code", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => window.__mock.peerPairs("p-card"));
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairList .pair-peer");
+  const top = async (selector) => (await page.locator(selector).first().boundingBox()).y;
+  assert.ok((await top("#pairList .pair-peer")) < (await top("#pairStart")), "devices above the pair button");
+  assert.ok((await top("#pairStart")) < (await top("#syncEnabled")), "the buttons above this device's switch");
+  assert.equal(await page.isHidden("#pairJoinBox"), true);
+  await page.click("#pairJoinOpen");
+  assert.equal(await page.isVisible("#pairJoinCode"), true);
+  // The name stands out: bold and in the normal text size, the details smaller.
+  const weight = await page.$eval("#pairList .pair-name", (n) => getComputedStyle(n).fontWeight);
+  assert.ok(Number(weight) >= 600, weight);
+  // A tick box sits in front of its words and is big enough to hit.
+  const box = await page.locator("#syncEnabled").boundingBox();
+  const words = await page.locator('#settings .setting-row:has(#syncEnabled) .setting-label').boundingBox();
+  assert.ok(box.x < words.x && words.x - (box.x + box.width) < 24, JSON.stringify({ box, words }));
+  assert.ok(box.width >= 18, String(box.width));
+  if (shots) {
+    for (const scheme of ["light", "dark"]) {
+      await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), scheme);
+      await page.click("#settingsTab-sync");
+      await page.screenshot({ path: `${shots}/v058-${scheme}-sync.png` });
+      for (const tab of ["drawing", "privacy", "device"]) {
+        await page.click(`#settingsTab-${tab}`);
+        await page.screenshot({ path: `${shots}/v058-${scheme}-${tab}.png` });
+      }
+    }
+  }
+}, { settings: existingUser({ updates: false }) });
+
 await test("Settings has tabs: Look first, one tab shown at a time, arrow keys move between them, and the last tab is remembered", async (page) => {
   await page.waitForSelector("#newNote");
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Pages", "Drawing", "Updates", "Sync", "Files", "This device", "Shortcuts", "About"]);
+  assert.deepEqual(names, ["Look", "Drawing", "Updates", "Sync", "Files", "This device", "Shortcuts", "About", "Privacy"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
@@ -7799,15 +7926,15 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   assert.equal(await page.locator("#settings .settings-body:visible .theme-card").count(), 10, "the theme cards are on Look");
   await page.focus("#settingsTab-look");
   await page.keyboard.press("ArrowDown");
-  assert.equal(await page.locator("#settings h2").textContent(), "Pages");
-  assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-pages");
+  assert.equal(await page.locator("#settings h2").textContent(), "Drawing");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "settingsTab-drawing");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
-  assert.equal(await page.locator("#settings h2").textContent(), "About", "it wraps round");
+  assert.equal(await page.locator("#settings h2").textContent(), "Privacy", "it wraps round");
   await page.click("#settings button.primary");
   await page.waitForSelector("#settings", { state: "hidden" });
   await page.click("#openSettings");
-  assert.equal(await page.locator("#settings h2").textContent(), "About", "it opens where it was left");
+  assert.equal(await page.locator("#settings h2").textContent(), "Privacy", "it opens where it was left");
 }, { settings: existingUser({ updates: false }) });
 
 await test("Settings has a Sync tab: on by default, the name is kept clean, and both choices are saved and shown as saved", async (page) => {
@@ -7816,7 +7943,8 @@ await test("Settings has a Sync tab: on by default, the name is kept clean, and 
   await page.waitForSelector("#syncEnabled:not([disabled])");
   assert.equal(await page.isChecked("#syncEnabled"), true, "sync is on by default");
   assert.equal(await page.inputValue("#syncName"), "this-device");
-  assert.ok((await page.locator("#settings .settings-body:visible").textContent()).includes("What ScaleNote contacts"), "says what the app does on the network");
+  // What the app contacts is on the Privacy tab now, so Sync is devices and buttons.
+  assert.ok(!(await page.locator("#settings .settings-body:visible").textContent()).includes("What ScaleNote contacts"));
   await page.fill("#syncName", "  Alice's Phone / 2 ");
   await page.dispatchEvent("#syncName", "change");
   await page.waitForFunction(() => document.querySelector("#syncName").value === "Alices-Phone-2");
@@ -7855,6 +7983,40 @@ await test("when the Sync settings cannot be read the switch and the name stay l
   assert.equal(await page.isDisabled("#syncEnabled"), true);
   assert.equal(await page.isDisabled("#syncName"), true);
 }, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__failSync = true; }) });
+
+await test("with Tailscale on, the Sync tab and the pairing code show this device's Tailscale address, and a paired device's too", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairStart");
+  await page.waitForFunction(() => /100\.101\.102\.103/.test(document.getElementById("pairTailscale").textContent));
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.match(await page.textContent("#pairCodeTailscale"), /From another network: 100\.101\.102\.103 \(Tailscale\)/);
+  if (shots) {
+    await page.screenshot({ path: `${shots}/v057-sync-tailscale-light.png` });
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+    await page.screenshot({ path: `${shots}/v057-sync-tailscale-dark.png` });
+  }
+  await page.click("#pairStop");
+  await page.evaluate(() => { window.__mock.peerPairs("p-ts"); window.__mock.syncPeers()[0].tailscale = "100.90.3.4"; });
+  await page.click("#settingsTab-look");
+  await page.click("#settingsTab-sync");
+  await page.waitForFunction(() => /On Tailscale at 100\.90\.3\.4/.test(document.getElementById("pairList").textContent));
+}, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__tailscale = "100.101.102.103"; }) });
+
+await test("with Tailscale off, the Sync tab says what it is for and the pairing code has no Tailscale line", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForFunction(() => /turn on Tailscale on both devices/.test(document.getElementById("pairTailscale").textContent));
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.equal(await page.isHidden("#pairCodeTailscale"), true);
+}, { settings: existingUser({ updates: false }) });
+
+// Entering a code from another device: its fields show after "Enter a code" (0.5.8).
+const openJoin = async (page) => {
+  if (await page.isHidden("#pairJoinBox")) await page.click("#pairJoinOpen");
+};
 
 await test("pairing: the Sync tab shows this device, shows a code with its address and time, and closes it when a device pairs", async (page) => {
   await page.waitForSelector("#newNote");
@@ -7897,6 +8059,7 @@ await test("pairing: stopping the code, closing Settings while a code shows, and
 await test("pairing: Find devices lists the devices showing a code, Use fills the address, and nothing found says what to do", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
+  await openJoin(page);
   await page.click("#pairFind");
   await page.waitForFunction(() => document.querySelector("#pairNearby") && !document.querySelector("#pairNearby").hidden);
   assert.match(await page.textContent("#pairNearby"), /No device found/);
@@ -7918,6 +8081,7 @@ await test("pairing: Find devices lists the devices showing a code, Use fills th
 await test("pairing: entering a code pairs, a wrong-length code and an unreachable device say why, and removing needs a second click", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
+  await openJoin(page);
   await page.fill("#pairJoinAddress", "bob.example.local:47821");
   await page.fill("#pairJoinCode", "12");
   await page.click("#pairJoin");
@@ -8145,12 +8309,12 @@ await test("on a phone Settings is a full-screen list of groups, each opening as
   if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-list.png` });
   await page.click("#settingsTab-look");
   assert.equal(await page.isVisible("#settingsPanel-look"), true);
-  assert.equal(await page.isVisible("#settingsTab-pages"), false);
+  assert.equal(await page.isVisible("#settingsTab-drawing"), false);
   assert.equal(await page.isVisible(".settings-back"), true);
   assert.equal(await page.isVisible('#settings .theme-card[data-theme="black"]'), true);
   if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-look.png` });
   await page.click(".settings-back");
-  assert.equal(await page.isVisible("#settingsTab-pages"), true);
+  assert.equal(await page.isVisible("#settingsTab-drawing"), true);
   await page.click("#settingsTab-files");
   assert.equal(await page.locator("#settings h2").textContent(), "Files");
   await page.click(".settings-back");
@@ -8896,6 +9060,7 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.screenshot({ path: `${shots}/v051-${label}-${scheme}-1-pairing-code.png` });
       // 0.5.2: Find devices with one device found.
       await page.evaluate(() => { window.__nearby = [{ name: "bob-laptop", address: "192.168.1.30:47821", paired: false }]; });
+      await openJoin(page);
       await page.click("#pairFind");
       await page.waitForSelector("#pairNearby .pair-use");
       await page.locator("#pairFind").scrollIntoViewIfNeeded();
@@ -8960,7 +9125,7 @@ await test("the phone back gesture steps out of a Settings group to the list, th
   await page.evaluate(() => history.back());
   await page.waitForFunction(() => document.querySelector("#settings .settings-layout").dataset.view === "list");
   assert.equal(await page.isVisible("#settings"), true);
-  assert.equal(await page.isVisible("#settingsTab-pages"), true);
+  assert.equal(await page.isVisible("#settingsTab-drawing"), true);
   // Back again closes Settings.
   await page.evaluate(() => history.back());
   await page.waitForSelector("#settings", { state: "hidden" });
@@ -9069,13 +9234,16 @@ await test("About copies the app's log so it can be sent from a phone", async (p
   await page.click("#settingsTab-about");
   await page.click("#aboutCopyLog");
   await page.waitForFunction(async () => (await navigator.clipboard.readText()).includes("ui: example line"));
+  // The button itself says it worked, since a toast would sit behind Settings.
+  await page.waitForFunction(() => document.getElementById("aboutCopyLog").textContent === "Copied!");
+  await page.waitForFunction(() => document.getElementById("aboutCopyLog").textContent === "Copy the app's log", null, { timeout: 4000 });
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA });
 
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /PDF import is timed in the log/);
-  assert.doesNotMatch(text, /Updated from inside|squashed|<!--|-->/);
+  assert.match(text, /Much faster PDF import as pictures/);
+  assert.doesNotMatch(text, /Ctrl P|It did nothing before|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9084,15 +9252,15 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Updated from inside the app/);
-  assert.doesNotMatch(text, /PDF import is timed|squashed|<!--/i);
+  assert.match(text, /Ctrl P prints the page/);
+  assert.doesNotMatch(text, /Much faster PDF import|It did nothing before|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /checked that it comes from ScaleNote's own builds[\s\S]*stretched sideways and squashed/);
+  assert.match(text, /Devices that synced once tell each other[\s\S]*It did nothing before/);
   assert.doesNotMatch(text, /fingerprint|Linux|Android|phone|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
@@ -9102,16 +9270,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Updated from inside the app/);
-  assert.doesNotMatch(text, /squashed|PDF import is timed/i);
+  assert.match(text, /Ctrl P prints the page/);
+  assert.doesNotMatch(text, /It did nothing before|Much faster PDF import/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Pen writing keeps its shape/);
-  assert.doesNotMatch(text, /squashed|Updated from inside/);
+  assert.match(text, /Shorter Sync tab/);
+  assert.doesNotMatch(text, /Ctrl P|It did nothing before/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
@@ -9233,7 +9401,7 @@ await test("Android: after the app was in the background for a while it says so 
   await page.waitForSelector(".toast", { state: "visible" });
   assert.match(await page.textContent(".toast"), /Android may have paused syncing/);
   await openSettingsTab(page, "sync");
-  assert.match(await page.locator("#settings .settings-body:visible").textContent(), /syncing happens while ScaleNote is open/);
+  assert.match(await page.locator("#settings .settings-body:visible").textContent(), /sync only runs while ScaleNote is open/);
 }, { settings: existingUser({ updates: false }), userAgent: "Mozilla/5.0 (Linux; Android 14; Phone) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36", hasTouch: true });
 
 // Screenshots for the design check of 0.5.3 (only when SHOTS_DIR is set): the first-sync plan,
@@ -9353,7 +9521,7 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-2-backups.png` });
       // On a phone a settings page covers the list of tabs; Back shows the list again.
       if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");
-      await page.click('#settings [role="tab"][id="settingsTab-sync"]');
+      await page.click('#settings [role="tab"][id="settingsTab-privacy"]');
       await page.locator("#securityCards").scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-3-security-cards.png` });
       if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");

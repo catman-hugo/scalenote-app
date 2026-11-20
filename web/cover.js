@@ -1,10 +1,10 @@
-// The cover of a page: a picture above the text, shown only when covers are switched on in
-// Settings. This file only draws it and reports the buttons; main.js does the work, and
-// coverrules.js writes the one line in the page's properties.
+// The cover of a page: a picture above the text, shown on the pages that have one (0.5.8: set per
+// page, from the page's View menu or by right-clicking it in the list; there is no setting for
+// all pages any more). This file only draws it and reports the buttons; main.js does the work,
+// and coverrules.js writes the one line in the page's properties.
 //
-// When covers are off nothing is drawn at all: no picture, no "Add cover" button.
+// A page without a cover shows nothing here: no empty area, no "Add cover" button.
 
-import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -23,11 +23,11 @@ function textButton(text, onClick) {
 
 /**
  * Creates the cover area as the first thing inside `host` (the scrolling page area).
- * `loadImage(path)` gives a picture as a data: address. `onAdd`, `onChange` and `onRemove` are
+ * `loadImage(path)` gives a picture as a data: address. `onChange` and `onRemove` are
  * called by the buttons. Returns { show(path), hide() }: `path` is the cover's path or null.
  */
-export function createCover(host, { loadImage, onAdd, onChange, onRemove }) {
-  // The area exists only while a cover (or the Add cover button) is on screen.
+export function createCover(host, { loadImage, onChange, onRemove }) {
+  // The area exists only while a cover is on screen.
   let section = null;
   const area = () => {
     if (!section) {
@@ -54,14 +54,12 @@ export function createCover(host, { loadImage, onAdd, onChange, onRemove }) {
     },
 
     show(path) {
-      const mine = ++run;
-      const box = area();
       if (!path) {
-        const add = textButton(strings.cover.add, onAdd);
-        add.prepend(icon("image"));
-        box.replaceChildren(actions([add]));
+        this.hide();
         return;
       }
+      const mine = ++run;
+      const box = area();
       const frame = make("div", "cover-image");
       const picture = make("img");
       picture.alt = strings.cover.alt;

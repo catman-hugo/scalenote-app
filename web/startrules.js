@@ -17,12 +17,10 @@ export function cleanLastPage(raw) {
 // What "Reset to defaults" puts back. Not in the list on purpose: the open folder and recent
 // folders, which devices are paired, what has been read or dismissed (the disclosure, the update
 // notes), and the page that was open last. Resetting the look must never change what is stored
-// or paired.
+// or paired. What each page remembers (its view, its Linked from) is not a setting and stays.
 export const RESETTABLE = {
   ...DEFAULT_APPEARANCE,
   updates: true,
-  showBacklinks: true,
-  showCovers: false,
   penButton: "erase",
   openIn: "text",
   snapShapes: true,

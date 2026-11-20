@@ -1237,6 +1237,10 @@ body.block-dragging .float-bar { visibility: hidden; }
 
 .settings-body { display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-4) 0; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+/* A tick box sits right in front of its words and is big enough to hit (0.5.8), instead of a
+   small box at the far edge of the row. The whole row is the label, so the words tick it too. */
+.setting-row:has(> input[type="checkbox"]) { justify-content: flex-start; gap: var(--space-3); cursor: pointer; }
+.setting-row > input[type="checkbox"] { order: -1; flex: 0 0 auto; width: 1.25rem; height: 1.25rem; margin: 0; cursor: pointer; }
 .setting-label { color: var(--text); }
 .setting-row select, .setting-row input[type="range"] { min-width: 12rem; max-width: 60%; }
 
@@ -2121,8 +2125,18 @@ body.is-locked .toast { display: none; }
 /* Sync: the status line at the bottom of the page list, the per-device controls, the preview
    panel and the conflict review. Solid colours and the same spacing scale as the rest. */
 .sync-line { padding: var(--space-2) var(--space-4); border-top: 1px solid var(--line); font-size: var(--text-s); color: var(--text-soft); overflow-wrap: anywhere; }
-.pair-peer { display: block; }
+/* Each paired device is a card that stands out from the text around it (0.5.8): the name in the
+   normal text size and bold, the details small under it. */
+.pair-list li.pair-peer { display: block; margin: 0 0 var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); font-size: var(--text-m); }
+.pair-peer .pair-name { font-weight: 600; }
+.pair-fingerprint { margin: 0; font-variant-numeric: tabular-nums; }
 .pair-last { margin: var(--space-1) 0; }
+/* The main Sync buttons side by side, each as wide as its share of the row. */
+.pair-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
+.pair-actions > button { flex: 1 1 10rem; }
+.pair-actions > button[hidden] { display: none; }
+.pair-join-box { margin: var(--space-2) 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); }
+.pair-join-box[hidden] { display: none; }
 .sync-peer-buttons, .sync-panel-buttons { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
 .sync-panel { margin: var(--space-2) 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); }
 .sync-panel-title { margin: 0 0 var(--space-2); font-size: var(--text-m); }

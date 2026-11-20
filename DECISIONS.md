@@ -819,4 +819,22 @@ Cost. Where text wraps differently, ink cannot stay on every word; it did not be
 Context. Adding a PDF as pictures is instant on a computer and about 2 seconds a page on the phone. The same code runs on both, so the slow step could be painting, JPEG, saving across to Rust, or reading the words.
 Decision. Time each step and write it to the log, and add "Copy the app's log" to About so the owner can send it from the phone. Change the import once the numbers are in.
 Cost. One more round before it is faster.
+Result (same day). The phone's log showed the JPEG step taking about 5 seconds a page (0.2 s for 8 pages on a laptop); everything else was fast. Pages are now made with `toDataURL` instead of `toBlob`, see PROGRESS.md.
+
+## 2026-11-20: Sync over Tailscale finds the address by itself
+
+Context. Sync works on home Wi-Fi but not on eduroam: such networks keep devices apart and drop the discovery messages. ScaleNote has no central server, so the plan names Tailscale (or a typed address) for this.
+Decision. Each device detects its own Tailscale address (100.64.0.0/10 on Tailscale's connection, not any 100.64 address, because mobile networks use that range too) and sends it in the greeting after each sync. The other device keeps it per paired device and tries it when the device is not found on the network, so devices that synced once at home keep syncing on eduroam with nothing typed. The address is shown in Settings, Sync and with the pairing code, so pairing from elsewhere is possible by typing it. A kept address is only accepted from a paired device and only in the Tailscale range; the connection is the same encrypted, key-checked channel as at home.
+Cost. One more small file of addresses. The greeting now has extra words after the version; 0.5.6 reads the whole text as the version, finds it invalid and shows no version for a 0.5.7 device until it is updated.
+
+## 2026-11-20: Cover, "Linked from" and the view are per page
+
+Context. The owner wants no global switch for covers or "Linked from", and each page to open as it was left.
+Decision. A cover is content and stays in the page's properties, as before; it is added or removed from the page's View menu or its right-click menu. "Linked from" and the view are ways of looking at a page, so they are kept per page in this device's settings (`pageViews`), not in the file and not synced. "Linked from" is off for a page until switched on there (the owner had it off everywhere). Only a view chosen by hand is remembered; "Open pages in" stays the default for pages never opened.
+Cost. Another device does not know how a page was left here. Up to 1000 pages are remembered; the oldest are dropped.
+
+## 2026-11-20: Settings show only text needed to use them
+
+Context. The owner found the Sync tab too long, with the paired devices lost between explanations.
+Decision. A settings tab is controls first, with a hint only where a control needs one. Explanations of how things work go to the Privacy tab (sync, security, network) or the docs. On Sync the paired devices come first, as cards.
 

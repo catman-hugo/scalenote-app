@@ -93,7 +93,7 @@ function themePicker(state, change) {
   return box;
 }
 
-const TAB_ORDER = ["pages", "drawing", "updates", "sync", "files", "device", "shortcuts", "about"];
+const TAB_ORDER = ["drawing", "updates", "sync", "files", "device", "shortcuts", "about", "privacy"];
 
 // The tab that was open last, kept while the app runs so the box opens where it was left.
 let lastTab = "look";
@@ -105,7 +105,7 @@ export function openSettingsAt(id) {
 
 /**
  * Fills the dialog and opens it. `current` is the look settings; `onChange(next)` is called after each
- * change. `groups` maps a tab name (pages, drawing, updates, sync, files) to the rows that belong on it.
+ * change. `groups` maps a tab name (drawing, updates, sync, privacy, files, …) to the rows that belong on it.
  * The tabs are a list on the left on a wide screen and a row on top on a phone (see style.css).
  */
 export function openSettings(dialog, current, onChange, groups = {}) {

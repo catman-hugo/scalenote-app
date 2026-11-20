@@ -97,6 +97,8 @@
       let n = 1, path;
       for (;; n++) { path = `attachments/${n === 1 ? stem : stem + "-" + n}.${ext}`; if (!attachments.has(path) || attachments.get(path) === data) break; }
       attachments.set(path, data);
+      // A test can slow saving down, to look at an import while it is still running.
+      if (window.__saveDelay) return new Promise((resolve) => setTimeout(() => resolve(path), window.__saveDelay));
       return path;
     },
     // The converted copy is made by Rust (tested there with real files). Here the call is only
@@ -204,6 +206,7 @@
         enabled: syncDevice.enabled,
         listeningPort: 47821,
         address: window.__noAddress ? null : "192.168.1.20",
+        tailscale: window.__tailscale || null,
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,

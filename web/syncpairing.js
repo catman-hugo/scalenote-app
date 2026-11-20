@@ -50,7 +50,13 @@ function activityLine(event) {
 }
 
 /** Returns the rows to append to the Sync tab. `isOn()` says whether the switch is on. */
-export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi = null } = {}) {
+/**
+ * The Sync tab (0.5.8 layout): the paired devices first, then the buttons to pair one, the code or
+ * the fields to enter one (hidden until asked for), Pause and conflict copies, then this device
+ * (`deviceRows`: the on switch and the name, from main.js) and the activity list. What sync does
+ * and what the app contacts is on the Privacy tab (privacyRows).
+ */
+export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi = null, deviceRows = [] } = {}) {
   const s = strings.settings;
   const message = element("p", "", "setting-hint");
   message.id = "pairMessage";
@@ -58,6 +64,9 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
 
   const fingerprint = element("p", "", "setting-hint");
   fingerprint.id = "pairFingerprint";
+  // This device's Tailscale address, or a short note on what Tailscale is for (tailscale.rs).
+  const tailscaleText = element("p", "", "setting-hint");
+  tailscaleText.id = "pairTailscale";
   const list = element("ul", "", "pair-list");
   list.id = "pairList";
   const activity = element("ul", "", "pair-list");
@@ -70,9 +79,11 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   codeText.id = "pairCode";
   const addressText = element("p", "", "setting-hint");
   addressText.id = "pairAddressText";
+  const codeTailscale = element("p", "", "setting-hint");
+  codeTailscale.id = "pairCodeTailscale";
   const leftText = element("p", "", "setting-hint");
   leftText.id = "pairLeft";
-  codeBox.append(element("p", s.pairShow, "setting-hint"), codeText, addressText, leftText);
+  codeBox.append(element("p", s.pairShow, "setting-hint"), codeText, addressText, codeTailscale, leftText);
 
   let pairing = false;
   let knownPeers = null;
@@ -141,7 +152,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     for (const peer of peers) {
       const item = element("li", "", "pair-peer");
       const head = element("div", "", "pair-item");
-      const text = element("span", `${peer.name} (${peer.fingerprint})`, "pair-name");
+      const text = element("span", peer.name, "pair-name");
       const remove = button(removing === peer.id ? s.pairRemoveConfirm : s.pairRemove, async () => {
         if (removing !== peer.id) {
           removing = peer.id;
@@ -161,10 +172,12 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       head.append(text, remove);
       const stamp = peer.lastSync.replace("T", " ").replace("Z", " UTC");
       const when = peer.lastSync ? (peer.lastChanged > 0 ? fill(s.pairLastSync, { when: stamp, n: peer.lastChanged }) : fill(s.pairLastSyncPlain, { when: stamp })) : peer.hasHistory ? "" : s.pairNeverSynced;
-      item.append(head);
+      item.append(head, element("p", peer.fingerprint, "setting-hint pair-fingerprint"));
       if (when) item.append(element("p", when, "setting-hint pair-last"));
       // The version the device reported at the last sync. An older one is said plainly, since it may lack newer fixes.
       if (peer.version) item.append(element("p", fill(peer.olderVersion ? s.pairVersionOlder : s.pairVersion, { v: peer.version }), "setting-hint pair-version"));
+      // Learned from the device itself at a sync; used when it cannot be found on this network.
+      if (peer.tailscale) item.append(element("p", fill(s.pairPeerTailscale, { address: peer.tailscale }), "setting-hint pair-tailscale"));
       // Each paired device belongs to one notes folder here. Shown by its folder name; when it
       // is another folder than the open one, the device does not sync now, and it can be moved.
       if (peer.folder) {
@@ -210,6 +223,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     pauseButton.textContent = paused ? s.resumeButton : s.pauseButton;
     pausedHint.hidden = !paused;
     fingerprint.textContent = `${s.pairThisDevice}: ${status.fingerprint}`;
+    tailscaleText.textContent = status.tailscale ? fill(s.tailscaleOn, { address: status.tailscale }) : s.tailscaleOff;
     showPeers(status.peers);
     activity.replaceChildren();
     if (status.events.length === 0) activity.append(element("li", s.activityNone));
@@ -273,6 +287,9 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       knownPeers = status.peers.length;
       codeText.textContent = groupCode(fresh);
       addressText.textContent = `${s.pairAddress}: ${status.address ? `${status.address}:${status.listeningPort ?? ""}` : s.pairNoAddress}`;
+      // From another network (eduroam, mobile data) only the Tailscale address can reach this device.
+      codeTailscale.textContent = status.tailscale ? fill(s.pairCodeTailscale, { address: status.tailscale }) : "";
+      codeTailscale.hidden = !status.tailscale;
       codeBox.hidden = false;
       stopButton.hidden = false;
       startButton.hidden = true;
@@ -346,27 +363,41 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   // The timer only runs while a code is shown (see start); otherwise the list is read once.
   refresh();
 
+  // Entering a code from another device: the fields only show when asked for.
+  const joinBox = element("div", "", "pair-join-box");
+  joinBox.id = "pairJoinBox";
+  joinBox.hidden = true;
+  joinBox.append(element("p", s.pairJoinHint, "setting-hint"), findButton, nearby, labelled(s.pairAddressLabel, address), labelled(s.pairCodeLabel, code), joinButton);
+  const joinOpen = button(s.pairEnterCode, () => {
+    joinBox.hidden = !joinBox.hidden;
+    if (!joinBox.hidden) findButton.focus();
+  });
+  joinOpen.id = "pairJoinOpen";
+  const pairActions = element("div", "", "pair-actions");
+  pairActions.append(startButton, stopButton, joinOpen);
+  const moreActions = element("div", "", "pair-actions");
+  moreActions.append(pauseButton, conflictsButton);
+
   return [
     element("h3", s.pairHeading, "setting-heading"),
-    fingerprint,
     list,
-    pauseButton,
-    pausedHint,
-    conflictsButton,
-    startButton,
-    stopButton,
+    pairActions,
     codeBox,
-    element("h3", s.pairJoinHeading, "setting-heading"),
-    element("p", s.pairJoinHint, "setting-hint"),
-    findButton,
-    nearby,
-    labelled(s.pairAddressLabel, address),
-    labelled(s.pairCodeLabel, code),
-    joinButton,
+    joinBox,
     message,
+    moreActions,
+    pausedHint,
+    element("h3", s.thisDeviceHeading, "setting-heading"),
+    ...deviceRows,
+    fingerprint,
+    tailscaleText,
     element("h3", s.activityHeading, "setting-heading"),
     activity,
-    element("h3", s.netHeading, "setting-heading"),
-    ...[s.netUpdates, s.netAnnounce, s.netSync, s.netNothing].map((line) => element("p", line, "setting-hint net-statement")),
   ];
+}
+
+/** The Privacy tab's statement of everything the app contacts on the network. Text only. */
+export function privacyRows() {
+  const s = strings.settings;
+  return [element("h3", s.netHeading, "setting-heading"), ...[s.netUpdates, s.netAnnounce, s.netSync, s.netNothing].map((line) => element("p", line, "setting-hint net-statement"))];
 }
