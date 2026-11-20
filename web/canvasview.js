@@ -38,6 +38,9 @@ const NOTE_MIN_PIXELS = 24;
 const GRAB_PIXELS = 8;
 // How close to the resize handle counts as holding it. Bigger than it looks, for a finger or a pen.
 const HANDLE_PIXELS = 16;
+// The grip left of a region's top corner (0.5.8), like the handle next to a block in the text:
+// pressing it moves the region with any tool, and shows its corners to change its size.
+const GRIP = { w: 16, h: 24, gap: 6 };
 // Tools that choose how the next thing is drawn, so picking a colour or width switches to the pen
 // only when the current tool has no colour of its own.
 const COLOURLESS_TOOLS = ["eraser", "hand", "select"];
@@ -107,9 +110,10 @@ function paperThumb(paper) {
  * Builds the canvas inside `host`. `onChange()` is called after every finished gesture,
  * `onNotice(text)` for a short message (for example, the drawing is full), and `penButton()`
  * says what the barrel button of a pen does: "erase", "select" or "none". `snapShapes()` says
- * whether shape corners snap to a grid.
+ * whether shape corners snap to a grid. `onLive()` is called while a gesture is still going (at
+ * most once a frame), so the canvas blocks in the text can follow the pen as it moves.
  */
-export function createCanvasView(host, { onChange, onNotice, penButton = () => "erase", snapShapes = () => true }) {
+export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true }) {
   const t = strings.canvas;
   const state = {
     canvas: emptyCanvas(),
@@ -589,6 +593,40 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     context.restore();
   }
 
+  // Grips are drawn in screen pixels, so they keep their size at any zoom.
+  function gripOf(frame) {
+    const x = frame.x * state.view.scale + state.view.x;
+    const y = frame.y * state.view.scale + state.view.y;
+    return { x: x - GRIP.gap - GRIP.w, y, w: GRIP.w, h: GRIP.h };
+  }
+
+  function gripAt(point) {
+    if (state.readOnly) return null;
+    for (let i = state.canvas.frames.length - 1; i >= 0; i--) {
+      const grip = gripOf(state.canvas.frames[i]);
+      if (point.x >= grip.x - 4 && point.x <= grip.x + grip.w + 4 && point.y >= grip.y - 4 && point.y <= grip.y + grip.h + 4) return state.canvas.frames[i];
+    }
+    return null;
+  }
+
+  function paintGrips(ratio) {
+    if (state.readOnly || !state.canvas.frames.length) return;
+    context.save();
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    for (const frame of state.canvas.frames) {
+      const grip = gripOf(frame);
+      context.fillStyle = state.pageFill;
+      context.strokeStyle = state.accent;
+      context.lineWidth = 1;
+      context.fillRect(grip.x, grip.y, grip.w, grip.h);
+      context.strokeRect(grip.x + 0.5, grip.y + 0.5, grip.w - 1, grip.h - 1);
+      // Six dots, like the block handle in the text.
+      context.fillStyle = state.accent;
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 2; col++) context.fillRect(grip.x + 5 + col * 5, grip.y + 6 + row * 5, 2, 2);
+    }
+    context.restore();
+  }
+
   function paintFrameSelection(scale) {
     const f = state.frameSel;
     if (!f) return;
@@ -657,6 +695,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       context.arc(g.screen.x, g.screen.y, ERASER_PIXELS, 0, Math.PI * 2);
       context.stroke();
     }
+    paintGrips(ratio);
     placeEditor();
   }
 
@@ -1000,6 +1039,8 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     } catch {
       // Nothing to do: the events still arrive while the pen is over the sheet.
     }
+    // A region's grip, or a corner of the selected region, works with any tool and any pointer.
+    if (!state.gesture && !state.readOnly && event.button === 0 && regionGesture(event)) return;
     if (event.pointerType === "touch" && !state.fingerDraws) {
       state.touches.set(event.pointerId, localPoint(event));
       beginTouchMove();
@@ -1015,6 +1056,24 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     }
     startGesture(event, toolFor(event));
     scheduleDraw();
+  }
+
+  // Starts moving a region by its grip, or resizing the selected one by a corner. Returns
+  // whether the press was taken.
+  function regionGesture(event) {
+    const screen = localPoint(event);
+    const world = toWorld(screen.x, screen.y);
+    const grabbed = gripAt(screen);
+    const corner = !grabbed && state.frameSel ? frameHit([], state.frameSel, world, state.view.scale, HANDLE_PIXELS) : null;
+    if (!grabbed && !corner) return false;
+    const frame = grabbed || state.frameSel;
+    state.selection = [];
+    state.frameSel = frame;
+    const { x, y, w, h } = frame;
+    state.gesture = { kind: "frame", id: event.pointerId, part: grabbed ? "move" : corner.part, frame, start: world, before: { x, y, w, h } };
+    drawToolbar();
+    scheduleDraw();
+    return true;
   }
 
   function beginTouchMove() {
@@ -1081,6 +1140,24 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
       eraseAt(toWorld(now.x, now.y));
     }
     scheduleDraw();
+    scheduleLive();
+  }
+
+  // The canvas blocks in the text follow a gesture while it goes on, at most once a frame.
+  let livePending = 0;
+  function scheduleLive() {
+    if (!livePending) livePending = requestAnimationFrame(() => {
+      livePending = 0;
+      onLive();
+    });
+  }
+
+  // What is being drawn right now and is not in the drawing yet: a pen line or a shape.
+  function liveItems() {
+    const g = state.gesture;
+    if (g && g.kind === "pen" && g.stroke.points.length) return [g.stroke];
+    if (g && g.kind === "shape") return [g.shape];
+    return [];
   }
 
   function onUp(event) {
@@ -1172,6 +1249,7 @@ export function createCanvasView(host, { onChange, onNotice, penButton = () => "
     get canvas() {
       return state.canvas;
     },
+    liveItems,
     get readOnly() {
       return state.readOnly;
     },

@@ -34,9 +34,10 @@ export function paintForPaper(on) {
 
 /**
  * Paints the part of `canvas` inside `frame` onto `surface`, scaled down to fit `width` pixels
- * when the frame is wider (never scaled up). Returns the size on the page.
+ * when the frame is wider (never scaled up). `live` are items still being drawn on the canvas
+ * (a pen line, a shape), so the block follows the pen in the split view. Returns the size.
  */
-export function paintRegion(surface, canvas, frame, width, { paper = forPaper, ratio = window.devicePixelRatio || 1 } = {}) {
+export function paintRegion(surface, canvas, frame, width, { paper = forPaper, ratio = window.devicePixelRatio || 1, live = [] } = {}) {
   const scale = Math.min(1, width / frame.w);
   const cssWidth = Math.max(1, Math.round(frame.w * scale));
   const cssHeight = Math.max(1, Math.round(frame.h * scale));
@@ -62,7 +63,7 @@ export function paintRegion(surface, canvas, frame, width, { paper = forPaper, r
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
   ctx.clip();
   painter.paper(canvas.paper, { x: -frame.x * scale, y: -frame.y * scale, scale }, { width: cssWidth, height: cssHeight });
-  painter.items(canvas.items);
+  painter.items(live.length ? [...canvas.items, ...live] : canvas.items);
   return { width: cssWidth, height: cssHeight };
 }
 
@@ -103,7 +104,7 @@ export const CanvasBlock = Node.create({
           title.textContent = frame && frame.label ? frame.label : strings.canvasBlock.title;
           if (!frame) return;
           surface.setAttribute("aria-label", strings.canvasBlock.surface);
-          paintRegion(surface, d.canvas, frame, Math.max(50, dom.clientWidth));
+          paintRegion(surface, d.canvas, frame, Math.max(50, dom.clientWidth), { live: d.live || [] });
         },
       };
       views.add(view);
