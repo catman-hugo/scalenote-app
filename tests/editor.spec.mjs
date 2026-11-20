@@ -7856,6 +7856,35 @@ await test("when the Sync settings cannot be read the switch and the name stay l
   assert.equal(await page.isDisabled("#syncName"), true);
 }, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__failSync = true; }) });
 
+await test("with Tailscale on, the Sync tab and the pairing code show this device's Tailscale address, and a paired device's too", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#pairStart");
+  await page.waitForFunction(() => /100\.101\.102\.103/.test(document.getElementById("pairTailscale").textContent));
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.match(await page.textContent("#pairCodeTailscale"), /From another network: 100\.101\.102\.103 \(Tailscale\)/);
+  if (shots) {
+    await page.screenshot({ path: `${shots}/v057-sync-tailscale-light.png` });
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+    await page.screenshot({ path: `${shots}/v057-sync-tailscale-dark.png` });
+  }
+  await page.click("#pairStop");
+  await page.evaluate(() => { window.__mock.peerPairs("p-ts"); window.__mock.syncPeers()[0].tailscale = "100.90.3.4"; });
+  await page.click("#settingsTab-look");
+  await page.click("#settingsTab-sync");
+  await page.waitForFunction(() => /On Tailscale at 100\.90\.3\.4/.test(document.getElementById("pairList").textContent));
+}, { settings: existingUser({ updates: false }), before: (page) => page.addInitScript(() => { window.__tailscale = "100.101.102.103"; }) });
+
+await test("with Tailscale off, the Sync tab says what it is for and the pairing code has no Tailscale line", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForFunction(() => /devices cannot see each other\. Turn on Tailscale/.test(document.getElementById("pairTailscale").textContent));
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.equal(await page.isHidden("#pairCodeTailscale"), true);
+}, { settings: existingUser({ updates: false }) });
+
 await test("pairing: the Sync tab shows this device, shows a code with its address and time, and closes it when a device pairs", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");

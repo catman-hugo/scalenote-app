@@ -21,6 +21,7 @@ pub mod pairing;
 pub mod plan;
 pub mod manager;
 pub mod service;
+pub mod tailscale;
 pub mod trust;
 pub mod watch;
 

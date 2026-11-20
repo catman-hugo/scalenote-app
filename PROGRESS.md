@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-20; 0.5.7 built (quicker sync, pen ink keeps its shape, PDF import timing, Copy the app's log; first in-app update); 0.5.6 released (in-app updates for computers, signing key set up); 0.5.5 released (home server program and all six extras); sync tried by the owner between a computer and a tablet: it works with Sync now.
+Last updated: 2026-11-20; 0.5.7 built (sync over Tailscale for eduroam, quicker sync, pen ink keeps its shape, PDF import timing, Copy the app's log; first in-app update); 0.5.6 released (in-app updates for computers, signing key set up); 0.5.5 released (home server program and all six extras); sync tried by the owner between a computer and a tablet: it works with Sync now.
 
 ## 0.5.7: built (from the owner's device test of 0.5.6, 2026-11-20)
 
@@ -10,9 +10,10 @@ Branch `fix/sync-ink-pdf-0.5.7`. Release notes: `docs/release-notes/0.5.7.md`.
 
 The owner's report: sync between the computer and the tablet works (pressing Sync now, then reopening the page); handwriting from the tablet looked stretched on the computer; automatic sync was not seen within 30 seconds; adding a PDF as pictures is instant on a computer and very slow on the phone (38 pages, about 2 seconds each).
 
-Done (tried here: npm test 330 passed, Rust core 267 passed, full browser suite 425 passed):
+Done (tried here: npm test 330 passed, Rust core 272 passed, full browser suite 427 passed):
 - Automatic sync looks every 5 seconds instead of 20 (`start_auto_sync` in `src/lib.rs`). With the other device needing up to 8 seconds to notice new files (`web/vaultwatch.js`), a change took up to about 35 seconds before, so the owner's 30 seconds was just short; now about 10 to 15. Only compiled by CI.
 - Pen ink over text keeps its shape: each new piece stores its block's width, height and text size when drawn (`size` in the drawing file, optional, checked when read) and is drawn at the same distance from the block's corner, scaled only with the text size (`web/textink.js`). Ink from before has no size and is drawn as before. 2 unit tests and the browser test for a narrower window.
+- Sync over Tailscale (asked 2026-11-20: sync works on home Wi-Fi but not on eduroam, which keeps devices apart and drops discovery). `core/src/sync/tailscale.rs` finds this device's Tailscale address (an address in 100.64.0.0/10 on a connection named like Tailscale's: "Tailscale", `tailscale0`, or the VPN `tun` on Android, so a mobile network's 100.64 address is not taken for it; `if-addrs` =0.15.0). The greeting after each sync carries `ts=<address:port>`; the other device keeps it in `sync-tailscale.txt` (paired devices only; forgotten on remove). When a device is not heard on the network, Sync now and the automatic round try its kept Tailscale address (the automatic round only after a 3-second connection check, so a device that is off costs no failed sync). Settings, Sync shows this device's Tailscale address or what Tailscale is for; the pairing code shows it as "From another network", and each paired device shows its own. 4 unit tests, 1 service test, 2 browser tests. Not tried with Tailscale anywhere: only parsing and the kept list are tested; whether Windows' firewall lets connections in on the Tailscale connection is unknown.
 - Adding a PDF as pictures writes how long each step took to the log (`pdf import: … (open, painting, jpeg, saving, words; page size)`), and About has "Copy the app's log" (`log_tail`, the last 32 KB, closed while locked; `Logger::tail` with a Rust test). Purpose: the owner copies the log on the phone after an import, so the slow step is measured, not guessed.
 
 Not done / untried:

@@ -25,6 +25,9 @@ zeroize = "=1.8.2"
 # The app lock (0.5.6): the PIN or passcode is never stored, only a slow salted hash of it
 # (PBKDF2 with SHA-256, from the same RustCrypto family as sha2 and hmac above).
 pbkdf2 = { version = "=0.12.2", default-features = false, features = ["hmac"] }
+# Lists this device's network connections, to find its Tailscale address (sync/tailscale.rs).
+# Small, widely used, no dependencies beyond the system's own (libc, windows-sys).
+if-addrs = "=0.15.0"
 
 [[bin]]
 # Used only by the tests. It writes a note over and over so a test can kill it

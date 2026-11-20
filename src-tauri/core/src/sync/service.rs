@@ -19,6 +19,7 @@ use super::exchange::{self, is_sync_kind, KIND_NO};
 use super::identity::{fingerprint, Identity, KEY_LEN};
 use super::pairing::{self, clean_code, CodeBook, KIND_REFUSED, KIND_START};
 use super::folders::FolderBook;
+use super::tailscale::{self, AddressBook};
 use super::trust::{Peer, TrustList};
 use super::{hex, Result, SyncError};
 use crate::logger::format_utc;
@@ -44,6 +45,11 @@ const RESYNC_AFTER: Duration = Duration::from_secs(300);
 const TRUST_FILE: &str = "sync-peers.txt";
 /// Which notes folder each paired device belongs to (folders.rs). Never synced.
 const FOLDERS_FILE: &str = "sync-folders.txt";
+/// The Tailscale address each paired device last told this one (tailscale.rs). Never synced.
+const TAILSCALE_FILE: &str = "sync-tailscale.txt";
+/// How long to wait for a device at its Tailscale address. Short, because the automatic round
+/// tries it every few seconds while the device may simply be off.
+const TAILSCALE_CONNECT: Duration = Duration::from_secs(3);
 
 /// Questions a paired device can ask (more are added with the sync itself in 0.5.3).
 const KIND_PING: u8 = 0x20;
@@ -99,6 +105,8 @@ struct State {
     syncing: Option<SyncingView>,
     /// The notes folder each paired device belongs to (folders.rs).
     folders: FolderBook,
+    /// Where each paired device can be reached over Tailscale (tailscale.rs).
+    tailscale: AddressBook,
 }
 
 #[derive(Default)]
@@ -140,6 +148,9 @@ struct Shared {
     identity: Identity,
     trust_path: PathBuf,
     folders_path: PathBuf,
+    tailscale_path: PathBuf,
+    /// The port this device listens on now (0 while it does not), for the greeting.
+    port: std::sync::atomic::AtomicU16,
     /// Where discovery notes go and are listened for (loopback only in tests).
     route: Mutex<Route>,
     state: Mutex<State>,
@@ -184,6 +195,9 @@ pub struct Status {
     /// Seconds the open code is still good for, or `None` when no code is open.
     pub pairing_seconds_left: Option<u64>,
     pub events: Vec<Event>,
+    /// This device's Tailscale address, to type on another device ("" when Tailscale is off).
+    /// The port is only added when it is not the usual one.
+    pub tailscale: String,
 }
 
 #[derive(Clone, Debug)]
@@ -205,6 +219,8 @@ pub struct PeerView {
     pub has_history: bool,
     /// Syncs with this device only on Wi-Fi.
     pub wifi_only: bool,
+    /// Where it can be reached over Tailscale, as it last said ("" if never).
+    pub tailscale: String,
     /// The notes folder on this device it belongs to ("" when not tied yet).
     pub folder: String,
     /// It belongs to a folder other than the one open now, so it does not sync until that one is open.
@@ -270,8 +286,10 @@ impl Service {
         let trust = TrustList::load(&trust_path)?;
         let folders_path = dir.join(FOLDERS_FILE);
         let folders = FolderBook::load(&folders_path);
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders };
-        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
+        let tailscale_path = dir.join(TAILSCALE_FILE);
+        let tailscale = AddressBook::load(&tailscale_path);
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale };
+        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
     }
@@ -359,6 +377,7 @@ impl Service {
     fn start_on(&self, socket: TcpListener) -> Result<Listener> {
         socket.set_nonblocking(true)?;
         let port = socket.local_addr()?.port();
+        self.shared.port.store(port, Ordering::Relaxed);
         let stop = Arc::new(AtomicBool::new(false));
         let shared = self.shared.clone();
         let flag = stop.clone();
@@ -481,6 +500,9 @@ impl Service {
                 if state.folders.untie(&key) {
                     let _ = state.folders.save(&self.shared.folders_path);
                 }
+                if state.tailscale.forget(&key) {
+                    let _ = state.tailscale.save(&self.shared.tailscale_path);
+                }
                 record(&mut state, EventKind::Removed, name.as_deref().unwrap_or(""));
                 true
             } else {
@@ -589,8 +611,30 @@ impl Service {
         }
         let route = lock(&self.shared.route).clone();
         let heard = discovery::find(&route, Duration::from_millis(3500), self.shared.identity.public())?;
-        let found = heard.into_iter().find(|d| d.key == peer.public).ok_or(SyncError::Refused("device not found"))?;
-        self.open(&found.address, peer)
+        match heard.into_iter().find(|d| d.key == peer.public) {
+            Some(found) => self.open(&found.address, peer),
+            // Not on this network (eduroam and the like keep devices apart): try Tailscale.
+            None => match self.tailscale_address(peer) {
+                Some(address) => self.open(&address, peer),
+                None => Err(SyncError::Refused("device not found")),
+            },
+        }
+    }
+
+    /// The kept Tailscale address of a paired device, as `ip:port`, when this device is on
+    /// Tailscale too (otherwise it cannot be reached there).
+    fn tailscale_address(&self, peer: &Peer) -> Option<String> {
+        tailscale::own_address()?;
+        lock(&self.shared.state).tailscale.address_of(&peer.public).map(|address| address.to_string())
+    }
+
+    /// Keeps the Tailscale address a paired device sent in its greeting.
+    fn keep_tailscale(shared: &Shared, key: [u8; KEY_LEN], address: Option<std::net::SocketAddrV4>) {
+        let Some(address) = address else { return };
+        let mut state = lock(&shared.state);
+        if state.trust.contains(&key) && state.tailscale.set(key, address) {
+            let _ = state.tailscale.save(&shared.tailscale_path);
+        }
     }
 
     fn open(&self, address: &str, peer: &Peer) -> Result<Channel<TcpStream>> {
@@ -656,15 +700,13 @@ impl Service {
         let Some(address) = known else { return };
         let Ok(mut channel) = self.open(&address, peer) else { return };
         let mut hello = vec![KIND_HELLO];
-        hello.extend_from_slice(APP_VERSION.as_bytes());
+        hello.extend_from_slice(greeting(&self.shared).as_bytes());
         if channel.send(&hello).is_err() {
             return;
         }
         if let Ok(answer) = channel.recv() {
             if answer.first() == Some(&KIND_HELLO_ACK) {
-                if let Some(version) = clean_version(&answer[1..]) {
-                    lock(&self.shared.state).live.entry(peer.public).or_default().version = version;
-                }
+                read_hello(&self.shared, peer.public, &answer[1..]);
             }
         }
     }
@@ -695,8 +737,17 @@ impl Service {
         let heard = discovery::find(&route, look, self.shared.identity.public()).unwrap_or_default();
         let mut results = Vec::new();
         for peer in due {
-            let Some(found) = heard.iter().find(|d| d.key == peer.public) else { continue };
-            lock(&self.shared.state).live.entry(peer.public).or_default().address = Some(found.address.clone());
+            let address = match heard.iter().find(|d| d.key == peer.public) {
+                Some(found) => found.address.clone(),
+                // Not on this network: try its Tailscale address, but only start a sync when the
+                // device answers there, so a device that is simply off costs a few seconds and
+                // no failed sync every round.
+                None => match self.tailscale_address(&peer) {
+                    Some(address) if answers(&address) => address,
+                    _ => continue,
+                },
+            };
+            lock(&self.shared.state).live.entry(peer.public).or_default().address = Some(address);
             let outcome = match self.sync_peer(&hex::encode(&peer.public), false, &mut |_| {}) {
                 Ok(Outcome::Done(report)) => Ok(report),
                 Ok(Outcome::NeedsApproval(_)) => continue,
@@ -750,6 +801,7 @@ impl Service {
                     older: live.is_some_and(|l| is_older(&l.version, APP_VERSION)),
                     has_history: state.vault.as_ref().is_some_and(|root| engine::has_history(root, &p.public)),
                     wifi_only: state.wifi_only.contains(&p.public),
+                    tailscale: state.tailscale.address_of(&p.public).map(|a| a.ip().to_string()).unwrap_or_default(),
                     folder: state.folders.folder_of(&p.public).and_then(|f| f.to_str()).unwrap_or("").to_string(),
                     other_folder: state.vault.as_ref().is_some_and(|root| !state.folders.allows(&p.public, root)),
                 }
@@ -765,6 +817,12 @@ impl Service {
             peers,
             pairing_seconds_left: if state.pairing_open && state.codes.is_open(now) { state.codes.seconds_left(now) } else { None },
             events: state.events.clone(),
+            tailscale: tailscale::own_address()
+                .map(|ip| match listening_port {
+                    Some(port) if port != DEFAULT_PORT => format!("{ip}:{port}"),
+                    _ => ip.to_string(),
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -881,10 +939,38 @@ pub fn is_older(theirs: &str, ours: &str) -> bool {
     }
 }
 
+/// What this device says in a greeting: its app version and, when Tailscale is on, where it can
+/// be reached there (tailscale.rs). Older apps read only up to the space as the version.
+fn greeting(shared: &Shared) -> String {
+    let port = shared.port.load(Ordering::Relaxed);
+    format!("{APP_VERSION}{}", tailscale::greeting_part((port != 0).then_some(port)))
+}
+
+/// Reads a greeting from a paired device: its version, and its Tailscale address if it sent one.
+#[cfg(test)]
+pub(crate) fn read_hello_for_test(service: &Service, key: [u8; KEY_LEN], raw: &[u8]) {
+    read_hello(&service.shared, key, raw);
+}
+
+fn read_hello(shared: &Shared, key: [u8; KEY_LEN], raw: &[u8]) {
+    let Ok(text) = std::str::from_utf8(raw) else { return };
+    let (version, address) = tailscale::read_greeting(text);
+    if let Some(version) = clean_version(version.as_bytes()) {
+        lock(&shared.state).live.entry(key).or_default().version = version;
+    }
+    Service::keep_tailscale(shared, key, address);
+}
+
 /// A version from another device is shown on screen, so only digits, dots and a short length are accepted.
 fn clean_version(raw: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(raw).ok()?;
     (!text.is_empty() && text.len() <= 20 && text.bytes().all(|b| b.is_ascii_digit() || b == b'.')).then(|| text.to_string())
+}
+
+/// Whether something accepts connections at `address` within a few seconds. The connection is
+/// closed at once; the other device sees a connection that never says anything and drops it.
+fn answers(address: &str) -> bool {
+    address.parse::<SocketAddr>().is_ok_and(|target| TcpStream::connect_timeout(&target, TAILSCALE_CONNECT).is_ok())
 }
 
 fn connect_to(address: &str) -> Result<TcpStream> {
@@ -933,11 +1019,9 @@ fn handle_connection(shared: &Shared, stream: TcpStream) -> Result<()> {
             }
         }
         Some(KIND_HELLO) if trusted => {
-            if let Some(version) = clean_version(&first[1..]) {
-                lock(&shared.state).live.entry(remote).or_default().version = version;
-            }
+            read_hello(shared, remote, &first[1..]);
             let mut answer = vec![KIND_HELLO_ACK];
-            answer.extend_from_slice(APP_VERSION.as_bytes());
+            answer.extend_from_slice(greeting(shared).as_bytes());
             channel.send(&answer)
         }
         Some(KIND_PING) if trusted => {
