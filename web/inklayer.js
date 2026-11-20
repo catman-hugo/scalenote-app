@@ -269,9 +269,11 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     return surface.getBoundingClientRect();
   }
   // A block's box in sheet pixels (the sheet's top left corner is 0, 0).
+  // `em` is the text size of the block, so ink keeps its size next to the text (textink.js).
   function blockRect(node, sheet) {
     const box = node.getBoundingClientRect();
-    return { left: box.left - sheet.left, top: box.top - sheet.top, width: box.width, height: box.height, bottom: box.bottom - sheet.top };
+    const em = parseFloat(getComputedStyle(node).fontSize) || 16;
+    return { left: box.left - sheet.left, top: box.top - sheet.top, width: box.width, height: box.height, bottom: box.bottom - sheet.top, em };
   }
 
   // ---- painting ----
@@ -422,7 +424,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
       canvas.height = Math.max(1, Math.round(height * scale));
       const ctx = canvas.getContext("2d");
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
-      const rect = { left: 0, top: 0, width, height, bottom: height };
+      const rect = { left: 0, top: 0, width, height, bottom: height, em: parseFloat(getComputedStyle(node).fontSize) || 16 };
       for (const item of items) paintLine(item, inkToScreen(item, rect), ctx, colours);
       const url = canvas.toDataURL("image/png");
       canvas.width = 0;

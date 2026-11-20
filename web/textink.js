@@ -95,9 +95,21 @@ export function fromFractions(fx, fy, rect) {
   return [rect.left + fx * span(rect.width), rect.top + fy * span(rect.height)];
 }
 
+// Ink keeps its shape and its size next to the text (0.5.7). The same paragraph is wider and has
+// fewer lines on a computer than on a tablet, and until 0.5.7 the width and the height of the
+// block were scaled separately, which stretched handwriting sideways and squashed it. Ink now
+// also stores the block's size and text size when it was drawn (`size`: [width, height, text
+// size], CSS pixels) and keeps its distance from the block's top left corner, grown or shrunk
+// only with the text size (a bigger font setting or zoom on a phone). Text does not get bigger
+// when a page is wider, so ink does not either; a word written on a tablet looks the same on a
+// computer. Where the text wraps differently the ink cannot follow every word, in neither way.
+// Ink from before has no size and is drawn as before.
+const tenth = (value) => Math.round(value * 10) / 10;
+
 /**
  * Turns a stroke drawn in screen positions into stroke ink: `points` are `[x, y, pressure]` on
- * the screen, `rect` is the block the first point is in, `anchor` says which block that is.
+ * the screen, `rect` is the block the first point is in (`{ left, top, width, height, em }`,
+ * em being its text size), `anchor` says which block that is.
  */
 export function inkFromScreen(stroke, rect, anchor) {
   return {
@@ -105,13 +117,17 @@ export function inkFromScreen(stroke, rect, anchor) {
     color: stroke.color,
     width: stroke.width,
     anchor: { block: anchor.block, tag: anchor.tag },
+    size: [tenth(span(rect.width)), tenth(span(rect.height)), tenth(rect.em || 16)],
     points: stroke.points.map(([x, y, pressure]) => [...toFractions(x, y, rect).map(keep), pressure]),
   };
 }
 
 /** The screen positions `[x, y, pressure]` of a piece of ink, for the block it is on now. */
 export function inkToScreen(item, rect) {
-  return item.points.map(([fx, fy, pressure]) => [...fromFractions(fx, fy, rect), pressure]);
+  if (!item.size) return item.points.map(([fx, fy, pressure]) => [...fromFractions(fx, fy, rect), pressure]);
+  const [drawnWidth, drawnHeight, drawnEm] = item.size;
+  const scale = (rect.em || drawnEm) / drawnEm;
+  return item.points.map(([fx, fy, pressure]) => [rect.left + fx * drawnWidth * scale, rect.top + fy * drawnHeight * scale, pressure]);
 }
 
 function distanceToSegment(px, py, ax, ay, bx, by) {

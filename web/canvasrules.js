@@ -265,9 +265,14 @@ function validAnchor(anchor) {
   return isObject(anchor) && Number.isInteger(anchor.block) && anchor.block >= 0 && anchor.block < 100_000 && typeof anchor.tag === "string" && anchor.tag.length <= 80;
 }
 
+// [width, height, text size] of the block when the ink was drawn (see textink.js).
+const validInkSize = (size) => Array.isArray(size) && size.length === 3 && size.every((v) => isNumber(v) && v >= 1 && v <= 100_000);
+
 function validInk(item) {
   if (!isObject(item) || !["pen", "highlighter"].includes(item.tool)) return false;
   if (!PEN_COLOURS.includes(item.color) || !validWidth(item.width) || !validAnchor(item.anchor)) return false;
+  // The size of the block when it was drawn, from 0.5.7 on (see textink.js). Optional.
+  if (item.size !== undefined && !validInkSize(item.size)) return false;
   const points = item.points;
   if (!Array.isArray(points) || points.length === 0 || points.length > LIMITS.pointsPerStroke) return false;
   return points.every((point) => Array.isArray(point) && point.length === 3 && inkNumber(point[0]) && inkNumber(point[1]) && isNumber(point[2]) && point[2] >= 0 && point[2] <= 1);
@@ -279,6 +284,7 @@ function cleanInk(item) {
     color: item.color,
     width: item.width,
     anchor: { block: item.anchor.block, tag: item.anchor.tag },
+    ...(item.size ? { size: [item.size[0], item.size[1], item.size[2]] } : {}),
     points: item.points.map((p) => [p[0], p[1], p[2]]),
   };
 }
@@ -339,7 +345,8 @@ const corner = ([x, y]) => [round(x, 1), round(y, 1)];
 
 function inkLine(item) {
   const points = item.points.map(([x, y, p]) => [round(x, 4), round(y, 4), round(p, 2)]);
-  return JSON.stringify({ tool: item.tool, color: item.color, width: item.width, anchor: { block: item.anchor.block, tag: item.anchor.tag }, points });
+  const size = item.size ? { size: item.size.map((v) => round(v, 1)) } : {};
+  return JSON.stringify({ tool: item.tool, color: item.color, width: item.width, anchor: { block: item.anchor.block, tag: item.anchor.tag }, ...size, points });
 }
 
 function itemLine(item) {
