@@ -50,7 +50,13 @@ function activityLine(event) {
 }
 
 /** Returns the rows to append to the Sync tab. `isOn()` says whether the switch is on. */
-export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi = null } = {}) {
+/**
+ * The Sync tab (0.5.8 layout): the paired devices first, then the buttons to pair one, the code or
+ * the fields to enter one (hidden until asked for), Pause and conflict copies, then this device
+ * (`deviceRows`: the on switch and the name, from main.js) and the activity list. What sync does
+ * and what the app contacts is on the Privacy tab (privacyRows).
+ */
+export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi = null, deviceRows = [] } = {}) {
   const s = strings.settings;
   const message = element("p", "", "setting-hint");
   message.id = "pairMessage";
@@ -146,7 +152,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     for (const peer of peers) {
       const item = element("li", "", "pair-peer");
       const head = element("div", "", "pair-item");
-      const text = element("span", `${peer.name} (${peer.fingerprint})`, "pair-name");
+      const text = element("span", peer.name, "pair-name");
       const remove = button(removing === peer.id ? s.pairRemoveConfirm : s.pairRemove, async () => {
         if (removing !== peer.id) {
           removing = peer.id;
@@ -166,7 +172,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       head.append(text, remove);
       const stamp = peer.lastSync.replace("T", " ").replace("Z", " UTC");
       const when = peer.lastSync ? (peer.lastChanged > 0 ? fill(s.pairLastSync, { when: stamp, n: peer.lastChanged }) : fill(s.pairLastSyncPlain, { when: stamp })) : peer.hasHistory ? "" : s.pairNeverSynced;
-      item.append(head);
+      item.append(head, element("p", peer.fingerprint, "setting-hint pair-fingerprint"));
       if (when) item.append(element("p", when, "setting-hint pair-last"));
       // The version the device reported at the last sync. An older one is said plainly, since it may lack newer fixes.
       if (peer.version) item.append(element("p", fill(peer.olderVersion ? s.pairVersionOlder : s.pairVersion, { v: peer.version }), "setting-hint pair-version"));
@@ -357,28 +363,41 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   // The timer only runs while a code is shown (see start); otherwise the list is read once.
   refresh();
 
+  // Entering a code from another device: the fields only show when asked for.
+  const joinBox = element("div", "", "pair-join-box");
+  joinBox.id = "pairJoinBox";
+  joinBox.hidden = true;
+  joinBox.append(element("p", s.pairJoinHint, "setting-hint"), findButton, nearby, labelled(s.pairAddressLabel, address), labelled(s.pairCodeLabel, code), joinButton);
+  const joinOpen = button(s.pairEnterCode, () => {
+    joinBox.hidden = !joinBox.hidden;
+    if (!joinBox.hidden) findButton.focus();
+  });
+  joinOpen.id = "pairJoinOpen";
+  const pairActions = element("div", "", "pair-actions");
+  pairActions.append(startButton, stopButton, joinOpen);
+  const moreActions = element("div", "", "pair-actions");
+  moreActions.append(pauseButton, conflictsButton);
+
   return [
     element("h3", s.pairHeading, "setting-heading"),
+    list,
+    pairActions,
+    codeBox,
+    joinBox,
+    message,
+    moreActions,
+    pausedHint,
+    element("h3", s.thisDeviceHeading, "setting-heading"),
+    ...deviceRows,
     fingerprint,
     tailscaleText,
-    list,
-    pauseButton,
-    pausedHint,
-    conflictsButton,
-    startButton,
-    stopButton,
-    codeBox,
-    element("h3", s.pairJoinHeading, "setting-heading"),
-    element("p", s.pairJoinHint, "setting-hint"),
-    findButton,
-    nearby,
-    labelled(s.pairAddressLabel, address),
-    labelled(s.pairCodeLabel, code),
-    joinButton,
-    message,
     element("h3", s.activityHeading, "setting-heading"),
     activity,
-    element("h3", s.netHeading, "setting-heading"),
-    ...[s.netUpdates, s.netAnnounce, s.netSync, s.netNothing].map((line) => element("p", line, "setting-hint net-statement")),
   ];
+}
+
+/** The Privacy tab's statement of everything the app contacts on the network. Text only. */
+export function privacyRows() {
+  const s = strings.settings;
+  return [element("h3", s.netHeading, "setting-heading"), ...[s.netUpdates, s.netAnnounce, s.netSync, s.netNothing].map((line) => element("p", line, "setting-hint net-statement"))];
 }
