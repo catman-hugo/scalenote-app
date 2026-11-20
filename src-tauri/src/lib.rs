@@ -670,6 +670,8 @@ struct SyncPeerReply {
     folder: String,
     /// It belongs to another folder than the open one, so it does not sync now.
     other_folder: bool,
+    /// Its Tailscale address as it last said, or "" (sync/tailscale.rs in the core).
+    tailscale: String,
 }
 
 #[derive(Serialize)]
@@ -696,6 +698,9 @@ struct SyncStatusReply {
     listening_port: Option<u16>,
     /// This device's address on the local network, for the other device to type.
     address: Option<String>,
+    /// This device's Tailscale address, for the other device to type when it is elsewhere
+    /// (eduroam and other networks keep devices apart). Null when Tailscale is off.
+    tailscale: Option<String>,
     fingerprint: String,
     paused: bool,
     on_wifi: bool,
@@ -730,6 +735,7 @@ fn peer_reply(peer: PeerView) -> SyncPeerReply {
         wifi_only: peer.wifi_only,
         folder: peer.folder.clone(),
         other_folder: peer.other_folder,
+        tailscale: peer.tailscale,
     }
 }
 
@@ -739,6 +745,7 @@ fn status_reply(status: Status, problem: Option<&'static str>) -> SyncStatusRepl
         enabled: status.enabled,
         listening_port: status.listening_port,
         address: local_address_hint(),
+        tailscale: Some(status.tailscale).filter(|address| !address.is_empty()),
         fingerprint: status.fingerprint,
         paused: status.paused,
         on_wifi: status.on_wifi,

@@ -204,6 +204,7 @@
         enabled: syncDevice.enabled,
         listeningPort: 47821,
         address: window.__noAddress ? null : "192.168.1.20",
+        tailscale: window.__tailscale || null,
         fingerprint: "ab12 cd34 ef56 7890 1234",
         paused: syncPairing.paused,
         syncing: syncPairing.syncing,

@@ -58,6 +58,9 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
 
   const fingerprint = element("p", "", "setting-hint");
   fingerprint.id = "pairFingerprint";
+  // This device's Tailscale address, or a short note on what Tailscale is for (tailscale.rs).
+  const tailscaleText = element("p", "", "setting-hint");
+  tailscaleText.id = "pairTailscale";
   const list = element("ul", "", "pair-list");
   list.id = "pairList";
   const activity = element("ul", "", "pair-list");
@@ -70,9 +73,11 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   codeText.id = "pairCode";
   const addressText = element("p", "", "setting-hint");
   addressText.id = "pairAddressText";
+  const codeTailscale = element("p", "", "setting-hint");
+  codeTailscale.id = "pairCodeTailscale";
   const leftText = element("p", "", "setting-hint");
   leftText.id = "pairLeft";
-  codeBox.append(element("p", s.pairShow, "setting-hint"), codeText, addressText, leftText);
+  codeBox.append(element("p", s.pairShow, "setting-hint"), codeText, addressText, codeTailscale, leftText);
 
   let pairing = false;
   let knownPeers = null;
@@ -165,6 +170,8 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       if (when) item.append(element("p", when, "setting-hint pair-last"));
       // The version the device reported at the last sync. An older one is said plainly, since it may lack newer fixes.
       if (peer.version) item.append(element("p", fill(peer.olderVersion ? s.pairVersionOlder : s.pairVersion, { v: peer.version }), "setting-hint pair-version"));
+      // Learned from the device itself at a sync; used when it cannot be found on this network.
+      if (peer.tailscale) item.append(element("p", fill(s.pairPeerTailscale, { address: peer.tailscale }), "setting-hint pair-tailscale"));
       // Each paired device belongs to one notes folder here. Shown by its folder name; when it
       // is another folder than the open one, the device does not sync now, and it can be moved.
       if (peer.folder) {
@@ -210,6 +217,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     pauseButton.textContent = paused ? s.resumeButton : s.pauseButton;
     pausedHint.hidden = !paused;
     fingerprint.textContent = `${s.pairThisDevice}: ${status.fingerprint}`;
+    tailscaleText.textContent = status.tailscale ? fill(s.tailscaleOn, { address: status.tailscale }) : s.tailscaleOff;
     showPeers(status.peers);
     activity.replaceChildren();
     if (status.events.length === 0) activity.append(element("li", s.activityNone));
@@ -273,6 +281,9 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       knownPeers = status.peers.length;
       codeText.textContent = groupCode(fresh);
       addressText.textContent = `${s.pairAddress}: ${status.address ? `${status.address}:${status.listeningPort ?? ""}` : s.pairNoAddress}`;
+      // From another network (eduroam, mobile data) only the Tailscale address can reach this device.
+      codeTailscale.textContent = status.tailscale ? fill(s.pairCodeTailscale, { address: status.tailscale }) : "";
+      codeTailscale.hidden = !status.tailscale;
       codeBox.hidden = false;
       stopButton.hidden = false;
       startButton.hidden = true;
@@ -349,6 +360,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   return [
     element("h3", s.pairHeading, "setting-heading"),
     fingerprint,
+    tailscaleText,
     list,
     pauseButton,
     pausedHint,

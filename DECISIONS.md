@@ -820,3 +820,9 @@ Context. Adding a PDF as pictures is instant on a computer and about 2 seconds a
 Decision. Time each step and write it to the log, and add "Copy the app's log" to About so the owner can send it from the phone. Change the import once the numbers are in.
 Cost. One more round before it is faster.
 
+## 2026-11-20: Sync over Tailscale finds the address by itself
+
+Context. Sync works on home Wi-Fi but not on eduroam: such networks keep devices apart and drop the discovery messages. ScaleNote has no central server, so the plan names Tailscale (or a typed address) for this.
+Decision. Each device detects its own Tailscale address (100.64.0.0/10 on Tailscale's connection, not any 100.64 address, because mobile networks use that range too) and sends it in the greeting after each sync. The other device keeps it per paired device and tries it when the device is not found on the network, so devices that synced once at home keep syncing on eduroam with nothing typed. The address is shown in Settings, Sync and with the pairing code, so pairing from elsewhere is possible by typing it. A kept address is only accepted from a paired device and only in the Tailscale range; the connection is the same encrypted, key-checked channel as at home.
+Cost. One more small file of addresses. The greeting now has extra words after the version; 0.5.6 reads the whole text as the version, finds it invalid and shows no version for a 0.5.7 device until it is updated.
+
