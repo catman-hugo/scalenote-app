@@ -7559,21 +7559,20 @@ await test("Pages as images makes one picture per page with an empty line after 
   const stored = await page.evaluate(() => [...window.__mock.attachments.entries()].map(([k, v]) => [k, v.slice(0, 4)]));
   assert.equal(stored.length, 3);
   assert.ok(stored.every(([k, head]) => k.endsWith(".jpg") && head === "/9j/"), "each is a real JPEG");
+  // The pictures are made with toDataURL: toBlob was measured at about 5 s a page on a phone.
+  assert.equal(await page.evaluate(() => window.__toBlobCalls), 0, "toBlob is not used");
   // How long each step took goes to the app's log, to find what is slow on a phone.
   const logs = await page.evaluate(() => window.__mock.logs);
   assert.ok(logs.some((line) => /^info pdf import: 3 of 3 pages in [\d.]+ s \(open [\d.]+, painting [\d.]+, jpeg [\d.]+, saving [\d.]+, words [\d.]+; page \d+x\d+ px\)$/.test(line)), JSON.stringify(logs));
   // A page can be typed under: the line after a picture is an empty paragraph.
   await page.click(".image-block:nth-of-type(1) .image-img");
   assert.equal(await page.locator(".image-block").count(), 3);
-});
+}, { before: (page) => page.addInitScript(() => { window.__toBlobCalls = 0; const real = HTMLCanvasElement.prototype.toBlob; HTMLCanvasElement.prototype.toBlob = function counted(...args) { window.__toBlobCalls++; return real.apply(this, args); }; }) });
 
 // ---------- a PDF added as pictures runs in the background ----------
 // Saving each picture is slowed down a little so the import is still running while the test
 // does other things.
-const slowPictures = (ms = 120) => (page) => page.addInitScript((delay) => {
-  const real = HTMLCanvasElement.prototype.toBlob;
-  HTMLCanvasElement.prototype.toBlob = function slow(callback, ...rest) { setTimeout(() => real.call(this, callback, ...rest), delay); };
-}, ms);
+const slowPictures = (ms = 120) => (page) => page.addInitScript((delay) => { window.__saveDelay = delay; }, ms);
 const startPagesImport = async (page, count = 8) => {
   await slashPdf(page, pdfFile(count));
   await pdfChoice(page, "Pages as images");
@@ -9103,7 +9102,7 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /PDF import is timed in the log/);
+  assert.match(text, /Much faster PDF import as pictures/);
   assert.doesNotMatch(text, /Updated from inside|squashed|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
@@ -9114,7 +9113,7 @@ await test("What's new from About on Windows is the short list for computers, wi
   await openAboutNotes(page);
   const text = await whatsNewText(page);
   assert.match(text, /Updated from inside the app/);
-  assert.doesNotMatch(text, /PDF import is timed|squashed|<!--/i);
+  assert.doesNotMatch(text, /Much faster PDF import|squashed|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
@@ -9132,7 +9131,7 @@ await test("after an update downloaded from GitHub, a computer shows the short l
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
   assert.match(text, /Updated from inside the app/);
-  assert.doesNotMatch(text, /squashed|PDF import is timed/i);
+  assert.doesNotMatch(text, /squashed|Much faster PDF import/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 

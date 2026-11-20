@@ -7,7 +7,7 @@
 // stopping half way leaves the page as it was.
 
 import { backend } from "./backend.js";
-import { readAsBase64, storePicture } from "./images.js";
+import { checkPicture, readAsBase64 } from "./images.js";
 import { openPdf } from "./pdfdoc.js";
 import { encodePageText } from "./imagetext.js";
 import { PDF_LIMITS, checkPdf, pageFileName, pdfTitle, roundEstimate, secondsLeft } from "./pdfrules.js";
@@ -108,12 +108,18 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
 
     // Encodes and saves one drawn page. A failure is kept and thrown by the main loop, so a
     // rejected promise is never left without someone listening.
+    //
+    // Why toDataURL and not toBlob: measured on an Android phone (0.5.7), toBlob took about 5
+    // seconds a page against 25 ms on a computer, for the same page and the same JPEG quality.
+    // The browser engine makes the toBlob picture in the main thread's idle moments, and while
+    // the page is busy (the progress card, the page itself) there are few of them. toDataURL
+    // makes it at once, which takes a fraction of a second on a phone, and it gives the text form
+    // that saving needs anyway (no second step through a FileReader).
     const save = async (canvas, page) => {
       try {
-        const blob = await timed("jpeg", () => new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", PDF_LIMITS.jpegQuality)));
-        if (!blob) throw fail("pdf_failed");
-        const picture = new File([blob], pageFileName(file.name, page, total), { type: "image/jpeg" });
-        const path = await timed("save", () => storePicture(picture));
+        const name = pageFileName(file.name, page, total);
+        const base64 = await timed("jpeg", async () => jpegOf(canvas));
+        const path = await timed("save", () => storePageBase64(name, base64));
         await timed("words", () => keepWords(path, page));
         made[page - 1] = { path, alt: fill(strings.pdf.pageAlt, { page, name: title }) };
         done++;
@@ -168,6 +174,23 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
     }
     await pdf.destroy();
   }
+}
+
+/** The canvas as a JPEG, in base64 without the "data:" part. Throws when the canvas is empty. */
+function jpegOf(canvas) {
+  const url = canvas.toDataURL("image/jpeg", PDF_LIMITS.jpegQuality);
+  const comma = url.indexOf(",");
+  if (!url.startsWith("data:image/jpeg") || comma < 0) throw fail("pdf_failed");
+  return url.slice(comma + 1);
+}
+
+/** Saves a page picture given as base64, with the same checks as any picture. */
+async function storePageBase64(name, base64) {
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  const size = Math.floor((base64.length * 3) / 4) - padding;
+  const problem = checkPicture({ name, type: "image/jpeg", size });
+  if (problem) throw fail(problem);
+  return backend.saveAttachment(name, base64);
 }
 
 function logTimes(clock, done, total) {
