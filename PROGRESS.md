@@ -2,9 +2,25 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-19; 0.5.6 released, then fixed for a re-release (shorter What's new, phone back gesture in Settings); 0.5.5 released (home server program and all six extras); 0.5.4 built (re-release: now with theme cards and a phone Settings list) (Android support and six extras, branch `feature/v0.5.4-android`, on top of 0.5.3); 0.5.3 built (the sync itself, plus six extras); tested in a browser and with two real services over loopback sockets on one computer in Rust, NOT tried on two devices or on a real network.
+Last updated: 2026-11-20; 0.5.7 built (quicker sync, pen ink keeps its shape, PDF import timing, Copy the app's log; first in-app update); 0.5.6 released (in-app updates for computers, signing key set up); 0.5.5 released (home server program and all six extras); sync tried by the owner between a computer and a tablet: it works with Sync now.
 
-## 0.5.6: built, ready to release
+## 0.5.7: built (from the owner's device test of 0.5.6, 2026-11-20)
+
+Branch `fix/sync-ink-pdf-0.5.7`. Release notes: `docs/release-notes/0.5.7.md`.
+
+The owner's report: sync between the computer and the tablet works (pressing Sync now, then reopening the page); handwriting from the tablet looked stretched on the computer; automatic sync was not seen within 30 seconds; adding a PDF as pictures is instant on a computer and very slow on the phone (38 pages, about 2 seconds each).
+
+Done (tried here: npm test 330 passed, Rust core 267 passed, full browser suite 425 passed):
+- Automatic sync looks every 5 seconds instead of 20 (`start_auto_sync` in `src/lib.rs`). With the other device needing up to 8 seconds to notice new files (`web/vaultwatch.js`), a change took up to about 35 seconds before, so the owner's 30 seconds was just short; now about 10 to 15. Only compiled by CI.
+- Pen ink over text keeps its shape: each new piece stores its block's width, height and text size when drawn (`size` in the drawing file, optional, checked when read) and is drawn at the same distance from the block's corner, scaled only with the text size (`web/textink.js`). Ink from before has no size and is drawn as before. 2 unit tests and the browser test for a narrower window.
+- Adding a PDF as pictures writes how long each step took to the log (`pdf import: … (open, painting, jpeg, saving, words; page size)`), and About has "Copy the app's log" (`log_tail`, the last 32 KB, closed while locked; `Logger::tail` with a Rust test). Purpose: the owner copies the log on the phone after an import, so the slow step is measured, not guessed.
+
+Not done / untried:
+- The PDF import on the phone is not faster yet: waiting for the timing from the owner's phone.
+- Nothing tried on a device. Automatic sync speed, the ink on a tablet and a computer, and copying the log on Android are untried.
+- The in-app update from 0.5.6 to 0.5.7 is the first real one.
+
+## 0.5.6: released (re-released twice on 2026-11-19)
 
 Branch `fix/pdf-find-and-width` (fixes reported while testing 0.5.5). Release notes: `docs/release-notes/0.5.6.md`; security checklist: `docs/security-checklist-0.5.6.md`.
 
@@ -20,7 +36,7 @@ Done (tried here: node tests, the browser tests for PDFs and find, screenshots l
 - Setup guide (`docs/setup-guide.md`), linked from the README.
 - (25) the Fedora install check moved to v0.8 (the owner's choice).
 - Re-release fixes (branch `fix/short-notes-and-back`, from the owner's phone test of the first 0.5.6): the GitHub page keeps the full release notes; the app shows a short list kept in a hidden comment (`appNotes`), except on a computer right after an update made with its own Download button, which gets the full notes; each system sees only its own lines (`notesFor` in `web/whatsnew.js`; rule in DECISIONS.md); the What's new box keeps clear of the status bar; the phone back gesture now closes Settings and other windows (and steps from a Settings group back to the list) instead of leaving the app (`web/backlayers.js`, 2 browser tests). Not tried on the phone.
-- In-app updates on computers (asked during the re-release): `src-tauri/src/selfupdate.rs` (`install_kind`, `install_update`, one Rust test), `tauri-plugin-updater` =2.14.1, `scripts/latest-json.mjs` (3 tests), CI signs the installers and uploads `latest.json` when the key is set up (`docs/update-signing.md`), Download in the computer app uses it (3 browser tests with the mock). What's new after an update shows the full notes only when the app's own Download button was used; otherwise the short list with a button to GitHub. The public key is in `tauri.conf.json`; waiting on the owner to add the two GitHub secrets (this session could not reach the secrets settings). Not tried: anything on a real computer; the Rust side is only compiled by CI.
+- In-app updates on computers (asked during the re-release): `src-tauri/src/selfupdate.rs` (`install_kind`, `install_update`, one Rust test), `tauri-plugin-updater` =2.14.1, `scripts/latest-json.mjs` (3 tests), CI signs the installers and uploads `latest.json` when the key is set up (`docs/update-signing.md`), Download in the computer app uses it (3 browser tests with the mock). What's new after an update shows the full notes only when the app's own Download button was used; otherwise the short list with a button to GitHub. The public key is in `tauri.conf.json` and the two GitHub secrets are set; the v0.5.6 release has a signed `latest.json`. Not tried: anything on a real computer; the Rust side is only compiled by CI.
 - Phone sizing: root text size is the chosen size times `--screen-scale` (0.875 at 480 CSS px wide or less, 0.8125 at 360 or less), spacing steps shrink too; full-screen Settings keeps clear of the status bar (safe-area padding). Compared with the owner's phone screenshots at the same size (393 x 873, 2.75x).
 
 Not done / untried:

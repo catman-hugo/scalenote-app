@@ -808,3 +808,15 @@ Decision. Tauri's updater plugin (`tauri-plugin-updater` =2.14.1), used from Rus
 The key pair was made for the owner outside the repository; only the public half is in the code, and the private key and its password exist only as GitHub secrets and in the owner's own safe copy (he asked that they never appear in the code).
 Cost. A key that must not be lost (`docs/update-signing.md`). Only versions built with the public key in place can update themselves, so the first in-app update is from the re-released 0.5.6 to the next version. The Rust side is only compiled by CI and not tried on a real computer.
 
+## 2026-11-20: Pen ink keeps its size next to the text
+
+Context. Ink over text was stored as fractions of its block's width and height. The same paragraph is wider and shorter on a computer than on a tablet, so handwriting was stretched sideways and squashed.
+Decision. New ink also stores its block's width, height and text size when drawn, and is drawn at the same distance from the block's top left corner, scaled only when the text size changes (a font size or zoom on a phone). Text does not grow with a wider page, so ink does not either. Old ink is drawn as before.
+Cost. Where text wraps differently, ink cannot stay on every word; it did not before either, but it was stretched as well. Older app versions ignore the new field and drop it when they change that drawing.
+
+## 2026-11-20: Measure the phone's PDF import before changing it
+
+Context. Adding a PDF as pictures is instant on a computer and about 2 seconds a page on the phone. The same code runs on both, so the slow step could be painting, JPEG, saving across to Rust, or reading the words.
+Decision. Time each step and write it to the log, and add "Copy the app's log" to About so the owner can send it from the phone. Change the import once the numbers are in.
+Cost. One more round before it is faster.
+
