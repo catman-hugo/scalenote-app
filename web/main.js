@@ -628,7 +628,17 @@ function aboutRows() {
   notes.id = "aboutWhatsNew";
   const all = buttonElement(t.allChanges, () => openUrlOrWarn(RELEASE_PAGE));
   all.id = "aboutAllChanges";
-  rows.push(notes, all, textElement("p", t.allChangesHint, "setting-hint"), textElement("h3", t.howMade, "setting-heading"));
+  const copyLog = buttonElement(t.copyLog, async () => {
+    try {
+      await navigator.clipboard.writeText(await backend.logTail());
+      showToast(t.logCopied);
+    } catch (error) {
+      logProblem("log copy failed", error);
+      showToast(t.logCopyFailed);
+    }
+  });
+  copyLog.id = "aboutCopyLog";
+  rows.push(notes, all, textElement("p", t.allChangesHint, "setting-hint"), copyLog, textElement("p", t.copyLogHint, "setting-hint"), textElement("h3", t.howMade, "setting-heading"));
   for (const point of strings.disclosure.points) rows.push(textElement("p", point, "setting-hint"));
   return rows;
 }
