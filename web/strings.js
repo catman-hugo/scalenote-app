@@ -428,6 +428,8 @@ export const strings = {
     penButton: "Pen button",
     penButtonOptions: { erase: "Erases", select: "Selects with a loop", none: "Does nothing" },
     penButtonHint: "What the button on the side of a pen does while you hold it on the canvas. The eraser end of a pen always erases.",
+    canvasEdge: "Canvas edges",
+    canvasEdgeOptions: { open: "Open on every side", topLeft: "Start at the top left, like a page" },
     snapShapes: "Snap shapes to a grid",
     snapShapesHint: "Corners of rectangles, ellipses, lines and arrows land on an invisible grid, so shapes drawn at different times line up exactly. Shapes already drawn are not moved.",
     historyHeading: "Page history",

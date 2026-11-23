@@ -112,8 +112,9 @@ function paperThumb(paper) {
  * says what the barrel button of a pen does: "erase", "select" or "none". `snapShapes()` says
  * whether shape corners snap to a grid. `onLive()` is called while a gesture is still going (at
  * most once a frame), so the canvas blocks in the text can follow the pen as it moves.
+ * `topLeftEdge()` says whether the sheet stops at the top and the left (see clampView).
  */
-export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true }) {
+export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true, topLeftEdge = () => false }) {
   const t = strings.canvas;
   const state = {
     canvas: emptyCanvas(),
@@ -537,6 +538,29 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     state.view = { scale, x: sx - before.x * scale, y: sy - before.y * scale };
   }
 
+  // With the "Starts at the top left" setting (0.5.8), the sheet has an edge at the top and the
+  // left, like a page in OneNote: it cannot be moved further than that, and stays open to the
+  // right and down. The edge is the sheet's corner (0, 0), where the margin line of ruled paper
+  // starts from, or further out if something was drawn there before the setting was switched on,
+  // so nothing already drawn is ever out of reach. Applied before every paint, so panning,
+  // zooming, pinching and scrolling all respect it in one place.
+  function clampView() {
+    if (!topLeftEdge()) return;
+    let left = 0;
+    let top = 0;
+    const around = boundsOf(state.canvas.items);
+    if (around) {
+      left = Math.min(left, around.minX);
+      top = Math.min(top, around.minY);
+    }
+    for (const frame of state.canvas.frames) {
+      left = Math.min(left, frame.x);
+      top = Math.min(top, frame.y);
+    }
+    state.view.x = Math.min(state.view.x, -left * state.view.scale);
+    state.view.y = Math.min(state.view.y, -top * state.view.scale);
+  }
+
   // Puts the whole drawing in view (never bigger than life size), or the sheet's corner when empty.
   function fitView() {
     const box = surface.getBoundingClientRect();
@@ -643,6 +667,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
 
   function draw() {
     state.frame = 0;
+    clampView();
     const ratio = window.devicePixelRatio || 1;
     const box = surface.getBoundingClientRect();
     const width = Math.max(1, Math.round(box.width * ratio));

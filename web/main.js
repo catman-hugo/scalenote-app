@@ -68,7 +68,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
@@ -193,6 +193,7 @@ async function loadSettings() {
       openIn: OPEN_IN.includes(parsed.openIn) ? parsed.openIn : "text",
       // Shapes snap to a grid unless turned off.
       snapShapes: parsed.snapShapes !== false,
+      canvasEdge: CANVAS_EDGES.includes(parsed.canvasEdge) ? parsed.canvasEdge : "open",
       // The notes box after an update is shown unless turned off.
       showWhatsNew: parsed.showWhatsNew !== false,
       lastSeenVersion: typeof parsed.lastSeenVersion === "string" ? parsed.lastSeenVersion.slice(0, 20) : null,
@@ -376,6 +377,7 @@ function removeCover() {
 
 
 const PEN_BUTTONS = ["erase", "select", "none"];
+const CANVAS_EDGES = ["open", "topLeft"];
 const OPEN_IN = ["text", "canvas", "split"];
 
 function canvasSettingsRows() {
@@ -422,7 +424,26 @@ function canvasSettingsRows() {
   const snapRow = document.createElement("label");
   snapRow.className = "setting-row";
   snapRow.append(textElement("span", s.snapShapes, "setting-label"), snap);
-  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint")];
+  // Where the sheet ends: open on every side, or an edge at the top and left like a page.
+  const edge = document.createElement("select");
+  edge.id = "canvasEdge";
+  for (const value of CANVAS_EDGES) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = s.canvasEdgeOptions[value];
+    edge.append(option);
+  }
+  edge.value = app.settings.canvasEdge;
+  edge.setAttribute("aria-label", s.canvasEdge);
+  edge.addEventListener("change", () => {
+    app.settings.canvasEdge = CANVAS_EDGES.includes(edge.value) ? edge.value : "open";
+    saveSettings();
+    if (app.canvasView) app.canvasView.redraw();
+  });
+  const edgeRow = document.createElement("label");
+  edgeRow.className = "setting-row";
+  edgeRow.append(textElement("span", s.canvasEdge, "setting-label"), edge);
+  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint"), edgeRow];
 }
 
 
@@ -2179,6 +2200,7 @@ function ensureCanvasView() {
     onNotice: (text) => showToast(text),
     penButton: () => app.settings.penButton,
     snapShapes: () => app.settings.snapShapes,
+    topLeftEdge: () => app.settings.canvasEdge === "topLeft",
   });
   app.canvasSave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCanvas, onStatus: setStatus });
   // Leaving the window (or the app being put away on a phone) ends a note being typed, so its

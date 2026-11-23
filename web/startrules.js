@@ -24,6 +24,7 @@ export const RESETTABLE = {
   penButton: "erase",
   openIn: "text",
   snapShapes: true,
+  canvasEdge: "open",
   reopenLast: true,
   showWhatsNew: true,
 };
