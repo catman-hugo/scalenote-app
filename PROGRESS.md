@@ -2,7 +2,25 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-24; 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-24; 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+
+## 0.6.0: built (partial sync, no new screens)
+
+Branch `feature/v0.6.0-partial-sync` (made on top of `feature/v0.6-plan`; merge that first). Plan: `docs/v0.6-plan.md`. Release notes: `docs/release-notes/0.6.0.md`; security checklist: `docs/security-checklist-0.6.0.md`.
+
+Done (tried here: `cargo test -p scalenote-core` 287 unit tests passed, 15 of them new, plus the 18 integration tests; `npm test` 327 passed and 2 failed, `images.test.mjs` and `togglefold.test.mjs`, which fail the same way without this change because this workspace lacks a library they load):
+- `core/src/sync/keep.rs`: choices per folder or page (`.scalenote/offline.txt`, per device, never synced), with kinds text, drawings, pictures and other files. The deepest choice wins; a page choice covers its drawing; files in `attachments/` are kept when a kept page whose choice includes their kind links to them; `x.png.text.json` follows `x.png`. No choices means keep everything, and a damaged file is read that way too.
+- The listing a device sends (`exchange.rs`) now carries its choices (`/keep`, `/linked` lines) and the files it removed to free space (after `/not-kept`). An app before 0.6 drops the `/` lines and reads the removed files as ordinary skipped names, so it never deletes them.
+- The plan (`engine.rs`) leaves out, on each side, files that side does not have now, did not have at the last sync and does not keep. A page the person deleted on a device that keeps it still syncs as a delete. The preview counts `not_kept_here` and `not_kept_there`.
+- `keep::free_up_space`: removes files the choices no longer keep, only when a saved list shows a paired device had the same version; rechecks the hash first. Order: removed list, then saved lists, then the file.
+- After each sync the other device's list is kept (`.scalenote/sync-tree-<device>.txt`, removed with the device); `keep::not_here` lists what exists elsewhere but not here (for the cloud icons of 0.6.1).
+- Renaming, moving or trashing a folder or page with files not here is refused with the new error `not_all_here` (sentence in `web/strings.js`).
+- Version 0.6.0.
+
+Not done / untried:
+- No screen uses any of it yet (0.6.1). `src-tauri/src/lib.rs` has no commands for the choices or "Free up space" yet.
+- An app before 0.6 can still send a device files it does not keep (kept there, nothing lost).
+- Never tried between two real devices.
 
 ## 0.5.9: built (asked for one of the owner's testers, 2026-11-23)
 
@@ -672,7 +690,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.14 | The `/canvas` block inside callouts, toggles and columns (see "0.4.14") | built, not tried on a device |
 | 0.4.15 | Ink and canvas drawings in print and export; text selection and find inside a PDF block | built, waiting for device test |
 | 0.5 | Sync between your own devices: LocalSend-style direct sync and the home server as an always-on device. Slices 0.5.0 to 0.5.6, see `docs/v0.5-plan.md`. 25 extra features were added to 0.5.3 to 0.5.6 on 2026-11-17. The browser client moved to a later release | 0.5.0 to 0.5.2 built, not tried on two devices; 0.5.3 next |
-| 0.6 | Offline choices per item, storage page, sharing into ScaleNote and quick capture, on every device (Windows, Linux and Android). Slices 0.6.0 to 0.6.4, see `docs/v0.6-plan.md` | planned; 0.6.0 (partial sync) first |
+| 0.6 | Offline choices per item, storage page, sharing into ScaleNote and quick capture, on every device (Windows, Linux and Android). Slices 0.6.0 to 0.6.4, see `docs/v0.6-plan.md` | 0.6.0 built (partial sync in the core); 0.6.1 (offline choices in the app) next |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
 | 1.1 | Planning and calendar, templates, daily notes | not started |
 | 1.2 | AI assistant and the model Cookbook | not started |
