@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-23; 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-24; 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.5.9: built (asked for one of the owner's testers, 2026-11-23)
 
@@ -672,7 +672,7 @@ Owner requests (2026-11-11). Release notes: `docs/release-notes/0.4.8.md`. Built
 | 0.4.14 | The `/canvas` block inside callouts, toggles and columns (see "0.4.14") | built, not tried on a device |
 | 0.4.15 | Ink and canvas drawings in print and export; text selection and find inside a PDF block | built, waiting for device test |
 | 0.5 | Sync between your own devices: LocalSend-style direct sync and the home server as an always-on device. Slices 0.5.0 to 0.5.6, see `docs/v0.5-plan.md`. 25 extra features were added to 0.5.3 to 0.5.6 on 2026-11-17. The browser client moved to a later release | 0.5.0 to 0.5.2 built, not tried on two devices; 0.5.3 next |
-| 0.6 | Android, offline choices per item, share target and quick capture | not started |
+| 0.6 | Offline choices per item, storage page, sharing into ScaleNote and quick capture, on every device (Windows, Linux and Android). Slices 0.6.0 to 0.6.4, see `docs/v0.6-plan.md` | planned; 0.6.0 (partial sync) first |
 | 1.0.0 | Hardening, accessibility, tests on every device | not started |
 | 1.1 | Planning and calendar, templates, daily notes | not started |
 | 1.2 | AI assistant and the model Cookbook | not started |

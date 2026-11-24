@@ -844,3 +844,9 @@ Context. A tester wants the canvas to work like a page in OneNote: an edge at th
 Decision. A device setting under Drawing, off by default: the canvas view is kept from moving past the sheet's corner. The edge moves out to anything already drawn beyond it, so switching it on never hides drawings. The drawing file does not change.
 Cost. One setting more.
 
+
+## 2026-11-24: 0.6 is for every device, not only Android
+
+Context. The spec named 0.6 "Android and offline selection". The owner pointed out that a laptop goes on the road too, and that the storage page and the share target are just as useful on a computer.
+Decision. Offline choices per item, the storage page, sharing into ScaleNote and quick capture come to Windows, Linux and Android in 0.6. On a computer everything stays offline unless switched off, so nothing changes for someone who never opens the setting. Sharing into the app uses each system's own route: the share menu on Android, "Send to" and "Open with" on Windows, "Open with" and drag and drop on Linux. Partial sync is built first (0.6.0), because a file a device leaves out by choice must never be taken for a deleted file. Plan: `docs/v0.6-plan.md`.
+Cost. Partial sync touches every sync, so it needs its own release and many tests before any screen is built. Windows' own share window is left out: it needs an MSIX-installed app.
