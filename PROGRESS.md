@@ -2,9 +2,21 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-20; 0.5.8 built (Settings cleanup, per-page cover, Linked from and view, sync over Tailscale, faster PDF import on phones, Ctrl P); 0.5.7 released (quicker sync, pen ink keeps its shape, PDF import timing, Copy the app's log; first in-app update); 0.5.6 released (in-app updates for computers, signing key set up); 0.5.5 released (home server program and all six extras); sync tried by the owner between a computer and a tablet: it works with Sync now.
+Last updated: 2026-11-23; 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
-## 0.5.8: built (from the owner's tests and Settings review, 2026-11-20)
+## 0.5.9: built (asked for one of the owner's testers, 2026-11-23)
+
+Branch `feature/canvas-edges`. Release notes: `docs/release-notes/0.5.9.md`.
+
+The tester finds the endless canvas annoying: the red margin line of ruled paper can end up in the middle of the screen. They want it like OneNote: an edge at the top and the left, open to the right and down.
+
+Done (tried here: npm test 333 passed, full browser suite 434 passed after the What's new size test was made to hold for short notes; Rust unchanged):
+- Settings, Drawing, "Canvas edges": "Open on every side" (default, as before) or "Start at the top left, like a page". With the edge on, the view cannot be moved past the sheet's corner (0, 0), or past anything already drawn further out, so nothing becomes unreachable (`clampView` in `web/canvasview.js`, applied before every paint, so panning, zooming, pinching and scrolling all obey it). It is a device setting and is reset by "Reset to defaults". 2 browser tests.
+
+Not done / untried:
+- Not tried on a device, or with a finger or pen pinch.
+
+## 0.5.8: released 2026-11-20 (from the owner's tests and Settings review)
 
 Branch `feature/v0.5.8`. Release notes: `docs/release-notes/0.5.8.md`. Two commits came from after the 0.5.7 release (Tailscale, PDF import).
 

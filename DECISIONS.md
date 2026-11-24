@@ -838,3 +838,9 @@ Cost. Another device does not know how a page was left here. Up to 1000 pages ar
 Context. The owner found the Sync tab too long, with the paired devices lost between explanations.
 Decision. A settings tab is controls first, with a hint only where a control needs one. Explanations of how things work go to the Privacy tab (sync, security, network) or the docs. On Sync the paired devices come first, as cards.
 
+## 2026-11-23: The canvas can have an edge at the top and the left
+
+Context. A tester wants the canvas to work like a page in OneNote: an edge at the top and the left, endless to the right and down, so the ruled paper's margin line stays at the left.
+Decision. A device setting under Drawing, off by default: the canvas view is kept from moving past the sheet's corner. The edge moves out to anything already drawn beyond it, so switching it on never hides drawings. The drawing file does not change.
+Cost. One setting more.
+

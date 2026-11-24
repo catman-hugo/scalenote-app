@@ -929,12 +929,13 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
     const d = document.querySelector("#whatsnew").getBoundingClientRect();
     const b = document.querySelector("#whatsnew .dialog-actions button").getBoundingClientRect();
     const n = document.querySelector("#whatsnew .notes");
-    return { top: d.top, bottom: d.bottom, left: d.left, right: d.right, buttonBottom: b.bottom, scrolls: n.scrollHeight > n.clientHeight, notesHeight: n.clientHeight, view: [innerWidth, innerHeight] };
+    return { top: d.top, bottom: d.bottom, left: d.left, right: d.right, buttonBottom: b.bottom, scrolls: n.scrollHeight <= n.clientHeight || ["auto", "scroll"].includes(getComputedStyle(n).overflowY), notesHeight: n.clientHeight, view: [innerWidth, innerHeight] };
   });
   assert.ok(m.top >= 0 && m.bottom <= m.view[1], "the box is inside the screen: " + JSON.stringify(m));
   assert.ok(m.left >= 0 && m.right <= m.view[0], "the box is inside the screen: " + JSON.stringify(m));
   assert.ok(m.buttonBottom <= m.view[1], "the Close button is on screen: " + JSON.stringify(m));
   assert.ok(m.notesHeight >= 80, "the notes have room: " + JSON.stringify(m));
+  // Short notes fit; longer ones scroll inside the box rather than push Close off the screen.
   if (mustScroll) assert.ok(m.scrolls, "on a short screen the notes scroll inside the box: " + JSON.stringify(m));
   const atEnd = await page.evaluate(() => { const n = document.querySelector("#whatsnew .notes"); n.scrollTop = n.scrollHeight; return n.scrollTop + n.clientHeight >= n.scrollHeight - 1; });
   assert.ok(atEnd, "the end of the notes can be reached");
@@ -7503,6 +7504,59 @@ await test("in the split view the canvas block in the text shows a line while it
   await page.mouse.up();
 });
 
+// ---------- canvas edges: the sheet can stop at the top and the left ----------
+
+// A drawing with only pen lines is saved in the first, simplest format, with "strokes".
+const drawnLines = async (page) => {
+  const saved = await savedDrawing(page);
+  return saved ? saved.items || saved.strokes || [] : [];
+};
+const drawnMin = async (page) => {
+  const items = await drawnLines(page);
+  const points = items.flatMap((item) => item.points || []);
+  return [Math.min(...points.map((p) => p[0])), Math.min(...points.map((p) => p[1]))];
+};
+
+await test("with Start at the top left, the canvas cannot be moved past its top and left edge", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  const box = await sheetBox(page);
+  // Scrolling up and to the left as far as it goes stays at the sheet's corner.
+  await page.mouse.move(box.x + 200, box.y + 200);
+  await page.mouse.wheel(-600, -600);
+  await page.waitForTimeout(150);
+  await drawLine(page, [3, 3], [60, 40]);
+  await page.waitForFunction(() => ((t) => (t ? JSON.parse(t).items || JSON.parse(t).strokes : []).length === 1)(window.__mock.canvases.get("Sketch.md")));
+  const [x, y] = await drawnMin(page);
+  assert.ok(x >= 0 && y >= 0, `drawn at ${x}, ${y}: nothing left of or above the edge`);
+  // To the right and down it stays open.
+  await page.mouse.move(box.x + 200, box.y + 200);
+  await page.mouse.wheel(900, 900);
+  await page.waitForTimeout(150);
+  await drawLine(page, [100, 100], [140, 120]);
+  await page.waitForFunction(() => ((t) => (JSON.parse(t).items || JSON.parse(t).strokes).length === 2)(window.__mock.canvases.get("Sketch.md")));
+  const far = (await drawnLines(page))[1].points[0];
+  assert.ok(far[0] > 700 && far[1] > 700, JSON.stringify(far));
+}, { settings: existingUser({ updates: false, canvasEdge: "topLeft" }) });
+
+await test("by default the canvas is open on every side, and the setting is under Drawing", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await drawLine(page, [3, 3], [60, 40]);
+  await page.waitForFunction(() => ((t) => (t ? JSON.parse(t).items || JSON.parse(t).strokes : []).length === 1)(window.__mock.canvases.get("Sketch.md")));
+  const [x, y] = await drawnMin(page);
+  assert.ok(x < 0 && y < 0, "the empty sheet starts a little in, so its corner can be passed");
+  await openSettingsTab(page, "drawing");
+  assert.equal(await page.inputValue("#canvasEdge"), "open");
+  await page.selectOption("#canvasEdge", "topLeft");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).canvasEdge === "topLeft");
+  if (shots) {
+    await page.screenshot({ path: `${shots}/v059-light-drawing.png` });
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+    await page.screenshot({ path: `${shots}/v059-dark-drawing.png` });
+  }
+}, { settings: existingUser({ updates: false }) });
+
 // ---------- 0.4.12: PDF import ----------
 
 // A small real PDF: `count` pages of 300 x 400 points, each with a black box and the words "Page N".
@@ -9242,8 +9296,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Much faster PDF import as pictures/);
-  assert.doesNotMatch(text, /Ctrl P|It did nothing before|<!--|-->/);
+  assert.match(text, /Canvas can start at the top left/);
+  assert.doesNotMatch(text, /OneNote|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9252,15 +9306,15 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Ctrl P prints the page/);
-  assert.doesNotMatch(text, /Much faster PDF import|It did nothing before|<!--/i);
+  assert.match(text, /Canvas can start at the top left/);
+  assert.doesNotMatch(text, /OneNote|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Devices that synced once tell each other[\s\S]*It did nothing before/);
+  assert.match(text, /like a page in OneNote/);
   assert.doesNotMatch(text, /fingerprint|Linux|Android|phone|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
@@ -9270,16 +9324,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Ctrl P prints the page/);
-  assert.doesNotMatch(text, /It did nothing before|Much faster PDF import/i);
+  assert.match(text, /Canvas can start at the top left/);
+  assert.doesNotMatch(text, /OneNote/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Shorter Sync tab/);
-  assert.doesNotMatch(text, /Ctrl P|It did nothing before/);
+  assert.match(text, /Canvas can start at the top left/);
+  assert.doesNotMatch(text, /OneNote/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
