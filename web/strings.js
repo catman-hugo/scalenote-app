@@ -931,6 +931,7 @@ export const strings = {
     io: "The computer could not read or write that file.",
     no_vault: "No folder is open.",
     unsupported_type: "That file is not a picture ScaleNote can use. Allowed types: png, jpg, gif and webp.",
+    not_all_here: "Some files in here are not kept on this device. Rename, move or delete it on a device that has all of them.",
     too_large_picture: "That picture is too large. The limit is 10 MB.",
     unsupported_pdf: "That file is not a PDF ScaleNote can use.",
     too_large_pdf: "That PDF is too large. The limit is 25 MB.",

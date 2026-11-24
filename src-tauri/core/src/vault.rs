@@ -32,6 +32,9 @@ pub enum VaultError {
     AlreadyExists,
     /// A file that is not one of the allowed picture types.
     UnsupportedType,
+    /// A folder or page with files this device does not keep (0.6): renaming, moving or deleting
+    /// it here would leave those files behind on the other devices.
+    NotAllHere,
     /// Anything else the operating system reported. The text is for the log only.
     Io(String),
 }
@@ -49,6 +52,7 @@ impl VaultError {
             VaultError::Conflict => "conflict",
             VaultError::AlreadyExists => "already_exists",
             VaultError::UnsupportedType => "unsupported_type",
+            VaultError::NotAllHere => "not_all_here",
             VaultError::Io(_) => "io",
         }
     }
@@ -388,8 +392,18 @@ impl Vault {
         if target.exists() {
             return Err(VaultError::AlreadyExists);
         }
+        self.check_all_here(relative)?;
         self.rename_with_sidecar(&path, &target, is_note)?;
         self.relative_for_new(&target)
+    }
+
+    /// Refuses to rename, move or delete a folder or page that has files this device does not
+    /// keep (see sync/keep.rs): the files elsewhere would be left under the old name.
+    pub(crate) fn check_all_here(&self, relative: &str) -> Result<()> {
+        if crate::sync::keep::has_missing_inside(&self.root, relative) {
+            return Err(VaultError::NotAllHere);
+        }
+        Ok(())
     }
 
     /// Renames a page together with its drawing (see canvas.rs). Nothing is replaced: if the
@@ -446,6 +460,7 @@ impl Vault {
         if target.exists() {
             return Err(VaultError::AlreadyExists);
         }
+        self.check_all_here(relative)?;
         self.rename_with_sidecar(&path, &target, is_note)?;
         self.relative_for_new(&target)
     }
