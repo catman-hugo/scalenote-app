@@ -13,6 +13,7 @@
 
 use super::channel::{Channel, MAX_MESSAGE};
 use super::files::{self, Done, Expect, MAX_TRANSFER_BYTES};
+use super::keep::{self, KeepRules, Kinds, MAX_RULES};
 use super::manifest::{hash_bytes, safe_path, Manifest, MAX_MANIFEST_BYTES};
 use super::{Result, SyncError};
 use std::collections::BTreeSet;
@@ -102,37 +103,119 @@ pub fn recv_blob<S: Read + Write>(channel: &mut Channel<S>, max_body: u64) -> Re
     recv_blob_from(channel, &head, max_body)
 }
 
-/// The listing: the list of files as text, then the names that were left out on purpose.
+/// The listing: the list of files as text, then the names that were left out.
 /// Body layout: `<manifest length as 8 digits>` `<manifest text>` `<one skipped path per line>`.
+///
+/// Since 0.6 a device that keeps only part of the vault adds, after the skipped names:
+/// - the line `/not-kept`, then the files it removed to free space (one per line), and
+/// - its choices as `/keep <kinds> <path>` lines and `/linked <path>` lines (keep.rs).
+///
+/// Lines starting with `/` are never safe paths, so an app older than 0.6 drops them, and reads
+/// the removed files after `/not-kept` as ordinary skipped names: it leaves them alone instead
+/// of taking them for deleted files. That is what keeps an older device safe.
 pub fn encode_listing(manifest: &Manifest, skipped: &[String]) -> Vec<u8> {
-    let text = manifest.to_text();
+    encode_listing_full(&Listing { manifest: manifest.clone(), skipped: skipped.iter().cloned().collect(), ..Listing::default() })
+}
+
+/// Everything a device says about its files in answer to `LIST`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Listing {
+    pub manifest: Manifest,
+    /// Left out for a reason (too big, a link, an odd name).
+    pub skipped: BTreeSet<String>,
+    /// Removed to free space, and not here again yet.
+    pub not_kept: BTreeSet<String>,
+    /// What the device keeps. Empty choices (also from apps before 0.6) mean "everything".
+    pub rules: KeepRules,
+}
+
+pub fn encode_listing_full(listing: &Listing) -> Vec<u8> {
+    let text = listing.manifest.to_text();
     let mut body = format!("{:08}", text.len()).into_bytes();
     body.extend_from_slice(text.as_bytes());
-    for path in skipped {
-        body.extend_from_slice(path.as_bytes());
+    let mut line = |text: &str| {
+        body.extend_from_slice(text.as_bytes());
         body.push(b'\n');
+    };
+    for path in &listing.skipped {
+        line(path);
+    }
+    if !listing.not_kept.is_empty() {
+        line("/not-kept");
+        for path in &listing.not_kept {
+            line(path);
+        }
+    }
+    for (path, kinds) in &listing.rules.choices {
+        line(&format!("/keep {} {path}", kinds.to_letters()));
+    }
+    for path in &listing.rules.linked {
+        line(&format!("/linked {path}"));
     }
     body
 }
 
 pub fn decode_listing(body: &[u8]) -> Result<(Manifest, BTreeSet<String>)> {
+    let listing = decode_listing_full(body)?;
+    let mut skipped = listing.skipped;
+    skipped.extend(listing.not_kept);
+    Ok((listing.manifest, skipped))
+}
+
+/// Reads a listing. The choices of the other device are checked like everything else from a
+/// network: a damaged choice line ends the sync, because guessing what a device keeps could make
+/// this side delete files there.
+pub fn decode_listing_full(body: &[u8]) -> Result<Listing> {
     let digits = body.get(..8).and_then(|d| std::str::from_utf8(d).ok()).ok_or(SyncError::Damaged("listing"))?;
     let length: usize = digits.parse().map_err(|_| SyncError::Damaged("listing"))?;
     let end = 8usize.checked_add(length).filter(|e| *e <= body.len()).ok_or(SyncError::Damaged("listing"))?;
     let manifest = Manifest::from_text(std::str::from_utf8(&body[8..end]).map_err(|_| SyncError::Damaged("listing"))?)?;
     let rest = std::str::from_utf8(&body[end..]).map_err(|_| SyncError::Damaged("listing"))?;
-    let mut skipped = BTreeSet::new();
+    let mut listing = Listing { manifest, ..Listing::default() };
+    let mut in_not_kept = false;
+    let mut count = 0usize;
     for line in rest.lines() {
-        // Names that are not safe paths could never be planned anyway; they are dropped.
-        if safe_path(line) && skipped.len() < super::manifest::MAX_FILES {
-            skipped.insert(line.to_string());
+        count += 1;
+        if count > 2 * super::manifest::MAX_FILES + MAX_RULES {
+            return Err(SyncError::Damaged("listing too long"));
+        }
+        if line == "/not-kept" {
+            in_not_kept = true;
+        } else if let Some(choice) = line.strip_prefix("/keep ") {
+            let (letters, path) = choice.split_once(' ').ok_or(SyncError::Damaged("listing choice"))?;
+            let kinds = Kinds::from_letters(letters).ok_or(SyncError::Damaged("listing choice"))?;
+            listing.rules.set(path, Some(kinds)).map_err(|_| SyncError::Damaged("listing choice"))?;
+        } else if let Some(path) = line.strip_prefix("/linked ") {
+            if !safe_path(path) || listing.rules.linked.len() >= super::manifest::MAX_FILES {
+                return Err(SyncError::Damaged("listing choice"));
+            }
+            listing.rules.linked.insert(path.to_string());
+        } else if line.starts_with('/') {
+            // A kind of line from a newer app: not understood, so left alone.
+        } else if safe_path(line) {
+            // Names that are not safe paths could never be planned anyway; they are dropped.
+            if in_not_kept {
+                listing.not_kept.insert(line.to_string());
+            } else {
+                listing.skipped.insert(line.to_string());
+            }
         }
     }
-    Ok((manifest, skipped))
+    Ok(listing)
 }
 
-/// How many bytes a listing may have: the manifest limit plus room for the skipped names.
-pub const MAX_LISTING_BYTES: u64 = MAX_MANIFEST_BYTES as u64 + 16 * 1024 * 1024;
+/// The listing of this device's vault: its files, and what it keeps (keep.rs).
+pub fn own_listing(root: &Path) -> Result<Listing> {
+    let scan = Manifest::scan(root)?;
+    let skipped = scan.skipped.iter().map(|s| s.path.clone()).collect();
+    let not_kept = keep::still_removed(root, &scan.manifest);
+    let rules = KeepRules::load_with_links(root, &scan.manifest);
+    Ok(Listing { manifest: scan.manifest, skipped, not_kept, rules })
+}
+
+/// How many bytes a listing may have: the manifest limit plus room for the skipped names and,
+/// since 0.6, the removed files and choices.
+pub const MAX_LISTING_BYTES: u64 = MAX_MANIFEST_BYTES as u64 + 32 * 1024 * 1024;
 
 /// A request's note, split into the expectation and the path: `expected\npath`.
 fn split_expect(meta: &[u8]) -> Option<(Expect<'_>, &str)> {
@@ -166,9 +249,7 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
         }
         match request.kind {
             KIND_LIST => {
-                let scan = Manifest::scan(root)?;
-                let skipped: Vec<String> = scan.skipped.iter().map(|s| s.path.clone()).collect();
-                send_blob(channel, KIND_LISTING, &[], &encode_listing(&scan.manifest, &skipped))?;
+                send_blob(channel, KIND_LISTING, &[], &encode_listing_full(&own_listing(root)?))?;
             }
             KIND_GET => {
                 let path = std::str::from_utf8(&request.meta).map_err(|_| SyncError::Refused("path not allowed"))?;
