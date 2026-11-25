@@ -320,3 +320,15 @@ fn folder_colours_from_both_devices_are_kept_after_a_sync_from_either_side() {
     assert!(read(&p.va.0).contains("Cytology"));
     assert_eq!(sync_from_bob(&p).changed(), 0);
 }
+
+#[test]
+fn repeated_syncs_that_change_nothing_leave_one_activity_line() {
+    use super::service::EventKind;
+    let p = setup("quiet");
+    write(&p.vb.0, "Note.md", "hello");
+    sync(&p);
+    sync(&p);
+    sync(&p);
+    let synced: Vec<usize> = p.alice.status().events.iter().filter(|e| e.kind == EventKind::Synced).map(|e| e.changed).collect();
+    assert_eq!(synced, [1, 0], "one line for the sync that changed something, one for the quiet ones");
+}
