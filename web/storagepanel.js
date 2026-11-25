@@ -5,6 +5,7 @@
 // Freeing follows rule 2 of the 0.6 plan: only what this device does not keep by its offline
 // choices, and only where another of your devices has the same version. What stays is said.
 
+import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
 const PARTS = ["text", "ink", "pictures", "pdfs", "other"];
@@ -56,7 +57,11 @@ function usageRow(row, biggest, onOpen) {
   const fillBar = make("span", "storage-bar-fill");
   fillBar.style.width = `${biggest ? Math.max(1, Math.round((total / biggest) * 100)) : 0}%`;
   bar.append(fillBar);
-  line.append(make("span", "storage-name", rowName(row)), bar, make("span", "storage-size", sizeText(total)));
+  const name = make("span", "storage-name", rowName(row));
+  // A folder with folders inside shows that it opens.
+  const more = onOpen ? icon("chevronRight") : make("span");
+  more.classList.add("storage-more");
+  line.append(name, bar, make("span", "storage-size", sizeText(total)), more);
   return line;
 }
 
@@ -85,7 +90,7 @@ export function storageRows({ backend, chooseOffline, logProblem }) {
   chooseButton.addEventListener("click", chooseOffline);
   const result = make("p", "setting-hint");
   result.id = "storageResult";
-  const actions = make("div", "setting-row");
+  const actions = make("div", "storage-actions");
   actions.append(freeButton, chooseButton);
 
   let report = null;

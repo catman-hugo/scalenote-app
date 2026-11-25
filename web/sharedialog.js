@@ -2,7 +2,7 @@
 // - Share: who it is shared with, the people nearby to share it with, and Stop sharing (for the
 //   person who shared it) or Leave (for the others). Sharing happens in Rust (sync/shares.rs,
 //   sync/service/sharing.rs); this box only shows it and passes the choice on.
-// - An invitation: "Rowan wants to share Biology with you", Accept or No.
+// - An invitation: "Alice wants to share Biology with you", Accept or No.
 // Names come from other people's devices, so they are only ever put in as text.
 
 import { strings } from "./strings.js";

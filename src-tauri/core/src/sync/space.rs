@@ -1,7 +1,7 @@
 //! What one share looks like to the sync (0.6.4, slice 5): the "share space".
 //!
-//! The same shared folder sits at different places in two people's notes (`Biology` for Rowan,
-//! `Shared with me/Rowan/Biology` for Mila), so a share is synced under its own names, the same
+//! The same shared folder sits at different places in two people's notes (`Biology` for Alice,
+//! `Shared with me/Alice/Biology` for Dana), so a share is synced under its own names, the same
 //! on both sides, and each device maps them to its own places:
 //!
 //! - `s/<path>` is the shared item: for a folder, everything in it (`s/Cells.md` is
@@ -156,11 +156,11 @@ mod tests {
 
     #[test]
     fn a_shared_folder_maps_everything_in_it_and_nothing_else() {
-        let m = map("Shared with me/Rowan/Biology", true);
-        assert_eq!(m.to_space("Shared with me/Rowan/Biology/Week 1/Cells.md").as_deref(), Some("s/Week 1/Cells.md"));
-        assert_eq!(m.to_vault("s/Week 1/Cells.md").as_deref(), Some("Shared with me/Rowan/Biology/Week 1/Cells.md"));
-        assert_eq!(m.to_space("Shared with me/Rowan/Biology 2/x.md"), None, "a folder with a longer name is not in it");
-        assert_eq!(m.to_space("Shared with me/Rowan/Biology"), None);
+        let m = map("Shared with me/Alice/Biology", true);
+        assert_eq!(m.to_space("Shared with me/Alice/Biology/Week 1/Cells.md").as_deref(), Some("s/Week 1/Cells.md"));
+        assert_eq!(m.to_vault("s/Week 1/Cells.md").as_deref(), Some("Shared with me/Alice/Biology/Week 1/Cells.md"));
+        assert_eq!(m.to_space("Shared with me/Alice/Biology 2/x.md"), None, "a folder with a longer name is not in it");
+        assert_eq!(m.to_space("Shared with me/Alice/Biology"), None);
         assert_eq!(m.to_space("Diary.md"), None);
         assert_eq!(m.to_space("attachments/cell.png").as_deref(), Some("a/cell.png"));
         assert_eq!(m.to_space("attachments/other.png"), None, "not linked: not shared");

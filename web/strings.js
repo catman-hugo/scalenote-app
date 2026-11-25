@@ -75,7 +75,7 @@ export const strings = {
     back: "Back from {folder}",
     inFolder: "{size} in all: {parts}",
     parts: { text: "Text", ink: "Ink", pictures: "Pictures", pdfs: "PDFs", other: "Other files" },
-    rows: { top: "Pages in no folder", loose: "Pictures and files no page shows", trash: "Trash", history: "Page history", app: "Sync and app data" },
+    rows: { top: "Pages in no folder", loose: "Unused pictures and files", trash: "Trash", history: "Page history", app: "Sync and app data" },
     units: { b: "{n} B", kb: "{n} KB", mb: "{n} MB", gb: "{n} GB" },
     freeHeading: "Free up space",
     keepsEverything: "This device keeps everything. To free space, choose what it keeps: folders and pages stay listed and open from your other devices.",

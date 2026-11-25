@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn names_become_folder_names_that_work_everywhere() {
-        assert_eq!(folder_name_for("Mila"), "Mila");
+        assert_eq!(folder_name_for("Dana"), "Dana");
         assert_eq!(folder_name_for("a/b:c"), "a-b-c");
         assert_eq!(folder_name_for("..."), "Someone");
         assert_eq!(folder_name_for("CON"), "Someone");
