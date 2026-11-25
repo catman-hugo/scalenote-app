@@ -52,7 +52,8 @@ function wifiRow(peer, wifi, text, logProblem) {
   return row;
 }
 
-function previewPanel(peer, preview, ask, text) {
+// `ask` holds `start` when the panel asks before a first sync; `close` always hides the panel.
+function previewPanel(peer, preview, ask, close, text) {
   const box = element("div", "", "sync-panel");
   box.append(element("h4", fill(preview.first ? text.previewFirstHeading : text.previewHeading, { name: peer.name }), "sync-panel-title"));
   if (preview.first) box.append(element("p", text.previewFirstHint, "setting-hint"));
@@ -72,7 +73,8 @@ function previewPanel(peer, preview, ask, text) {
   }
   const row = element("div", "", "sync-panel-buttons");
   if (ask) row.append(button(text.previewStart, ask.start, true));
-  row.append(button(text.previewCancel, ask ? ask.cancel : () => {}, false));
+  // After Compare there is nothing to start, but Cancel still closes the panel.
+  row.append(button(text.previewCancel, close, false));
   box.append(row);
   return box;
 }
@@ -115,7 +117,7 @@ export function peerControls(peer, { logProblem, done, paused, wifi = null }) {
     if (!view) return;
     if (view.type === "message") panel.append(element("p", view.text, "setting-hint"));
     if (view.type === "error") panel.append(element("p", view.text, "setting-hint sync-error"));
-    if (view.type === "preview") panel.append(previewPanel(peer, view.preview, view.ask ? { start: () => run(true), cancel: () => show(null) } : null, text));
+    if (view.type === "preview") panel.append(previewPanel(peer, view.preview, view.ask ? { start: () => run(true) } : null, () => show(null), text));
     if (view.type === "rename") panel.append(renameBox());
   };
 

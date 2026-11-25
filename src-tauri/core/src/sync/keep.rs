@@ -462,7 +462,7 @@ fn tree_files(root: &Path) -> Vec<PathBuf> {
 }
 
 /// Every file known to exist on another device or removed from here, that this device does not
-/// have by choice. The page list can show these with a cloud icon (0.6.2).
+/// have by choice. The page list can show these with a cloud icon (0.6.3).
 pub fn not_here(root: &Path) -> Result<BTreeSet<String>> {
     let local = Manifest::scan(root)?.manifest;
     let rules = KeepRules::load_with_links(root, &local);

@@ -702,7 +702,7 @@ struct SyncStatusReply {
     /// makes or a cable (sync/networks.rs). Empty when none is known.
     addresses: Vec<String>,
     /// This device's Tailscale address, for the other device to type when it is elsewhere
-    /// (eduroam and other networks keep devices apart). Null when Tailscale is off.
+    /// (school and public networks keep devices apart). Null when Tailscale is off.
     tailscale: Option<String>,
     fingerprint: String,
     paused: bool,
@@ -1274,7 +1274,18 @@ pub fn run() {
             get_settings,
             set_settings
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!())
+        .map(|app| {
+            app.run(|handle, event| {
+                // With the tray on, the window is taken away when it is closed (tray.rs); the
+                // program then stays for sync instead of ending with its last window.
+                if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                    if tray::keeps_running(handle, code) {
+                        api.prevent_exit();
+                    }
+                }
+            })
+        });
     if let Err(error) = result {
         eprintln!("ScaleNote failed to start: {error}");
         std::process::exit(1);

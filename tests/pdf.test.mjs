@@ -108,3 +108,24 @@ test("an estimate is rounded so it does not look more exact than it is", () => {
   assert.deepEqual(roundEstimate(93), { minutes: 2, seconds: 0 });
   assert.deepEqual(roundEstimate(600), { minutes: 10, seconds: 0 });
 });
+
+import { describeSize, estimatePagesBytes, longPdfNeedsAsking } from "../web/pdfrules.js";
+
+test("long PDFs are asked about, never refused, and the space of their pictures is guessed and said in MB or GB", () => {
+  // No page limit: a long PDF is only asked about, by pages or by the space of the pictures.
+  assert.equal(PDF_LIMITS.importPages, undefined);
+  assert.equal(longPdfNeedsAsking(100, 1_000_000), false);
+  assert.equal(longPdfNeedsAsking(101, 1_000_000), true);
+  assert.equal(longPdfNeedsAsking(40, 101 * 1024 * 1024), true);
+  assert.equal(longPdfNeedsAsking(5000, 0), true);
+  assert.equal(PDF_LIMITS.bytes, 64 * 1024 * 1024);
+  // 400,000 base64 characters are 300,000 bytes; 200 pages of that are 60,000,000 bytes.
+  assert.equal(estimatePagesBytes(400_000, 200), 60_000_000);
+  assert.equal(estimatePagesBytes(-5, 10), 0);
+  assert.equal(estimatePagesBytes("junk", 10), 0);
+  assert.equal(describeSize(60_000_000), "57 MB");
+  assert.equal(describeSize(10), "1 MB");
+  assert.equal(describeSize(2 * 1024 ** 3), "2.0 GB");
+  assert.equal(describeSize(undefined), "1 MB");
+});
+

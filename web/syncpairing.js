@@ -11,6 +11,15 @@ import { groupCode, timeLeftText } from "./syncpairrules.js";
 import { peerControls } from "./syncrun.js";
 import { strings } from "./strings.js";
 
+// The sync service keeps its times in UTC ("2026-11-25T09:15:47Z"); they are shown in this
+// device's own time ("2026-11-25 10:15:47"). A time that cannot be read is shown as it came.
+export function localStamp(iso) {
+  const date = new Date(String(iso || ""));
+  if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(String(iso || "")) || Number.isNaN(date.getTime())) return String(iso || "").replace("T", " ").replace("Z", " UTC");
+  const two = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
+}
+
 const POLL_MS = 1000;
 
 // The last part of a folder path, for showing ("C:\\Users\\bob\\Notes" and "/home/bob/Notes" both give "Notes").
@@ -46,7 +55,7 @@ function activityLine(event) {
   const s = strings.settings;
   const synced = event.changed > 0 ? s.activitySynced : s.activitySyncedNone;
   const template = { paired: s.activityPaired, refused: s.activityRefused, removed: s.activityRemoved, synced, syncFailed: s.activitySyncFailed }[event.kind];
-  return fill(template || "{when}", { when: event.when.replace("T", " ").replace("Z", " UTC"), name: event.name, changed: event.changed });
+  return fill(template || "{when}", { when: localStamp(event.when), name: event.name, changed: event.changed });
 }
 
 /** Returns the rows to append to the Sync tab. `isOn()` says whether the switch is on. */
@@ -64,6 +73,10 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
 
   const fingerprint = element("p", "", "setting-hint");
   fingerprint.id = "pairFingerprint";
+  // This device's address on each network it is on (home Wi-Fi, a hotspot), for typing on
+  // another device nearby; shown above the Tailscale line.
+  const localText = element("p", "", "setting-hint");
+  localText.id = "pairLocalAddress";
   // This device's Tailscale address, or a short note on what Tailscale is for (tailscale.rs).
   const tailscaleText = element("p", "", "setting-hint");
   tailscaleText.id = "pairTailscale";
@@ -170,7 +183,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       });
       remove.className = "pair-remove";
       head.append(text, remove);
-      const stamp = peer.lastSync.replace("T", " ").replace("Z", " UTC");
+      const stamp = localStamp(peer.lastSync);
       const when = peer.lastSync ? (peer.lastChanged > 0 ? fill(s.pairLastSync, { when: stamp, n: peer.lastChanged }) : fill(s.pairLastSyncPlain, { when: stamp })) : peer.hasHistory ? "" : s.pairNeverSynced;
       item.append(head, element("p", peer.fingerprint, "setting-hint pair-fingerprint"));
       if (when) item.append(element("p", when, "setting-hint pair-last"));
@@ -223,6 +236,9 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     pauseButton.textContent = paused ? s.resumeButton : s.pauseButton;
     pausedHint.hidden = !paused;
     fingerprint.textContent = `${s.pairThisDevice}: ${status.fingerprint}`;
+    const addresses = status.addresses?.length ? status.addresses : status.address ? [status.address] : [];
+    localText.textContent = addresses.length ? fill(s.localAddress, { address: addresses.map((a) => `${a}:${status.listeningPort ?? ""}`).join(s.pairAddressOr) }) : "";
+    localText.hidden = addresses.length === 0;
     tailscaleText.textContent = status.tailscale ? fill(s.tailscaleOn, { address: status.tailscale }) : s.tailscaleOff;
     showPeers(status.peers);
     activity.replaceChildren();
@@ -290,7 +306,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       const addresses = status.addresses?.length ? status.addresses : status.address ? [status.address] : [];
       const shown = addresses.map((address) => `${address}:${status.listeningPort ?? ""}`).join(s.pairAddressOr);
       addressText.textContent = `${s.pairAddress}: ${shown || s.pairNoAddress}`;
-      // From another network (eduroam, mobile data) only the Tailscale address can reach this device.
+      // From another network (a school network, mobile data) only the Tailscale address can reach this device.
       codeTailscale.textContent = status.tailscale ? fill(s.pairCodeTailscale, { address: status.tailscale }) : "";
       codeTailscale.hidden = !status.tailscale;
       codeBox.hidden = false;
@@ -393,6 +409,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     element("h3", s.thisDeviceHeading, "setting-heading"),
     ...deviceRows,
     fingerprint,
+    localText,
     tailscaleText,
     element("h3", s.activityHeading, "setting-heading"),
     activity,

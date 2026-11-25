@@ -1247,6 +1247,7 @@ body.block-dragging .float-bar { visibility: hidden; }
 .setting-actions { display: flex; flex-direction: column; gap: var(--space-2); }
 .setting-actions:empty { display: none; }
 .setting-heading { margin: var(--space-3) 0 0; font-size: var(--text-m); font-weight: 600; }
+.setting-divider { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 .setting-hint { margin: 0; color: var(--text-soft); font-size: var(--text-s); }
 .setting-subheading { margin: var(--space-2) 0 0; font-size: var(--text-s); font-weight: 600; }
 .security-cards { display: flex; flex-direction: column; gap: var(--space-2); }

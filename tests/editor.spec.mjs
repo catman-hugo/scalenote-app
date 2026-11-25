@@ -5,6 +5,7 @@ import zlib from "node:zlib";
 import { createRequire } from "node:module";
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -65,7 +66,7 @@ let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
   if (process.env.ONLY && !name.includes(process.env.ONLY)) return; // run the tests whose name contains this text
-  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}), ...(opts.hasTouch ? { hasTouch: true } : {}) });
+  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}), ...(opts.hasTouch ? { hasTouch: true } : {}), ...(opts.timezoneId ? { timezoneId: opts.timezoneId } : {}) });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   // Pages that exist before the app starts (the mock reads them when it loads, so this goes first).
   if (opts.files) await context.addInitScript((f) => { window.__seedFiles = f; }, opts.files);
@@ -5513,6 +5514,41 @@ await test("pinching zooms around the middle of the two fingers, in and out, wit
   assert.equal(await inkAt(page, 250, 200), true, "after zooming out, too");
 }, ctxOpts);
 
+await test("with Finger draws on, two fingers move and zoom the sheet and draw nothing; one finger still draws", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await chooseWidth(page, 4);
+  await drawLine(page, [236, 200], [264, 200]);
+  await waitSaved(page);
+  await chooseMore(page, "Finger draws");
+  assert.equal(await inkAt(page, 280, 200), false, "the mark is short to begin with");
+  // The first finger lands and moves a little before the second one comes: that start of a line
+  // must not stay.
+  await touchEvents(page, 21, "pointerdown", 210, 200);
+  await touchEvents(page, 21, "pointermove", 205, 200);
+  await touchEvents(page, 22, "pointerdown", 290, 200);
+  for (let step = 1; step <= 12; step++) {
+    const half = 40 + (80 * step) / 12;
+    await touchEvents(page, 21, "pointermove", 250 - half, 200);
+    await touchEvents(page, 22, "pointermove", 250 + half, 200);
+  }
+  // The fingers went three times as far apart around x 250: the mark (28 pixels wide there) is
+  // now about 84 pixels wide, so it reaches x 280.
+  await page.waitForTimeout(100);
+  assert.equal(await inkAt(page, 280, 200), true, "the sheet was zoomed in: the mark is wider now");
+  // One finger lifts first; the other one moving on must not start a line either.
+  await touchEvents(page, 22, "pointerup", 370, 200);
+  await touchEvents(page, 21, "pointermove", 140, 220);
+  await touchEvents(page, 21, "pointerup", 140, 220);
+  await page.waitForTimeout(1200);
+  assert.equal((await savedDrawing(page)).strokes.length, 1, "no line was added by the two fingers");
+  await touchEvents(page, 23, "pointerdown", 60, 60);
+  await touchEvents(page, 23, "pointermove", 120, 90);
+  await touchEvents(page, 23, "pointerup", 120, 90);
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).strokes.length, 2, "one finger draws again");
+}, { ...ctxOpts, hasTouch: true });
+
 await test("the shape menu opens under its button, shows the shape used last, and closes by choosing, Escape or a press elsewhere", async (page) => {
   await canvasVault(page);
   await openCanvas(page);
@@ -6916,6 +6952,30 @@ await test("a finger moves the page and leaves no mark, unless Finger draws is o
   assert.ok((await savedDrawing(page)).ink.length >= 1, "something was drawn");
 }, ctxOpts);
 
+await test("with Finger draws on in the text, two fingers scroll the page and leave no mark", async (page) => {
+  await inkVault(page, null, Array.from({ length: 60 }, (_, i) => `Paragraph number ${i} of a long page.`).join("\n\n") + "\n");
+  await startInk(page);
+  await page.click('.ink-bar [data-action="finger"]');
+  const before = await page.evaluate(() => document.querySelector("#editor").scrollTop);
+  await page.evaluate(() => {
+    const surface = document.querySelector(".ink-surface");
+    const fire = (t, id, x, y) => surface.dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: "touch", isPrimary: id === 31, clientX: x, clientY: y, pressure: 0.5, button: 0, buttons: t === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+    fire("pointerdown", 31, 300, 500);
+    fire("pointermove", 31, 300, 495);
+    fire("pointerdown", 32, 380, 500);
+    for (let y = 480; y >= 200; y -= 20) {
+      fire("pointermove", 31, 300, y);
+      fire("pointermove", 32, 380, y);
+    }
+    fire("pointerup", 31, 300, 200);
+    fire("pointermove", 32, 380, 150);
+    fire("pointerup", 32, 380, 150);
+  });
+  assert.ok((await page.evaluate(() => document.querySelector("#editor").scrollTop)) > before + 150, "the page scrolled");
+  await page.waitForTimeout(1200);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.has("Sketch.md")), false, "nothing was drawn or saved");
+}, ctxOpts);
+
 await test("the eraser removes a stroke, undo brings it back, redo erases it again", async (page) => {
   await inkVault(page);
   await startInk(page);
@@ -7788,13 +7848,53 @@ await test("a page that is gone when its pictures are ready says so, and nothing
   assert.equal(await page.evaluate(() => [...window.__mock.files.values()].some((t) => t.includes("Lecture-1-p"))), false);
 }, { before: slowPictures() });
 
-await test("a PDF of more than 100 pages is refused as pictures with a clear message, and nothing is stored", async (page) => {
+const padded = (file, size) => ({ ...file, buffer: Buffer.concat([file.buffer, Buffer.alloc(size - file.buffer.length, 0x20)]) });
+
+await test("a PDF over 25 MB is not refused: the question says its size and that it takes that space on every device", async (page) => {
+  await slashPdf(page, padded(pdfFile(2, "Scans.pdf"), 30 * 1024 * 1024));
+  assert.match(await page.textContent("#pdfBox"), /This PDF is 30 MB\. It takes that space in your notes folder and on every device that syncs it/);
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-block", { timeout: 30000 });
+});
+
+await test("a small PDF has no size line, and one over 64 MB is refused because it could not sync", async (page) => {
+  await slashPdf(page, pdfFile(2, "Small.pdf"));
+  assert.equal(await page.locator("#pdfBox .pdf-large").count(), 0);
+  await page.click("#pdfBox button:has-text('Cancel')");
+  const chooser = new Promise((resolve) => page.once("filechooser", resolve));
+  await page.click("#editor .note-body");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/pdf");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  // Playwright passes at most 50 MB from memory, so this one goes through a file.
+  const huge = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sn-pdf-")), "Huge.pdf");
+  fs.writeFileSync(huge, padded(pdfFile(2, "Huge.pdf"), 65 * 1024 * 1024).buffer);
+  await (await chooser).setFiles(huge);
+  await page.waitForFunction(() => /too large to sync between devices\. The limit is 64 MB/.test(document.body.innerText), null, { timeout: 10000 });
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].length), 0);
+});
+
+await test("a PDF of more than 100 pages asks first with the space it will take; Cancel stores nothing", async (page) => {
   await slashPdf(page, pdfFile(101, "Big.pdf"));
   await pdfChoice(page, "Pages as images");
-  await page.waitForSelector(".banner, .toast");
-  assert.match(await page.evaluate(() => document.body.innerText), /more than 100 pages/);
+  await page.waitForSelector("#pdfLongGo");
+  const text = await page.textContent("#pdfBox");
+  assert.match(text, /Big has 101 pages\. As pictures it will take about \d+(\.\d)? [MG]B in your notes folder/);
+  assert.match(text, /Add 101 pages/);
+  await page.click("#pdfBox button:not(#pdfLongGo)");
+  await page.waitForSelector("#pdfJob", { state: "hidden", timeout: 10000 });
+  assert.equal(await page.evaluate(() => document.querySelector("#pdfBox").open), false);
   assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].length), 0);
   assert.equal(await page.locator(".image-block").count(), 0);
+});
+
+await test("a PDF of more than 100 pages is added as pictures after saying yes", async (page) => {
+  await slashPdf(page, pdfFile(101, "Big.pdf"));
+  await pdfChoice(page, "Pages as images");
+  await page.click("#pdfLongGo");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 101, null, { timeout: 120000 });
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].filter((k) => k.endsWith(".jpg")).length), 101);
 });
 
 await test("a file called .pdf that is not a PDF says so and changes nothing", async (page) => {
@@ -8062,6 +8162,10 @@ await test("with Tailscale off, the Sync tab says what it is for and the pairing
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
   await page.waitForFunction(() => /turn on Tailscale on both devices/.test(document.getElementById("pairTailscale").textContent));
+  // The address on this network is shown above it, and nothing names a particular network.
+  assert.equal((await page.textContent("#pairLocalAddress")).trim(), "Address on this network: 192.168.1.20:47821");
+  assert.ok(await page.evaluate(() => document.getElementById("pairLocalAddress").compareDocumentPosition(document.getElementById("pairTailscale")) & Node.DOCUMENT_POSITION_FOLLOWING));
+  assert.doesNotMatch(await page.textContent("#settingsBox, body"), /eduroam/i);
   await page.click("#pairStart");
   await page.waitForSelector("#pairCodeBox:not([hidden])");
   assert.equal(await page.isHidden("#pairCodeTailscale"), true);
@@ -8195,8 +8299,10 @@ await test("sync: the first sync shows what it would do and changes nothing unti
   assert.deepEqual((await page.evaluate(() => window.__runs)).map((r) => r.approved), [false, true]);
   await page.waitForFunction(() => document.querySelector("#syncLine") && !document.querySelector("#syncLine").hidden && document.querySelector("#syncLine").textContent === "Synced · 3 changed");
   assert.match(await page.textContent("#pairActivity"), /synced with alice-phone, 3 changed/);
-  assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 12:00:00 UTC \(3 changed\)/);
-}, { settings: existingUser({ updates: false }) });
+  // Shown in this device's own time: noon UTC is 13:00 in Amsterdam in winter.
+  assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 13:00:00 \(3 changed\)/);
+  assert.doesNotMatch(await page.textContent("#pairActivity"), /UTC/);
+}, { settings: existingUser({ updates: false }), timezoneId: "Europe/Amsterdam" });
 
 await test("the device list shows the last sync time and the device's app version, and says when it is older", async (page) => {
   await page.waitForSelector("#newNote");
@@ -8212,13 +8318,13 @@ await test("the device list shows the last sync time and the device's app versio
   await page.click("#settingsTab-sync");
   await page.waitForSelector("#pairList .pair-version");
   const items = await page.locator("#pairList > *").allTextContents();
-  assert.match(items[0], /Last sync: 2026-01-01 12:00:00 UTC(?! \()/, "no '0 changed' after a restart");
+  assert.match(items[0], /Last sync: 2026-01-01 13:00:00(?! \()/, "no '0 changed' after a restart");
   assert.match(items[0], /App version 0\.5\.4 \(older than this device; update it\)/);
-  assert.match(items[1], /Last sync: 2026-01-02 08:30:00 UTC \(2 changed\)/);
+  assert.match(items[1], /Last sync: 2026-01-02 09:30:00 \(2 changed\)/);
   assert.match(items[1], /App version 0\.5\.5(?! \()/);
   assert.match(items[2], /Not synced yet/);
   assert.doesNotMatch(items[2], /App version/);
-}, { settings: existingUser({ updates: false }) });
+}, { settings: existingUser({ updates: false }), timezoneId: "Europe/Amsterdam" });
 
 await test("each paired device shows the notes folder it belongs to; one tied to another folder can be moved here with two presses", async (page) => {
   await page.waitForSelector("#newNote");
@@ -8254,6 +8360,9 @@ await test("sync: Compare shows the plan and runs nothing; an error says what to
   await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("Nothing to do: both devices already have the same files."));
   assert.equal(await page.evaluate(() => window.__runs), undefined, "compare never starts a sync");
   assert.equal((await page.evaluate(() => window.__compares)).length, 1);
+  // Cancel closes what Compare showed (it did nothing before 0.6.1).
+  await page.click(".sync-peer-panel button:has-text('Cancel')");
+  await page.waitForFunction(() => !document.querySelector(".sync-peer-panel").textContent.includes("Nothing to do"));
   await page.evaluate(() => { window.__failSyncRun = "sync_not_found"; });
   await page.click("#pairList .sync-now");
   await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("was not found on this network"));
@@ -9310,8 +9419,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam|<!--|-->/);
+  assert.match(text, /No page limit for PDFs as pictures/);
+  assert.doesNotMatch(text, /set once more|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9320,17 +9429,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam|<!--/i);
+  assert.match(text, /No page limit for PDFs as pictures/);
+  assert.doesNotMatch(text, /set once more|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /eduroam keeps devices apart/);
+  assert.match(text, /Colours that were already lost have to be set once more/);
   // These notes are the same for every system: only the hidden short list must stay out.
-  assert.doesNotMatch(text, /<!--|-->|Sync over a hotspot or USB cable, no internet/i);
+  assert.doesNotMatch(text, /<!--|-->|No page limit for PDFs as pictures; asks first/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -9339,16 +9448,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam/i);
+  assert.match(text, /No page limit for PDFs as pictures/);
+  assert.doesNotMatch(text, /set once more/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam/);
+  assert.match(text, /No page limit for PDFs as pictures/);
+  assert.doesNotMatch(text, /set once more/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
@@ -9413,6 +9522,8 @@ await test("This device: Reset to defaults needs a second press, restores the lo
   await page.click('#settings .mode-option[data-mode="light"]');
   await page.click('#settings .theme-card[data-theme="sepia"]');
   await page.click('#settings [role="tab"][id="settingsTab-device"]');
+  // A divider sits right before Reset, after the app lock.
+  assert.equal(await page.evaluate(() => document.getElementById("settingsReset").previousElementSibling.className), "setting-divider");
   await page.click("#settingsReset");
   assert.equal(await page.textContent("#settingsReset"), "Press again to reset");
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "sepia", "one press changes nothing");
