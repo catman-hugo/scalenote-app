@@ -19,13 +19,14 @@ use super::exchange::{self, is_sync_kind, KIND_NO};
 use super::identity::{fingerprint, Identity, KEY_LEN};
 use super::pairing::{self, clean_code, CodeBook, KIND_REFUSED, KIND_START};
 use super::folders::FolderBook;
+use super::networks;
 use super::tailscale::{self, AddressBook};
 use super::trust::{Peer, TrustList};
 use super::{hex, Result, SyncError};
 use crate::logger::format_utc;
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -589,9 +590,6 @@ impl Service {
             return Err(SyncError::Refused("sync is paused"));
         }
         let peer = state.trust.peers().iter().find(|p| p.public == key).cloned().ok_or(SyncError::Refused("not a paired device"))?;
-        if state.wifi_only.contains(&peer.public) && !state.on_wifi {
-            return Err(SyncError::Refused("only on Wi-Fi"));
-        }
         let root = state.vault.clone().ok_or(SyncError::Refused("no vault is open"))?;
         if !state.folders.allows(&peer.public, &root) {
             return Err(SyncError::Refused("paired with another folder"));
@@ -604,7 +602,7 @@ impl Service {
     /// that answers really holds the key of the paired device.
     fn reach(&self, peer: &Peer) -> Result<Channel<TcpStream>> {
         let known = lock(&self.shared.state).live.get(&peer.public).and_then(|l| l.address.clone());
-        if let Some(address) = known {
+        if let Some(address) = known.filter(|a| !self.wifi_blocks(peer, a)) {
             if let Ok(channel) = self.open(&address, peer) {
                 return Ok(channel);
             }
@@ -612,13 +610,27 @@ impl Service {
         let route = lock(&self.shared.route).clone();
         let heard = discovery::find(&route, Duration::from_millis(3500), self.shared.identity.public())?;
         match heard.into_iter().find(|d| d.key == peer.public) {
+            Some(found) if self.wifi_blocks(peer, &found.address) => Err(SyncError::Refused("only on Wi-Fi")),
             Some(found) => self.open(&found.address, peer),
             // Not on this network (eduroam and the like keep devices apart): try Tailscale.
             None => match self.tailscale_address(peer) {
-                Some(address) => self.open(&address, peer),
-                None => Err(SyncError::Refused("device not found")),
+                Some(address) if !self.wifi_blocks(peer, &address) => self.open(&address, peer),
+                _ if self.wifi_blocks(peer, "") => Err(SyncError::Refused("only on Wi-Fi")),
+                _ => Err(SyncError::Refused("device not found")),
             },
         }
+    }
+
+    /// "Wi-Fi only" is there to keep sync off mobile data. A device reached on a local network
+    /// this device is on (home Wi-Fi, a hotspot, a cable; networks.rs) is never reached over
+    /// mobile data, so it is allowed too, also on a phone that makes the hotspot itself and is
+    /// therefore not "on Wi-Fi". Everything else waits for Wi-Fi.
+    fn wifi_blocks(&self, peer: &Peer, address: &str) -> bool {
+        let blocked = {
+            let state = lock(&self.shared.state);
+            state.wifi_only.contains(&peer.public) && !state.on_wifi
+        };
+        blocked && !networks::is_nearby(&networks::local_networks(), address)
     }
 
     /// The kept Tailscale address of a paired device, as `ip:port`, when this device is on
@@ -738,12 +750,13 @@ impl Service {
         let mut results = Vec::new();
         for peer in due {
             let address = match heard.iter().find(|d| d.key == peer.public) {
+                Some(found) if self.wifi_blocks(&peer, &found.address) => continue,
                 Some(found) => found.address.clone(),
                 // Not on this network: try its Tailscale address, but only start a sync when the
                 // device answers there, so a device that is simply off costs a few seconds and
                 // no failed sync every round.
                 None => match self.tailscale_address(&peer) {
-                    Some(address) if answers(&address) => address,
+                    Some(address) if !self.wifi_blocks(&peer, &address) && answers(&address) => address,
                     _ => continue,
                 },
             };
@@ -769,7 +782,6 @@ impl Service {
             .trust
             .peers()
             .iter()
-            .filter(|p| !state.wifi_only.contains(&p.public) || state.on_wifi)
             .filter(|p| engine::has_history(&root, &p.public))
             .filter(|p| state.folders.allows(&p.public, &root))
             .filter(|p| match state.live.get(&p.public) {
@@ -1058,9 +1070,31 @@ pub fn ping(service: &Service, address: &str) -> Result<String> {
 /// use to reach another network; a UDP "connection" sends nothing, so no packet leaves. `None`
 /// when there is no network.
 pub fn local_address_hint() -> Option<String> {
-    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    // 192.0.2.1 is a documentation address: it is never a real machine.
-    socket.connect("192.0.2.1:9").ok()?;
-    let ip = socket.local_addr().ok()?.ip();
-    (!ip.is_unspecified() && !ip.is_loopback()).then(|| ip.to_string())
+    local_addresses().into_iter().next()
+}
+
+/// All addresses another device nearby can type to reach this one: first the one of the main
+/// connection, then the one on each other local network (a hotspot this device makes, a cable).
+/// Without a main connection (a phone making a hotspot with mobile data off), only the others.
+pub fn local_addresses() -> Vec<String> {
+    let mut found = Vec::new();
+    let main = std::net::UdpSocket::bind("0.0.0.0:0").ok().and_then(|socket| {
+        // 192.0.2.1 is a documentation address: it is never a real machine.
+        socket.connect("192.0.2.1:9").ok()?;
+        Some(socket.local_addr().ok()?.ip())
+    });
+    let nets = networks::local_networks();
+    if let Some(ip) = main.filter(|ip| !ip.is_unspecified() && !ip.is_loopback()) {
+        // Mobile data is the main connection on a phone making a hotspot: not reachable nearby.
+        if nets.iter().any(|n| IpAddr::V4(n.ip) == ip) {
+            found.push(ip.to_string());
+        }
+    }
+    for net in nets {
+        let ip = net.ip.to_string();
+        if !found.contains(&ip) {
+            found.push(ip);
+        }
+    }
+    found
 }
