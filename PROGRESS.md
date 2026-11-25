@@ -16,6 +16,10 @@ Done:
 - Folder colours: the colours file is merged folder by folder during a sync (`sync/settings_merge.rs`), against the copy both devices had after the last sync (`.scalenote/sync-settings-<device>.json`). Before, the newer file won whole and wiped colours set on the other device (reported 2026-11-25).
 - Two fingers move and zoom the canvas, and scroll a page with ink, while Finger draws is on; a line the first finger began is dropped (`fingerPinch` in canvasview.js, `fingers` in inklayer.js).
 - Cancel after Compare closes the panel (`syncrun.js`). Settings, Sync shows this device's network address above the Tailscale line (`pairLocalAddress`). The word "eduroam" is gone from the app and the docs, as asked.
+- Paired devices are synced again every 30 seconds when nothing changed here (`RESYNC_AFTER`, was 5 minutes); syncs that change nothing fold into one activity line.
+- Sync times in Settings, Sync are shown in local time (`localStamp` in syncpairing.js).
+- Tray: closing the window with the tray on destroys the window instead of hiding it, which frees the web view (about 100 MB on Linux); `RunEvent::ExitRequested` is stopped while the tray is on and the exit came from closing, and the tray makes the window again from its start settings (`tray.rs`). Only compiled by CI.
+- A divider between the app lock and Reset to defaults.
 - Tried by the owner on 2026-11-25: sync between a laptop and an Android phone over the phone's hotspot works.
 - PDFs: no page limit for "Pages as images" (was 100). Over 100 pages, or over 100 MB of pictures, a question first says the guessed space (one page from the middle is drawn and made into a picture to measure it, not saved) and Cancel stores nothing (`longPdfNeedsAsking`, `askLongPdf`). A PDF file may be up to 64 MB (was 25 MB; `MAX_PDF_BYTES`, the largest file sync sends); above 25 MB the question how to add it says the size, above 64 MB it is refused before any question. Asked for on 2026-11-25.
 - Version 0.6.1.
