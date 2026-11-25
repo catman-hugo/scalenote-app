@@ -798,12 +798,6 @@ struct FreeReply {
     only_here: usize,
 }
 
-fn vault_root(state: &AppState) -> Result<PathBuf, String> {
-    lock::refuse_if_locked(state)?;
-    let guard = state.vault.lock().map_err(|_| "io".to_string())?;
-    guard.as_ref().map(|v| v.root().to_path_buf()).ok_or_else(|| "no_vault".to_string())
-}
-
 #[tauri::command]
 async fn offline_get(state: State<'_, AppState>) -> Result<OfflineReply, String> {
     let root = vault_root(&state)?;
