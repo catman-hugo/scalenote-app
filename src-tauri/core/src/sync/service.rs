@@ -15,6 +15,7 @@
 //!   for those even with nothing paired.
 
 mod sharing;
+pub use sharing::ShareResult;
 
 use super::channel::Channel;
 use super::device::clean_name;
@@ -47,6 +48,8 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_EVENTS: usize = 50;
 /// A sync of a big vault can keep the other side busy (making its list) for a while.
 const SYNC_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long a share sync listens for the other people's devices on the network.
+const SHARE_LOOK: Duration = Duration::from_millis(1500);
 /// With nothing changed here, a paired device is still synced again after this long, so a change
 /// made on the other device arrives within about half a minute even when that device cannot
 /// start a sync itself (asked for in 0.6.1; it was five minutes). A sync that finds nothing costs
@@ -124,6 +127,8 @@ struct State {
     heard: HashMap<[u8; super::account::ID_LEN], discovery::Person>,
     /// Where each invitation came from (`ip:port`), to send the answer to.
     invited_from: HashMap<[u8; super::account::ID_LEN], String>,
+    /// Where other people's devices were last reached for a share sync, by device key.
+    share_addresses: HashMap<[u8; KEY_LEN], String>,
     /// Invitations and answers from devices that are not paired, per minute.
     limiter: super::invite::Limiter,
 }
@@ -322,7 +327,7 @@ impl Service {
         let tailscale = AddressBook::load(&tailscale_path);
         let account_path = dir.join(ACCOUNT_FILE);
         let account = Account::load(&account_path);
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account, heard: HashMap::new(), invited_from: HashMap::new(), limiter: super::invite::Limiter::default() };
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account, heard: HashMap::new(), invited_from: HashMap::new(), share_addresses: HashMap::new(), limiter: super::invite::Limiter::default() };
         let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, account_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()), shares: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
@@ -799,7 +804,7 @@ impl Service {
         let _session = self.take_session()?;
         let mut channel = self.reach(&peer)?;
         let shares = self.knows_shares(&peer.public);
-        engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today(), shares })
+        engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today(), shares, map: None })
     }
 
     /// Syncs with one paired device. The first sync with a device changes nothing until
@@ -863,7 +868,7 @@ impl Service {
             on_progress(progress);
         };
         let shares = self.knows_shares(&peer.public);
-        engine::run(&mut channel, &Pair { root, peer_key: &peer.public, own_name, peer_name: &peer.name, today: &today(), shares }, approved, &mut report)
+        engine::run(&mut channel, &Pair { root, peer_key: &peer.public, own_name, peer_name: &peer.name, today: &today(), shares, map: None }, approved, &mut report)
     }
 
     /// One round of automatic syncing, called every little while by the app. Does nothing (and
@@ -986,8 +991,10 @@ impl Service {
 fn announcing(shared: &Shared) -> bool {
     let state = lock(&shared.state);
     let pairing = state.pairing_open && state.codes.is_open(Instant::now());
-    let findable = state.account.findable && state.account.is_set();
-    state.enabled && (pairing || (!state.paused && (!state.trust.is_empty() || findable)))
+    // A person with a name announces this device (not the name) so the devices of people they
+    // share with can find it; the name only goes out while findable (the people note).
+    let sharing = state.account.is_set();
+    state.enabled && (pairing || (!state.paused && (!state.trust.is_empty() || sharing)))
 }
 
 fn may_listen(shared: &Shared) -> bool {
@@ -1068,7 +1075,7 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
 }
 
 fn engine_serve(channel: &mut Channel<TcpStream>, first: Vec<u8>, root: &Path, allowed: bool, shares: bool) -> Result<usize> {
-    exchange::serve(channel, first, root, allowed, shares)
+    exchange::serve(channel, first, root, allowed, exchange::Scope::Whole { shares })
 }
 
 /// The `ip:port` a typed address leads to (the default port when none was typed).
@@ -1194,6 +1201,7 @@ fn handle_connection(shared: &Shared, stream: TcpStream) -> Result<()> {
         // Anyone may send an invitation or an answer; sharing.rs decides whether it is taken.
         Some(super::invite::KIND_INVITE) => sharing::take_invitation(shared, &mut channel, &first[1..], from_ip),
         Some(super::invite::KIND_INVITE_ANSWER) => sharing::take_answer(shared, &mut channel, &first[1..]),
+        Some(super::invite::KIND_SHARE_OPEN) => sharing::serve_share(shared, &mut channel, &first[1..]),
         _ => {
             // Not paired, or not something a device may ask: say no and hang up.
             let _ = channel.send(&[KIND_REFUSED]);

@@ -31,6 +31,10 @@ pub const KIND_INVITE: u8 = 0x60;
 /// Sent by the invited device: yes or no. Answered with `KIND_INVITE_OK` or refused.
 pub const KIND_INVITE_ANSWER: u8 = 0x61;
 pub const KIND_INVITE_OK: u8 = 0x62;
+/// Sent by a device of a person in a share, followed by the share's id: "sync this share". The
+/// answering device checks the caller's key belongs to the share, answers `KIND_INVITE_OK`, and
+/// then serves that share's files only (space.rs). Refused otherwise.
+pub const KIND_SHARE_OPEN: u8 = 0x63;
 pub const MAX_BYTES: usize = 16 * 1024;
 pub const MAX_PER_MINUTE: usize = 10;
 pub const MAX_WAITING: usize = 20;

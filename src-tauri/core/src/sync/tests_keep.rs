@@ -99,7 +99,7 @@ fn sync_from_bob(p: &Pair) -> super::engine::Report {
     let stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
     let mut channel = super::channel::Channel::connect(stream, p.bob.identity_for_tests()).expect("channel");
     let alice_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&p.alice_id).expect("key");
-    let pair = super::engine::Pair { root: &p.vb.0, peer_key: &alice_key, own_name: "bob", peer_name: "alice", today: "2026-11-24", shares: true };
+    let pair = super::engine::Pair { root: &p.vb.0, peer_key: &alice_key, own_name: "bob", peer_name: "alice", today: "2026-11-24", shares: true, map: None };
     done(super::engine::run(&mut channel, &pair, true, &mut |_| {}).expect("sync from bob"))
 }
 
@@ -561,4 +561,114 @@ fn invitations_and_answers_from_strangers_that_do_not_fit_are_refused_and_change
     assert_ne!(send(KIND_INVITE, invitation(me).encode()), Some(KIND_INVITE_OK), "too many in a minute");
     assert_eq!(mila.shares().expect("list").list.len(), 1, "the same invitation is kept once");
     assert!(names(&vm.0).is_empty(), "no file is made by an invitation");
+}
+
+/// Rowan (alice and bob, paired) shares the folder `Biology` with Mila (one device, not paired
+/// with his), who accepts. Returns the pair, Mila's service and folders, and the share id.
+fn shared_biology(label: &str) -> (Pair, Service, Dir, Dir, [u8; 16]) {
+    let port = std::net::UdpSocket::bind("127.0.0.1:0").expect("free port").local_addr().expect("addr").port();
+    let at = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let route = super::discovery::Route { listen: at, join_group: false, send_to: vec![at], interval: std::time::Duration::from_millis(200) };
+    let p = setup_on(label, Some(route.clone()));
+    let (dm, vm) = (Dir::new(&format!("{label}-dm")), Dir::new(&format!("{label}-vm")));
+    let mila = Service::with_bind(&dm.0, Identity::generate().expect("identity"), "tablet", true, "127.0.0.1", 0).expect("service");
+    mila.set_route(route);
+    mila.set_vault(Some(vm.0.clone()));
+    p.alice.set_account_name("Rowan").expect("name");
+    let mila_id = mila.set_account_name("Mila").expect("name").id.expect("id");
+    mila.set_findable(true).expect("findable");
+    p.alice.people_nearby(std::time::Duration::from_millis(2000)).expect("listen");
+    let id = p.alice.share_with("Biology", true, &mila_id).expect("invite");
+    assert!(mila.answer_invitation(&id, true).expect("accept"));
+    (p, mila, dm, vm, id)
+}
+
+fn ok_with(results: &[super::service::ShareResult], person: &str) -> super::engine::Report {
+    let found = results.iter().find(|r| r.person == person).unwrap_or_else(|| panic!("no result for {person}"));
+    found.outcome.clone().unwrap_or_else(|code| panic!("share sync with {person}: {code}"))
+}
+
+#[test]
+fn a_shared_folder_syncs_both_ways_joins_edits_and_never_shows_anything_else() {
+    let (p, mila, _dm, vm, id) = shared_biology("share-sync");
+    write(&p.va.0, "Biology/Cells.md", "Cells have a membrane.\n![](attachments/cell.png)\nThe nucleus holds DNA.\n");
+    write(&p.va.0, "attachments/cell.png", "png");
+    write(&p.va.0, "attachments/private.png", "not linked from the share");
+    write(&p.va.0, "Diary.md", "private");
+    let here = "Shared with me/Rowan/Biology";
+
+    // Mila's tablet starts: it gets the folder and the picture its page links to, nothing else.
+    let results = mila.sync_share(&id).expect("sync");
+    assert_eq!(ok_with(&results, "Rowan").received, 2);
+    assert_eq!(names(&vm.0), ["Shared with me/Rowan/Biology/Cells.md", "attachments/cell.png"]);
+
+    // Both change the page in different places, and Mila adds a page: joined and sent.
+    write(&p.va.0, "Biology/Cells.md", "Cells have a thin membrane.\n![](attachments/cell.png)\nThe nucleus holds DNA.\n");
+    write(&vm.0, &format!("{here}/Cells.md"), "Cells have a membrane.\n![](attachments/cell.png)\nThe nucleus holds the DNA.\n");
+    write(&vm.0, &format!("{here}/Week 2/Tissues.md"), "tissues");
+    let report = ok_with(&p.alice.sync_share(&id).expect("sync"), "Mila");
+    assert_eq!(report.merged, 1);
+    let joined = "Cells have a thin membrane.\n![](attachments/cell.png)\nThe nucleus holds the DNA.\n";
+    assert_eq!(fs::read_to_string(p.va.0.join("Biology/Cells.md")).expect("rowan"), joined);
+    assert_eq!(fs::read_to_string(vm.0.join(format!("{here}/Cells.md"))).expect("mila"), joined);
+    assert_eq!(fs::read_to_string(p.va.0.join("Biology/Week 2/Tissues.md")).expect("new page"), "tissues");
+
+    // Rowan's other device gets the share and its pages from his own sync, then syncs the share
+    // with Mila directly.
+    sync(&p);
+    sync(&p);
+    write(&p.vb.0, "Biology/From laptop.md", "hello");
+    ok_with(&p.bob.sync_share(&id).expect("sync"), "Mila");
+    assert!(vm.0.join(format!("{here}/From laptop.md")).is_file());
+
+    // Removing a page in the share moves it to the other person's trash, never further.
+    fs::remove_file(vm.0.join(format!("{here}/Week 2/Tissues.md"))).expect("remove");
+    ok_with(&mila.sync_share(&id).expect("sync"), "Rowan");
+    let rowan_has: Vec<String> = names(&p.va.0).into_iter().filter(|n| n.contains("Tissues")).collect();
+    assert!(rowan_has.is_empty(), "gone from Rowan's folder: {rowan_has:?}");
+    assert!(trash_has(&p.va.0) || trash_has(&p.vb.0), "it is in a trash");
+    assert!(!vm.0.join("Diary.md").exists() && !vm.0.join("attachments/private.png").exists());
+}
+
+#[test]
+fn a_share_connection_from_a_stranger_or_for_something_outside_the_share_gets_nothing() {
+    use super::exchange::{send_blob, KIND_GET, KIND_FILE, KIND_LIST, KIND_LISTING};
+    use super::invite::{KIND_INVITE_OK, KIND_SHARE_OPEN};
+    let (p, mila, _dm, _vm, id) = shared_biology("share-strangers");
+    write(&p.va.0, "Biology/Cells.md", "cells");
+    write(&p.va.0, "Diary.md", "private");
+    let port = p.alice.status().listening_port.expect("listens");
+    let open = |identity: &Identity| {
+        let stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let mut channel = super::channel::Channel::connect(stream, identity).expect("channel");
+        let mut message = vec![KIND_SHARE_OPEN];
+        message.extend_from_slice(&id);
+        channel.send(&message).expect("send");
+        let answer = channel.recv().ok().and_then(|a| a.first().copied());
+        (channel, answer)
+    };
+    let stranger = Identity::generate().expect("identity");
+    assert_ne!(open(&stranger).1, Some(KIND_INVITE_OK), "a device not in the share");
+    // Mila's own device is let in, but only sees the share.
+    let (mut channel, answer) = open(mila.identity_for_tests());
+    assert_eq!(answer, Some(KIND_INVITE_OK));
+    send_blob(&mut channel, KIND_LIST, &[], &[]).expect("list");
+    let listing = super::exchange::recv_blob(&mut channel, super::exchange::MAX_LISTING_BYTES).expect("listing");
+    assert_eq!(listing.kind, KIND_LISTING);
+    let listing = super::exchange::decode_listing_full(&listing.body).expect("listing");
+    assert_eq!(listing.manifest.files.keys().cloned().collect::<Vec<_>>(), ["s/Cells.md"]);
+    for asked in ["s/../Diary.md", "Diary.md", "a/../Diary.md", "s/Cells.md/../../Diary.md"] {
+        send_blob(&mut channel, KIND_GET, asked.as_bytes(), &[]).expect("get");
+        let answer = super::exchange::recv_blob(&mut channel, 1 << 20).expect("answer");
+        assert_ne!(answer.kind, KIND_FILE, "{asked}");
+    }
+    // An unshared id is refused even for Mila's device.
+    let mut other = id;
+    other[0] ^= 1;
+    let stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let mut channel = super::channel::Channel::connect(stream, mila.identity_for_tests()).expect("channel");
+    let mut message = vec![KIND_SHARE_OPEN];
+    message.extend_from_slice(&other);
+    channel.send(&message).expect("send");
+    assert_ne!(channel.recv().ok().and_then(|a| a.first().copied()), Some(KIND_INVITE_OK));
 }

@@ -40,6 +40,12 @@ pub fn read(root: &Path, peer_hex: &str, path: &str) -> Option<String> {
 /// pages that are no longer alike. A page that changed on disk in the meantime is skipped; it is
 /// simply not joined next time.
 pub fn update(root: &Path, peer_hex: &str, before: Option<&Manifest>, same: &Manifest) -> Result<()> {
+    update_mapped(root, peer_hex, before, same, &|path| Some(path.to_string()))
+}
+
+/// The same, for lists whose names are not vault paths (a share's names, space.rs): `at` gives
+/// where a name is in the notes folder. The copies are kept under the list's own names.
+pub fn update_mapped(root: &Path, peer_hex: &str, before: Option<&Manifest>, same: &Manifest, at: &dyn Fn(&str) -> Option<String>) -> Result<()> {
     let base = dir(root, peer_hex);
     for (path, state) in &same.files {
         if !is_page(path, state.size) {
@@ -50,10 +56,11 @@ pub fn update(root: &Path, peer_hex: &str, before: Option<&Manifest>, same: &Man
         if unchanged && copy.is_file() {
             continue;
         }
-        if super::files::current_hash(root, path)?.as_deref() != Some(state.hash.as_str()) {
+        let Some(here) = at(path) else { continue };
+        if super::files::current_hash(root, &here)?.as_deref() != Some(state.hash.as_str()) {
             continue;
         }
-        let Ok(bytes) = fs::read(root.join(path)) else { continue };
+        let Ok(bytes) = fs::read(root.join(&here)) else { continue };
         if let Some(parent) = copy.parent() {
             fs::create_dir_all(parent)?;
         }

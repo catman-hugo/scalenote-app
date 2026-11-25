@@ -13,6 +13,7 @@
 
 use super::channel::{Channel, MAX_MESSAGE};
 use super::files::{self, Done, Expect, MAX_TRANSFER_BYTES};
+use super::space::ShareMap;
 use super::keep::{self, KeepRules, Kinds, MAX_RULES};
 use super::manifest::{hash_bytes, safe_path, Manifest, MAX_MANIFEST_BYTES};
 use super::{Result, SyncError};
@@ -25,6 +26,10 @@ pub const KIND_GET: u8 = 0x31;
 pub const KIND_PUT: u8 = 0x32;
 pub const KIND_DEL: u8 = 0x33;
 pub const KIND_BYE: u8 = 0x34;
+/// Share syncs only (0.6.4): the calling device's list of what both now have alike, sent just
+/// before the goodbye, so the answering device can join edits and see deletions next time it
+/// starts the sync itself. Never sent to apps before 0.6.4 (they are never in a share).
+pub const KIND_BASE: u8 = 0x35;
 
 pub const KIND_OK: u8 = 0x40;
 pub const KIND_LISTING: u8 = 0x41;
@@ -231,8 +236,31 @@ fn answer<S: Read + Write>(channel: &mut Channel<S>, kind: u8) -> Result<()> {
 /// Answers requests until the other device says goodbye or something is wrong. `head` is the
 /// first message, already read. Returns how many files were written or removed here.
 /// `allowed` is false when this device has paused sync: every request is then turned down.
-/// `shares`: whether the calling device knows the list of shares (engine.rs, `Pair::shares`).
-pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Path, allowed: bool, shares: bool) -> Result<usize> {
+/// What a connection may see and change.
+pub enum Scope<'a> {
+    /// One's own device: the whole notes folder. `shares`: whether it knows the list of shares
+    /// (engine.rs, `Pair::shares`).
+    Whole { shares: bool },
+    /// Another person's device: one share, by its share-space names only (space.rs). The list
+    /// the caller sends at the end (`KIND_BASE`) is handed to the function before the answer, so
+    /// it is kept before the caller goes on.
+    Share(&'a ShareMap, &'a dyn Fn(&Manifest) -> Result<()>),
+}
+
+impl Scope<'_> {
+    /// Where a requested name is here, if this connection may touch it at all. `listed_only`:
+    /// reading, changing and removing need a listed name; making a new file needs only a name
+    /// of the share (a new attachment a changed page links to).
+    fn place(&self, path: &str, listed_only: bool) -> Option<String> {
+        match self {
+            Scope::Whole { .. } => Some(path.to_string()),
+            Scope::Share(map, _) if listed_only && !map.listed(path) => None,
+            Scope::Share(map, _) => map.to_vault(path),
+        }
+    }
+}
+
+pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Path, allowed: bool, scope: Scope) -> Result<usize> {
     let mut changed = 0;
     let mut next = Some(head);
     for _ in 0..MAX_REQUESTS {
@@ -250,13 +278,29 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
         }
         match request.kind {
             KIND_LIST => {
-                send_blob(channel, KIND_LISTING, &[], &encode_listing_full(&super::engine::listing_for(root, shares)?))?;
+                let listing = match &scope {
+                    Scope::Whole { shares } => super::engine::listing_for(root, *shares)?,
+                    Scope::Share(map, _) => super::engine::share_listing(root, map)?,
+                };
+                send_blob(channel, KIND_LISTING, &[], &encode_listing_full(&listing))?;
             }
+            KIND_BASE => match &scope {
+                Scope::Share(_, keep) => {
+                    let text = std::str::from_utf8(&request.body).map_err(|_| SyncError::Damaged("base"))?;
+                    keep(&Manifest::from_text(text)?)?;
+                    answer(channel, KIND_OK)?;
+                }
+                Scope::Whole { .. } => return Err(SyncError::Refused("unknown request")),
+            },
             KIND_GET => {
-                let path = std::str::from_utf8(&request.meta).map_err(|_| SyncError::Refused("path not allowed"))?;
-                match files::current_hash(root, path)? {
+                let asked = std::str::from_utf8(&request.meta).map_err(|_| SyncError::Refused("path not allowed"))?;
+                let Some(path) = scope.place(asked, true) else {
+                    answer(channel, KIND_MISSING)?;
+                    continue;
+                };
+                match files::current_hash(root, &path)? {
                     None => answer(channel, KIND_MISSING)?,
-                    Some(_) => match read_with_hash(root, path)? {
+                    Some(_) => match read_with_hash(root, &path)? {
                         Some((hash, bytes)) => send_blob(channel, KIND_FILE, hash.as_bytes(), &bytes)?,
                         None => answer(channel, KIND_MISSING)?,
                     },
@@ -273,7 +317,11 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
                     answer(channel, KIND_NO)?;
                     return Err(SyncError::Refused("file damaged on the way"));
                 }
-                match files::put(root, path, expect, &request.body, None) {
+                let Some(path) = scope.place(path, !matches!(expect, Expect::Absent)) else {
+                    answer(channel, KIND_NO)?;
+                    continue;
+                };
+                match files::put(root, &path, expect, &request.body, None) {
                     Ok(Done::Applied) => {
                         changed += 1;
                         answer(channel, KIND_OK)?;
@@ -286,7 +334,11 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
             KIND_DEL => {
                 let (expect, path) = split_expect(&request.meta).ok_or(SyncError::Refused("bad request"))?;
                 let Expect::Hash(hash) = expect else { return Err(SyncError::Refused("bad request")) };
-                match files::remove(root, path, hash) {
+                let Some(path) = scope.place(path, true) else {
+                    answer(channel, KIND_NO)?;
+                    continue;
+                };
+                match files::remove(root, &path, hash) {
                     Ok(Done::Applied) => {
                         changed += 1;
                         answer(channel, KIND_OK)?;

@@ -25,9 +25,10 @@
 use super::channel::Channel;
 use super::exchange::*;
 use super::exchange::Listing;
+use super::space::ShareMap;
 use super::files::{self, Done, Expect, MAX_TRANSFER_BYTES};
 use super::identity::KEY_LEN;
-use super::keep;
+use super::keep::{self, KeepRules};
 use super::manifest::{FileState, Manifest};
 use super::plan::{conflict_name, make_plan, Action, Plan, PlanInput, PlanSummary, Side};
 use super::{hex, Result, SyncError};
@@ -64,6 +65,50 @@ pub struct Pair<'a> {
     /// greeting). Older apps refuse a list with a file they do not know, so for them the shares
     /// file is left out of this device's list.
     pub shares: bool,
+    /// When syncing one share with another person's device (0.6.4): how its share-space names
+    /// map to this notes folder (space.rs). `None` for a sync between one's own devices.
+    pub map: Option<&'a ShareMap>,
+}
+
+/// The vault path of a name in the plan: itself, or for a share sync its place here. A name that
+/// is not in the share is refused (the other device can only name what the share holds).
+fn place(pair: &Pair, path: &str) -> Result<String> {
+    match pair.map {
+        None => Ok(path.to_string()),
+        Some(map) => map.to_vault(path).ok_or(SyncError::Refused("outside the share")),
+    }
+}
+
+/// Names the saved lists of this sync: the other device, and for a share sync also the share,
+/// so a share's history never mixes with the whole-folder sync with the same device.
+fn tag(pair: &Pair) -> String {
+    let peer = &hex::encode(pair.peer_key)[..16];
+    match pair.map {
+        None => peer.to_string(),
+        Some(map) => format!("{peer}-{}", &hex::encode(&map.id)[..16]),
+    }
+}
+
+/// The answering side of a share sync keeps the list the calling device says both now have alike,
+/// but only the files that are exactly so here (a list from another person is not taken on trust).
+pub fn keep_share_base(pair: &Pair, said: &Manifest) -> Result<()> {
+    let Some(map) = pair.map else { return Ok(()) };
+    let here = map.view(&Manifest::scan(pair.root)?.manifest);
+    let mut same = Manifest::default();
+    for (path, state) in &said.files {
+        if here.files.get(path).is_some_and(|mine| mine.same_content(state)) {
+            same.files.insert(path.clone(), state.clone());
+        }
+    }
+    let before = load_base(pair);
+    save_base(pair, &same)?;
+    super::basetext::update_mapped(pair.root, &tag(pair), before.as_ref(), &same, &|path| place(pair, path).ok())
+}
+
+/// The share's listing: its files by share-space name, no choices (a share is kept whole).
+pub fn share_listing(root: &Path, map: &ShareMap) -> Result<Listing> {
+    let scan = Manifest::scan(root)?;
+    Ok(Listing { manifest: map.view(&scan.manifest), skipped: map.view_names(scan.skipped.iter().map(|s| &s.path)), not_kept: BTreeSet::new(), rules: KeepRules::default() })
 }
 
 /// What a sync would do, without doing it.
@@ -124,7 +169,7 @@ pub struct Progress {
 }
 
 fn base_path(pair: &Pair) -> PathBuf {
-    pair.root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(pair.peer_key)[..16]))
+    pair.root.join(BASE_DIR).join(format!("sync-base-{}.txt", tag(pair)))
 }
 
 /// The folder colours file as both devices had it after the last sync (settings_merge.rs).
@@ -290,7 +335,10 @@ pub fn compare<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result
 }
 
 fn make_preview<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<(Preview, Manifest, Manifest)> {
-    let here = listing_for(pair.root, pair.shares)?;
+    let here = match pair.map {
+        Some(map) => share_listing(pair.root, map)?,
+        None => listing_for(pair.root, pair.shares)?,
+    };
     let there = fetch_listing(channel)?;
     let base = load_base(pair);
     let first = base.is_none();
@@ -383,7 +431,11 @@ pub fn run<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, approved: boo
 
 /// After the actions: list both sides again and save what is now the same on both.
 fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> {
-    let mut local = Manifest::scan(pair.root)?.manifest;
+    let scanned = Manifest::scan(pair.root)?.manifest;
+    let mut local = match pair.map {
+        Some(map) => map.view(&scanned),
+        None => scanned,
+    };
     if !pair.shares {
         local.files.remove(SHARES_FILE);
     }
@@ -397,7 +449,13 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
     let before = load_base(pair);
     save_base(pair, &same)?;
     // The pages both now have alike, for joining edits next time (basetext.rs).
-    super::basetext::update(pair.root, &hex::encode(pair.peer_key)[..16], before.as_ref(), &same)?;
+    super::basetext::update_mapped(pair.root, &tag(pair), before.as_ref(), &same, &|path| place(pair, path).ok())?;
+    if pair.map.is_some() {
+        // The other person's device keeps the same list (see `keep_share_base`). A share has no
+        // colours, choices or page list of its own.
+        ask(channel, KIND_BASE, &[], same.to_text().as_bytes(), 0)?;
+        return send_blob(channel, KIND_BYE, &[], &[]);
+    }
     // The colours and shares files both devices now have, for the next merge.
     for path in [SETTINGS_FILE, SHARES_FILE] {
         if same.files.contains_key(path) {
@@ -461,7 +519,7 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
         Action::Push { path } => {
             let mine = state(local, path)?;
             let expect = remote.files.get(path).map_or(Expect::Absent, |s| Expect::Hash(&s.hash));
-            let Some(bytes) = files::read_expected(pair.root, path, &mine.hash)? else {
+            let Some(bytes) = files::read_expected(pair.root, &place(pair, path)?, &mine.hash)? else {
                 report.left_for_next += 1;
                 return Ok(());
             };
@@ -475,7 +533,7 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
                 report.left_for_next += 1;
                 return Ok(());
             };
-            match files::put(pair.root, path, expect, &bytes, Some(theirs.modified))? {
+            match files::put(pair.root, &place(pair, path)?, expect, &bytes, Some(theirs.modified))? {
                 Done::Applied => report.received += 1,
                 Done::Changed => report.left_for_next += 1,
             }
@@ -483,7 +541,7 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
         }
         Action::DeleteLocal { path } => {
             let mine = state(local, path)?;
-            match files::remove(pair.root, path, &mine.hash)? {
+            match files::remove(pair.root, &place(pair, path)?, &mine.hash)? {
                 Done::Applied => report.deleted_here += 1,
                 Done::Changed => report.left_for_next += 1,
             }
@@ -501,7 +559,7 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
 
 /// The two texts joined against the text both devices had after their last sync, or `None`.
 fn join_texts(pair: &Pair, path: &str, mine: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
-    let base = super::basetext::read(pair.root, &hex::encode(pair.peer_key)[..16], path)?;
+    let base = super::basetext::read(pair.root, &tag(pair), path)?;
     let (mine, theirs) = (std::str::from_utf8(mine).ok()?, std::str::from_utf8(theirs).ok()?);
     crate::textmerge::merge(&base, mine, theirs).map(String::into_bytes)
 }
@@ -512,7 +570,7 @@ fn join_texts(pair: &Pair, path: &str, mine: &[u8], theirs: &[u8]) -> Option<Vec
 #[allow(clippy::too_many_arguments)]
 fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, local_wins: bool, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
     let (mine, theirs) = (state(local, path)?, state(remote, path)?);
-    let Some(here) = files::read_expected(pair.root, path, &mine.hash)? else {
+    let Some(here) = files::read_expected(pair.root, &place(pair, path)?, &mine.hash)? else {
         report.left_for_next += 1;
         return Ok(());
     };
@@ -524,7 +582,7 @@ fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: 
     let merge = if path == SHARES_FILE { super::shares::merge } else { super::settings_merge::merge };
     let merged = merge(base.as_deref(), &here, &there, local_wins).unwrap_or_else(|| if local_wins { here.clone() } else { there.clone() });
     if merged != here {
-        match files::put(pair.root, path, Expect::Hash(&mine.hash), &merged, None)? {
+        match files::put(pair.root, &place(pair, path)?, Expect::Hash(&mine.hash), &merged, None)? {
             Done::Applied => report.received += 1,
             Done::Changed => {
                 report.left_for_next += 1;
@@ -551,7 +609,7 @@ fn read_small(path: &Path) -> Option<Vec<u8>> {
 #[allow(clippy::too_many_arguments)]
 fn conflict<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, copy: &str, winner: Side, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
     let (mine, theirs) = (state(local, path)?, state(remote, path)?);
-    let Some(mine_bytes) = files::read_expected(pair.root, path, &mine.hash)? else {
+    let Some(mine_bytes) = files::read_expected(pair.root, &place(pair, path)?, &mine.hash)? else {
         report.left_for_next += 1;
         return Ok(());
     };
@@ -563,7 +621,7 @@ fn conflict<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, 
     // and the two changes do not touch the same place (basetext.rs, textmerge.rs).
     if path.ends_with(".md") {
         if let Some(merged) = join_texts(pair, path, &mine_bytes, &their_bytes) {
-            if merged != mine_bytes && files::put(pair.root, path, Expect::Hash(&mine.hash), &merged, None)? == Done::Changed {
+            if merged != mine_bytes && files::put(pair.root, &place(pair, path)?, Expect::Hash(&mine.hash), &merged, None)? == Done::Changed {
                 report.left_for_next += 1;
                 return Ok(());
             }
@@ -583,12 +641,12 @@ fn conflict<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, 
         Side::Remote => (&their_bytes, &mine_bytes, mine.modified),
     };
     // 1. The older version is safe here, under its own name.
-    if files::put(pair.root, copy, Expect::Absent, older, Some(older_modified))? == Done::Changed {
+    if files::put(pair.root, &place(pair, copy)?, Expect::Absent, older, Some(older_modified))? == Done::Changed {
         report.left_for_next += 1;
         return Ok(());
     }
     // 2. The newer version takes the name here (when it is the other device's).
-    if winner == Side::Remote && files::put(pair.root, path, Expect::Hash(&mine.hash), keep, Some(theirs.modified))? == Done::Changed {
+    if winner == Side::Remote && files::put(pair.root, &place(pair, path)?, Expect::Hash(&mine.hash), keep, Some(theirs.modified))? == Done::Changed {
         report.left_for_next += 1;
         return Ok(());
     }
@@ -606,6 +664,6 @@ fn conflict<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, 
         }
     }
     report.conflicts += 1;
-    report.conflict_copies.push(copy.to_string());
+    report.conflict_copies.push(place(pair, copy)?);
     Ok(())
 }

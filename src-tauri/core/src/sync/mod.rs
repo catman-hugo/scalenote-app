@@ -23,6 +23,7 @@ pub mod keep;
 pub mod networks;
 pub mod settings_merge;
 pub mod shares;
+pub mod space;
 pub mod manifest;
 pub mod pairing;
 pub mod plan;
