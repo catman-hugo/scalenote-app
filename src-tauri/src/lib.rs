@@ -494,9 +494,19 @@ struct SearchHitReply {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SearchReply {
     hits: Vec<SearchHitReply>,
     truncated: bool,
+    /// Pages that are not on this device whose title fits (0.6.5); their text is not here.
+    not_here: Vec<SearchHitReply>,
+    /// How many pages are not on this device at all, so the interface can say the text search
+    /// covered only this device.
+    not_here_count: usize,
+}
+
+fn hit_reply(h: scalenote_core::search::SearchHit) -> SearchHitReply {
+    SearchHitReply { path: h.path, title: h.title, snippet: h.snippet }
 }
 
 /// Searches the pages. It runs away from the main thread and does not keep the vault locked
@@ -507,14 +517,102 @@ fn search_vault(query: String, limit: usize, state: State<AppState>) -> Result<S
     let root = with_vault(&state, "search", |vault| Ok(vault.root().to_path_buf()))?;
     let vault = Vault::open(&root).map_err(|e| code(e, &state, "search"))?;
     let results = vault.search(&query, limit).map_err(|e| code(e, &state, "search"))?;
+    // Not being able to read the list of pages elsewhere only means none are shown.
+    let missing: Vec<String> = keep::not_here(&root).map(|set| set.into_iter().filter(|p| p.to_ascii_lowercase().ends_with(".md")).collect()).unwrap_or_default();
+    let not_here = scalenote_core::search::match_titles(missing.iter(), &query, limit);
     Ok(SearchReply {
         truncated: results.truncated,
-        hits: results
-            .hits
-            .into_iter()
-            .map(|h| SearchHitReply { path: h.path, title: h.title, snippet: h.snippet })
-            .collect(),
+        hits: results.hits.into_iter().map(hit_reply).collect(),
+        not_here: not_here.into_iter().map(hit_reply).collect(),
+        not_here_count: missing.len(),
     })
+}
+
+/// What one paired device found among the pages that are not here.
+#[derive(Serialize)]
+struct ElsewhereReply {
+    device: String,
+    hits: Vec<SearchHitReply>,
+    truncated: bool,
+}
+
+/// Asks the paired devices in reach to search the text of the pages that are not here (0.6.5).
+/// The query is not written to the log.
+#[tauri::command]
+async fn search_elsewhere(query: String, state: State<'_, AppState>) -> Result<Vec<ElsewhereReply>, String> {
+    lock::refuse_if_locked(&state)?;
+    vault_root(&state)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.search_elsewhere(&query))).await?;
+    result
+        .map(|answers| answers.into_iter().map(|(device, hits, truncated)| ElsewhereReply { device, hits: hits.into_iter().map(hit_reply).collect(), truncated }).collect())
+        .map_err(|error| sync_failed(&state.logger, "search elsewhere", error))
+}
+
+/// How much room the notes folder takes here (Settings, Storage, 0.6.5).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageReply {
+    /// Bytes per kind: text, ink, pictures, pdfs, other.
+    total: [u64; 5],
+    files: u64,
+    rows: Vec<StorageRow>,
+    /// Every folder with everything under it, to look inside a row.
+    folders: Vec<StorageRow>,
+    can_free_bytes: u64,
+    can_free_files: u64,
+    keeps_everything: bool,
+    incomplete: bool,
+}
+
+#[derive(Serialize)]
+struct StorageRow {
+    /// folder, top, loose, trash, history or app.
+    kind: &'static str,
+    /// The folder's path; empty for the other rows.
+    path: String,
+    bytes: [u64; 5],
+    files: u64,
+}
+
+#[tauri::command]
+async fn storage_report(state: State<'_, AppState>) -> Result<StorageReply, String> {
+    use scalenote_core::storage::Row;
+    let root = vault_root(&state)?;
+    let report = blocking(move || scalenote_core::storage::report(&root)).await?;
+    let row = |row: &Row, usage: &scalenote_core::storage::Usage| {
+        let (kind, path) = match row {
+            Row::Folder(path) => ("folder", path.clone()),
+            Row::TopPages => ("top", String::new()),
+            Row::LooseAttachments => ("loose", String::new()),
+            Row::Trash => ("trash", String::new()),
+            Row::History => ("history", String::new()),
+            Row::AppData => ("app", String::new()),
+        };
+        StorageRow { kind, path, bytes: usage.bytes, files: usage.files }
+    };
+    Ok(StorageReply {
+        total: report.total.bytes,
+        files: report.total.files,
+        rows: report.rows.iter().map(|(r, u)| row(r, u)).collect(),
+        folders: report.folders.iter().map(|(p, u)| row(&Row::Folder(p.clone()), u)).collect(),
+        can_free_bytes: report.can_free_bytes,
+        can_free_files: report.can_free_files,
+        keeps_everything: report.keeps_everything,
+        incomplete: report.incomplete,
+    })
+}
+
+/// "Free up space": removes what this device does not keep, only where another of your devices
+/// has the same version (sync/keep.rs, rule 2 of the 0.6 plan).
+#[tauri::command]
+async fn storage_free(state: State<'_, AppState>) -> Result<FreeReply, String> {
+    lock::refuse_if_locked(&state)?;
+    let root = vault_root(&state)?;
+    let result = blocking(move || keep::free_up_space(&root)).await?;
+    result
+        .map(|r| FreeReply { removed: r.removed.len(), bytes: r.bytes, only_here: r.only_here.len() })
+        .map_err(|error| sync_failed(&state.logger, "free up space", error))
 }
 
 #[derive(Serialize)]
@@ -1433,6 +1531,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             share_page_open,
+            search_elsewhere,
+            storage_report,
+            storage_free,
             shares_list,
             share_with,
             share_answer,

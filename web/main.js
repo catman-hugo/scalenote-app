@@ -51,6 +51,7 @@ import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { pairingRows, privacyRows } from "./syncpairing.js";
 import { openOfflineDialog } from "./offlinedialog.js";
 import { openInvitationDialog, openShareDialog } from "./sharedialog.js";
+import { storageRows } from "./storagepanel.js";
 import { withMissing } from "./offlinerules.js";
 import { describeSize } from "./pdfrules.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
@@ -2185,7 +2186,9 @@ function openSearch() {
     recent: () => app.recent.filter((p) => p !== (app.current && app.current.path)),
     commands,
     search: (query) => backend.search(query, SEARCH_LIMIT),
-    openPage: (path) => openNote(path),
+    searchElsewhere: (query) => backend.searchElsewhere(query),
+    // A page that is not here (found by its title, or by another device) is brought first.
+    openPage: (path, away) => (away || app.offline.notHere.includes(path) ? openMissing(path) : openNote(path)),
   });
 }
 
@@ -2907,6 +2910,14 @@ function fillStaticText() {
         sync: syncSettingsRows(),
         privacy: privacySettingsRows(),
         files: [...offlineSettingsRows(), ...historySettingsRows(), ...obsidianRows(), ...backupRows()],
+        storage: storageRows({
+          backend,
+          logProblem,
+          chooseOffline: () => {
+            el("settings").close();
+            chooseOffline("", "");
+          },
+        }),
         device: deviceSettingsRows(),
         shortcuts: shortcutRows(),
         about: aboutRows(),

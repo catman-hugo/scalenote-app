@@ -8310,6 +8310,92 @@ await test("an invitation is asked about once: Accept puts it in the list, No sa
   await page.waitForFunction(() => !document.querySelector('.tree-button[data-shared]'));
 }, { settings: existingUser({ updates: false }) });
 
+await test("Settings, Storage counts per folder, looks inside a folder, and frees only what may go", async (page) => {
+  await page.waitForSelector("#newNote");
+  const mb = 1024 * 1024;
+  await page.evaluate((mb) => {
+    window.__storage = {
+      total: [2 * mb, mb, 3 * mb, 10 * mb, 0], files: 120,
+      rows: [
+        { kind: "folder", path: "Biology", bytes: [mb, mb, 3 * mb, 10 * mb, 0], files: 80 },
+        { kind: "trash", path: "", bytes: [mb / 2, 0, 0, 0, 0], files: 3 },
+        { kind: "top", path: "", bytes: [mb / 2, 0, 0, 0, 0], files: 2 },
+      ],
+      folders: [
+        { kind: "folder", path: "Biology", bytes: [mb, mb, 3 * mb, 10 * mb, 0], files: 80 },
+        { kind: "folder", path: "Biology/Week 1", bytes: [mb, 0, 3 * mb, 0, 0], files: 40 },
+        { kind: "folder", path: "Biology/<b>Week 2", bytes: [0, mb, 0, 10 * mb, 0], files: 40 },
+      ],
+      canFreeBytes: 10 * mb, canFreeFiles: 4, keepsEverything: false, incomplete: false,
+    };
+    window.__freeResult = { removed: 3, bytes: 9 * mb, onlyHere: 1 };
+  }, mb);
+  await openSettingsTab(page, "storage");
+  await page.waitForFunction(() => document.querySelector("#storageTotal").textContent.startsWith("ScaleNote takes 16.0 MB"));
+  assert.equal(await page.textContent("#storageParts"), "Text 2.0 MB · Ink 1.0 MB · Pictures 3.0 MB · PDFs 10.0 MB");
+  assert.deepEqual(await page.locator("#storageList .storage-name").allTextContents(), ["Biology", "Trash", "Pages in no folder"]);
+  // Looking inside Biology: its folders, biggest first; names are text.
+  await page.click('#storageList .storage-row[data-path="Biology"]');
+  await page.waitForSelector("#storageUp");
+  assert.deepEqual(await page.locator("#storageList .storage-name").allTextContents(), ["<b>Week 2", "Week 1"]);
+  assert.equal(await page.locator("#storageList b").count(), 0);
+  await page.click("#storageUp");
+  await page.waitForSelector('#storageList .storage-row[data-path="Biology"]');
+  assert.equal(await page.textContent("#storageFreeText"), "Up to 10.0 MB (4 files) is here but not kept by your choices.");
+  await page.click("#storageFree");
+  await page.waitForFunction(() => document.querySelector("#storageResult").textContent.startsWith("9.0 MB freed (3 files)."));
+  assert.ok((await page.textContent("#storageResult")).includes("1 files stay until another of your devices has them"));
+  assert.equal(await page.evaluate(() => window.__freed), 1);
+}, { settings: existingUser({ updates: false }) });
+
+await test("Settings, Storage on a device that keeps everything offers the choices, and a failed count says so", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "storage");
+  await page.waitForFunction(() => document.querySelector("#storageFreeText").textContent.startsWith("This device keeps everything."));
+  assert.equal(await page.isVisible("#storageFree"), false);
+  await page.click("#storageChoose");
+  await page.waitForSelector("#offlineBox[open]");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { window.__failStorage = true; });
+  await openSettingsTab(page, "storage");
+  await page.waitForFunction(() => document.querySelector("#storageTotal").textContent === "The notes folder could not be counted.");
+}, { settings: existingUser({ updates: false }) });
+
+await test("search finds pages on other devices by title, and asks the other devices for their text", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    window.__mock.files.set("Cells here.md", "the cell membrane\n");
+    window.__mock.offline.elsewhere.set("Biology/Cells.md", "cells\n");
+    window.__mock.offline.elsewhere.set("Biology/Plants.md", "plant cells\n");
+  });
+  // A new folder redraws the page list, which reads what is on other devices again.
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Biology"][data-missing="1"]');
+  await page.click("#openSearch");
+  await page.fill("#palette input", "cells");
+  await page.waitForSelector('#palette .palette-row[data-away="1"]');
+  const headings = await page.locator("#palette .palette-heading").allTextContents();
+  assert.deepEqual(headings.slice(0, 2), ["Pages", "On your other devices"]);
+  assert.equal(await page.locator('#palette .palette-row[data-away="1"] .palette-title').first().textContent(), "Cells");
+  assert.equal(await page.textContent("#palette .palette-note"), "The text of 2 pages that are not on this device was not searched, only their titles.");
+  // Nobody in reach.
+  await page.click("#palette .palette-elsewhere");
+  await page.waitForFunction(() => document.querySelector("#palette .palette-note").textContent === "None of your other devices could be reached.");
+  assert.ok(await page.isVisible("#palette"), "the box stays open");
+  // A laptop answers with Plants, found in its text; with the keyboard this time.
+  await page.evaluate(() => { window.__otherDevices = [{ device: "Laptop", truncated: false, hits: [{ path: "Biology/Plants.md", title: "Plants", snippet: [["plant ", false], ["cells", true]] }] }]; });
+  await page.fill("#palette input", "cell");
+  await page.waitForSelector("#palette .palette-elsewhere");
+  for (let i = 0; i < 6 && !(await page.evaluate(() => document.querySelector("#palette .palette-row.active")?.classList.contains("palette-elsewhere"))); i++) await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => [...document.querySelectorAll("#palette .palette-heading")].some((h) => h.textContent === "Found on Laptop"));
+  assert.equal(await page.locator("#palette mark").last().textContent(), "cells");
+  assert.equal(await page.locator("#palette .palette-elsewhere").count(), 0, "asked once per query");
+  // Opening a result brings the page from the other device.
+  await page.click('#palette .palette-row[data-away="1"] >> text=Plants');
+  await page.waitForFunction(() => window.__mock.files.has("Biology/Plants.md"));
+}, { settings: existingUser({ updates: false }) });
+
 await test("Sync settings that cannot be saved or read say so calmly and change nothing on screen", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");

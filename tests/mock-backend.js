@@ -426,7 +426,11 @@
       if (window.__failSearch) fail(window.__failSearch);
       if (window.__searchDelay) await new Promise((r) => setTimeout(r, window.__searchDelay));
       const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
-      if (!words.length) return { hits: [], truncated: false };
+      const missingPages = [...offline.elsewhere.keys()].filter((p) => !files.has(p) && /\.md$/i.test(p));
+      const notHere = missingPages
+        .filter((p) => words.every((w) => p.split("/").pop().toLowerCase().includes(w)))
+        .map((path) => ({ path, title: path.split("/").pop().replace(/\.md$/i, ""), snippet: [] }));
+      if (!words.length) return { hits: [], truncated: false, notHere: [], notHereCount: missingPages.length };
       const hits = [];
       for (const [path, text] of files) {
         const title = path.split("/").pop().replace(/\.md$/i, "");
@@ -441,7 +445,26 @@
         hits.push({ rank: exact ? 0 : inTitle ? 1 : 2, path, title, snippet });
       }
       hits.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
-      return { hits: hits.slice(0, Math.max(1, Math.min(limit, 50))).map(({ rank, ...h }) => h), truncated: false };
+      return { hits: hits.slice(0, Math.max(1, Math.min(limit, 50))).map(({ rank, ...h }) => h), truncated: false, notHere, notHereCount: missingPages.length };
+    },
+    // Tests put the answers of other devices in window.__otherDevices ([{ device, hits, truncated }]).
+    search_elsewhere: async () => {
+      window.__elsewhereAsked = (window.__elsewhereAsked || 0) + 1;
+      if (window.__elsewhereDelay) await new Promise((r) => setTimeout(r, window.__elsewhereDelay));
+      if (!window.__otherDevices) fail("not_available_offline");
+      return window.__otherDevices;
+    },
+    // Tests put the count in window.__storage; without one the files here are counted as text.
+    storage_report: () => {
+      if (window.__failStorage) fail("io");
+      if (window.__storage) return window.__storage;
+      const size = (t) => new TextEncoder().encode(t).length;
+      const total = [...files.values()].reduce((n, t) => n + size(t), 0);
+      return { total: [total, 0, 0, 0, 0], files: files.size, rows: [], folders: [], canFreeBytes: 0, canFreeFiles: 0, keepsEverything: true, incomplete: false };
+    },
+    storage_free: () => {
+      window.__freed = (window.__freed || 0) + 1;
+      return window.__freeResult || { removed: 0, bytes: 0, onlyHere: 0 };
     },
     // A simple stand-in: names are matched without folders. The real rules are tested in Rust
     // and in tests/wikilinks.test.mjs against the same cases.
