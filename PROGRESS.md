@@ -2,17 +2,13 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-25; 0.6.1 built (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-25; 0.6.2 built (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
-## 0.6.1: built (sync over a hotspot or a cable, without internet)
+## 0.6.2: built (fixes and requests after testing 0.6.1)
 
-Asked for on 2026-11-25. Branch `feature/v0.6.1-hotspot`. Release notes `docs/release-notes/0.6.1.md`; security checklist `docs/security-checklist-0.6.1.md`. The 0.6 plan moved up one number: offline choices in the app are now 0.6.2, storage 0.6.3, sharing in 0.6.4, hardening 0.6.5.
+All asked for or reported by the owner on 2026-11-25 while testing 0.6.1. Branch `feature/v0.6.2-fixes`. Release notes `docs/release-notes/0.6.2.md`; security checklist `docs/security-checklist-0.6.2.md`. The 0.6 plan moved up one more number: offline choices in the app are now 0.6.3, storage 0.6.4, sharing in 0.6.5, hardening 0.6.6.
 
 Done:
-- `core/src/sync/networks.rs`: the local networks a device is on (home Wi-Fi, a hotspot it makes or joins, USB tethering, a cable), leaving out mobile data, Tailscale, loopback and point-to-point links.
-- `discovery.rs`: the "I'm here" note also goes to the broadcast address of every local network, from this device's address there, and the listener joins the group on each. Before, it only went along the main connection, which on a phone making a hotspot is mobile data or nothing.
-- `service.rs`: "Wi-Fi only" now allows a device reached on a local network (a hotspot or cable never uses mobile data); the check moved from the start of a sync to the moment the address is known. `local_addresses()` lists every nearby address; the pairing screen shows them all (`addresses` in the status, `pairAddressOr`).
-- Setup guide: "Without Wi-Fi or internet: a hotspot or a cable".
 - Folder colours: the colours file is merged folder by folder during a sync (`sync/settings_merge.rs`), against the copy both devices had after the last sync (`.scalenote/sync-settings-<device>.json`). Before, the newer file won whole and wiped colours set on the other device (reported 2026-11-25).
 - Two fingers move and zoom the canvas, and scroll a page with ink, while Finger draws is on; a line the first finger began is dropped (`fingerPinch` in canvasview.js, `fingers` in inklayer.js).
 - Cancel after Compare closes the panel (`syncrun.js`). Settings, Sync shows this device's network address above the Tailscale line (`pairLocalAddress`). The word "eduroam" is gone from the app and the docs, as asked.
@@ -20,14 +16,31 @@ Done:
 - Sync times in Settings, Sync are shown in local time (`localStamp` in syncpairing.js).
 - Tray: closing the window with the tray on destroys the window instead of hiding it, which frees the web view (about 100 MB on Linux); `RunEvent::ExitRequested` is stopped while the tray is on and the exit came from closing, and the tray makes the window again from its start settings (`tray.rs`). Only compiled by CI.
 - A divider between the app lock and Reset to defaults.
-- Tried by the owner on 2026-11-25: sync between a laptop and an Android phone over the phone's hotspot works.
 - PDFs: no page limit for "Pages as images" (was 100). Over 100 pages, or over 100 MB of pictures, a question first says the guessed space (one page from the middle is drawn and made into a picture to measure it, not saved) and Cancel stores nothing (`longPdfNeedsAsking`, `askLongPdf`). A PDF file may be up to 64 MB (was 25 MB; `MAX_PDF_BYTES`, the largest file sync sends); above 25 MB the question how to add it says the size, above 64 MB it is refused before any question. Asked for on 2026-11-25.
-- Version 0.6.1.
+- The word "eduroam" is gone from the app and the docs, as asked.
+- Version 0.6.2.
 
-Tried here: `cargo test -p scalenote-core` (unit and integration tests), `npm test`, and the browser tests after `npm run build` (all passed: 291 core unit tests plus 18 integration tests, 333 unit tests, every browser test). The sending test had no private network to send on here.
+Tried here: `cargo test -p scalenote-core` (296 unit tests, 18 integration tests), `npm test` (334), and the browser tests after `npm run build`, all passed.
 
 Not done / untried:
-- Not yet tried: the laptop making the hotspot, USB tethering, a cable, and pairing over a hotspot. The two-finger moves, the colours merge and the PDF changes are untried on a device.
+- On a device: the colours merge, the two-finger moves, the PDF warnings, the 30-second checks, and the window coming back from the tray (only compiled by CI).
+
+## 0.6.1: released (sync over a hotspot or a cable, without internet)
+
+Asked for on 2026-11-25. Pull request #94, released as v0.6.1. Release notes `docs/release-notes/0.6.1.md`; security checklist `docs/security-checklist-0.6.1.md`.
+
+Done:
+- `core/src/sync/networks.rs`: the local networks a device is on (home Wi-Fi, a hotspot it makes or joins, USB tethering, a cable), leaving out mobile data, Tailscale, loopback and point-to-point links.
+- `discovery.rs`: the "I'm here" note also goes to the broadcast address of every local network, from this device's address there, and the listener joins the group on each. Before, it only went along the main connection, which on a phone making a hotspot is mobile data or nothing.
+- `service.rs`: "Wi-Fi only" now allows a device reached on a local network (a hotspot or cable never uses mobile data); the check moved from the start of a sync to the moment the address is known. `local_addresses()` lists every nearby address; the pairing screen shows them all (`addresses` in the status, `pairAddressOr`).
+- Setup guide: "Without Wi-Fi or internet: a hotspot or a cable".
+- Tried by the owner on 2026-11-25: sync between a laptop and an Android phone over the phone's hotspot works.
+- Version 0.6.1.
+
+Tried here: `cargo test -p scalenote-core` (unit and integration tests), `npm test`, and the browser tests after `npm run build` (all passed). The sending test had no private network to send on here.
+
+Not done / untried:
+- Not yet tried: the laptop making the hotspot, USB tethering, a cable, and pairing over a hotspot.
 - Bluetooth and Wi-Fi Direct are not planned (see DECISIONS).
 
 ## 0.6.0: built (partial sync, no new screens)
@@ -39,12 +52,12 @@ Done (tried here: `cargo test -p scalenote-core` 287 unit tests passed, 15 of th
 - The listing a device sends (`exchange.rs`) now carries its choices (`/keep`, `/linked` lines) and the files it removed to free space (after `/not-kept`). An app before 0.6 drops the `/` lines and reads the removed files as ordinary skipped names, so it never deletes them.
 - The plan (`engine.rs`) leaves out, on each side, files that side does not have now, did not have at the last sync and does not keep. A page the person deleted on a device that keeps it still syncs as a delete. The preview counts `not_kept_here` and `not_kept_there`.
 - `keep::free_up_space`: removes files the choices no longer keep, only when a saved list shows a paired device had the same version; rechecks the hash first. Order: removed list, then saved lists, then the file.
-- After each sync the other device's list is kept (`.scalenote/sync-tree-<device>.txt`, removed with the device); `keep::not_here` lists what exists elsewhere but not here (for the cloud icons of 0.6.1).
+- After each sync the other device's list is kept (`.scalenote/sync-tree-<device>.txt`, removed with the device); `keep::not_here` lists what exists elsewhere but not here (for the cloud icons of 0.6.3).
 - Renaming, moving or trashing a folder or page with files not here is refused with the new error `not_all_here` (sentence in `web/strings.js`).
 - Version 0.6.0.
 
 Not done / untried:
-- No screen uses any of it yet (0.6.2). `src-tauri/src/lib.rs` has no commands for the choices or "Free up space" yet.
+- No screen uses any of it yet (0.6.3). `src-tauri/src/lib.rs` has no commands for the choices or "Free up space" yet.
 - An app before 0.6 can still send a device files it does not keep (kept there, nothing lost).
 - Never tried between two real devices.
 
