@@ -11,6 +11,7 @@ A local-first note app. Notes are plain markdown files in a normal folder, so Ob
 - Each version in `PROGRESS.md` is built in short slices. One chat builds one version or slice.
 - Nothing lives only in a chat. At the end of every session, update `PROGRESS.md` (what is done, what is half done, what is untested on a device) and `DECISIONS.md`.
 - A new session starts by reading this file, `PROGRESS.md` and `DECISIONS.md`.
+- Release notes (`docs/release-notes/<version>.md`) for a version ending in `.0` (0.6.0, 0.7.0, 1.0.0) have two parts, each with its own short in-app list: **Since** the version just before it (0.5.9 for 0.6.0), for people who follow every release, and **Since** the previous `.0` version (0.5.0 for 0.6.0), a short summary of the whole line, for people who only follow those. Other versions have one part, as before.
 - `README.md` has a "Current progress" section. Update it in every pull request that changes the app, a version or the plan, and at the end of every session: the date, the latest version, what is done, what is being built next, and what is not yet tried on a real device. It must never be older than `PROGRESS.md`. Check it again before opening the pull request.
 
 ## Git rules
