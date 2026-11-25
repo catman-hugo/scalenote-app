@@ -17,9 +17,11 @@ use std::path::Path;
 pub const ATTACHMENT_DIR: &str = "attachments";
 /// Largest picture accepted. Bigger files make the app slow and fill the disk.
 pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
-/// Largest PDF accepted. Lecture slides and scanned chapters are bigger than pictures, but the
-/// whole file travels to the interface as one text, so it still has a limit.
-pub const MAX_PDF_BYTES: usize = 25 * 1024 * 1024;
+/// Largest PDF accepted. Lecture slides and scanned books are bigger than pictures. Raised from
+/// 25 MB to 64 MB in 0.6.1 (the interface warns above 25 MB instead of refusing). It stays at the
+/// largest file sync sends (`sync::files::MAX_TRANSFER_BYTES`), so every PDF added still reaches
+/// the other devices, and because the whole file travels to the interface as one text.
+pub const MAX_PDF_BYTES: usize = 64 * 1024 * 1024;
 /// The largest attachment of any kind as base64 text (four characters for every three bytes).
 /// Checked before decoding, so a huge text is never turned into bytes. The limit of the actual
 /// kind is checked after the content has been recognised.

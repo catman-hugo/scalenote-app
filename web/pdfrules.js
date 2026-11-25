@@ -4,10 +4,17 @@
 import { findAll } from "./findrules.js";
 
 export const PDF_LIMITS = {
-  // The Rust side refuses a bigger PDF too (MAX_PDF_BYTES); this only gives a friendly answer first.
-  bytes: 25 * 1024 * 1024,
-  // "Pages as images" makes one picture file per page, so a very long PDF is refused.
-  importPages: 100,
+  // The largest PDF file: the most sync sends in one file, so every PDF reaches the other
+  // devices (the Rust side checks it too, MAX_PDF_BYTES). Above `warnBytes` the person is told
+  // the file is large, but it is not refused.
+  bytes: 64 * 1024 * 1024,
+  warnBytes: 25 * 1024 * 1024,
+  // "Pages as images" makes one picture file per page. There is no page limit (since 0.6.1):
+  // above `warnPages` pages, or when the pictures will take more than `warnPictureBytes`, the
+  // person is told about how much space they will take (in the notes folder and on every device
+  // that syncs it) and asked first.
+  warnPages: 100,
+  warnPictureBytes: 100 * 1024 * 1024,
   // A page picture is drawn at 1.5 times its size on paper (as v1 did), but never with more
   // pixels than this, so a poster-sized page cannot use all the memory of a phone.
   pagePixels: 4_000_000,
@@ -108,6 +115,28 @@ export function roundEstimate(seconds) {
   const rounded = Math.max(5, Math.ceil(seconds / 5) * 5);
   if (rounded < 60) return { minutes: 0, seconds: rounded };
   return { minutes: Math.max(1, Math.round(seconds / 60)), seconds: 0 };
+}
+
+/**
+ * How much space `pages` page pictures will take, from the size of one sample picture given as
+ * base64 text. A page picture is drawn at the same size and quality for every page of a PDF, so
+ * one page from the middle (not the cover) gives a fair guess; the person is told it is a guess.
+ */
+export function estimatePagesBytes(sampleBase64Length, pages) {
+  const sample = Math.max(0, Math.floor((Number(sampleBase64Length) || 0) * 3 / 4));
+  return sample * Math.max(0, Math.floor(Number(pages) || 0));
+}
+
+/** Whether making pictures of `pages` pages that take about `bytes` should be asked first. */
+export function longPdfNeedsAsking(pages, bytes) {
+  return pages > PDF_LIMITS.warnPages || bytes > PDF_LIMITS.warnPictureBytes;
+}
+
+/** A size as people say it: "about 45 MB", "about 1.2 GB", at least "about 1 MB". */
+export function describeSize(bytes) {
+  const mb = Math.max(1, Math.round((Number(bytes) || 0) / (1024 * 1024)));
+  if (mb < 1000) return `${mb} MB`;
+  return `${(mb / 1024).toFixed(1)} GB`;
 }
 
 /** The narrowest a PDF shown in a page can be made, in pixels. */

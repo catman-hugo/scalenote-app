@@ -799,6 +799,11 @@ export const strings = {
     seconds: "{count} s",
     doneElsewhere: "Added {count} pages of {name} to {page}.",
     pageAlt: "Page {page} of {name}",
+    longTitle: "A long PDF",
+    longText: "{name} has {pages} pages. As pictures it will take about {size} in your notes folder, and the same on every device that syncs it.",
+    longHint: "This is a guess from one page. \u201cScroll through\u201d only takes the size of the PDF itself.",
+    longGo: "Add {pages} pages",
+    largeFile: "This PDF is {size}. It takes that space in your notes folder and on every device that syncs it.",
     block: {
       surface: "PDF document",
       pageCount: "{count} pages",
@@ -935,7 +940,7 @@ export const strings = {
     not_all_here: "Some files in here are not kept on this device. Rename, move or delete it on a device that has all of them.",
     too_large_picture: "That picture is too large. The limit is 10 MB.",
     unsupported_pdf: "That file is not a PDF ScaleNote can use.",
-    too_large_pdf: "That PDF is too large. The limit is 25 MB.",
+    too_large_pdf: "That PDF is too large to sync between devices. The limit is 64 MB.",
     pdf_failed: "That PDF could not be read. It may be damaged or protected with a password.",
     import_busy: "A PDF is still being added. Wait for it to finish, or stop it, before adding another.",
     pdf_page_gone: "The pages were made, but the page they were for is gone. They are in the attachments folder.",
@@ -958,7 +963,6 @@ export const strings = {
     settings: "The sync settings could not be read, so sync is off.",
     keys: "This device's sync key could not be read, so sync is off. Nothing was replaced.",
     service: "Sync could not start on this device.",
-    pdf_too_many_pages: "That PDF has more than {limit} pages, which is too many to turn into pictures. Add it as a PDF to scroll through instead.",
     unknown: "Something went wrong.",
   },
 };
