@@ -16,6 +16,7 @@ pub mod files;
 pub mod folders;
 pub mod hex;
 pub mod identity;
+pub mod account;
 pub mod basetext;
 pub mod keep;
 pub mod networks;
@@ -85,6 +86,7 @@ impl SyncError {
             SyncError::Refused("paired with another folder") => "sync_other_folder",
             SyncError::Refused("the other device has it with another folder") => "sync_peer_other_folder",
             SyncError::Refused("not available offline") => "not_available_offline",
+            SyncError::Refused("name is empty") => "account_name_empty",
             SyncError::Refused("not a choice") | SyncError::Refused("path not allowed") | SyncError::Refused("too many choices") => "offline_bad_choice",
             SyncError::Refused(_) => "pair_refused",
             SyncError::Channel(_) => "pair_failed",

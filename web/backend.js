@@ -28,6 +28,12 @@ export const backend = {
   // The folder "Use the default folder" would open, as text for the first-run screen.
   defaultVaultPath: () => call("default_vault_path"),
   tree: () => call("vault_tree"),
+  // Your name for sharing (0.6.4): { id, name, findable }. id is null until a name is set.
+  account: () => call("account_get"),
+  setAccountName: (name) => call("account_set_name", { name }),
+  setFindable: (findable) => call("account_set_findable", { findable }),
+  // People nearby who let themselves be found: [{ account, name }].
+  peopleNearby: () => call("people_nearby"),
   // What this device keeps offline (0.6.3): { choices: [{ path, kinds }], notHere: [paths] }.
   // kinds are letters: t text, d drawings, i pictures, f other files, "-" nothing.
   offline: () => call("offline_get"),

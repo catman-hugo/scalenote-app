@@ -19,6 +19,7 @@ use super::exchange::{self, is_sync_kind, KIND_NO};
 use super::identity::{fingerprint, Identity, KEY_LEN};
 use super::pairing::{self, clean_code, CodeBook, KIND_REFUSED, KIND_START};
 use super::folders::FolderBook;
+use super::account::Account;
 use super::networks;
 use super::tailscale::{self, AddressBook};
 use super::trust::{Peer, TrustList};
@@ -51,6 +52,8 @@ const TRUST_FILE: &str = "sync-peers.txt";
 const FOLDERS_FILE: &str = "sync-folders.txt";
 /// The Tailscale address each paired device last told this one (tailscale.rs). Never synced.
 const TAILSCALE_FILE: &str = "sync-tailscale.txt";
+/// This person's name and account id for sharing (account.rs).
+const ACCOUNT_FILE: &str = "account.txt";
 /// How long to wait for a device at its Tailscale address. Short, because the automatic round
 /// tries it every few seconds while the device may simply be off.
 const TAILSCALE_CONNECT: Duration = Duration::from_secs(3);
@@ -111,6 +114,7 @@ struct State {
     folders: FolderBook,
     /// Where each paired device can be reached over Tailscale (tailscale.rs).
     tailscale: AddressBook,
+    account: Account,
 }
 
 #[derive(Default)]
@@ -153,6 +157,7 @@ struct Shared {
     trust_path: PathBuf,
     folders_path: PathBuf,
     tailscale_path: PathBuf,
+    account_path: PathBuf,
     /// The port this device listens on now (0 while it does not), for the greeting.
     port: std::sync::atomic::AtomicU16,
     /// Where discovery notes go and are listened for (loopback only in tests).
@@ -300,8 +305,10 @@ impl Service {
         let folders = FolderBook::load(&folders_path);
         let tailscale_path = dir.join(TAILSCALE_FILE);
         let tailscale = AddressBook::load(&tailscale_path);
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale };
-        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
+        let account_path = dir.join(ACCOUNT_FILE);
+        let account = Account::load(&account_path);
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account };
+        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, account_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
     }
@@ -344,8 +351,17 @@ impl Service {
                 let (route, key, name) = (lock(&self.shared.route).clone(), *self.shared.identity.public(), lock(&self.shared.state).name.clone());
                 let shared = self.shared.clone();
                 let keep = move || announcing(&shared);
+                // With "findable" on, a second note says who this device belongs to (0.6.4).
+                let people = self.shared.clone();
+                let extra = move || {
+                    let account = lock(&people.state).account.clone();
+                    match (account.findable, account.id) {
+                        (true, Some(id)) if account.is_set() => Some(discovery::encode_person(&id, &account.name, &key, port)),
+                        _ => None,
+                    }
+                };
                 // Not being able to announce is not fatal: the address can still be typed.
-                *announcer = Announcer::start(route, key, name, port, keep).ok();
+                *announcer = Announcer::start_with(route, key, name, port, keep, extra).ok();
             }
             (None, true) => {
                 announcer.take();
@@ -717,6 +733,39 @@ impl Service {
         }
     }
 
+    /// This person's account for sharing (account.rs).
+    pub fn account(&self) -> Account {
+        lock(&self.shared.state).account.clone()
+    }
+
+    /// Sets this person's name (and makes the account id the first time). Paired devices that
+    /// have no account yet take it at their next hello.
+    pub fn set_account_name(&self, name: &str) -> Result<Account> {
+        let mut state = lock(&self.shared.state);
+        state.account.set_name(name)?;
+        state.account.save(&self.shared.account_path)?;
+        Ok(state.account.clone())
+    }
+
+    /// Lets people nearby see this person's name (to share with them), or stops it.
+    pub fn set_findable(&self, findable: bool) -> Result<Account> {
+        let mut state = lock(&self.shared.state);
+        if findable && !state.account.is_set() {
+            return Err(SyncError::Refused("name is empty"));
+        }
+        state.account.findable = findable;
+        state.account.save(&self.shared.account_path)?;
+        Ok(state.account.clone())
+    }
+
+    /// The people whose devices let themselves be found on the networks this device is on,
+    /// heard within a few seconds; not this person.
+    pub fn people_nearby(&self, wait: Duration) -> Result<Vec<discovery::Person>> {
+        let own = lock(&self.shared.state).account.id;
+        let route = lock(&self.shared.route).clone();
+        Ok(discovery::find_people(&route, wait, own.as_ref())?)
+    }
+
     /// What a sync with that device would change. Changes nothing on either side.
     pub fn compare_peer(&self, id: &str) -> Result<Preview> {
         let (peer, root, own_name) = self.prepare(id)?;
@@ -1003,7 +1052,8 @@ pub fn is_older(theirs: &str, ours: &str) -> bool {
 /// be reached there (tailscale.rs). Older apps read only up to the space as the version.
 fn greeting(shared: &Shared) -> String {
     let port = shared.port.load(Ordering::Relaxed);
-    format!("{APP_VERSION}{}", tailscale::greeting_part((port != 0).then_some(port)))
+    let account = lock(&shared.state).account.greeting_part();
+    format!("{APP_VERSION}{}{account}", tailscale::greeting_part((port != 0).then_some(port)))
 }
 
 /// Reads a greeting from a paired device: its version, and its Tailscale address if it sent one.
@@ -1019,6 +1069,13 @@ fn read_hello(shared: &Shared, key: [u8; KEY_LEN], raw: &[u8]) {
         lock(&shared.state).live.entry(key).or_default().version = version;
     }
     Service::keep_tailscale(shared, key, address);
+    // A device without an account takes the one of its paired device (account.rs).
+    if let Some(theirs) = Account::read_greeting(text) {
+        let mut state = lock(&shared.state);
+        if state.account.adopt(&theirs) {
+            let _ = state.account.save(&shared.account_path);
+        }
+    }
 }
 
 /// A version from another device is shown on screen, so only digits, dots and a short length are accepted.

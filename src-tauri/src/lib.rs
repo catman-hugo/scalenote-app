@@ -822,6 +822,52 @@ async fn offline_set(path: String, kinds: Option<String>, state: State<'_, AppSt
         .map_err(|error| sync_failed(&state.logger, "offline choice", error))
 }
 
+/// Your name for sharing (sync/account.rs, 0.6.4).
+#[derive(Serialize)]
+struct AccountReply {
+    id: Option<String>,
+    name: String,
+    findable: bool,
+}
+
+fn account_reply(account: scalenote_core::sync::account::Account) -> AccountReply {
+    AccountReply { id: account.id.map(|id| scalenote_core::sync::hex::encode(&id)), name: account.name, findable: account.findable }
+}
+
+#[tauri::command]
+fn account_get(state: State<'_, AppState>) -> Result<AccountReply, String> {
+    running(&state.sync).map(|service| account_reply(service.account())).map_err(|error| sync_failed(&state.logger, "account", error))
+}
+
+#[tauri::command]
+fn account_set_name(name: String, state: State<'_, AppState>) -> Result<AccountReply, String> {
+    lock::refuse_if_locked(&state)?;
+    running(&state.sync).and_then(|service| service.set_account_name(&name)).map(account_reply).map_err(|error| sync_failed(&state.logger, "account name", error))
+}
+
+#[tauri::command]
+fn account_set_findable(findable: bool, state: State<'_, AppState>) -> Result<AccountReply, String> {
+    lock::refuse_if_locked(&state)?;
+    running(&state.sync).and_then(|service| service.set_findable(findable)).map(account_reply).map_err(|error| sync_failed(&state.logger, "account findable", error))
+}
+
+/// A person nearby who can be shared with: their account id and name.
+#[derive(Serialize)]
+struct PersonReply {
+    account: String,
+    name: String,
+}
+
+#[tauri::command]
+async fn people_nearby(state: State<'_, AppState>) -> Result<Vec<PersonReply>, String> {
+    lock::refuse_if_locked(&state)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.people_nearby(std::time::Duration::from_millis(2500)))).await?;
+    result
+        .map(|people| people.into_iter().map(|p| PersonReply { account: scalenote_core::sync::hex::encode(&p.account), name: p.name }).collect())
+        .map_err(|error| sync_failed(&state.logger, "people nearby", error))
+}
+
 /// Brings pages that are not on this device from a paired device that can be reached now.
 #[tauri::command]
 async fn offline_fetch(paths: Vec<String>, state: State<'_, AppState>) -> Result<Vec<String>, String> {
@@ -1264,6 +1310,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            account_get,
+            account_set_name,
+            account_set_findable,
+            people_nearby,
             offline_get,
             offline_set,
             offline_fetch,

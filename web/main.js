@@ -843,6 +843,51 @@ function deviceSettingsRows() {
   return [row, hint, ...keepRows, lockRows, divider, reset, resetHint];
 }
 
+// Your name for sharing with other people (0.6.4), and whether people nearby may see it. The
+// name is the same on all your paired devices; finding is off until switched on.
+function accountRows() {
+  const t = strings.sharing;
+  const heading = textElement("h4", t.accountHeading, "setting-subheading");
+  const name = document.createElement("input");
+  name.type = "text";
+  name.id = "accountName";
+  name.maxLength = 40;
+  name.disabled = true;
+  name.autocomplete = "off";
+  name.placeholder = t.accountPlaceholder;
+  const nameRow = document.createElement("label");
+  nameRow.className = "setting-row";
+  nameRow.append(textElement("span", t.accountName, "setting-label"), name);
+  const findable = document.createElement("input");
+  findable.type = "checkbox";
+  findable.id = "accountFindable";
+  findable.disabled = true;
+  const findRow = document.createElement("label");
+  findRow.className = "setting-row";
+  findRow.append(textElement("span", t.findable, "setting-label"), findable);
+  const hint = textElement("p", t.accountHint, "setting-hint");
+  hint.id = "accountHint";
+  const show = (account) => {
+    name.value = account.name || "";
+    findable.checked = Boolean(account.findable);
+    findable.disabled = !account.name;
+    name.disabled = false;
+  };
+  const run = async (work) => {
+    try {
+      show(await work());
+      hint.textContent = t.accountHint;
+    } catch (error) {
+      logProblem("saving the account failed", error);
+      hint.textContent = errorText(error);
+    }
+  };
+  name.addEventListener("change", () => run(() => backend.setAccountName(name.value)));
+  findable.addEventListener("change", () => run(() => backend.setFindable(findable.checked)));
+  backend.account().then(show).catch((error) => logProblem("reading the account failed", error));
+  return [heading, nameRow, findRow, hint];
+}
+
 function syncSettingsRows() {
   const s = strings.settings;
   const box = document.createElement("input");
@@ -891,7 +936,7 @@ function syncSettingsRows() {
       status.textContent = s.syncLoadFailed;
     });
   // The paired devices and the buttons come first; this device's switch and name further down.
-  const deviceRows = [row, nameRow, status, ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : [])];
+  const deviceRows = [row, nameRow, status, ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : []), ...accountRows()];
   return pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly }, deviceRows });
 }
 

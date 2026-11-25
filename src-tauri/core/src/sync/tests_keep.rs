@@ -42,9 +42,20 @@ struct Pair {
 }
 
 fn setup(label: &str) -> Pair {
+    setup_on(label, None)
+}
+
+/// Like `setup`, with discovery notes on a loopback port both hear (for people nearby).
+fn setup_on(label: &str, route: Option<super::discovery::Route>) -> Pair {
     let (da, db) = (Dir::new(&format!("{label}-da")), Dir::new(&format!("{label}-db")));
     let (va, vb) = (Dir::new(&format!("{label}-va")), Dir::new(&format!("{label}-vb")));
-    let make = |dir: &Dir, name: &str| Service::with_bind(&dir.0, Identity::generate().expect("identity"), name, true, "127.0.0.1", 0).expect("service");
+    let make = |dir: &Dir, name: &str| {
+        let service = Service::with_bind(&dir.0, Identity::generate().expect("identity"), name, true, "127.0.0.1", 0).expect("service");
+        if let Some(route) = &route {
+            service.set_route(route.clone());
+        }
+        service
+    };
     let (alice, bob) = (make(&da, "alice"), make(&db, "bob"));
     let code = bob.start_pairing().expect("code");
     let address = format!("127.0.0.1:{}", bob.status().listening_port.expect("listening"));
@@ -397,4 +408,28 @@ fn a_page_changed_on_both_devices_in_different_places_is_joined_and_a_clash_keep
     let report = sync(&p);
     assert_eq!((report.merged, report.conflicts), (0, 1));
     assert_eq!(names(&p.va.0).len(), 2, "the page and its conflict copy");
+}
+
+#[test]
+fn a_findable_person_is_heard_nearby_and_a_paired_device_takes_the_same_account() {
+    let port = std::net::UdpSocket::bind("127.0.0.1:0").expect("free port").local_addr().expect("addr").port();
+    let at = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let route = super::discovery::Route { listen: at, join_group: false, send_to: vec![at], interval: std::time::Duration::from_millis(200) };
+    let p = setup_on("people", Some(route));
+    assert!(p.alice.set_findable(true).is_err(), "a name is needed first");
+    let account = p.alice.set_account_name("  Rowan ").expect("name");
+    assert_eq!(account.name, "Rowan");
+    // Not findable yet: nobody hears a name.
+    assert!(p.bob.people_nearby(std::time::Duration::from_millis(1500)).expect("listen").is_empty());
+    p.alice.set_findable(true).expect("findable");
+    let heard = p.bob.people_nearby(std::time::Duration::from_millis(2500)).expect("listen");
+    assert_eq!(heard.iter().map(|person| person.name.as_str()).collect::<Vec<_>>(), ["Rowan"]);
+    assert_eq!(Some(heard[0].account), account.id);
+    // After a sync the paired device has the same account, so Rowan no longer counts as someone else.
+    write(&p.va.0, "Note.md", "hi");
+    sync(&p);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(p.bob.account().id, account.id);
+    assert_eq!(p.bob.account().name, "Rowan");
+    assert!(p.bob.people_nearby(std::time::Duration::from_millis(2000)).expect("listen").is_empty());
 }

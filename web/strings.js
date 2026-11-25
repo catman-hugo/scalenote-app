@@ -63,6 +63,15 @@ export const strings = {
     bringHere: "Open (bring to this device)",
   },
 
+  // Sharing with other people (0.6.4).
+  sharing: {
+    accountHeading: "Sharing with people",
+    accountName: "Your name",
+    accountPlaceholder: "The name others see",
+    findable: "Let people nearby see my name to share with me",
+    accountHint: "Your name is the same on all your paired devices. When finding is on, people on the same network (Wi-Fi, a hotspot, a cable) can choose you to share a page or folder with. Off by default.",
+  },
+
   // What this device keeps of the notes folder (offlinedialog.js, 0.6.3).
   offline: {
     title: "Available offline: {name}",
@@ -971,6 +980,7 @@ export const strings = {
     too_large_picture: "That picture is too large. The limit is 10 MB.",
     unsupported_pdf: "That file is not a PDF ScaleNote can use.",
     too_large_pdf: "That PDF is too large to sync between devices. The limit is 64 MB.",
+    account_name_empty: "Choose your name first.",
     not_available_offline: "That is not on this device, and none of your other devices can be reached right now.",
     offline_bad_choice: "That choice could not be saved.",
     pdf_failed: "That PDF could not be read. It may be damaged or protected with a password.",

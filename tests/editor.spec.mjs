@@ -8201,6 +8201,32 @@ await test("Settings has a Sync tab: on by default, the name is kept clean, and 
   assert.equal(await page.inputValue("#syncName"), "Alices-Phone-2");
 }, { settings: existingUser({ updates: false }) });
 
+await test("Settings, Sync has your name for sharing: finding is off and cannot be turned on until a name is set", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#accountName:not([disabled])");
+  assert.equal(await page.inputValue("#accountName"), "");
+  assert.equal(await page.isChecked("#accountFindable"), false, "finding is off by default");
+  assert.equal(await page.isDisabled("#accountFindable"), true, "no name, no finding");
+  // An empty name is refused with a calm sentence, not an error code.
+  await page.fill("#accountName", "   ");
+  await page.dispatchEvent("#accountName", "change");
+  await page.waitForFunction(() => document.querySelector("#accountHint").textContent === "Choose your name first.");
+  await page.fill("#accountName", "  Bob   Example ");
+  await page.dispatchEvent("#accountName", "change");
+  await page.waitForFunction(() => document.querySelector("#accountName").value === "Bob Example");
+  await page.waitForSelector("#accountFindable:not([disabled])");
+  await page.check("#accountFindable");
+  await page.waitForFunction(() => window.__mock.account.findable === true);
+  // Rapid clicking never throws and ends on what was saved.
+  for (let i = 0; i < 9; i++) await page.click("#accountFindable");
+  await page.waitForFunction(() => document.querySelector("#accountFindable").checked === window.__mock.account.findable);
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await openSettingsTab(page, "sync");
+  await page.waitForFunction(() => document.querySelector("#accountName").value === "Bob Example");
+}, { settings: existingUser({ updates: false }) });
+
 await test("Sync settings that cannot be saved or read say so calmly and change nothing on screen", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");

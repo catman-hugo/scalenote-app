@@ -26,7 +26,22 @@
   // Offline choices (0.6.3): the real rules are tested in Rust. Here pages in
   // window.__elsewhere are "on another device"; they are listed until brought.
   const offline = { choices: new Map(), elsewhere: new Map(Object.entries(window.__elsewhere || {})), sets: [] };
+  const account = { id: null, name: "", findable: false };
   const handlers = {
+    account_get: () => ({ ...account }),
+    account_set_name: ({ name }) => {
+      const clean = String(name).replace(/\s+/g, " ").trim().slice(0, 40);
+      if (!clean) fail("account_name_empty");
+      account.name = clean;
+      account.id = account.id || "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+      return { ...account };
+    },
+    account_set_findable: ({ findable }) => {
+      if (findable && !account.name) fail("account_name_empty");
+      account.findable = Boolean(findable);
+      return { ...account };
+    },
+    people_nearby: () => window.__peopleNearby || [],
     offline_get: () => ({
       choices: [...offline.choices].map(([path, kinds]) => ({ path, kinds })),
       notHere: [...offline.elsewhere.keys()].filter((p) => !files.has(p)),
@@ -508,5 +523,6 @@
     },
   };
   window.__mock = {
-    offline, emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+    offline,
+    account, emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();
