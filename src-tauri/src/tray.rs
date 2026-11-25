@@ -35,9 +35,18 @@ fn short(label: &str) -> String {
     label.chars().filter(|c| !c.is_control()).take(MAX_LABEL_CHARS).collect()
 }
 
-/// Brings the main window back from the tray (or from behind other windows).
+/// Brings the main window back from the tray (or from behind other windows). Closing the window
+/// with the tray on takes the whole window away (see `hide_main_window`), so here it is made
+/// again from the same settings as at start; the interface then opens the page that was open.
 #[cfg(desktop)]
 fn show_main(app: &AppHandle) {
+    if app.get_webview_window("main").is_none() {
+        let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main").cloned() else { return };
+        if let Err(error) = tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build()) {
+            eprintln!("the window could not be made again: {error}");
+            return;
+        }
+    }
     let Some(window) = app.get_webview_window("main") else { return };
     // Each step can fail on its own (for example a window that is already closed); none of them
     // is worth stopping for, the person can still use the tray menu again.
@@ -101,13 +110,16 @@ pub fn tray_set(app: AppHandle, enabled: bool, show_label: String, quit_label: S
     }
 }
 
-/// Hides the window (used when it is closed while the tray is on).
+/// Takes the window away when it is closed while the tray is on (since 0.6.1). It used to be only
+/// hidden, which kept the whole web view running (about 100 MB, the "WebKitWebProcess" on Linux)
+/// for nothing. Sync runs in Rust, not in the window, so it goes on; `keeps_running` stops the
+/// program from ending now that no window is left, and the tray makes the window again.
 #[tauri::command]
 pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
     #[cfg(desktop)]
     {
         let window = app.get_webview_window("main").ok_or_else(|| "not_found".to_string())?;
-        window.hide().map_err(|_| "io".to_string())
+        window.destroy().map_err(|_| "io".to_string())
     }
     #[cfg(not(desktop))]
     {
@@ -172,3 +184,19 @@ pub fn autostart_set(app: AppHandle, enabled: bool) -> Result<bool, String> {
         Err("unsupported".to_string())
     }
 }
+
+/// Whether the program should keep running when its last window has gone: only while the tray
+/// icon is there, and only when the person closed the window (the tray's Quit and an update ask
+/// to end with an exit code, and then the program ends).
+pub fn keeps_running(app: &AppHandle, code: Option<i32>) -> bool {
+    #[cfg(desktop)]
+    {
+        code.is_none() && app.tray_by_id(TRAY_ID).is_some()
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, code);
+        false
+    }
+}
+
