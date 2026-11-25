@@ -2,11 +2,11 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-25; 0.6.4 in progress (sharing with other people; slices 1 to 5 of 8 built); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-25; 0.6.4 built (sharing pages and folders with other people; not tried on real devices yet); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
-## 0.6.4: in progress (sharing pages and folders with other people)
+## 0.6.4: built, not tried on a real device (sharing pages and folders with other people)
 
-Branch `feature/v0.6.4-sharing`, no pull request yet. Build plan in slices: `docs/v0.6.4-sharing.md`.
+Branch `feature/v0.6.4-sharing`. Build plan in slices: `docs/v0.6.4-sharing.md`. Release notes `docs/release-notes/0.6.4.md`; security checklist `docs/security-checklist-0.6.4.md`.
 
 Done:
 - Slice 1, joining edits word by word: `core/src/textmerge.rs` (three-way merge on words, spaces and single marks, Myers' method; gives up when both changed the same place) and `core/src/sync/basetext.rs` (the text of each page as both devices had it after their last sync, `.scalenote/sync-text-<device>/`). `engine::conflict` tries joining first for pages; only a clash keeps both versions. `Report.merged`, shown as "N pages were changed on both devices; the changes were joined." Tests: `textmerge` unit tests and a two-service sync test (`a_page_changed_on_both_devices_in_different_places_is_joined_and_a_clash_keeps_both`).
@@ -18,9 +18,15 @@ Done:
 
 - Slice 5, syncing a share: `core/src/sync/space.rs` (the share space: `s/…` for the shared folder or page with its drawing and conflict copies, `a/…` for attachments its pages link to; everything else is outside), `engine::Pair::map`, `engine::share_listing`, `engine::keep_share_base`, and `exchange::Scope` on the answering side. A share connection starts with `KIND_SHARE_OPEN` and the share id; the answering device checks the caller's key is in that active share, then serves only that share's names: an attachment no shared page links to can only be made new, never read, changed or removed. The saved lists are per device and per share (`sync-base-<device>-<share>.txt`), and the calling device sends its list of what both have alike at the end (`KIND_BASE`), checked against the answering device's own files, so edits are joined whichever side starts. `Service::sync_share` and `sync_shares` find the other people's devices on the network (or where they were reached before). Tests: space unit tests, a three-device test (the folder and its linked picture arrive and nothing else, edits joined, a new page both ways, Rowan's second device syncs the share directly, a removed page goes to a trash) and a test that a stranger or a name outside the share gets nothing.
 
-Half done / known gaps so far: nothing on screen uses the share records yet (slice 7). Renaming or moving a shared page or folder must call `Shares::moved` (to be wired in with the screens). Nothing of 0.6.4 is tried on a real device yet; slice 2 needs two devices on one network (for example a phone's hotspot) to check that the name is heard.
+- Slice 6, more often: `Service::share_tick` (the app calls it every 2 seconds, `start_share_sync` in lib.rs): the share of the open page every 5 seconds, a change here at the next round once 2 seconds have passed since the last sync, other shares every 30 seconds; answers the owner has not heard are sent again. The interface says which page is open (`share_page_open`). Addresses that worked before are tried before looking on the network. Test: `a_share_is_synced_every_few_seconds_while_its_page_is_open_and_soon_after_a_change_here`.
+- Slice 7, screens: `web/sharedialog.js` (the Share box: people nearby, who it is shared with, Stop sharing for the owner, Leave for the others; the invitation box with Accept and No, asked once per start of the app), Share… in the menu of pages and folders, a people mark in the list (`people` icon), Settings, Sync has its own part "Sharing with people". App commands `shares_list`, `share_with`, `share_answer`, `share_end`. A renamed or moved shared item stays shared (`Service::share_moved`). Words in strings.js. Screenshots in light and dark on a computer and a phone were checked (`SHOTS_ONLY=064`); the account rows were moved to their own part after that check.
+- Slice 8, wrap-up: a share that was stopped or left is said to be ended to the other side (`KIND_SHARE_ENDED`), which stops too; copies stay. Rust tests with three services (Rowan's two devices, Mila's tablet) for invite, accept, decline, edits both ways, joining, removing, a stranger refused, a rename, stop and leave. Version 0.6.4, release notes, security checklist.
 
-Next: slice 6 (syncing shares often while a shared page is open), see the plan.
+Tested here: all Rust core tests (330), the unit tests (334) and the whole browser suite pass; the app crate builds on Linux.
+
+NOT tried on a real device: everything in 0.6.4. To try: two devices on one network (for example a phone's hotspot), a name on each, findable on the receiving one, then Share… on a folder, Accept, edit on both (also with one offline), Stop sharing and Leave. Also try that two of your own devices join edits to one page instead of making a conflict copy.
+
+Known limits: sharing only between devices on the same network (not over Tailscale); a device paired after accepting gets the shared pages through the person's other devices, not directly from the other person (open question in the plan); two people nearby with the same name look the same in the list.
 
 ## 0.6.3: released (offline choices in the app)
 

@@ -714,3 +714,30 @@ fn a_renamed_shared_folder_stays_shared_and_keeps_syncing() {
     assert_eq!((report.received, report.deleted_here), (1, 0), "nothing looks removed after the rename");
     assert!(vm.0.join("Shared with me/Rowan/Biology/Tissues.md").is_file());
 }
+
+#[test]
+fn stopping_or_leaving_a_share_ends_it_on_both_sides_and_every_copy_stays() {
+    use super::shares::State;
+    let (p, mila, _dm, vm, id) = shared_biology("share-end");
+    write(&p.va.0, "Biology/Cells.md", "cells");
+    ok_with(&mila.sync_share(&id).expect("sync"), "Rowan");
+    // Mila leaves: her copy stays; Rowan's device hears it at its next try and takes her out.
+    mila.end_share(&id).expect("leave");
+    assert_eq!(mila.shares().expect("list").list[&id].state, State::Left);
+    assert!(mila.sync_share(&id).is_err(), "not synced any more from her side");
+    let results = p.alice.sync_share(&id).expect("round");
+    assert!(results.iter().all(|r| r.outcome.is_err()));
+    let owner = p.alice.shares().expect("list");
+    assert_eq!(owner.list[&id].state, State::Stopped, "nobody else was in it");
+    assert!(vm.0.join("Shared with me/Rowan/Biology/Cells.md").is_file() && p.va.0.join("Biology/Cells.md").is_file());
+
+    // Rowan stops a second share: Mila's device hears it and stops trying.
+    let (p, mila, _dm, vm, id) = shared_biology("share-stop");
+    write(&p.va.0, "Biology/Cells.md", "cells");
+    ok_with(&mila.sync_share(&id).expect("sync"), "Rowan");
+    p.alice.end_share(&id).expect("stop");
+    let results = mila.sync_share(&id).expect("round");
+    assert!(results.iter().all(|r| r.outcome.is_err()));
+    assert_eq!(mila.shares().expect("list").list[&id].state, State::Stopped);
+    assert!(vm.0.join("Shared with me/Rowan/Biology/Cells.md").is_file(), "her copy stays");
+}

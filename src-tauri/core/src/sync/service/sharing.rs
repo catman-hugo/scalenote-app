@@ -6,7 +6,7 @@ use super::super::account::ID_LEN;
 use super::super::channel::Channel;
 use super::super::identity::KEY_LEN;
 use super::super::engine::{Outcome, Pair};
-use super::super::invite::{Answer, Invitation, KIND_INVITE, KIND_INVITE_ANSWER, KIND_INVITE_OK, KIND_SHARE_OPEN, MAX_WAITING};
+use super::super::invite::{Answer, Invitation, KIND_INVITE, KIND_INVITE_ANSWER, KIND_INVITE_OK, KIND_SHARE_ENDED, KIND_SHARE_OPEN, MAX_WAITING};
 use super::super::space::ShareMap;
 use super::super::shares::{Share, Shares, State, MAX_KEYS};
 use super::super::{Result, SyncError};
@@ -352,8 +352,13 @@ impl Service {
         let mut open = vec![KIND_SHARE_OPEN];
         open.extend_from_slice(&share.id);
         channel.send(&open)?;
-        if channel.recv()?.first() != Some(&KIND_INVITE_OK) {
-            return Err(SyncError::Refused("share refused"));
+        match channel.recv()?.first().copied() {
+            Some(KIND_INVITE_OK) => {}
+            Some(KIND_SHARE_ENDED) => {
+                self.note_ended(share, key);
+                return Err(SyncError::Refused("share refused"));
+            }
+            _ => return Err(SyncError::Refused("share refused")),
         }
         lock(&shared.state).share_addresses.insert(*key, address.to_string());
         let scan = super::super::manifest::Manifest::scan(root)?.manifest;
@@ -424,6 +429,16 @@ impl Service {
         results
     }
 
+    /// The device `key` said the share has ended on its side: note it here (see `Shares::ended_there`).
+    fn note_ended(&self, share: &Share, key: &[u8; KEY_LEN]) {
+        let Some(me) = lock(&self.shared.state).account.id else { return };
+        let Some(who) = share.people.iter().find(|(_, p)| p.keys.contains(key)).map(|(id, _)| *id) else { return };
+        let _ = change_shares(&self.shared, |shares, _| {
+            shares.ended_there(&share.id, &who, &me);
+            Ok(())
+        });
+    }
+
     /// Syncs every active share now.
     pub fn sync_shares(&self) -> Vec<ShareResult> {
         let ids: Vec<[u8; ID_LEN]> = match self.shares() {
@@ -448,6 +463,12 @@ pub(super) fn serve_share(shared: &Shared, channel: &mut Channel<TcpStream>, bod
         let _guard = lock(&shared.shares);
         Shares::load(&root).ok().and_then(|s| s.list.get(&id).cloned())
     };
+    // A share that ended here is said to be ended to someone who was in it, so they stop too.
+    let ended = share.as_ref().is_some_and(|s| matches!(s.state, State::Stopped | State::Left) && s.people.values().any(|p| p.keys.contains(&remote)));
+    if ended {
+        let _ = channel.send(&[KIND_SHARE_ENDED]);
+        return Err(SyncError::Refused("share ended"));
+    }
     let Some(share) = share.filter(|s| s.allows(&remote)) else { return refuse(shared, channel, "not in the share") };
     if !allowed {
         return refuse(shared, channel, "sync is paused");

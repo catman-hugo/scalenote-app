@@ -347,6 +347,20 @@ impl Shares {
         }
     }
 
+    /// The other side said the share has ended there: for a member, the owner stopped it; for the
+    /// owner, that person left (and when nobody else is left, it is stopped). Copies stay.
+    pub fn ended_there(&mut self, id: &[u8; ID_LEN], who: &[u8; ID_LEN], me: &[u8; ID_LEN]) {
+        let Some(share) = self.list.get_mut(id) else { return };
+        if share.owner == *me {
+            share.people.remove(who);
+            if share.people.len() <= 1 {
+                share.state = State::Stopped;
+            }
+        } else if share.owner == *who {
+            share.state = State::Stopped;
+        }
+    }
+
     /// The member's answer reached the owner's device.
     pub fn mark_told(&mut self, id: &[u8; ID_LEN]) {
         if let Some(share) = self.list.get_mut(id) {

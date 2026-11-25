@@ -35,6 +35,9 @@ pub const KIND_INVITE_OK: u8 = 0x62;
 /// answering device checks the caller's key belongs to the share, answers `KIND_INVITE_OK`, and
 /// then serves that share's files only (space.rs). Refused otherwise.
 pub const KIND_SHARE_OPEN: u8 = 0x63;
+/// The answer to `KIND_SHARE_OPEN` when the share was stopped or left on the answering side and
+/// the caller is (was) in it: the caller marks it as ended too, so neither keeps trying.
+pub const KIND_SHARE_ENDED: u8 = 0x64;
 pub const MAX_BYTES: usize = 16 * 1024;
 pub const MAX_PER_MINUTE: usize = 10;
 pub const MAX_WAITING: usize = 20;
