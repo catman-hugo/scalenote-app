@@ -2,7 +2,24 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-24; 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-25; 0.6.1 built (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+
+## 0.6.1: built (sync over a hotspot or a cable, without internet)
+
+Asked for on 2026-11-25. Branch `feature/v0.6.1-hotspot`. Release notes `docs/release-notes/0.6.1.md`; security checklist `docs/security-checklist-0.6.1.md`. The 0.6 plan moved up one number: offline choices in the app are now 0.6.2, storage 0.6.3, sharing in 0.6.4, hardening 0.6.5.
+
+Done:
+- `core/src/sync/networks.rs`: the local networks a device is on (home Wi-Fi, a hotspot it makes or joins, USB tethering, a cable), leaving out mobile data, Tailscale, loopback and point-to-point links.
+- `discovery.rs`: the "I'm here" note also goes to the broadcast address of every local network, from this device's address there, and the listener joins the group on each. Before, it only went along the main connection, which on a phone making a hotspot is mobile data or nothing.
+- `service.rs`: "Wi-Fi only" now allows a device reached on a local network (a hotspot or cable never uses mobile data); the check moved from the start of a sync to the moment the address is known. `local_addresses()` lists every nearby address; the pairing screen shows them all (`addresses` in the status, `pairAddressOr`).
+- Setup guide: "Without Wi-Fi or internet: a hotspot or a cable".
+- Version 0.6.1.
+
+Tried here: `cargo test -p scalenote-core` (unit and integration tests), `npm test`, and the browser tests after `npm run build` (all passed: 291 core unit tests plus 18 integration tests, 333 unit tests, every browser test). The sending test had no private network to send on here.
+
+Not done / untried:
+- Never tried on a real hotspot or cable. Things to check: the phone making the hotspot with mobile data off and on, the laptop making it (Linux, Windows), USB tethering, and pairing over each.
+- Bluetooth and Wi-Fi Direct are not planned (see DECISIONS).
 
 ## 0.6.0: built (partial sync, no new screens)
 
@@ -18,7 +35,7 @@ Done (tried here: `cargo test -p scalenote-core` 287 unit tests passed, 15 of th
 - Version 0.6.0.
 
 Not done / untried:
-- No screen uses any of it yet (0.6.1). `src-tauri/src/lib.rs` has no commands for the choices or "Free up space" yet.
+- No screen uses any of it yet (0.6.2). `src-tauri/src/lib.rs` has no commands for the choices or "Free up space" yet.
 - An app before 0.6 can still send a device files it does not keep (kept there, nothing lost).
 - Never tried between two real devices.
 

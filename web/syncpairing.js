@@ -286,7 +286,10 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       pairing = true;
       knownPeers = status.peers.length;
       codeText.textContent = groupCode(fresh);
-      addressText.textContent = `${s.pairAddress}: ${status.address ? `${status.address}:${status.listeningPort ?? ""}` : s.pairNoAddress}`;
+      // A phone that makes a hotspot has an address there besides its main one: show all.
+      const addresses = status.addresses?.length ? status.addresses : status.address ? [status.address] : [];
+      const shown = addresses.map((address) => `${address}:${status.listeningPort ?? ""}`).join(s.pairAddressOr);
+      addressText.textContent = `${s.pairAddress}: ${shown || s.pairNoAddress}`;
       // From another network (eduroam, mobile data) only the Tailscale address can reach this device.
       codeTailscale.textContent = status.tailscale ? fill(s.pairCodeTailscale, { address: status.tailscale }) : "";
       codeTailscale.hidden = !status.tailscale;

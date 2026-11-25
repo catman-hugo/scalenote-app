@@ -44,10 +44,21 @@ After that, the devices sync by themselves while both are on and can see each ot
 - **A pairing belongs to one notes folder:** the folder that was open when you paired. Settings, Sync shows which. With another folder open, that device does not sync, so folders never mix. To use a pairing with a different folder, open that folder and choose **Sync it with this folder instead**.
 - **Editing the same page on both devices:** both versions are kept. The older one is saved next to it as a copy.
 - **Deleting a page:** a page deleted on one device goes to the trash on the other, never straight away.
-- **Wi-Fi only:** a phone can be set to sync with a device only on Wi-Fi (**Sync with this device only on Wi-Fi**).
+- **Wi-Fi only:** a phone can be set to sync with a device only on Wi-Fi (**Sync with this device only on Wi-Fi**). A hotspot or a cable counts as Wi-Fi here: it never uses mobile data.
 - **Android in the background:** on Android, syncing happens while ScaleNote is open, so open the app to catch up.
 - **Pausing:** **Pause sync** stops all syncing until you resume it or close the app.
 - **Privacy:** the connection between two devices is encrypted. Other devices on the network can see that they talk, but not what they send.
+
+### Without Wi-Fi or internet: a hotspot or a cable
+
+Sync never needs the internet. The devices only have to be on one network together, and you can make that network yourself, for example at school where eduroam keeps devices apart, on a train, or with no connection at all.
+
+- **Hotspot from the phone.** Turn on the phone's hotspot (mobile data can be off) and join it on the laptop. Then open ScaleNote on both. They find each other as at home.
+- **Hotspot from the laptop.** On Linux, turn on the Wi-Fi hotspot in the network settings; on Windows, Settings, Network, Mobile hotspot (Windows may only offer it while it is connected itself). Join it on the phone or tablet.
+- **USB cable.** Connect the phone to the computer and turn on **USB tethering** in the phone's hotspot settings. This is usually faster and steadier than Wi-Fi.
+- **Cable between two computers.** An Ethernet cable directly between them works too.
+
+Devices that are already paired need nothing else. To pair over a hotspot or cable, do it as above; the pairing screen shows every address this device has (for example its home address and its hotspot address), so if the device is not found you can type the one on the shared network.
 
 ## 4. Optional: a home server
 

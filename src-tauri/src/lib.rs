@@ -18,7 +18,7 @@ use scalenote_core::sync::engine::{Outcome, Preview, Report};
 use scalenote_core::sync::files::Done;
 use scalenote_core::sync::manager::Manager;
 use scalenote_core::sync::plan::Action;
-use scalenote_core::sync::service::{local_address_hint, Event, EventKind, Nearby, PeerView, Status, SyncingView};
+use scalenote_core::sync::service::{local_address_hint, local_addresses, Event, EventKind, Nearby, PeerView, Status, SyncingView};
 use scalenote_core::sync::watch;
 use scalenote_core::sync::SyncError;
 use scalenote_core::{EntryKind, NoteVersion, Vault, VaultError};
@@ -698,6 +698,9 @@ struct SyncStatusReply {
     listening_port: Option<u16>,
     /// This device's address on the local network, for the other device to type.
     address: Option<String>,
+    /// Every address a device nearby can use: the main one first, then a hotspot this device
+    /// makes or a cable (sync/networks.rs). Empty when none is known.
+    addresses: Vec<String>,
     /// This device's Tailscale address, for the other device to type when it is elsewhere
     /// (eduroam and other networks keep devices apart). Null when Tailscale is off.
     tailscale: Option<String>,
@@ -745,6 +748,7 @@ fn status_reply(status: Status, problem: Option<&'static str>) -> SyncStatusRepl
         enabled: status.enabled,
         listening_port: status.listening_port,
         address: local_address_hint(),
+        addresses: local_addresses(),
         tailscale: Some(status.tailscale).filter(|address| !address.is_empty()),
         fingerprint: status.fingerprint,
         paused: status.paused,
