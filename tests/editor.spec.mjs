@@ -5521,7 +5521,7 @@ await test("with Finger draws on, two fingers move and zoom the sheet and draw n
   await drawLine(page, [236, 200], [264, 200]);
   await waitSaved(page);
   await chooseMore(page, "Finger draws");
-  assert.equal(await inkAt(page, 290, 200), false, "the mark is short to begin with");
+  assert.equal(await inkAt(page, 280, 200), false, "the mark is short to begin with");
   // The first finger lands and moves a little before the second one comes: that start of a line
   // must not stay.
   await touchEvents(page, 21, "pointerdown", 210, 200);
@@ -5532,11 +5532,14 @@ await test("with Finger draws on, two fingers move and zoom the sheet and draw n
     await touchEvents(page, 21, "pointermove", 250 - half, 200);
     await touchEvents(page, 22, "pointermove", 250 + half, 200);
   }
+  // The fingers went three times as far apart around x 250: the mark (28 pixels wide there) is
+  // now about 84 pixels wide, so it reaches x 280.
+  await page.waitForTimeout(100);
+  assert.equal(await inkAt(page, 280, 200), true, "the sheet was zoomed in: the mark is wider now");
   // One finger lifts first; the other one moving on must not start a line either.
   await touchEvents(page, 22, "pointerup", 370, 200);
   await touchEvents(page, 21, "pointermove", 140, 220);
   await touchEvents(page, 21, "pointerup", 140, 220);
-  assert.equal(await inkAt(page, 290, 200) || await inkAt(page, 300, 220), true, "the sheet was zoomed in: the mark is wider now");
   await page.waitForTimeout(1200);
   assert.equal((await savedDrawing(page)).strokes.length, 1, "no line was added by the two fingers");
   await touchEvents(page, 23, "pointerdown", 60, 60);
