@@ -680,6 +680,43 @@ impl Service {
         }
     }
 
+    /// Brings `paths` (pages not on this device, keep.rs) from a paired device that can be reached
+    /// now and syncs this notes folder. Waits a little when a sync is running. Returns the files
+    /// that came; refused with "not available offline" when no device could give them.
+    pub fn fetch_files(&self, paths: &[String]) -> Result<Vec<String>> {
+        let (peers, root) = {
+            let state = lock(&self.shared.state);
+            if !state.enabled || state.paused {
+                return Err(SyncError::Refused("not available offline"));
+            }
+            let root = state.vault.clone().ok_or(SyncError::Refused("no vault is open"))?;
+            let peers: Vec<Peer> = state.trust.peers().iter().filter(|p| state.folders.allows(&p.public, &root)).cloned().collect();
+            (peers, root)
+        };
+        let _session = self.wait_for_session(Duration::from_secs(15))?;
+        for peer in peers {
+            let Ok(mut channel) = self.reach(&peer) else { continue };
+            if let Ok(got) = engine::fetch(&mut channel, &root, paths) {
+                if !got.is_empty() {
+                    return Ok(got);
+                }
+            }
+        }
+        Err(SyncError::Refused("not available offline"))
+    }
+
+    /// Like `take_session`, but waits up to `wait` for a running sync to finish.
+    fn wait_for_session(&self, wait: Duration) -> Result<MutexGuard<'_, ()>> {
+        let until = Instant::now() + wait;
+        loop {
+            match self.take_session() {
+                Ok(guard) => return Ok(guard),
+                Err(error) if Instant::now() >= until => return Err(error),
+                Err(_) => std::thread::sleep(Duration::from_millis(200)),
+            }
+        }
+    }
+
     /// What a sync with that device would change. Changes nothing on either side.
     pub fn compare_peer(&self, id: &str) -> Result<Preview> {
         let (peer, root, own_name) = self.prepare(id)?;

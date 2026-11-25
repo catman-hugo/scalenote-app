@@ -41,6 +41,8 @@ const paths = {
   undo: "M5.5 3.5l-3 3 3 3M2.5 6.5h6.5a3.5 3.5 0 0 1 0 7H6",
   redo: "M10.5 3.5l3 3-3 3M13.5 6.5H7a3.5 3.5 0 0 0 0 7h3",
   folderOpen: "M2 13V4.5h4L7.5 6H12v2M2 13l2-5h11l-2 5z",
+  // A page or folder that is on another device but not on this one (offline choices, 0.6.3).
+  cloud: "M4.5 12.5h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.3a3 3 0 0 0-.5 6.2z",
 };
 
 export function icon(name, { filled = false } = {}) {

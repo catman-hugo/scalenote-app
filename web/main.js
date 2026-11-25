@@ -49,6 +49,9 @@ import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { pairingRows, privacyRows } from "./syncpairing.js";
+import { openOfflineDialog } from "./offlinedialog.js";
+import { withMissing } from "./offlinerules.js";
+import { describeSize } from "./pdfrules.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
 import { startSyncLine } from "./syncline.js";
 import { pageAction, sameEntries } from "./syncrules.js";
@@ -69,6 +72,9 @@ const app = {
   navigating: false,
   settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
   entries: [],
+  // What this device keeps offline: { choices, notHere } (offlinerules.js). Empty where the
+  // backend has no such list (the browser) or before the first answer.
+  offline: { choices: [], notHere: [] },
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
   expanded: new Set(),
@@ -522,6 +528,20 @@ function obsidianRows() {
 
 // Backups of the whole vault. Not offered on Android, for the same reason as the Obsidian copy.
 // Restoring takes two presses and never deletes (see core/src/backup.rs).
+// Settings, Files: what this device keeps of the whole notes folder.
+function offlineSettingsRows() {
+  const t = strings.offline;
+  const button = buttonElement(t.settingsButton, () => {
+    el("settings").close();
+    chooseOffline("", "");
+  });
+  button.id = "offlineWhole";
+  const row = document.createElement("div");
+  row.className = "setting-row";
+  row.append(textElement("span", t.settingsLabel, "setting-label"), button);
+  return [row, textElement("p", t.settingsHint, "setting-hint")];
+}
+
 function backupRows() {
   if (isAndroid) return [];
   const s = strings.settings;
@@ -1275,10 +1295,61 @@ async function refreshTree() {
     showBanner(errorText(error));
     app.entries = [];
   }
+  await loadOffline();
   await loadFolderIcons();
   drawTree();
   syncLinks();
   refreshIndex();
+}
+
+// ---------- offline choices (0.6.3) ----------
+
+async function loadOffline() {
+  try {
+    const answer = await backend.offline();
+    app.offline = { choices: answer.choices || [], notHere: answer.notHere || [] };
+  } catch {
+    app.offline = { choices: [], notHere: [] };
+  }
+}
+
+// Opens a page that is only on another device: it is brought here first, then opened.
+async function openMissing(path, button) {
+  if (button) {
+    button.disabled = true;
+    button.title = strings.offline.bringing;
+  }
+  showToast(strings.offline.bringing);
+  try {
+    await backend.fetchOffline([path]);
+    await refreshTree();
+    await openNote(path);
+  } catch (error) {
+    logProblem("bring page failed", error);
+    showBanner(errorText(error));
+    if (button && button.isConnected) {
+      button.disabled = false;
+      button.title = strings.offline.notHere;
+    }
+  }
+}
+
+// The Available offline box for a folder or page ("" is the whole notes folder).
+async function chooseOffline(path, name) {
+  const saved = await openOfflineDialog(el("offlineBox"), {
+    path,
+    name,
+    choices: app.offline.choices,
+    save: async (kinds) => {
+      if (app.autosave) await app.autosave.flush();
+      const freed = await backend.setOffline(path, kinds);
+      const said = [];
+      if (freed && freed.removed) said.push(fill(strings.offline.freed, { size: describeSize(freed.bytes) }));
+      if (freed && freed.onlyHere) said.push(fill(strings.offline.onlyHere, { count: freed.onlyHere }));
+      if (said.length) showToast(said.join(" "));
+    },
+  });
+  if (saved) await refreshTree();
 }
 
 // ---------- changes made outside ScaleNote ----------
@@ -1683,7 +1754,7 @@ function loadBacklinks(path) {
 function drawTree() {
   renderTree(
     el("tree"),
-    app.entries,
+    withMissing(app.entries, app.offline.notHere),
     {
       expanded: app.expanded,
       currentPath: app.current ? app.current.path : null,
@@ -1692,6 +1763,7 @@ function drawTree() {
     },
     {
       openNote: (path) => openNote(path),
+      openMissing: (path, button) => openMissing(path, button),
       toggleFolder(path) {
         app.selectedFolder = path;
         if (app.expanded.has(path)) app.expanded.delete(path);
@@ -1727,6 +1799,13 @@ function pageItems(path) {
 // also gets its own items (cover, Linked from).
 function openEntryMenu(node, x, y, button) {
   const c = strings.contextMenu;
+  const offlineItem = { label: c.offline, run: () => chooseOffline(node.path, node.name.replace(/\.md$/i, "")) };
+  // An entry that is only on another device can be brought here or have its choice changed.
+  if (node.missing) {
+    const items = node.kind === "folder" ? [offlineItem] : [{ label: c.bringHere, run: () => openMissing(node.path, button) }, offlineItem];
+    openContextMenu(x, y, items, { returnFocus: button });
+    return;
+  }
   const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
   if (node.kind !== "folder" && /\.md$/i.test(node.path)) items.push(...pageItems(node.path));
   items.push({ label: node.kind === "folder" ? c.icon : c.colour, run: () => openFolderIconMenu(node, x, y, button) });
@@ -1739,6 +1818,7 @@ function openEntryMenu(node, x, y, button) {
       });
     items.push({ label: c.move, run: choose });
   }
+  items.push(offlineItem);
   // No question is asked: Delete only moves the entry to the trash, where it can be restored.
   items.push({ label: c.delete, run: () => trashEntry(node, button) });
   openContextMenu(x, y, items, { returnFocus: button });
@@ -2691,7 +2771,7 @@ function fillStaticText() {
         updates: updateSettingsRows(),
         sync: syncSettingsRows(),
         privacy: privacySettingsRows(),
-        files: [...historySettingsRows(), ...obsidianRows(), ...backupRows()],
+        files: [...offlineSettingsRows(), ...historySettingsRows(), ...obsidianRows(), ...backupRows()],
         device: deviceSettingsRows(),
         shortcuts: shortcutRows(),
         about: aboutRows(),

@@ -281,6 +281,50 @@ fn make_preview<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Resul
     Ok((preview, here.manifest, there.manifest))
 }
 
+/// Brings files this device does not have from the other device, as they are there now: the
+/// "open a page that is not on this device" step of 0.6.3 (keep.rs). Nothing is sent and nothing
+/// here is changed or removed; a file that turned up here in the meantime is left as it is. For a
+/// page (`.md`), its drawing and the attachments it links to come along. The files are then
+/// ordinary files here: they sync like any other, and "Free up space" may remove them again if
+/// the choices do not keep them. Returns the files that were brought.
+pub fn fetch<S: Read + Write>(channel: &mut Channel<S>, root: &Path, paths: &[String]) -> Result<Vec<String>> {
+    let there = fetch_listing(channel)?.manifest;
+    let mut wanted: Vec<String> = Vec::new();
+    for path in paths {
+        wanted.push(path.clone());
+        if let Some(stem) = path.strip_suffix(".md") {
+            wanted.push(format!("{stem}.canvas.json"));
+        }
+    }
+    let mut got = Vec::new();
+    let mut index = 0;
+    while index < wanted.len() && index < super::manifest::MAX_FILES {
+        let path = wanted[index].clone();
+        index += 1;
+        if !super::manifest::safe_path(&path) || got.contains(&path) || files::current_hash(root, &path)?.is_some() {
+            continue;
+        }
+        let Some(state) = there.files.get(&path) else { continue };
+        if state.size > MAX_TRANSFER_BYTES {
+            continue;
+        }
+        let Some(bytes) = get_there(channel, &path, &state.hash)? else { continue };
+        if files::put(root, &path, Expect::Absent, &bytes, Some(state.modified))? != Done::Applied {
+            continue;
+        }
+        // A page that came brings what it shows: its pictures and PDFs (and their words).
+        if path.ends_with(".md") {
+            for link in keep::attachment_links(&String::from_utf8_lossy(&bytes)) {
+                wanted.push(format!("{link}{}", crate::attachments::PAGE_TEXT_SUFFIX));
+                wanted.push(link);
+            }
+        }
+        got.push(path);
+    }
+    send_blob(channel, KIND_BYE, &[], &[])?;
+    Ok(got)
+}
+
 /// Does the sync. On a first sync with this device nothing is changed unless `approved`.
 pub fn run<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, approved: bool, progress: &mut dyn FnMut(Progress)) -> Result<Outcome> {
     let (preview, local, remote) = make_preview(channel, pair)?;

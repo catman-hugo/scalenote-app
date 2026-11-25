@@ -462,19 +462,56 @@ fn tree_files(root: &Path) -> Vec<PathBuf> {
 }
 
 /// Every file known to exist on another device or removed from here, that this device does not
-/// have by choice. The page list can show these with a cloud icon (0.6.3).
+/// have by choice. The page list shows these with a cloud icon (0.6.3). Quick enough to ask on
+/// every redraw of the page list: no file is hashed, and only kept pages that are here and whose
+/// choice keeps pictures or files are read (for the attachments they link to).
 pub fn not_here(root: &Path) -> Result<BTreeSet<String>> {
-    let local = Manifest::scan(root)?.manifest;
-    let rules = KeepRules::load_with_links(root, &local);
-    let mut known = still_removed(root, &local);
-    if !rules.keeps_everything() {
-        for file in tree_files(root) {
-            if let Some(tree) = read_list(&file) {
-                known.extend(tree.files.into_keys().filter(|p| !local.files.contains_key(p) && !rules.keeps(p)));
-            }
+    let here = |p: &String| root.join(p).exists();
+    let mut known: BTreeSet<String> = load_removed(root).into_iter().filter(|p| !here(p)).collect();
+    let mut rules = KeepRules::load(root);
+    if rules.keeps_everything() {
+        return Ok(known);
+    }
+    let mut elsewhere = BTreeSet::new();
+    for file in tree_files(root) {
+        if let Some(tree) = read_list(&file) {
+            elsewhere.extend(tree.files.into_keys());
         }
     }
+    for page in elsewhere.iter().filter(|p| kind_of(p) == Kind::Text && here(p)) {
+        let choice = rules.choice_for(page);
+        if !choice.has(Kind::Text) || !(choice.has(Kind::Picture) || choice.has(Kind::Other)) {
+            continue;
+        }
+        let path = root.join(page);
+        if fs::metadata(&path).map(|m| m.len() > MAX_PAGE_BYTES).unwrap_or(true) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let links: Vec<String> = attachment_links(&text).into_iter().filter(|l| choice.has(kind_of(l))).collect();
+        rules.linked.extend(links);
+    }
+    known.extend(elsewhere.into_iter().filter(|p| !here(p) && !rules.keeps(p)));
     Ok(known)
+}
+
+/// The choices of this device, as (path, kinds as letters) pairs: what the "Available offline"
+/// menus show. `""` is the whole notes folder.
+pub fn choices(root: &Path) -> Vec<(String, String)> {
+    KeepRules::load(root).choices.into_iter().map(|(path, kinds)| (path, kinds.to_letters())).collect()
+}
+
+/// Sets (or with `None` removes) the choice for one folder or page, saves it, and then frees
+/// what is no longer kept, as "Free up space" does (only files another device has).
+pub fn set_choice(root: &Path, path: &str, letters: Option<&str>) -> Result<FreeReport> {
+    let kinds = match letters {
+        Some(text) => Some(Kinds::from_letters(text).ok_or(SyncError::Refused("not a choice"))?),
+        None => None,
+    };
+    let mut rules = KeepRules::load(root);
+    rules.set(path, kinds)?;
+    rules.save(root)?;
+    free_up_space(root)
 }
 
 /// Whether renaming, moving or deleting `relative` (a page or a folder) would leave files behind

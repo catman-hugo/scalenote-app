@@ -16,6 +16,7 @@ use scalenote_core::logger::{Level, Logger};
 use scalenote_core::sync::conflicts::{self, Keep};
 use scalenote_core::sync::engine::{Outcome, Preview, Report};
 use scalenote_core::sync::files::Done;
+use scalenote_core::sync::keep;
 use scalenote_core::sync::manager::Manager;
 use scalenote_core::sync::plan::Action;
 use scalenote_core::sync::service::{local_address_hint, local_addresses, Event, EventKind, Nearby, PeerView, Status, SyncingView};
@@ -772,6 +773,64 @@ fn sync_failed(logger: &Logger, what: &str, error: SyncError) -> String {
     error.code().to_string()
 }
 
+/// What this device keeps of the open notes folder (sync/keep.rs, 0.6.3): its choices per folder
+/// or page, and the pages and files that exist on other devices but are not here by choice (the
+/// page list shows those with a cloud icon).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OfflineReply {
+    choices: Vec<OfflineChoice>,
+    not_here: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct OfflineChoice {
+    path: String,
+    kinds: String,
+}
+
+/// What switching a choice removed from this device to free space.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FreeReply {
+    removed: usize,
+    bytes: u64,
+    only_here: usize,
+}
+
+#[tauri::command]
+async fn offline_get(state: State<'_, AppState>) -> Result<OfflineReply, String> {
+    let root = vault_root(&state)?;
+    let result = blocking(move || {
+        let not_here = keep::not_here(&root)?;
+        let choices = keep::choices(&root).into_iter().map(|(path, kinds)| OfflineChoice { path, kinds }).collect();
+        Ok::<_, SyncError>(OfflineReply { choices, not_here: not_here.into_iter().collect() })
+    })
+    .await?;
+    result.map_err(|error| sync_failed(&state.logger, "offline list", error))
+}
+
+/// Sets what this device keeps of one folder or page (`kinds` as letters, see keep.rs), or with
+/// no kinds goes back to following the folder above. Frees what is no longer kept and another
+/// device has.
+#[tauri::command]
+async fn offline_set(path: String, kinds: Option<String>, state: State<'_, AppState>) -> Result<FreeReply, String> {
+    let root = vault_root(&state)?;
+    let result = blocking(move || keep::set_choice(&root, &path, kinds.as_deref())).await?;
+    result
+        .map(|r| FreeReply { removed: r.removed.len(), bytes: r.bytes, only_here: r.only_here.len() })
+        .map_err(|error| sync_failed(&state.logger, "offline choice", error))
+}
+
+/// Brings pages that are not on this device from a paired device that can be reached now.
+#[tauri::command]
+async fn offline_fetch(paths: Vec<String>, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    vault_root(&state)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.fetch_files(&paths))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "offline fetch", error))
+}
+
 /// Gives the running service, or the reason sync cannot be used on this device.
 fn running(sync: &Manager) -> Result<&scalenote_core::sync::service::Service, SyncError> {
     sync.service().ok_or(SyncError::Refused("sync is not available"))
@@ -1202,6 +1261,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            offline_get,
+            offline_set,
+            offline_fetch,
             open_vault,
             open_default_vault,
             default_vault_path,

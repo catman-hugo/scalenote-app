@@ -83,6 +83,8 @@ impl SyncError {
             SyncError::Refused("the other device said no") => "sync_peer_refused",
             SyncError::Refused("paired with another folder") => "sync_other_folder",
             SyncError::Refused("the other device has it with another folder") => "sync_peer_other_folder",
+            SyncError::Refused("not available offline") => "not_available_offline",
+            SyncError::Refused("not a choice") | SyncError::Refused("path not allowed") | SyncError::Refused("too many choices") => "offline_bad_choice",
             SyncError::Refused(_) => "pair_refused",
             SyncError::Channel(_) => "pair_failed",
         }

@@ -28,6 +28,14 @@ export const backend = {
   // The folder "Use the default folder" would open, as text for the first-run screen.
   defaultVaultPath: () => call("default_vault_path"),
   tree: () => call("vault_tree"),
+  // What this device keeps offline (0.6.3): { choices: [{ path, kinds }], notHere: [paths] }.
+  // kinds are letters: t text, d drawings, i pictures, f other files, "-" nothing.
+  offline: () => call("offline_get"),
+  // Sets the choice for a folder or page ("" is the whole folder); kinds null follows the folder
+  // above. Returns { removed, bytes, onlyHere } of what was freed.
+  setOffline: (path, kinds) => call("offline_set", { path, kinds }),
+  // Brings pages that are not on this device from a paired device. Returns the files that came.
+  fetchOffline: (paths) => call("offline_fetch", { paths }),
   readNote: (path) => call("read_note", { path }),
   writeNote: (path, text, expected) => call("write_note", { path, text, expected }),
   readCanvas: (path) => call("read_canvas", { path }),

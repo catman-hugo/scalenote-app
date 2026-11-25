@@ -23,7 +23,34 @@
   const unique = (parent, stem, ext, exists) => {
     for (let n = 1; ; n++) { const name = n === 1 ? stem : `${stem} ${n}`; const p = (parent ? parent + "/" : "") + name + ext; if (!exists(p)) return p; }
   };
+  // Offline choices (0.6.3): the real rules are tested in Rust. Here pages in
+  // window.__elsewhere are "on another device"; they are listed until brought.
+  const offline = { choices: new Map(), elsewhere: new Map(Object.entries(window.__elsewhere || {})), sets: [] };
   const handlers = {
+    offline_get: () => ({
+      choices: [...offline.choices].map(([path, kinds]) => ({ path, kinds })),
+      notHere: [...offline.elsewhere.keys()].filter((p) => !files.has(p)),
+    }),
+    offline_set: ({ path, kinds }) => {
+      if (kinds !== null && kinds !== undefined && !/^(-|[tdif]{1,4})$/.test(kinds)) fail("offline_bad_choice");
+      offline.sets.push({ path, kinds: kinds ?? null });
+      if (kinds === null || kinds === undefined) offline.choices.delete(path);
+      else offline.choices.set(path, kinds);
+      return window.__offlineFreed || { removed: 0, bytes: 0, onlyHere: 0 };
+    },
+    offline_fetch: ({ paths }) => {
+      if (window.__offlineUnreachable) fail("not_available_offline");
+      const got = [];
+      for (const p of paths) {
+        if (!offline.elsewhere.has(p) || files.has(p)) continue;
+        files.set(p, offline.elsewhere.get(p));
+        const parts = p.split("/");
+        for (let i = 1; i < parts.length; i++) folders.add(parts.slice(0, i).join("/"));
+        got.push(p);
+      }
+      if (!got.length) fail("not_available_offline");
+      return got;
+    },
     get_settings: () => settings,
     set_settings: ({ json }) => { settings = json; },
     log_line: ({ level, message }) => { logs.push(level + " " + message); },
@@ -480,5 +507,6 @@
       return h(args || {});
     },
   };
-  window.__mock = { emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+  window.__mock = {
+    offline, emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

@@ -15,13 +15,21 @@ export function buildTree(entries) {
     parent.children.push(node);
     if (entry.kind === "folder") folders.set(entry.path, node);
   }
+  // Entries that are only on other devices (offline choices) come after the list from Rust; they
+  // are put in place the way Rust orders a folder: folders first, then by name.
+  if (entries.some((e) => e.missing)) {
+    const order = (a, b) => (a.kind === "folder") !== (b.kind === "folder") ? (a.kind === "folder" ? -1 : 1) : a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0;
+    for (const folder of folders.values()) if (folder.children.some((c) => c.missing)) folder.children.sort(order);
+  }
   return root;
 }
 
 /**
  * Draws the tree into `container`.
  * `state` holds { expanded: Set, currentPath, selectedFolder, icons } (icons: folder path -> look).
- * `actions` has { openNote, toggleFolder, selectFolder, renameEntry, entryMenu, trashEntry }.
+ * `actions` has { openNote, openMissing, toggleFolder, selectFolder, renameEntry, entryMenu, trashEntry }.
+ * An entry with `missing` set is on another device only: it shows a cloud icon, and a page opens
+ * through `openMissing(path)`, which brings it here first.
  * `entryMenu(node, x, y, button)` opens the right-click menu; `renameEntry(node, button)` renames in place.
  */
 export function renderTree(container, entries, state, actions) {
@@ -72,7 +80,8 @@ function renderNode(node, state, actions) {
     button.title = open ? strings.sidebar.collapse : strings.sidebar.expand;
     if (state.selectedFolder === node.path) row.classList.add("selected-folder");
     button.addEventListener("click", () => actions.toggleFolder(node.path));
-    button.addEventListener("dblclick", () => actions.renameEntry(node, button));
+    if (!node.missing) button.addEventListener("dblclick", () => actions.renameEntry(node, button));
+    markMissing(node, button, row);
     row.append(button);
     item.append(row);
     if (open && node.children.length) item.append(renderList(node.children, state, actions));
@@ -86,12 +95,24 @@ function renderNode(node, state, actions) {
       row.classList.add("current");
       button.setAttribute("aria-current", "page");
     }
-    button.addEventListener("click", () => actions.openNote(node.path));
+    button.addEventListener("click", () => (node.missing && actions.openMissing ? actions.openMissing(node.path, button) : actions.openNote(node.path)));
+    markMissing(node, button, row);
     row.append(button);
     item.append(row);
   }
   wireEntryMenu(button, node, actions);
   return item;
+}
+
+// An entry that is only on other devices: dimmed, with a cloud icon after its name.
+function markMissing(node, button, row) {
+  if (!node.missing) return;
+  row.classList.add("tree-missing");
+  button.dataset.missing = "1";
+  const cloud = icon("cloud");
+  cloud.classList.add("tree-cloud");
+  button.append(cloud);
+  button.title = strings.offline.notHere;
 }
 
 // Right-click, a long press on a touch screen and the menu key all arrive as "contextmenu".
@@ -106,10 +127,10 @@ function wireEntryMenu(button, node, actions) {
     actions.entryMenu(node, fromKeyboard ? box.left + 16 : event.clientX, fromKeyboard ? box.bottom : event.clientY, button);
   });
   button.addEventListener("keydown", (event) => {
-    if (event.key === "F2") {
+    if (event.key === "F2" && !node.missing) {
       event.preventDefault();
       actions.renameEntry(node, button);
-    } else if (event.key === "Delete" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    } else if (event.key === "Delete" && !node.missing && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       actions.trashEntry(node, button);
     }
