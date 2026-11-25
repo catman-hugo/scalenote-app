@@ -741,3 +741,25 @@ fn stopping_or_leaving_a_share_ends_it_on_both_sides_and_every_copy_stays() {
     assert_eq!(mila.shares().expect("list").list[&id].state, State::Stopped);
     assert!(vm.0.join("Shared with me/Rowan/Biology/Cells.md").is_file(), "her copy stays");
 }
+
+#[test]
+fn a_paired_device_searches_the_text_of_pages_that_are_not_here_and_another_person_may_not() {
+    let (p, mila, _dm, _vm, _id) = shared_biology("remote-search");
+    write(&p.va.0, "Biology/Cells.md", "The membrane holds the cell together.");
+    write(&p.va.0, "Diary.md", "A membrane of thoughts.");
+    write(&p.vb.0, "Diary.md", "A membrane of thoughts.");
+    // Bob (Rowan's other device) does not have Biology/Cells.md; Alice finds it in her text.
+    let answers = p.bob.search_elsewhere("membrane").expect("asked");
+    assert_eq!(answers.len(), 1);
+    let (device, hits, truncated) = &answers[0];
+    assert!(!device.is_empty() && !truncated);
+    assert_eq!(hits.iter().map(|h| h.path.as_str()).collect::<Vec<_>>(), ["Biology/Cells.md"], "a page that is here is left out");
+    assert!(hits[0].snippet.iter().any(|(text, matched)| *matched && text == "membrane"));
+    // Mila is in a share with Rowan, not one of his devices: her search is refused.
+    let port = p.alice.status().listening_port.expect("listens");
+    let stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let mut channel = super::channel::Channel::connect(stream, mila.identity_for_tests()).expect("channel");
+    channel.send(&super::remotesearch::encode_query("membrane")).expect("send");
+    let answer = channel.recv().ok();
+    assert_ne!(answer.as_ref().and_then(|a| a.first().copied()), Some(super::remotesearch::KIND_FOUND));
+}

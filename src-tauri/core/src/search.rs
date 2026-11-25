@@ -95,6 +95,12 @@ impl Vault {
     /// are not searched. Pages that are too big to open, or are not valid text, are skipped
     /// without an error, because one odd file must not break the search.
     pub fn search(&self, query: &str, limit: usize) -> Result<SearchResults> {
+        self.search_until(query, limit, None)
+    }
+
+    /// The same, stopping (as truncated) at `deadline`. Used when another device asks (0.6.5),
+    /// so an answer always comes in time.
+    pub fn search_until(&self, query: &str, limit: usize, deadline: Option<std::time::Instant>) -> Result<SearchResults> {
         let words = split_query(query);
         let limit = limit.clamp(1, MAX_RESULTS);
         let mut results = SearchResults { hits: Vec::new(), truncated: false };
@@ -112,7 +118,7 @@ impl Vault {
         let mut candidates: Vec<Candidate> = Vec::new();
         let mut read_bytes: u64 = 0;
         for (relative, path) in self.page_files(&mut results.truncated) {
-            if candidates.len() >= MAX_COLLECTED || read_bytes >= MAX_TOTAL_BYTES {
+            if candidates.len() >= MAX_COLLECTED || read_bytes >= MAX_TOTAL_BYTES || deadline.is_some_and(|d| std::time::Instant::now() >= d) {
                 results.truncated = true;
                 break;
             }
@@ -178,6 +184,31 @@ impl Vault {
         let parts: Option<Vec<&str>> = relative.components().map(|c| c.as_os_str().to_str()).collect();
         Some(parts?.join("/"))
     }
+}
+
+/// Pages that are not on this device, found by their title alone (0.6.5): every word of the
+/// query must be in the title. `pages` are vault paths of pages (`….md`). No snippet: the text is
+/// not here.
+pub fn match_titles<'a>(pages: impl Iterator<Item = &'a String>, query: &str, limit: usize) -> Vec<SearchHit> {
+    let words = split_query(query);
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let whole: Vec<char> = words.join(&' ');
+    let mut found: Vec<(bool, String, SearchHit)> = Vec::new();
+    for path in pages {
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if !has_md_extension(name) {
+            continue;
+        }
+        let title = name[..name.len() - 3].to_string();
+        let folded = fold_text(&title);
+        if words.iter().all(|w| find(&folded, w, 0).is_some()) {
+            found.push((folded != whole, title.to_lowercase(), SearchHit { path: path.clone(), title, snippet: Vec::new() }));
+        }
+    }
+    found.sort_by(|a, b| (a.0, &a.1, &a.2.path).cmp(&(b.0, &b.1, &b.2.path)));
+    found.into_iter().take(limit.clamp(1, MAX_RESULTS)).map(|(_, _, hit)| hit).collect()
 }
 
 /// The page's text with its `id:` line blanked out. The id is bookkeeping for the app and must
@@ -487,5 +518,29 @@ mod tests {
         eprintln!("searched 3000 pages in {took:?}");
         assert!(took.as_secs() < 10, "{took:?}");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pages_not_here_are_found_by_every_word_of_their_title() {
+        let pages: Vec<String> = ["Biology/Cell walls.md", "Chemistry/Atoms.md", "Walls.md", "attachments/walls.png", "Biology/Cell.md"].iter().map(|s| s.to_string()).collect();
+        let hits = match_titles(pages.iter(), "WALLS", 10);
+        assert_eq!(hits.iter().map(|h| h.path.as_str()).collect::<Vec<_>>(), ["Walls.md", "Biology/Cell walls.md"], "the exact title first; not a picture");
+        assert!(hits.iter().all(|h| h.snippet.is_empty()));
+        assert_eq!(match_titles(pages.iter(), "cell walls", 10).len(), 1);
+        assert!(match_titles(pages.iter(), "   ", 10).is_empty());
+        assert_eq!(match_titles(pages.iter(), "a", 1).len(), 1, "the limit holds");
+    }
+
+    #[test]
+    fn a_search_with_a_deadline_that_has_passed_stops_and_says_so() {
+        let dir = std::env::temp_dir().join(format!("sn-search-deadline-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        std::fs::write(dir.join("One.md"), "apple").expect("page");
+        let vault = Vault::open(&dir).expect("vault");
+        let late = vault.search_until("apple", 10, Some(std::time::Instant::now())).expect("search");
+        assert!(late.truncated && late.hits.is_empty());
+        assert_eq!(vault.search_until("apple", 10, None).expect("search").hits.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
