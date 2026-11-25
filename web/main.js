@@ -48,7 +48,6 @@ import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
 import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
-import { PDF_LIMITS } from "./pdfrules.js";
 import { pairingRows, privacyRows } from "./syncpairing.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
 import { startSyncLine } from "./syncline.js";
@@ -2855,7 +2854,7 @@ async function start() {
     notify: showToast,
     followLink,
     openTag: (name) => openTagsDialog(name),
-    onProblem: (code) => showBanner((strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown).replace("{limit}", String(PDF_LIMITS.importPages))),
+    onProblem: (code) => showBanner(strings.errors[code === "too_large" ? "too_large_picture" : code] || strings.errors.unknown),
     pdfDialog: () => el("pdfBox"),
     jobCard: () => el("pdfJob"),
     pageToken: () => app.current,

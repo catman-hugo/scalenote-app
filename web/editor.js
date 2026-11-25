@@ -10,8 +10,8 @@ import { strings } from "./strings.js";
 import { Callout, Column, Columns, ImageBlock, Toggle, tableExtensions } from "./richnodes.js";
 import { FindMarks } from "./findmarks.js";
 import { PdfBlock } from "./pdfblock.js";
-import { askPdfMode, choosePdf, importPages, looksLikePdf, showProgress, storePdf } from "./pdfimport.js";
-import { pdfTitle } from "./pdfrules.js";
+import { askLongPdf, askPdfMode, choosePdf, importPages, looksLikePdf, showProgress, storePdf } from "./pdfimport.js";
+import { PDF_LIMITS, pdfTitle } from "./pdfrules.js";
 import { CanvasBlock } from "./canvasblock.js";
 import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
@@ -64,7 +64,12 @@ async function insertPdf(editor, file, position) {
   let progress = null;
   let follow = null;
   try {
-    const mode = await askPdfMode(dialog, file.name);
+    // Too big to sync: said at once, before asking how to add it.
+    if (file.size > PDF_LIMITS.bytes) {
+      pictureOptions.onProblem("too_large_pdf");
+      return;
+    }
+    const mode = await askPdfMode(dialog, file.name, file.size);
     dialog.close();
     if (!mode) return;
     const key = pictureOptions.noteKey();
@@ -82,7 +87,7 @@ async function insertPdf(editor, file, position) {
       const path = await storePdf(file);
       content = [{ type: "pdfBlock", attrs: { alt: pdfTitle(file.name), path } }, { type: "paragraph" }];
     } else {
-      pages = await importPages(file, { progress: progress.update, stopped: progress.stopped });
+      pages = await importPages(file, { progress: progress.update, stopped: progress.stopped, confirmLong: (info) => askLongPdf(dialog, file.name, info) });
       if (!pages) return;
       content = pages.flatMap((page) => [{ type: "imageBlock", attrs: { alt: page.alt, path: page.path } }, { type: "paragraph" }]);
     }

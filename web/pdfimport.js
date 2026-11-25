@@ -10,7 +10,7 @@ import { backend } from "./backend.js";
 import { checkPicture, readAsBase64 } from "./images.js";
 import { openPdf } from "./pdfdoc.js";
 import { encodePageText } from "./imagetext.js";
-import { PDF_LIMITS, checkPdf, pageFileName, pdfTitle, roundEstimate, secondsLeft } from "./pdfrules.js";
+import { PDF_LIMITS, checkPdf, describeSize, estimatePagesBytes, longPdfNeedsAsking, pageFileName, pdfTitle, roundEstimate, secondsLeft } from "./pdfrules.js";
 import { strings } from "./strings.js";
 
 function make(tag, className, text) {
@@ -64,7 +64,10 @@ export async function storePdf(file) {
  * Turns every page into a picture in the vault. Resolves to `[{ path, alt }]` in page order.
  * `progress(done, total)` is told when the import starts and after each page is saved, and
  * `stopped()` says whether the person pressed Stop (the pictures already made stay in the vault,
- * unused).
+ * unused). For a long PDF (more than `PDF_LIMITS.warnPages` pages, or pictures of more than
+ * `PDF_LIMITS.warnPictureBytes`), `confirmLong({ pages, bytes })` is asked first, with a guess of
+ * the space the pictures will take; when it says no, nothing is made and this resolves to null,
+ * like Stop. There is no page limit.
  *
  * Why it is built as two lanes: painting a page uses the screen's own thread, while turning the
  * painting into a JPEG, and saving it, mostly wait for other threads. So while page N is being
@@ -72,7 +75,7 @@ export async function storePdf(file) {
  * pictures are the same as doing one page at a time (same size, same JPEG quality). Painting two
  * pages at once was tried and was not faster, so it is not done.
  */
-export async function importPages(file, { progress = () => {}, stopped = () => false } = {}) {
+export async function importPages(file, { progress = () => {}, stopped = () => false, confirmLong = null } = {}) {
   const problem = checkPdf(file);
   if (problem) throw fail(problem === "unsupported_type" ? "unsupported_pdf" : problem);
   // How long each step took, written to the app's log at the end (About, "Copy the app's log"),
@@ -97,9 +100,21 @@ export async function importPages(file, { progress = () => {}, stopped = () => f
   let finished = 0;
   const canvases = [document.createElement("canvas"), document.createElement("canvas")];
   try {
-    if (pdf.pages > PDF_LIMITS.importPages) throw fail("pdf_too_many_pages");
     const title = pdfTitle(file.name);
     const total = pdf.pages;
+    if (total > 1 && confirmLong) {
+      // One page from the middle is drawn and turned into a picture to guess the size; it is
+      // not saved. The cover page is often much plainer or much busier than the rest.
+      let base64;
+      try {
+        await pdf.render(Math.ceil(total / 2), canvases[0]);
+        base64 = jpegOf(canvases[0]);
+      } catch {
+        throw fail("pdf_failed");
+      }
+      const bytes = estimatePagesBytes(base64.length, total);
+      if (longPdfNeedsAsking(total, bytes) && !(await confirmLong({ pages: total, bytes }))) return null;
+    }
     const made = new Array(total);
     const saves = [];
     let failure = null;
@@ -206,7 +221,7 @@ function logTimes(clock, done, total) {
  * Shows the question box in `dialog` and resolves to "scroll", "pages" or null (cancelled).
  * The box stays open afterwards: `showProgress` turns it into the progress view.
  */
-export function askPdfMode(dialog, name) {
+export function askPdfMode(dialog, name, size = 0) {
   const t = strings.pdf;
   return new Promise((resolve) => {
     let answered = false;
@@ -234,10 +249,45 @@ export function askPdfMode(dialog, name) {
     options.append(option(t.scroll, t.scrollHint, "scroll"), option(t.pages, t.pagesHint, "pages"));
     const actions = make("div", "dialog-actions");
     actions.append(cancel);
-    dialog.replaceChildren(make("h2", "", t.askTitle), make("p", "", fill(t.askText, { name: pdfTitle(name) })), options, actions);
+    // A large file is not refused, only said: it takes that space on every device that syncs it.
+    const large = size > PDF_LIMITS.warnBytes ? [make("p", "setting-hint pdf-large", fill(t.largeFile, { size: describeSize(size) }))] : [];
+    dialog.replaceChildren(make("h2", "", t.askTitle), make("p", "", fill(t.askText, { name: pdfTitle(name) })), ...large, options, actions);
     dialog.addEventListener("cancel", onCancel);
     if (!dialog.open) dialog.showModal();
     options.querySelector("button").focus();
+  });
+}
+
+/**
+ * Asks before turning a long PDF into pictures: how many pages, and about how much space they
+ * will take here and on every device that syncs the notes. Resolves to true to go on.
+ */
+export function askLongPdf(dialog, name, { pages, bytes }) {
+  const t = strings.pdf;
+  return new Promise((resolve) => {
+    let answered = false;
+    const answer = (value) => {
+      if (answered) return;
+      answered = true;
+      dialog.removeEventListener("cancel", onCancel);
+      dialog.close();
+      resolve(value);
+    };
+    const onCancel = () => answer(false);
+    const cancel = make("button", "", t.cancel);
+    cancel.type = "button";
+    cancel.addEventListener("click", () => answer(false));
+    const go = make("button", "primary", fill(t.longGo, { pages }));
+    go.type = "button";
+    go.id = "pdfLongGo";
+    go.addEventListener("click", () => answer(true));
+    const actions = make("div", "dialog-actions");
+    actions.append(cancel, go);
+    const text = fill(t.longText, { name: pdfTitle(name), pages, size: describeSize(bytes) });
+    dialog.replaceChildren(make("h2", "", t.longTitle), make("p", "", text), make("p", "setting-hint", t.longHint), actions);
+    dialog.addEventListener("cancel", onCancel);
+    if (!dialog.open) dialog.showModal();
+    cancel.focus();
   });
 }
 

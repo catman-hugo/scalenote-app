@@ -5,6 +5,7 @@ import zlib from "node:zlib";
 import { createRequire } from "node:module";
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -7788,13 +7789,53 @@ await test("a page that is gone when its pictures are ready says so, and nothing
   assert.equal(await page.evaluate(() => [...window.__mock.files.values()].some((t) => t.includes("Lecture-1-p"))), false);
 }, { before: slowPictures() });
 
-await test("a PDF of more than 100 pages is refused as pictures with a clear message, and nothing is stored", async (page) => {
+const padded = (file, size) => ({ ...file, buffer: Buffer.concat([file.buffer, Buffer.alloc(size - file.buffer.length, 0x20)]) });
+
+await test("a PDF over 25 MB is not refused: the question says its size and that it takes that space on every device", async (page) => {
+  await slashPdf(page, padded(pdfFile(2, "Scans.pdf"), 30 * 1024 * 1024));
+  assert.match(await page.textContent("#pdfBox"), /This PDF is 30 MB\. It takes that space in your notes folder and on every device that syncs it/);
+  await pdfChoice(page, "Scroll through");
+  await page.waitForSelector(".pdf-block", { timeout: 30000 });
+});
+
+await test("a small PDF has no size line, and one over 64 MB is refused because it could not sync", async (page) => {
+  await slashPdf(page, pdfFile(2, "Small.pdf"));
+  assert.equal(await page.locator("#pdfBox .pdf-large").count(), 0);
+  await page.click("#pdfBox button:has-text('Cancel')");
+  const chooser = new Promise((resolve) => page.once("filechooser", resolve));
+  await page.click("#editor .note-body");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/pdf");
+  await page.waitForSelector(".slash-menu");
+  await page.keyboard.press("Enter");
+  // Playwright passes at most 50 MB from memory, so this one goes through a file.
+  const huge = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sn-pdf-")), "Huge.pdf");
+  fs.writeFileSync(huge, padded(pdfFile(2, "Huge.pdf"), 65 * 1024 * 1024).buffer);
+  await (await chooser).setFiles(huge);
+  await page.waitForFunction(() => /too large to sync between devices\. The limit is 64 MB/.test(document.body.innerText), null, { timeout: 10000 });
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].length), 0);
+});
+
+await test("a PDF of more than 100 pages asks first with the space it will take; Cancel stores nothing", async (page) => {
   await slashPdf(page, pdfFile(101, "Big.pdf"));
   await pdfChoice(page, "Pages as images");
-  await page.waitForSelector(".banner, .toast");
-  assert.match(await page.evaluate(() => document.body.innerText), /more than 100 pages/);
+  await page.waitForSelector("#pdfLongGo");
+  const text = await page.textContent("#pdfBox");
+  assert.match(text, /Big has 101 pages\. As pictures it will take about \d+(\.\d)? [MG]B in your notes folder/);
+  assert.match(text, /Add 101 pages/);
+  await page.click("#pdfBox button:not(#pdfLongGo)");
+  await page.waitForSelector("#pdfJob", { state: "hidden", timeout: 10000 });
+  assert.equal(await page.evaluate(() => document.querySelector("#pdfBox").open), false);
   assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].length), 0);
   assert.equal(await page.locator(".image-block").count(), 0);
+});
+
+await test("a PDF of more than 100 pages is added as pictures after saying yes", async (page) => {
+  await slashPdf(page, pdfFile(101, "Big.pdf"));
+  await pdfChoice(page, "Pages as images");
+  await page.click("#pdfLongGo");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 101, null, { timeout: 120000 });
+  assert.equal(await page.evaluate(() => [...window.__mock.attachments.keys()].filter((k) => k.endsWith(".jpg")).length), 101);
 });
 
 await test("a file called .pdf that is not a PDF says so and changes nothing", async (page) => {
@@ -8254,6 +8295,9 @@ await test("sync: Compare shows the plan and runs nothing; an error says what to
   await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("Nothing to do: both devices already have the same files."));
   assert.equal(await page.evaluate(() => window.__runs), undefined, "compare never starts a sync");
   assert.equal((await page.evaluate(() => window.__compares)).length, 1);
+  // Cancel closes what Compare showed (it did nothing before 0.6.1).
+  await page.click(".sync-peer-panel button:has-text('Cancel')");
+  await page.waitForFunction(() => !document.querySelector(".sync-peer-panel").textContent.includes("Nothing to do"));
   await page.evaluate(() => { window.__failSyncRun = "sync_not_found"; });
   await page.click("#pairList .sync-now");
   await page.waitForFunction(() => document.querySelector(".sync-peer-panel").textContent.includes("was not found on this network"));
