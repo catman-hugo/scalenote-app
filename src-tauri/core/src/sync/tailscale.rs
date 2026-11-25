@@ -1,4 +1,4 @@
-//! Syncing over Tailscale, for networks where devices cannot see each other (eduroam and most
+//! Syncing over Tailscale, for networks where devices cannot see each other (most
 //! school, work and public Wi-Fi keep devices apart and drop the "I'm here" messages that
 //! `discovery.rs` uses).
 //!
@@ -12,7 +12,7 @@
 //! - Every greeting between two paired devices (`service.rs`, after each sync) carries the
 //!   sender's Tailscale address and port. The other device keeps it in `sync-tailscale.txt`.
 //! - When a paired device cannot be found the normal way, its kept Tailscale address is tried.
-//!   So two devices that synced once at home keep syncing on eduroam, with nothing to type.
+//!   So two devices that synced once at home keep syncing on such a network, with nothing to type.
 //!
 //! Nothing here changes who may connect: a connection over Tailscale goes through the same
 //! encrypted channel and the same check of the paired key as one at home.

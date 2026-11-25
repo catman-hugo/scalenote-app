@@ -64,6 +64,10 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
 
   const fingerprint = element("p", "", "setting-hint");
   fingerprint.id = "pairFingerprint";
+  // This device's address on each network it is on (home Wi-Fi, a hotspot), for typing on
+  // another device nearby; shown above the Tailscale line.
+  const localText = element("p", "", "setting-hint");
+  localText.id = "pairLocalAddress";
   // This device's Tailscale address, or a short note on what Tailscale is for (tailscale.rs).
   const tailscaleText = element("p", "", "setting-hint");
   tailscaleText.id = "pairTailscale";
@@ -223,6 +227,9 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     pauseButton.textContent = paused ? s.resumeButton : s.pauseButton;
     pausedHint.hidden = !paused;
     fingerprint.textContent = `${s.pairThisDevice}: ${status.fingerprint}`;
+    const addresses = status.addresses?.length ? status.addresses : status.address ? [status.address] : [];
+    localText.textContent = addresses.length ? fill(s.localAddress, { address: addresses.map((a) => `${a}:${status.listeningPort ?? ""}`).join(s.pairAddressOr) }) : "";
+    localText.hidden = addresses.length === 0;
     tailscaleText.textContent = status.tailscale ? fill(s.tailscaleOn, { address: status.tailscale }) : s.tailscaleOff;
     showPeers(status.peers);
     activity.replaceChildren();
@@ -290,7 +297,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
       const addresses = status.addresses?.length ? status.addresses : status.address ? [status.address] : [];
       const shown = addresses.map((address) => `${address}:${status.listeningPort ?? ""}`).join(s.pairAddressOr);
       addressText.textContent = `${s.pairAddress}: ${shown || s.pairNoAddress}`;
-      // From another network (eduroam, mobile data) only the Tailscale address can reach this device.
+      // From another network (a school network, mobile data) only the Tailscale address can reach this device.
       codeTailscale.textContent = status.tailscale ? fill(s.pairCodeTailscale, { address: status.tailscale }) : "";
       codeTailscale.hidden = !status.tailscale;
       codeBox.hidden = false;
@@ -393,6 +400,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
     element("h3", s.thisDeviceHeading, "setting-heading"),
     ...deviceRows,
     fingerprint,
+    localText,
     tailscaleText,
     element("h3", s.activityHeading, "setting-heading"),
     activity,

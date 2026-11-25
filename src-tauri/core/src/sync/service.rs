@@ -612,7 +612,7 @@ impl Service {
         match heard.into_iter().find(|d| d.key == peer.public) {
             Some(found) if self.wifi_blocks(peer, &found.address) => Err(SyncError::Refused("only on Wi-Fi")),
             Some(found) => self.open(&found.address, peer),
-            // Not on this network (eduroam and the like keep devices apart): try Tailscale.
+            // Not on this network (school and public networks keep devices apart): try Tailscale.
             None => match self.tailscale_address(peer) {
                 Some(address) if !self.wifi_blocks(peer, &address) => self.open(&address, peer),
                 _ if self.wifi_blocks(peer, "") => Err(SyncError::Refused("only on Wi-Fi")),

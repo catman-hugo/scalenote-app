@@ -702,7 +702,7 @@ struct SyncStatusReply {
     /// makes or a cable (sync/networks.rs). Empty when none is known.
     addresses: Vec<String>,
     /// This device's Tailscale address, for the other device to type when it is elsewhere
-    /// (eduroam and other networks keep devices apart). Null when Tailscale is off.
+    /// (school and public networks keep devices apart). Null when Tailscale is off.
     tailscale: Option<String>,
     fingerprint: String,
     paused: bool,

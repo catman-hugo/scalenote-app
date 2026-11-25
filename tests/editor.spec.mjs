@@ -8159,6 +8159,10 @@ await test("with Tailscale off, the Sync tab says what it is for and the pairing
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
   await page.waitForFunction(() => /turn on Tailscale on both devices/.test(document.getElementById("pairTailscale").textContent));
+  // The address on this network is shown above it, and nothing names a particular network.
+  assert.equal((await page.textContent("#pairLocalAddress")).trim(), "Address on this network: 192.168.1.20:47821");
+  assert.ok(await page.evaluate(() => document.getElementById("pairLocalAddress").compareDocumentPosition(document.getElementById("pairTailscale")) & Node.DOCUMENT_POSITION_FOLLOWING));
+  assert.doesNotMatch(await page.textContent("#settingsBox, body"), /eduroam/i);
   await page.click("#pairStart");
   await page.waitForSelector("#pairCodeBox:not([hidden])");
   assert.equal(await page.isHidden("#pairCodeTailscale"), true);
@@ -9411,7 +9415,7 @@ await test("What's new on Android is the short list for Android, with a button t
   await openAboutNotes(page);
   const text = await whatsNewText(page);
   assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam|<!--|-->/);
+  assert.doesNotMatch(text, /school networks|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9421,14 +9425,14 @@ await test("What's new from About on Windows is the short list for computers, wi
   await openAboutNotes(page);
   const text = await whatsNewText(page);
   assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam|<!--/i);
+  assert.doesNotMatch(text, /school networks|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /eduroam keeps devices apart/);
+  assert.match(text, /school networks that keep devices apart/);
   // These notes are the same for every system: only the hidden short list must stay out.
   assert.doesNotMatch(text, /<!--|-->|Sync over a hotspot or USB cable, no internet/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
@@ -9440,7 +9444,7 @@ await test("after an update downloaded from GitHub, a computer shows the short l
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
   assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam/i);
+  assert.doesNotMatch(text, /school networks/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
@@ -9448,7 +9452,7 @@ await test("after an update a phone always shows the short list, even when the a
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
   assert.match(text, /Sync over a hotspot or USB cable/);
-  assert.doesNotMatch(text, /eduroam/);
+  assert.doesNotMatch(text, /school networks/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
