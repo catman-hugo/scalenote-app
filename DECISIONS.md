@@ -874,3 +874,9 @@ Cost. A very long PDF as pictures can fill a phone; the question says how much b
 Context. 0.6.3 adds the screens for 0.6.0's partial sync. The owner asked for sharing with other people's accounts before 0.6.5.
 Decision. Every device keeps everything until a choice is made. Choices are made per folder or page from its menu (Available offline), and for the whole folder in Settings, Files. Pages not here stay listed with a cloud icon and are brought on opening. Sharing with other people becomes 0.6.4: shared pages land in "Shared with me/<name>/" and must be accepted first (both decided by the owner); storage and search move to 0.6.5, sharing into ScaleNote to 0.6.6 and hardening to 0.6.7.
 Cost. Sharing needs automatic joining of edits (word by word against the last shared version), which sync does not have yet: today a page changed on two devices is kept twice.
+
+## 2026-11-25: Accounts without a server, and the shares list only for apps that know it
+
+Context. Sharing (0.6.4) is with a person, on all their devices, with no server.
+Decision. An account is a name and a random id kept on the person's own devices (`account.txt` in the app's folder), passed between paired devices in their greeting. Being findable by people nearby is off until switched on and needs a name. The list of shares lives in the notes folder (`.scalenote/shares.json`) so all of a person's devices share it, merged share by share like the folder colours. Apps before 0.6.4 refuse a file list that has a file they do not know, so a device only lists the shares file to a device whose greeting says `shares=1`.
+Cost. The first sync after pairing two 0.6.4 devices leaves the shares list out; it follows on the next sync, about 30 seconds later. Two people with the same name are told apart only by the id, so the screens must show where a name was heard.

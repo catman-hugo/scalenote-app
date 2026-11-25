@@ -165,7 +165,7 @@ fn covers(rule: &str, path: &str) -> bool {
 
 /// A path a choice may be made for: the whole vault (`""`) or a safe vault path.
 fn choice_path_ok(path: &str) -> bool {
-    path.is_empty() || (safe_path(path) && path != SETTINGS_FILE)
+    path.is_empty() || (safe_path(path) && path != SETTINGS_FILE && path != super::shares::SHARES_FILE)
 }
 
 impl KeepRules {
@@ -188,7 +188,7 @@ impl KeepRules {
 
     /// Whether this device keeps `path`.
     pub fn keeps(&self, path: &str) -> bool {
-        if path == SETTINGS_FILE {
+        if path == SETTINGS_FILE || path == super::shares::SHARES_FILE {
             return true;
         }
         let owner = owner_of(path);

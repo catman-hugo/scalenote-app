@@ -40,6 +40,13 @@ use std::path::{Path, PathBuf};
 /// The one settings file that is synced: when both sides changed it, the newer one wins and no
 /// copy is made (a copy of a hidden settings file would be a file nobody can see).
 const SETTINGS_FILE: &str = ".scalenote/folder-icons.json";
+const SHARES_FILE: &str = super::shares::SHARES_FILE;
+
+/// The two small files of the notes folder that are merged entry by entry instead of copied
+/// whole: the folder colours (by folder) and, since 0.6.4, the list of shares (by share).
+fn merged_file(path: &str) -> bool {
+    path == SETTINGS_FILE || path == SHARES_FILE
+}
 const BASE_DIR: &str = ".scalenote";
 /// The saved list is read back as untrusted input and must stay small.
 const MAX_BASE_BYTES: u64 = 64 * 1024 * 1024;
@@ -53,6 +60,10 @@ pub struct Pair<'a> {
     pub peer_name: &'a str,
     /// For the name of conflict copies, `2026-11-17`.
     pub today: &'a str,
+    /// Whether the other device knows the list of shares (0.6.4 and later; it says so in its
+    /// greeting). Older apps refuse a list with a file they do not know, so for them the shares
+    /// file is left out of this device's list.
+    pub shares: bool,
 }
 
 /// What a sync would do, without doing it.
@@ -121,6 +132,28 @@ fn settings_base_path(root: &Path, peer_key: &[u8; KEY_LEN]) -> PathBuf {
     root.join(BASE_DIR).join(format!("sync-settings-{}.json", &hex::encode(peer_key)[..16]))
 }
 
+/// The same for the list of shares (shares.rs).
+fn shares_base_path(root: &Path, peer_key: &[u8; KEY_LEN]) -> PathBuf {
+    root.join(BASE_DIR).join(format!("sync-shares-{}.json", &hex::encode(peer_key)[..16]))
+}
+
+fn merge_base_path(root: &Path, peer_key: &[u8; KEY_LEN], path: &str) -> PathBuf {
+    if path == SHARES_FILE {
+        shares_base_path(root, peer_key)
+    } else {
+        settings_base_path(root, peer_key)
+    }
+}
+
+/// This device's listing as the other device may see it (see `Pair::shares`).
+pub fn listing_for(root: &Path, shares: bool) -> Result<Listing> {
+    let mut listing = own_listing(root)?;
+    if !shares {
+        listing.manifest.files.remove(SHARES_FILE);
+    }
+    Ok(listing)
+}
+
 fn tree_path(root: &Path, peer_key: &[u8; KEY_LEN]) -> PathBuf {
     root.join(BASE_DIR).join(format!("sync-tree-{}.txt", &hex::encode(peer_key)[..16]))
 }
@@ -151,6 +184,7 @@ pub fn forget_base(root: &Path, peer_key: &[u8; KEY_LEN]) {
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(tree_path(root, peer_key));
     let _ = fs::remove_file(settings_base_path(root, peer_key));
+    let _ = fs::remove_file(shares_base_path(root, peer_key));
     super::basetext::forget(root, &hex::encode(peer_key)[..16]);
 }
 
@@ -201,9 +235,10 @@ fn finish_plan(mut plan: Plan, local: &Manifest, remote: &Manifest, local_skippe
     for action in plan.actions.drain(..) {
         let path = action.path().to_string();
         match action {
-            // Deleting the settings file would leave folders without their colours; skipped.
-            Action::DeleteLocal { .. } | Action::DeleteRemote { .. } if path == SETTINGS_FILE => {}
-            Action::Conflict { winner, .. } if path == SETTINGS_FILE => {
+            // Deleting the colours or shares file would lose every folder's look or every share;
+            // skipped. Changed on both sides, they are merged (see `perform`).
+            Action::DeleteLocal { .. } | Action::DeleteRemote { .. } if merged_file(&path) => {}
+            Action::Conflict { winner, .. } if merged_file(&path) => {
                 actions.push(if winner == Side::Local { Action::Push { path } } else { Action::Pull { path } });
             }
             Action::Conflict { path, winner, .. } => {
@@ -255,7 +290,7 @@ pub fn compare<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result
 }
 
 fn make_preview<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<(Preview, Manifest, Manifest)> {
-    let here = own_listing(pair.root)?;
+    let here = listing_for(pair.root, pair.shares)?;
     let there = fetch_listing(channel)?;
     let base = load_base(pair);
     let first = base.is_none();
@@ -348,7 +383,10 @@ pub fn run<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, approved: boo
 
 /// After the actions: list both sides again and save what is now the same on both.
 fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> {
-    let local = Manifest::scan(pair.root)?.manifest;
+    let mut local = Manifest::scan(pair.root)?.manifest;
+    if !pair.shares {
+        local.files.remove(SHARES_FILE);
+    }
     let remote = fetch_listing(channel)?.manifest;
     let mut same = Manifest::default();
     for (path, state) in &local.files {
@@ -360,10 +398,12 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
     save_base(pair, &same)?;
     // The pages both now have alike, for joining edits next time (basetext.rs).
     super::basetext::update(pair.root, &hex::encode(pair.peer_key)[..16], before.as_ref(), &same)?;
-    // The colours file both devices now have, for the next merge (settings_merge.rs).
-    if same.files.contains_key(SETTINGS_FILE) {
-        if let Some(text) = read_small(&pair.root.join(SETTINGS_FILE)) {
-            write_atomic(&settings_base_path(pair.root, pair.peer_key), &text)?;
+    // The colours and shares files both devices now have, for the next merge.
+    for path in [SETTINGS_FILE, SHARES_FILE] {
+        if same.files.contains_key(path) {
+            if let Some(text) = read_small(&pair.root.join(path)) {
+                write_atomic(&merge_base_path(pair.root, pair.peer_key, path), &text)?;
+            }
         }
     }
     // Files that came back are taken off the "removed to free space" list.
@@ -414,9 +454,9 @@ fn get_there<S: Read + Write>(channel: &mut Channel<S>, path: &str, hash: &str) 
 
 fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Action, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
     match action {
-        // The folder colours file on both sides is merged folder by folder, not copied whole.
-        Action::Push { path } | Action::Pull { path } if path == SETTINGS_FILE && local.files.contains_key(path) && remote.files.contains_key(path) => {
-            merge_settings(channel, pair, matches!(action, Action::Push { .. }), local, remote, report)
+        // The colours and shares files on both sides are merged entry by entry, not copied whole.
+        Action::Push { path } | Action::Pull { path } if merged_file(path) && local.files.contains_key(path) && remote.files.contains_key(path) => {
+            merge_settings(channel, pair, path, matches!(action, Action::Push { .. }), local, remote, report)
         }
         Action::Push { path } => {
             let mine = state(local, path)?;
@@ -466,22 +506,25 @@ fn join_texts(pair: &Pair, path: &str, mine: &[u8], theirs: &[u8]) -> Option<Vec
     crate::textmerge::merge(&base, mine, theirs).map(String::into_bytes)
 }
 
-/// Merges the two folder colours files (settings_merge.rs), writes the result here and there.
-/// A file that cannot be merged falls back to the old rule: the newer one wins whole.
-fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, local_wins: bool, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
-    let (mine, theirs) = (state(local, SETTINGS_FILE)?, state(remote, SETTINGS_FILE)?);
-    let Some(here) = files::read_expected(pair.root, SETTINGS_FILE, &mine.hash)? else {
+/// Merges the two folder colours files (settings_merge.rs) or lists of shares (shares.rs), and
+/// writes the result here and there. A file that cannot be merged falls back to the old rule:
+/// the newer one wins whole.
+#[allow(clippy::too_many_arguments)]
+fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, local_wins: bool, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
+    let (mine, theirs) = (state(local, path)?, state(remote, path)?);
+    let Some(here) = files::read_expected(pair.root, path, &mine.hash)? else {
         report.left_for_next += 1;
         return Ok(());
     };
-    let Some(there) = get_there(channel, SETTINGS_FILE, &theirs.hash)? else {
+    let Some(there) = get_there(channel, path, &theirs.hash)? else {
         report.left_for_next += 1;
         return Ok(());
     };
-    let base = read_small(&settings_base_path(pair.root, pair.peer_key));
-    let merged = super::settings_merge::merge(base.as_deref(), &here, &there, local_wins).unwrap_or_else(|| if local_wins { here.clone() } else { there.clone() });
+    let base = read_small(&merge_base_path(pair.root, pair.peer_key, path));
+    let merge = if path == SHARES_FILE { super::shares::merge } else { super::settings_merge::merge };
+    let merged = merge(base.as_deref(), &here, &there, local_wins).unwrap_or_else(|| if local_wins { here.clone() } else { there.clone() });
     if merged != here {
-        match files::put(pair.root, SETTINGS_FILE, Expect::Hash(&mine.hash), &merged, None)? {
+        match files::put(pair.root, path, Expect::Hash(&mine.hash), &merged, None)? {
             Done::Applied => report.received += 1,
             Done::Changed => {
                 report.left_for_next += 1;
@@ -490,7 +533,7 @@ fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, local_
         }
     }
     if merged != there {
-        let kind = put_there(channel, SETTINGS_FILE, Expect::Hash(&theirs.hash), &merged)?;
+        let kind = put_there(channel, path, Expect::Hash(&theirs.hash), &merged)?;
         count(report, kind, |r| r.sent += 1)?;
     }
     Ok(())

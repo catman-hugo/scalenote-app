@@ -125,6 +125,8 @@ struct Live {
     last_changed: usize,
     /// The app version the device told us, if it did.
     version: String,
+    /// Whether it knows the list of shares (it said `shares=1` in its greeting, 0.6.4 and later).
+    shares: bool,
     /// The vault's change signature right after the last sync, and when that was.
     synced_signature: Option<u64>,
     synced_at: Option<Instant>,
@@ -771,7 +773,8 @@ impl Service {
         let (peer, root, own_name) = self.prepare(id)?;
         let _session = self.take_session()?;
         let mut channel = self.reach(&peer)?;
-        engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today() })
+        let shares = self.knows_shares(&peer.public);
+        engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today(), shares })
     }
 
     /// Syncs with one paired device. The first sync with a device changes nothing until
@@ -802,6 +805,11 @@ impl Service {
         result
     }
 
+    /// Whether that device said it knows the list of shares (see `Live::shares`).
+    fn knows_shares(&self, key: &[u8; KEY_LEN]) -> bool {
+        lock(&self.shared.state).live.get(key).is_some_and(|l| l.shares)
+    }
+
     /// Asks a paired device for its app version over a short connection and tells it ours. Best effort:
     /// any failure (an older app, a device that went away) just leaves the version unknown.
     fn exchange_version(&self, peer: &Peer) {
@@ -829,7 +837,8 @@ impl Service {
             lock(&shared.state).syncing = Some(SyncingView { name: name.clone(), done: progress.done, total: progress.total });
             on_progress(progress);
         };
-        engine::run(&mut channel, &Pair { root, peer_key: &peer.public, own_name, peer_name: &peer.name, today: &today() }, approved, &mut report)
+        let shares = self.knows_shares(&peer.public);
+        engine::run(&mut channel, &Pair { root, peer_key: &peer.public, own_name, peer_name: &peer.name, today: &today(), shares }, approved, &mut report)
     }
 
     /// One round of automatic syncing, called every little while by the app. Does nothing (and
@@ -990,11 +999,12 @@ fn tie_if_untied(shared: &Shared, state: &mut State, key: [u8; KEY_LEN], root: &
 fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>, remote: &[u8; KEY_LEN]) -> Result<()> {
     channel.stream().set_read_timeout(Some(SYNC_TIMEOUT))?;
     channel.stream().set_write_timeout(Some(SYNC_TIMEOUT))?;
-    let (root, allowed, peer_name, other_folder) = {
+    let (root, allowed, peer_name, other_folder, shares) = {
         let state = lock(&shared.state);
         let name = state.trust.peers().iter().find(|p| &p.public == remote).map(|p| p.name.clone()).unwrap_or_default();
         let other = state.vault.as_ref().is_some_and(|root| !state.folders.allows(remote, root));
-        (state.vault.clone(), !state.paused && state.enabled, name, other)
+        let shares = state.live.get(remote).is_some_and(|l| l.shares);
+        (state.vault.clone(), !state.paused && state.enabled, name, other, shares)
     };
     if other_folder {
         // Tied to another folder here: say why, change nothing.
@@ -1011,7 +1021,7 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
         let _ = exchange::send_blob(channel, KIND_NO, &[], &[]);
         return Err(SyncError::Refused("sync is busy"));
     };
-    let result = engine_serve(channel, first, &root, allowed);
+    let result = engine_serve(channel, first, &root, allowed, shares);
     let mut state = lock(&shared.state);
     match &result {
         Ok(changed) => {
@@ -1029,8 +1039,8 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
     result.map(|_| ())
 }
 
-fn engine_serve(channel: &mut Channel<TcpStream>, first: Vec<u8>, root: &Path, allowed: bool) -> Result<usize> {
-    exchange::serve(channel, first, root, allowed)
+fn engine_serve(channel: &mut Channel<TcpStream>, first: Vec<u8>, root: &Path, allowed: bool, shares: bool) -> Result<usize> {
+    exchange::serve(channel, first, root, allowed, shares)
 }
 
 /// The `ip:port` a typed address leads to (the default port when none was typed).
@@ -1053,7 +1063,7 @@ pub fn is_older(theirs: &str, ours: &str) -> bool {
 fn greeting(shared: &Shared) -> String {
     let port = shared.port.load(Ordering::Relaxed);
     let account = lock(&shared.state).account.greeting_part();
-    format!("{APP_VERSION}{}{account}", tailscale::greeting_part((port != 0).then_some(port)))
+    format!("{APP_VERSION}{}{account} shares=1", tailscale::greeting_part((port != 0).then_some(port)))
 }
 
 /// Reads a greeting from a paired device: its version, and its Tailscale address if it sent one.
@@ -1065,8 +1075,13 @@ pub(crate) fn read_hello_for_test(service: &Service, key: [u8; KEY_LEN], raw: &[
 fn read_hello(shared: &Shared, key: [u8; KEY_LEN], raw: &[u8]) {
     let Ok(text) = std::str::from_utf8(raw) else { return };
     let (version, address) = tailscale::read_greeting(text);
-    if let Some(version) = clean_version(version.as_bytes()) {
-        lock(&shared.state).live.entry(key).or_default().version = version;
+    {
+        let mut state = lock(&shared.state);
+        let live = state.live.entry(key).or_default();
+        if let Some(version) = clean_version(version.as_bytes()) {
+            live.version = version;
+        }
+        live.shares = text.split_whitespace().any(|part| part == "shares=1");
     }
     Service::keep_tailscale(shared, key, address);
     // A device without an account takes the one of its paired device (account.rs).

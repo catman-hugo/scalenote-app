@@ -99,7 +99,7 @@ fn sync_from_bob(p: &Pair) -> super::engine::Report {
     let stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
     let mut channel = super::channel::Channel::connect(stream, p.bob.identity_for_tests()).expect("channel");
     let alice_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&p.alice_id).expect("key");
-    let pair = super::engine::Pair { root: &p.vb.0, peer_key: &alice_key, own_name: "bob", peer_name: "alice", today: "2026-11-24" };
+    let pair = super::engine::Pair { root: &p.vb.0, peer_key: &alice_key, own_name: "bob", peer_name: "alice", today: "2026-11-24", shares: true };
     done(super::engine::run(&mut channel, &pair, true, &mut |_| {}).expect("sync from bob"))
 }
 
@@ -432,4 +432,36 @@ fn a_findable_person_is_heard_nearby_and_a_paired_device_takes_the_same_account(
     assert_eq!(p.bob.account().id, account.id);
     assert_eq!(p.bob.account().name, "Rowan");
     assert!(p.bob.people_nearby(std::time::Duration::from_millis(2000)).expect("listen").is_empty());
+}
+
+#[test]
+fn the_list_of_shares_goes_only_to_devices_that_know_it_and_is_merged_share_by_share() {
+    use super::account::{Account, ID_LEN};
+    use super::shares::{Shares, State, SHARES_FILE};
+    let p = setup("shares-file");
+    let me = Account { id: Some([1; ID_LEN]), name: "Rowan".to_string(), findable: false };
+    let mut list = Shares::default();
+    let first = list.offer(&me, &[], "Biology", true, [2; ID_LEN], "Mila").expect("offer");
+    list.save(&p.va.0).expect("save");
+    // Before the devices have greeted each other, neither knows the other reads the list (an
+    // app before 0.6.4 would refuse it), so it stays here.
+    sync(&p);
+    assert!(!p.vb.0.join(SHARES_FILE).exists(), "not sent to a device that did not say it knows the file");
+    // After the sync they said hello (and `shares=1`); now it goes along.
+    sync(&p);
+    assert_eq!(Shares::load(&p.vb.0).expect("bob's list"), list);
+    // Each device changes another share: both changes are kept.
+    let mut here = Shares::load(&p.va.0).expect("list");
+    here.offer(&me, &[], "Chemistry.md", false, [2; ID_LEN], "Mila").expect("offer");
+    here.save(&p.va.0).expect("save");
+    let mut there = Shares::load(&p.vb.0).expect("list");
+    there.accepted(&first, [2; ID_LEN], &[[9; super::identity::KEY_LEN]]).expect("accepted");
+    there.save(&p.vb.0).expect("save");
+    sync(&p);
+    for root in [&p.va.0, &p.vb.0] {
+        let merged = Shares::load(root).expect("merged list");
+        assert_eq!(merged.list.len(), 2);
+        assert_eq!(merged.list[&first].state, State::Active);
+    }
+    assert!(names(&p.va.0).is_empty(), "no conflict copies, no pages made");
 }

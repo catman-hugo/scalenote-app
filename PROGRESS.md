@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-25; 0.6.4 in progress (sharing with other people; slice 1 of 8 built); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-25; 0.6.4 in progress (sharing with other people; slices 1 to 3 of 8 built); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.6.4: in progress (sharing pages and folders with other people)
 
@@ -11,7 +11,12 @@ Branch `feature/v0.6.4-sharing`, no pull request yet. Build plan in slices: `doc
 Done:
 - Slice 1, joining edits word by word: `core/src/textmerge.rs` (three-way merge on words, spaces and single marks, Myers' method; gives up when both changed the same place) and `core/src/sync/basetext.rs` (the text of each page as both devices had it after their last sync, `.scalenote/sync-text-<device>/`). `engine::conflict` tries joining first for pages; only a clash keeps both versions. `Report.merged`, shown as "N pages were changed on both devices; the changes were joined." Tests: `textmerge` unit tests and a two-service sync test (`a_page_changed_on_both_devices_in_different_places_is_joined_and_a_clash_keeps_both`).
 
-Next: slice 2 (your name and people nearby), see the plan.
+- Slice 2, your name and people nearby: `core/src/sync/account.rs` (a name and a random account id per person, in the app's folder as `account.txt`; paired devices pass it on in their greeting, ` acct=<id>.<name>`, and a device without one takes it). Settings, Sync: "Your name" and "Let people nearby see my name to share with me" (off by default; cannot be turned on without a name). When on, discovery also sends a separate people note (`SNPERSON1`; older apps ignore it), and `Service::people_nearby()` lists the people heard who are not you. App commands `account_get`, `account_set_name`, `account_set_findable`, `people_nearby`. Tests: account unit tests, a two-service test on a loopback route (`a_findable_person_is_heard_nearby_and_a_paired_device_takes_the_same_account`) and a browser test.
+- Slice 3, share records: `core/src/sync/shares.rs`, the list in `.scalenote/shares.json` (per share: id, item name, page or folder, owner, people with their device keys, the path here, the state offered/invited/active/declined/left/stopped). Every record is checked when read; a damaged file is never saved over. It syncs between your own devices and is merged share by share (`settings_merge::merge_keyed`, also used for folder colours now). Apps before 0.6.4 refuse a list with a file they do not know, so the greeting now says `shares=1` and the file is only listed for a device that said so (`engine::Pair::shares`, `engine::listing_for`); the very first sync after pairing leaves it out until the devices have greeted. Tests: shares unit tests (offer, receive, accept, end, checks, merge, moving) and a two-service test (`the_list_of_shares_goes_only_to_devices_that_know_it_and_is_merged_share_by_share`).
+
+Half done / known gaps so far: nothing on screen uses the share records yet (slice 7). Renaming or moving a shared page or folder must call `Shares::moved` (to be wired in with the screens). Nothing of 0.6.4 is tried on a real device yet; slice 2 needs two devices on one network (for example a phone's hotspot) to check that the name is heard.
+
+Next: slice 4 (invitations from a device that is not paired), see the plan.
 
 ## 0.6.3: released (offline choices in the app)
 

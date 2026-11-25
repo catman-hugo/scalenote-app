@@ -231,7 +231,8 @@ fn answer<S: Read + Write>(channel: &mut Channel<S>, kind: u8) -> Result<()> {
 /// Answers requests until the other device says goodbye or something is wrong. `head` is the
 /// first message, already read. Returns how many files were written or removed here.
 /// `allowed` is false when this device has paused sync: every request is then turned down.
-pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Path, allowed: bool) -> Result<usize> {
+/// `shares`: whether the calling device knows the list of shares (engine.rs, `Pair::shares`).
+pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Path, allowed: bool, shares: bool) -> Result<usize> {
     let mut changed = 0;
     let mut next = Some(head);
     for _ in 0..MAX_REQUESTS {
@@ -249,7 +250,7 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
         }
         match request.kind {
             KIND_LIST => {
-                send_blob(channel, KIND_LISTING, &[], &encode_listing_full(&own_listing(root)?))?;
+                send_blob(channel, KIND_LISTING, &[], &encode_listing_full(&super::engine::listing_for(root, shares)?))?;
             }
             KIND_GET => {
                 let path = std::str::from_utf8(&request.meta).map_err(|_| SyncError::Refused("path not allowed"))?;
