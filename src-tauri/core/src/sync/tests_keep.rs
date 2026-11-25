@@ -332,3 +332,42 @@ fn repeated_syncs_that_change_nothing_leave_one_activity_line() {
     let synced: Vec<usize> = p.alice.status().events.iter().filter(|e| e.kind == EventKind::Synced).map(|e| e.changed).collect();
     assert_eq!(synced, [1, 0], "one line for the sync that changed something, one for the quiet ones");
 }
+
+#[test]
+fn a_page_that_is_not_here_is_brought_with_its_drawing_and_pictures_and_stays_a_normal_file() {
+    let p = setup("fetch");
+    choose(&p.va.0, &[("Home", "-")]);
+    write(&p.vb.0, "Home/Trip.md", "![](attachments/beach.png)");
+    write(&p.vb.0, "Home/Trip.canvas.json", "{}");
+    write(&p.vb.0, "attachments/beach.png", "png");
+    write(&p.vb.0, "attachments/beach.png.text.json", "{}");
+    write(&p.vb.0, "Home/Other.md", "not asked for");
+    choose(&p.va.0, &[("attachments", "-")]);
+    sync(&p);
+    assert!(names(&p.va.0).is_empty(), "nothing of Home or attachments is kept here");
+    assert!(keep::not_here(&p.va.0).expect("not here").contains("Home/Trip.md"));
+    let mut got = p.alice.fetch_files(&["Home/Trip.md".to_string()]).expect("fetch");
+    got.sort();
+    assert_eq!(got, ["Home/Trip.canvas.json", "Home/Trip.md", "attachments/beach.png", "attachments/beach.png.text.json"]);
+    assert_eq!(fs::read_to_string(p.va.0.join("Home/Trip.md")).expect("page"), "![](attachments/beach.png)");
+    assert!(!keep::not_here(&p.va.0).expect("not here").contains("Home/Trip.md"));
+    // The page is here now and syncs like any other; nothing is changed on Bob's side.
+    assert_eq!(sync(&p).changed(), 0);
+    assert_eq!(names(&p.vb.0).len(), 5);
+    // Asking for something no device has is refused calmly.
+    assert!(p.alice.fetch_files(&["Nowhere.md".to_string()]).is_err());
+}
+
+#[test]
+fn switching_a_folder_off_frees_what_another_device_has_and_back_on_brings_it_with_the_next_sync() {
+    let p = setup("switch");
+    write(&p.vb.0, "Home/Shopping.md", "milk");
+    sync(&p);
+    let freed = keep::set_choice(&p.va.0, "Home", Some("-")).expect("off");
+    assert_eq!(freed.removed, ["Home/Shopping.md"]);
+    assert_eq!(keep::choices(&p.va.0), [("Home".to_string(), "-".to_string())]);
+    assert!(keep::set_choice(&p.va.0, "Home", Some("zz")).is_err());
+    keep::set_choice(&p.va.0, "Home", None).expect("back to following the folder above");
+    assert!(keep::choices(&p.va.0).is_empty());
+    assert_eq!(sync(&p).received, 1);
+}
