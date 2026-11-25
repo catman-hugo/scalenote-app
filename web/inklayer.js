@@ -474,8 +474,24 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     }
   }
 
+  // With Finger draws on, two fingers scroll the page instead of drawing (as on the canvas);
+  // the line the first finger began a moment before was not meant and is dropped. Scrolling
+  // goes on until every finger is lifted. `fingers` maps each finger on the sheet to its height.
+  const fingers = new Map();
+  const middleY = () => [...fingers.values()].reduce((sum, y) => sum + y, 0) / Math.max(1, fingers.size);
+
   function onDown(event) {
-    if (!state.active || state.gesture) return;
+    if (!state.active) return;
+    if (event.pointerType === "touch" && state.fingerDraws) {
+      fingers.set(event.pointerId, event.clientY);
+      if (fingers.size >= 2 || (state.gesture && state.gesture.kind === "fingers")) {
+        capture(event);
+        state.gesture = { kind: "fingers", lastY: middleY() };
+        scheduleDraw();
+        return;
+      }
+    }
+    if (state.gesture) return;
     placeSurface();
     const touch = event.pointerType === "touch";
     if (touch && !state.fingerDraws) {
@@ -527,6 +543,14 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
 
   function onMove(event) {
     const g = state.gesture;
+    if (fingers.has(event.pointerId)) fingers.set(event.pointerId, event.clientY);
+    if (g && g.kind === "fingers") {
+      if (!fingers.has(event.pointerId)) return;
+      const y = middleY();
+      scroller.scrollTop -= y - g.lastY;
+      g.lastY = y;
+      return;
+    }
     if (!g || g.id !== event.pointerId) return;
     if (g.kind === "scroll") {
       scroller.scrollTop -= event.clientY - g.lastY;
@@ -543,7 +567,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   function finish(cancelled) {
     const g = state.gesture;
     state.gesture = null;
-    if (!g || g.kind === "scroll") return;
+    if (!g || g.kind === "scroll" || g.kind === "fingers") return;
     const d = drawing();
     if (!d || cancelled) return scheduleDraw();
     if (g.kind === "erase") {
@@ -582,8 +606,21 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   // takes no touches at all.
   holdTouches(surface, () => state.active);
   surface.addEventListener("pointermove", onMove);
-  surface.addEventListener("pointerup", () => finish(false));
-  surface.addEventListener("pointercancel", () => finish(true));
+  // A finger lifted from a two-finger scroll only ends it when it was the last one; any other
+  // pointer that is not the one drawing changes nothing.
+  const onUp = (cancelled) => (event) => {
+    const g = state.gesture;
+    fingers.delete(event.pointerId);
+    if (g && g.kind === "fingers") {
+      if (fingers.size === 0) state.gesture = null;
+      else g.lastY = middleY();
+      return;
+    }
+    if (g && g.id !== undefined && g.id !== event.pointerId) return;
+    finish(cancelled);
+  };
+  surface.addEventListener("pointerup", onUp(false));
+  surface.addEventListener("pointercancel", onUp(true));
   // A page that is not a place to be drawn on (a long press, a context menu) must not start a gesture.
   surface.addEventListener("contextmenu", (event) => event.preventDefault());
 
