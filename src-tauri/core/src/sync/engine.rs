@@ -114,6 +114,11 @@ fn base_path(pair: &Pair) -> PathBuf {
     pair.root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(pair.peer_key)[..16]))
 }
 
+/// The folder colours file as both devices had it after the last sync (settings_merge.rs).
+fn settings_base_path(root: &Path, peer_key: &[u8; KEY_LEN]) -> PathBuf {
+    root.join(BASE_DIR).join(format!("sync-settings-{}.json", &hex::encode(peer_key)[..16]))
+}
+
 fn tree_path(root: &Path, peer_key: &[u8; KEY_LEN]) -> PathBuf {
     root.join(BASE_DIR).join(format!("sync-tree-{}.txt", &hex::encode(peer_key)[..16]))
 }
@@ -143,6 +148,7 @@ pub fn forget_base(root: &Path, peer_key: &[u8; KEY_LEN]) {
     let path = root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(peer_key)[..16]));
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(tree_path(root, peer_key));
+    let _ = fs::remove_file(settings_base_path(root, peer_key));
 }
 
 /// Whether this device has synced with that device in this vault before.
@@ -304,6 +310,12 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
         }
     }
     save_base(pair, &same)?;
+    // The colours file both devices now have, for the next merge (settings_merge.rs).
+    if same.files.contains_key(SETTINGS_FILE) {
+        if let Some(text) = read_small(&pair.root.join(SETTINGS_FILE)) {
+            write_atomic(&settings_base_path(pair.root, pair.peer_key), &text)?;
+        }
+    }
     // Files that came back are taken off the "removed to free space" list.
     keep::still_removed(pair.root, &local);
     // What the other device has, kept for the page list and the rename check (keep.rs).
@@ -352,6 +364,10 @@ fn get_there<S: Read + Write>(channel: &mut Channel<S>, path: &str, hash: &str) 
 
 fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Action, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
     match action {
+        // The folder colours file on both sides is merged folder by folder, not copied whole.
+        Action::Push { path } | Action::Pull { path } if path == SETTINGS_FILE && local.files.contains_key(path) && remote.files.contains_key(path) => {
+            merge_settings(channel, pair, matches!(action, Action::Push { .. }), local, remote, report)
+        }
         Action::Push { path } => {
             let mine = state(local, path)?;
             let expect = remote.files.get(path).map_or(Expect::Absent, |s| Expect::Hash(&s.hash));
@@ -391,6 +407,42 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
         }
         Action::Conflict { path, copy, winner } => conflict(channel, pair, path, copy, *winner, local, remote, report),
     }
+}
+
+/// Merges the two folder colours files (settings_merge.rs), writes the result here and there.
+/// A file that cannot be merged falls back to the old rule: the newer one wins whole.
+fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, local_wins: bool, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
+    let (mine, theirs) = (state(local, SETTINGS_FILE)?, state(remote, SETTINGS_FILE)?);
+    let Some(here) = files::read_expected(pair.root, SETTINGS_FILE, &mine.hash)? else {
+        report.left_for_next += 1;
+        return Ok(());
+    };
+    let Some(there) = get_there(channel, SETTINGS_FILE, &theirs.hash)? else {
+        report.left_for_next += 1;
+        return Ok(());
+    };
+    let base = read_small(&settings_base_path(pair.root, pair.peer_key));
+    let merged = super::settings_merge::merge(base.as_deref(), &here, &there, local_wins).unwrap_or_else(|| if local_wins { here.clone() } else { there.clone() });
+    if merged != here {
+        match files::put(pair.root, SETTINGS_FILE, Expect::Hash(&mine.hash), &merged, None)? {
+            Done::Applied => report.received += 1,
+            Done::Changed => {
+                report.left_for_next += 1;
+                return Ok(());
+            }
+        }
+    }
+    if merged != there {
+        let kind = put_there(channel, SETTINGS_FILE, Expect::Hash(&theirs.hash), &merged)?;
+        count(report, kind, |r| r.sent += 1)?;
+    }
+    Ok(())
+}
+
+/// A small file kept by the sync, or `None` when it is missing or too big to be one.
+fn read_small(path: &Path) -> Option<Vec<u8>> {
+    let meta = fs::symlink_metadata(path).ok()?;
+    (meta.is_file() && meta.len() <= 4 * 1024 * 1024).then(|| fs::read(path).ok()).flatten()
 }
 
 /// Both sides changed the file. The older version is saved as `copy` here first (so it exists

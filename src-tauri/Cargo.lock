@@ -3340,6 +3340,7 @@ dependencies = [
  "hmac",
  "if-addrs",
  "pbkdf2",
+ "serde_json",
  "sha2",
  "snow",
  "spake2",

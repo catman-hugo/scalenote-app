@@ -294,3 +294,29 @@ fn an_older_app_reads_removed_files_as_left_out_and_newer_ones_read_the_choices(
     escape.extend_from_slice(b"/keep t ../outside\n");
     assert!(decode_listing_full(&escape).is_err());
 }
+
+#[test]
+fn folder_colours_from_both_devices_are_kept_after_a_sync_from_either_side() {
+    let p = setup("colours");
+    let colours = |icons: &str| format!("{{\"format\":1,\"icons\":{{{icons}}}}}");
+    write(&p.va.0, ".scalenote/folder-icons.json", &colours(r#""Cytology":{"style":"folder","colour":"blue"},"Histology":{"style":"folder","colour":"green"}"#));
+    write(&p.va.0, "Cytology/Lesson 1.md", "cells");
+    // Bob's file is newer and has none of Alice's colours: it used to win whole.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    write(&p.vb.0, ".scalenote/folder-icons.json", &colours(r#""Immunology":{"style":"notebook","colour":"red"}"#));
+    sync(&p);
+    let read = |root: &Path| fs::read_to_string(root.join(".scalenote/folder-icons.json")).expect("colours");
+    for root in [&p.va.0, &p.vb.0] {
+        let text = read(root);
+        for name in ["Cytology", "Histology", "Immunology"] {
+            assert!(text.contains(name), "{name} lost: {text}");
+        }
+    }
+    assert_eq!(read(&p.va.0), read(&p.vb.0));
+    // Later Bob removes a colour; that removal comes through (the last synced file is known).
+    write(&p.vb.0, ".scalenote/folder-icons.json", &colours(r#""Cytology":{"style":"folder","colour":"blue"},"Immunology":{"style":"notebook","colour":"red"}"#));
+    sync(&p);
+    assert!(!read(&p.va.0).contains("Histology"));
+    assert!(read(&p.va.0).contains("Cytology"));
+    assert_eq!(sync_from_bob(&p).changed(), 0);
+}
