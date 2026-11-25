@@ -371,3 +371,30 @@ fn switching_a_folder_off_frees_what_another_device_has_and_back_on_brings_it_wi
     assert!(keep::choices(&p.va.0).is_empty());
     assert_eq!(sync(&p).received, 1);
 }
+
+#[test]
+fn a_page_changed_on_both_devices_in_different_places_is_joined_and_a_clash_keeps_both() {
+    let p = setup("join");
+    write(&p.vb.0, "Cells.md", "Cells have a membrane.\nThe nucleus holds DNA.\n");
+    sync(&p);
+    write(&p.va.0, "Cells.md", "Cells have a thin membrane.\nThe nucleus holds DNA.\n");
+    write(&p.vb.0, "Cells.md", "Cells have a membrane.\nThe nucleus holds the DNA.\n");
+    let report = sync(&p);
+    assert_eq!((report.merged, report.conflicts), (1, 0));
+    let joined = "Cells have a thin membrane.\nThe nucleus holds the DNA.\n";
+    assert_eq!(fs::read_to_string(p.va.0.join("Cells.md")).expect("alice"), joined);
+    assert_eq!(fs::read_to_string(p.vb.0.join("Cells.md")).expect("bob"), joined);
+    assert_eq!(names(&p.va.0), ["Cells.md"], "no conflict copy");
+    // The joined text is now what both had last: the next edits join against it.
+    write(&p.va.0, "Cells.md", "Cells have a thin membrane.\nThe nucleus holds the DNA.\nMitochondria make energy.\n");
+    write(&p.vb.0, "Cells.md", "Animal cells have a thin membrane.\nThe nucleus holds the DNA.\n");
+    assert_eq!(sync(&p).merged, 1);
+    assert_eq!(fs::read_to_string(p.vb.0.join("Cells.md")).expect("bob"), "Animal cells have a thin membrane.\nThe nucleus holds the DNA.\nMitochondria make energy.\n");
+    // Both changing the same words still keeps both versions.
+    write(&p.va.0, "Cells.md", "Plant cells have a thin membrane.\n");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    write(&p.vb.0, "Cells.md", "Animal cells have a wall.\n");
+    let report = sync(&p);
+    assert_eq!((report.merged, report.conflicts), (0, 1));
+    assert_eq!(names(&p.va.0).len(), 2, "the page and its conflict copy");
+}

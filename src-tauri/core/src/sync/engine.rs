@@ -82,6 +82,8 @@ pub struct Report {
     pub deleted_here: usize,
     pub deleted_there: usize,
     pub conflicts: usize,
+    /// Pages changed on both sides whose changes were joined into one text (textmerge.rs).
+    pub merged: usize,
     /// The names of the conflict copies made, so the interface can offer to review them.
     pub conflict_copies: Vec<String>,
     /// Files that changed while the sync ran and were left for the next one.
@@ -93,7 +95,7 @@ pub struct Report {
 impl Report {
     /// How many files were changed on either side (the "3 changed" of the status line).
     pub fn changed(&self) -> usize {
-        self.sent + self.received + self.deleted_here + self.deleted_there + self.conflicts
+        self.sent + self.received + self.deleted_here + self.deleted_there + self.conflicts + self.merged
     }
 }
 
@@ -149,6 +151,7 @@ pub fn forget_base(root: &Path, peer_key: &[u8; KEY_LEN]) {
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(tree_path(root, peer_key));
     let _ = fs::remove_file(settings_base_path(root, peer_key));
+    super::basetext::forget(root, &hex::encode(peer_key)[..16]);
 }
 
 /// Whether this device has synced with that device in this vault before.
@@ -353,7 +356,10 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
             same.files.insert(path.clone(), state.clone());
         }
     }
+    let before = load_base(pair);
     save_base(pair, &same)?;
+    // The pages both now have alike, for joining edits next time (basetext.rs).
+    super::basetext::update(pair.root, &hex::encode(pair.peer_key)[..16], before.as_ref(), &same)?;
     // The colours file both devices now have, for the next merge (settings_merge.rs).
     if same.files.contains_key(SETTINGS_FILE) {
         if let Some(text) = read_small(&pair.root.join(SETTINGS_FILE)) {
@@ -453,6 +459,13 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
     }
 }
 
+/// The two texts joined against the text both devices had after their last sync, or `None`.
+fn join_texts(pair: &Pair, path: &str, mine: &[u8], theirs: &[u8]) -> Option<Vec<u8>> {
+    let base = super::basetext::read(pair.root, &hex::encode(pair.peer_key)[..16], path)?;
+    let (mine, theirs) = (std::str::from_utf8(mine).ok()?, std::str::from_utf8(theirs).ok()?);
+    crate::textmerge::merge(&base, mine, theirs).map(String::into_bytes)
+}
+
 /// Merges the two folder colours files (settings_merge.rs), writes the result here and there.
 /// A file that cannot be merged falls back to the old rule: the newer one wins whole.
 fn merge_settings<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, local_wins: bool, local: &Manifest, remote: &Manifest, report: &mut Report) -> Result<()> {
@@ -503,6 +516,25 @@ fn conflict<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, path: &str, 
         report.left_for_next += 1;
         return Ok(());
     };
+    // A page changed on both sides is joined word by word when the text both had last is known
+    // and the two changes do not touch the same place (basetext.rs, textmerge.rs).
+    if path.ends_with(".md") {
+        if let Some(merged) = join_texts(pair, path, &mine_bytes, &their_bytes) {
+            if merged != mine_bytes && files::put(pair.root, path, Expect::Hash(&mine.hash), &merged, None)? == Done::Changed {
+                report.left_for_next += 1;
+                return Ok(());
+            }
+            if merged != their_bytes {
+                let kind = put_there(channel, path, Expect::Hash(&theirs.hash), &merged)?;
+                if kind != KIND_OK {
+                    report.left_for_next += 1;
+                    return Ok(());
+                }
+            }
+            report.merged += 1;
+            return Ok(());
+        }
+    }
     let (keep, older, older_modified) = match winner {
         Side::Local => (&mine_bytes, &their_bytes, theirs.modified),
         Side::Remote => (&their_bytes, &mine_bytes, mine.modified),

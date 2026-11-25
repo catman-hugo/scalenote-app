@@ -16,6 +16,7 @@ pub mod files;
 pub mod folders;
 pub mod hex;
 pub mod identity;
+pub mod basetext;
 pub mod keep;
 pub mod networks;
 pub mod settings_merge;
