@@ -2,11 +2,11 @@
 
 A note-taking app that keeps your notes as plain markdown files in a normal folder. It has a block editor, a canvas for drawing with a pen next to the text, and search, tags, links between pages and page history. Because the notes are just files, you can open the same folder in Obsidian and nothing is locked inside the app.
 
-**Status: early test versions (0.5.x). Notes and drawing work. Sync between your own devices is being built: pairing and finding devices exist, but no notes are exchanged yet. The calendar and the study assistant do not exist yet. Keep your own backup of anything you care about.**
+**Status: early test versions (0.5.x). Notes and drawing work. Sync between your own devices works on the same network and over Tailscale. The calendar and the study assistant do not exist yet. Keep your own backup of anything you care about.**
 
 ## Current progress
 
-*Last updated: 2026-11-23 (0.5.9: the canvas can start at the top left, like a page).*
+*Last updated: 2026-11-24 (plan for 0.6 written).*
 
 - **Latest version: 0.5.9**: the canvas can start at the top left, like a page. Before that 0.5.8 (Tailscale sync, a cleaner Settings and per-page options) and 0.5.7, fixes from the first test of sync between a computer and a tablet. Before that 0.5.6 (app lock, zoom, updates from inside the computer app) and 0.5.5 (the home server program). Sync between a computer and a tablet was tried by the owner and works.
 - **Done in 0.5 (sync between your own devices):**
@@ -20,7 +20,7 @@ A note-taking app that keeps your notes as plain markdown files in a normal fold
   - 0.5.8: sync over Tailscale for networks such as eduroam (the address is found and shared by itself), much faster PDF import on phones, a cleaner Settings (devices first on Sync, a Privacy tab, bigger tick boxes), a cover and "Linked from" per page, pages that reopen in the view they were left in, canvas regions that can be moved and resized by a grip, a /canvas block that follows the pen in the split view, and Ctrl P to print.
   - 0.5.7: sync looks for changes every 5 seconds (an edit arrives in about 10 to 15 seconds), pen writing over text keeps its shape on a wider or narrower screen, and the app's log can be copied from About.
   - 0.5.6: an optional app lock (PIN or passcode, fingerprint on Android), each paired device tied to one notes folder, Find in PDF pages added as pictures, narrower PDFs, zoom, Shortcuts and About pages, smaller text on phones, updates from inside the computer app (signed), the phone back button closing Settings and other windows instead of the app, fingers on drawings fixed on Linux, a [setup guide](docs/setup-guide.md) and a [security checklist for all of 0.5](docs/security-checklist-0.5.md).
-- **Next: 0.6**: offline choices per item on the phone and tablet, sharing into ScaleNote from other apps, and quick capture. The detailed plan is not written yet.
+- **Next: 0.6**: choose per folder or page what each device keeps offline (also on computers), a storage page with "Free up space", sharing into ScaleNote from other apps, and quick capture, on Windows, Linux and Android. The plan is in [docs/v0.6-plan.md](docs/v0.6-plan.md); partial sync (0.6.0) comes first.
 - **The 0.5 plan** is in [docs/v0.5-plan.md](docs/v0.5-plan.md). The browser client moved to a later release, the Fedora install check to v0.8.
 - **Not tried on real devices yet:** updating from inside the computer app (first try: 0.5.6 to 0.5.7), automatic sync without pressing Sync now, sync over Tailscale, pen writing on a tablet seen on a computer, the phone back button in Settings, the app lock and fingerprint unlock, the tray and open at login, the home server on a real server, the Android phone syncing, printing and export from the packaged app, selecting PDF text by touch.
 - **Wanted, but after sync:** a list of further features is in [docs/features-to-implement.md](docs/features-to-implement.md).
