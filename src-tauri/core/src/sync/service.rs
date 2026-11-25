@@ -41,8 +41,11 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_EVENTS: usize = 50;
 /// A sync of a big vault can keep the other side busy (making its list) for a while.
 const SYNC_TIMEOUT: Duration = Duration::from_secs(120);
-/// With nothing changed here, a paired device is still synced again after this long.
-const RESYNC_AFTER: Duration = Duration::from_secs(300);
+/// With nothing changed here, a paired device is still synced again after this long, so a change
+/// made on the other device arrives within about half a minute even when that device cannot
+/// start a sync itself (asked for in 0.6.1; it was five minutes). A sync that finds nothing costs
+/// two file lists over the local network.
+const RESYNC_AFTER: Duration = Duration::from_secs(30);
 const TRUST_FILE: &str = "sync-peers.txt";
 /// Which notes folder each paired device belongs to (folders.rs). Never synced.
 const FOLDERS_FILE: &str = "sync-folders.txt";
@@ -256,6 +259,14 @@ fn record(state: &mut State, kind: EventKind, name: &str) {
 }
 
 fn record_changed(state: &mut State, kind: EventKind, name: &str, changed: usize) {
+    // A check every half minute that finds nothing would fill the list with "nothing changed"
+    // lines; the last such line for the same device only gets the new time.
+    if let Some(last) = state.events.last_mut() {
+        if kind == EventKind::Synced && changed == 0 && last.changed == 0 && last.kind == kind && last.name == name {
+            last.when = now_utc();
+            return;
+        }
+    }
     state.events.push(Event { when: now_utc(), kind, name: name.to_string(), changed });
     let extra = state.events.len().saturating_sub(MAX_EVENTS);
     state.events.drain(..extra);
