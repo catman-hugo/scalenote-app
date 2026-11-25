@@ -66,7 +66,7 @@ let failures = 0;
 async function test(name, fn, opts = {}) {
   if (process.env.ONLY_SHOTS) return; // screenshots only (SHOTS_DIR)
   if (process.env.ONLY && !name.includes(process.env.ONLY)) return; // run the tests whose name contains this text
-  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}), ...(opts.hasTouch ? { hasTouch: true } : {}) });
+  const context = await browser.newContext({ viewport: opts.viewport || { width: 1100, height: 760 }, colorScheme: opts.scheme || "light", ...(opts.userAgent ? { userAgent: opts.userAgent } : {}), ...(opts.hasTouch ? { hasTouch: true } : {}), ...(opts.timezoneId ? { timezoneId: opts.timezoneId } : {}) });
   if (opts.settings) await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(opts.settings));
   // Pages that exist before the app starts (the mock reads them when it loads, so this goes first).
   if (opts.files) await context.addInitScript((f) => { window.__seedFiles = f; }, opts.files);
@@ -8296,8 +8296,10 @@ await test("sync: the first sync shows what it would do and changes nothing unti
   assert.deepEqual((await page.evaluate(() => window.__runs)).map((r) => r.approved), [false, true]);
   await page.waitForFunction(() => document.querySelector("#syncLine") && !document.querySelector("#syncLine").hidden && document.querySelector("#syncLine").textContent === "Synced · 3 changed");
   assert.match(await page.textContent("#pairActivity"), /synced with alice-phone, 3 changed/);
-  assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 12:00:00 UTC \(3 changed\)/);
-}, { settings: existingUser({ updates: false }) });
+  // Shown in this device's own time: noon UTC is 13:00 in Amsterdam in winter.
+  assert.match(await page.textContent("#pairList"), /Last sync: 2026-01-01 13:00:00 \(3 changed\)/);
+  assert.doesNotMatch(await page.textContent("#pairActivity"), /UTC/);
+}, { settings: existingUser({ updates: false }), timezoneId: "Europe/Amsterdam" });
 
 await test("the device list shows the last sync time and the device's app version, and says when it is older", async (page) => {
   await page.waitForSelector("#newNote");
@@ -8313,13 +8315,13 @@ await test("the device list shows the last sync time and the device's app versio
   await page.click("#settingsTab-sync");
   await page.waitForSelector("#pairList .pair-version");
   const items = await page.locator("#pairList > *").allTextContents();
-  assert.match(items[0], /Last sync: 2026-01-01 12:00:00 UTC(?! \()/, "no '0 changed' after a restart");
+  assert.match(items[0], /Last sync: 2026-01-01 13:00:00(?! \()/, "no '0 changed' after a restart");
   assert.match(items[0], /App version 0\.5\.4 \(older than this device; update it\)/);
-  assert.match(items[1], /Last sync: 2026-01-02 08:30:00 UTC \(2 changed\)/);
+  assert.match(items[1], /Last sync: 2026-01-02 09:30:00 \(2 changed\)/);
   assert.match(items[1], /App version 0\.5\.5(?! \()/);
   assert.match(items[2], /Not synced yet/);
   assert.doesNotMatch(items[2], /App version/);
-}, { settings: existingUser({ updates: false }) });
+}, { settings: existingUser({ updates: false }), timezoneId: "Europe/Amsterdam" });
 
 await test("each paired device shows the notes folder it belongs to; one tied to another folder can be moved here with two presses", async (page) => {
   await page.waitForSelector("#newNote");
@@ -9517,6 +9519,8 @@ await test("This device: Reset to defaults needs a second press, restores the lo
   await page.click('#settings .mode-option[data-mode="light"]');
   await page.click('#settings .theme-card[data-theme="sepia"]');
   await page.click('#settings [role="tab"][id="settingsTab-device"]');
+  // A divider sits right before Reset, after the app lock.
+  assert.equal(await page.evaluate(() => document.getElementById("settingsReset").previousElementSibling.className), "setting-divider");
   await page.click("#settingsReset");
   assert.equal(await page.textContent("#settingsReset"), "Press again to reset");
   assert.equal(await page.evaluate(() => document.documentElement.getAttribute("data-theme")), "sepia", "one press changes nothing");

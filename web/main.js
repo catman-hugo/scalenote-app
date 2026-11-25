@@ -817,7 +817,10 @@ function deviceSettingsRows() {
     showToast(s.resetDone);
   });
   const resetHint = textElement("p", s.resetHint, "setting-hint");
-  return [row, hint, ...keepRows, lockRows, reset, resetHint];
+  // A line between the app lock and Reset, so the two parts read as separate.
+  const divider = document.createElement("hr");
+  divider.className = "setting-divider";
+  return [row, hint, ...keepRows, lockRows, divider, reset, resetHint];
 }
 
 function syncSettingsRows() {
