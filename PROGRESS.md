@@ -2,9 +2,18 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-25; 0.6.3 built (offline choices in the app); sharing with other people planned as 0.6.4; 0.6.2 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-25; 0.6.4 in progress (sharing with other people; slice 1 of 8 built); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
-## 0.6.3: built (offline choices in the app)
+## 0.6.4: in progress (sharing pages and folders with other people)
+
+Branch `feature/v0.6.4-sharing`, no pull request yet. Build plan in slices: `docs/v0.6.4-sharing.md`.
+
+Done:
+- Slice 1, joining edits word by word: `core/src/textmerge.rs` (three-way merge on words, spaces and single marks, Myers' method; gives up when both changed the same place) and `core/src/sync/basetext.rs` (the text of each page as both devices had it after their last sync, `.scalenote/sync-text-<device>/`). `engine::conflict` tries joining first for pages; only a clash keeps both versions. `Report.merged`, shown as "N pages were changed on both devices; the changes were joined." Tests: `textmerge` unit tests and a two-service sync test (`a_page_changed_on_both_devices_in_different_places_is_joined_and_a_clash_keeps_both`).
+
+Next: slice 2 (your name and people nearby), see the plan.
+
+## 0.6.3: released (offline choices in the app)
 
 Branch `feature/v0.6.3-offline-choices`. Release notes `docs/release-notes/0.6.3.md`; security checklist `docs/security-checklist-0.6.3.md`. Plan: `docs/v0.6-plan.md`.
 
