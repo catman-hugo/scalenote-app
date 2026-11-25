@@ -51,7 +51,7 @@ After that, the devices sync by themselves while both are on and can see each ot
 
 ### Without Wi-Fi or internet: a hotspot or a cable
 
-Sync never needs the internet. The devices only have to be on one network together, and you can make that network yourself, for example at school where eduroam keeps devices apart, on a train, or with no connection at all.
+Sync never needs the internet. The devices only have to be on one network together, and you can make that network yourself, for example on a school network that keeps devices apart, on a train, or with no connection at all.
 
 - **Hotspot from the phone.** Turn on the phone's hotspot (mobile data can be off) and join it on the laptop. Then open ScaleNote on both. They find each other as at home.
 - **Hotspot from the laptop.** On Linux, turn on the Wi-Fi hotspot in the network settings; on Windows, Settings, Network, Mobile hotspot (Windows may only offer it while it is connected itself). Join it on the phone or tablet.

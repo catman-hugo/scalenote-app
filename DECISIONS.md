@@ -823,8 +823,8 @@ Result (same day). The phone's log showed the JPEG step taking about 5 seconds a
 
 ## 2026-11-20: Sync over Tailscale finds the address by itself
 
-Context. Sync works on home Wi-Fi but not on eduroam: such networks keep devices apart and drop the discovery messages. ScaleNote has no central server, so the plan names Tailscale (or a typed address) for this.
-Decision. Each device detects its own Tailscale address (100.64.0.0/10 on Tailscale's connection, not any 100.64 address, because mobile networks use that range too) and sends it in the greeting after each sync. The other device keeps it per paired device and tries it when the device is not found on the network, so devices that synced once at home keep syncing on eduroam with nothing typed. The address is shown in Settings, Sync and with the pairing code, so pairing from elsewhere is possible by typing it. A kept address is only accepted from a paired device and only in the Tailscale range; the connection is the same encrypted, key-checked channel as at home.
+Context. Sync works on home Wi-Fi but not on school and public networks that keep devices apart and drop the discovery messages. ScaleNote has no central server, so the plan names Tailscale (or a typed address) for this.
+Decision. Each device detects its own Tailscale address (100.64.0.0/10 on Tailscale's connection, not any 100.64 address, because mobile networks use that range too) and sends it in the greeting after each sync. The other device keeps it per paired device and tries it when the device is not found on the network, so devices that synced once at home keep syncing on a network that keeps devices apart, with nothing typed. The address is shown in Settings, Sync and with the pairing code, so pairing from elsewhere is possible by typing it. A kept address is only accepted from a paired device and only in the Tailscale range; the connection is the same encrypted, key-checked channel as at home.
 Cost. One more small file of addresses. The greeting now has extra words after the version; 0.5.6 reads the whole text as the version, finds it invalid and shows no version for a 0.5.7 device until it is updated.
 
 ## 2026-11-20: Cover, "Linked from" and the view are per page
@@ -859,6 +859,12 @@ Cost. A small extra section in the file list. Apps before 0.6 can still send a d
 
 ## 2026-11-25: Sync over a hotspot or cable, not Bluetooth
 
-Context. The owner wants to sync two devices that are close together without shared Wi-Fi or internet (eduroam, travel, no connection).
+Context. The owner wants to sync two devices that are close together without shared Wi-Fi or internet (school networks, travel, no connection).
 Decision. A hotspot (from the phone or the laptop), USB tethering or a cable makes a local network, and sync already works on any local network. 0.6.1 makes sure the device that makes the hotspot announces itself on it, and lets "Wi-Fi only" allow such networks. Bluetooth is not built: real speeds of a few hundred KB per second, and separate native code with its own pairing for Android, Windows and Linux, for something a hotspot or cable already does at full speed. Wi-Fi Direct is not built either: realistic only between two Android devices.
 Cost. The person turns on a hotspot or plugs in a cable; nothing is automatic. The discovery note is sent once more per local network each second.
+
+## 2026-11-25: PDFs: warn instead of refuse
+
+Context. "Pages as images" refused PDFs over 100 pages and every PDF over 25 MB. Both were safety guesses from when a page took about 5 seconds on a phone.
+Decision. No page limit: a long PDF (over 100 pages or over 100 MB of pictures) is asked about first, with the guessed space. The file limit goes to 64 MB, with a size line above 25 MB. 64 MB stays a hard limit because it is the largest file sync sends (a bigger PDF would never reach the other devices) and because the whole file travels to the interface as one text. Going past it means sending files in parts, in sync and in the interface.
+Cost. A very long PDF as pictures can fill a phone; the question says how much before anything is made.
