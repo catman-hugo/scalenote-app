@@ -89,6 +89,7 @@ impl Vault {
         if !is_folder && !(meta.is_file() && has_md_extension(&name)) {
             return Err(VaultError::NotANote);
         }
+        self.check_all_here(relative)?;
         let from = match relative.rfind('/') {
             Some(at) => relative[..at].to_string(),
             None => String::new(),

@@ -15,11 +15,19 @@
 //!
 //! The saved list sits inside the vault (`.scalenote/sync-base-<device>.txt`), so a person who
 //! switches to another vault folder gets that folder's own history with the device.
+//!
+//! Since 0.6 a device may keep only part of the vault (keep.rs). Both sides' choices go into the
+//! plan as "left out" names, so a file that a device does not have by choice is never copied to
+//! it and never taken for a deleted file. After each sync the other device's list is saved too
+//! (`.scalenote/sync-tree-<device>.txt`): what exists elsewhere, for the page list and for the
+//! check before a folder with missing files is renamed or moved.
 
 use super::channel::Channel;
 use super::exchange::*;
+use super::exchange::Listing;
 use super::files::{self, Done, Expect, MAX_TRANSFER_BYTES};
 use super::identity::KEY_LEN;
+use super::keep;
 use super::manifest::{FileState, Manifest};
 use super::plan::{conflict_name, make_plan, Action, Plan, PlanInput, PlanSummary, Side};
 use super::{hex, Result, SyncError};
@@ -57,6 +65,9 @@ pub struct Preview {
     /// Files left out on this side / on the other side (too big, links, odd names).
     pub skipped_here: usize,
     pub skipped_there: usize,
+    /// Files left alone because this device / the other device does not keep them (0.6).
+    pub not_kept_here: usize,
+    pub not_kept_there: usize,
     /// Files bigger than one transfer takes; reported and not moved.
     pub too_big: Vec<String>,
     /// File names for the preview (the actions, with sizes), capped for display.
@@ -103,6 +114,10 @@ fn base_path(pair: &Pair) -> PathBuf {
     pair.root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(pair.peer_key)[..16]))
 }
 
+fn tree_path(root: &Path, peer_key: &[u8; KEY_LEN]) -> PathBuf {
+    root.join(BASE_DIR).join(format!("sync-tree-{}.txt", &hex::encode(peer_key)[..16]))
+}
+
 /// The saved list for this device. A missing or damaged file is "no list": the safe reading,
 /// because without a list the planner never deletes anything.
 fn load_base(pair: &Pair) -> Option<Manifest> {
@@ -127,6 +142,7 @@ fn save_base(pair: &Pair, manifest: &Manifest) -> Result<()> {
 pub fn forget_base(root: &Path, peer_key: &[u8; KEY_LEN]) {
     let path = root.join(BASE_DIR).join(format!("sync-base-{}.txt", &hex::encode(peer_key)[..16]));
     let _ = fs::remove_file(path);
+    let _ = fs::remove_file(tree_path(root, peer_key));
 }
 
 /// Whether this device has synced with that device in this vault before.
@@ -155,12 +171,12 @@ fn ask<S: Read + Write>(channel: &mut Channel<S>, kind: u8, meta: &[u8], body: &
     Ok(answer)
 }
 
-fn fetch_listing<S: Read + Write>(channel: &mut Channel<S>) -> Result<(Manifest, BTreeSet<String>)> {
+fn fetch_listing<S: Read + Write>(channel: &mut Channel<S>) -> Result<Listing> {
     let answer = ask(channel, KIND_LIST, &[], &[], MAX_LISTING_BYTES)?;
     if answer.kind != KIND_LISTING {
         return Err(SyncError::Damaged("answer to the list request"));
     }
-    decode_listing(&answer.body)
+    decode_listing_full(&answer.body)
 }
 
 fn too_big(manifest: &Manifest, path: &str) -> bool {
@@ -199,9 +215,27 @@ fn finish_plan(mut plan: Plan, local: &Manifest, remote: &Manifest, local_skippe
     (plan, big)
 }
 
-fn preview_from(plan: Plan, big: Vec<String>, first: bool, local: &Manifest, remote: &Manifest, skipped_here: usize, skipped_there: usize) -> Preview {
+struct Counts {
+    skipped_here: usize,
+    skipped_there: usize,
+    not_kept_here: usize,
+    not_kept_there: usize,
+}
+
+fn preview_from(plan: Plan, big: Vec<String>, first: bool, local: &Manifest, remote: &Manifest, counts: Counts) -> Preview {
     let summary = plan.summary();
-    Preview { plan, summary, first, skipped_here, skipped_there, too_big: big, files_here: local.files.len(), files_there: remote.files.len() }
+    Preview {
+        plan,
+        summary,
+        first,
+        skipped_here: counts.skipped_here,
+        skipped_there: counts.skipped_there,
+        not_kept_here: counts.not_kept_here,
+        not_kept_there: counts.not_kept_there,
+        too_big: big,
+        files_here: local.files.len(),
+        files_there: remote.files.len(),
+    }
 }
 
 /// What a sync would do. Changes nothing, here or there.
@@ -212,24 +246,33 @@ pub fn compare<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result
 }
 
 fn make_preview<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<(Preview, Manifest, Manifest)> {
-    let scan = Manifest::scan(pair.root)?;
-    let local_skipped: BTreeSet<String> = scan.skipped.iter().map(|s| s.path.clone()).collect();
-    let (remote, remote_skipped) = fetch_listing(channel)?;
+    let here = own_listing(pair.root)?;
+    let there = fetch_listing(channel)?;
     let base = load_base(pair);
     let first = base.is_none();
     let empty = Manifest::default();
+    let base = base.as_ref().unwrap_or(&empty);
+    // What each side does not have by choice. Removed files the other side reports are left
+    // alone as well: its own saved list may still have them, and they are not deleted.
+    let all = || base.files.keys().chain(here.manifest.files.keys()).chain(there.manifest.files.keys());
+    let out_here = keep::left_out(&here.rules, &here.manifest, base, all());
+    let mut out_there = keep::left_out(&there.rules, &there.manifest, base, all());
+    out_there.extend(there.not_kept.iter().filter(|p| !there.manifest.files.contains_key(*p)).cloned());
+    let local_skipped: BTreeSet<String> = here.skipped.union(&out_here).cloned().collect();
+    let remote_skipped: BTreeSet<String> = there.skipped.union(&out_there).cloned().collect();
     let plan = make_plan(&PlanInput {
-        base: base.as_ref().unwrap_or(&empty),
-        local: &scan.manifest,
-        remote: &remote,
+        base,
+        local: &here.manifest,
+        remote: &there.manifest,
         local_skipped: &local_skipped,
         remote_skipped: &remote_skipped,
         device: pair.peer_name,
         date: pair.today,
     });
-    let (plan, big) = finish_plan(plan, &scan.manifest, &remote, &local_skipped, &remote_skipped, pair);
-    let preview = preview_from(plan, big, first, &scan.manifest, &remote, local_skipped.len(), remote_skipped.len());
-    Ok((preview, scan.manifest, remote))
+    let (plan, big) = finish_plan(plan, &here.manifest, &there.manifest, &local_skipped, &remote_skipped, pair);
+    let counts = Counts { skipped_here: here.skipped.len(), skipped_there: there.skipped.len(), not_kept_here: out_here.len(), not_kept_there: out_there.len() };
+    let preview = preview_from(plan, big, first, &here.manifest, &there.manifest, counts);
+    Ok((preview, here.manifest, there.manifest))
 }
 
 /// Does the sync. On a first sync with this device nothing is changed unless `approved`.
@@ -253,7 +296,7 @@ pub fn run<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, approved: boo
 /// After the actions: list both sides again and save what is now the same on both.
 fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> {
     let local = Manifest::scan(pair.root)?.manifest;
-    let (remote, _) = fetch_listing(channel)?;
+    let remote = fetch_listing(channel)?.manifest;
     let mut same = Manifest::default();
     for (path, state) in &local.files {
         if remote.files.get(path).is_some_and(|other| other.same_content(state)) {
@@ -261,6 +304,10 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
         }
     }
     save_base(pair, &same)?;
+    // Files that came back are taken off the "removed to free space" list.
+    keep::still_removed(pair.root, &local);
+    // What the other device has, kept for the page list and the rename check (keep.rs).
+    write_atomic(&tree_path(pair.root, pair.peer_key), remote.to_text().as_bytes())?;
     send_blob(channel, KIND_BYE, &[], &[])
 }
 
