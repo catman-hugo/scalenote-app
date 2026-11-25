@@ -16,7 +16,7 @@ Done:
 - App commands `offline_get`, `offline_set`, `offline_fetch` (`src-tauri/src/lib.rs`, only compiled by CI). Cloud icon in `web/icons.js`.
 - Version 0.6.3.
 
-Tried here: `cargo test -p scalenote-core`, `npm test`, and the browser tests after `npm run build` (counts in the pull request).
+Tried here: `cargo test -p scalenote-core`, `npm test`, and the browser tests after `npm run build` (all passed: 298 core unit tests, 18 integration tests, 334 unit tests, every browser test).
 
 Not done / untried:
 - On a device: everything above.

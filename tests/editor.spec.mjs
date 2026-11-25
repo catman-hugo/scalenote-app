@@ -9505,8 +9505,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /No page limit for PDFs as pictures/);
-  assert.doesNotMatch(text, /set once more|<!--|-->/);
+  assert.match(text, /Available offline per folder or page/);
+  assert.doesNotMatch(text, /another of your devices already has|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9515,17 +9515,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /No page limit for PDFs as pictures/);
-  assert.doesNotMatch(text, /set once more|<!--/i);
+  assert.match(text, /Available offline per folder or page/);
+  assert.doesNotMatch(text, /another of your devices already has|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Colours that were already lost have to be set once more/);
+  assert.match(text, /only for files another of your devices already has/);
   // These notes are the same for every system: only the hidden short list must stay out.
-  assert.doesNotMatch(text, /<!--|-->|No page limit for PDFs as pictures; asks first/i);
+  assert.doesNotMatch(text, /<!--|-->|Available offline per folder or page\./i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -9534,16 +9534,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /No page limit for PDFs as pictures/);
-  assert.doesNotMatch(text, /set once more/i);
+  assert.match(text, /Available offline per folder or page/);
+  assert.doesNotMatch(text, /another of your devices already has/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /No page limit for PDFs as pictures/);
-  assert.doesNotMatch(text, /set once more/);
+  assert.match(text, /Available offline per folder or page/);
+  assert.doesNotMatch(text, /another of your devices already has/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
