@@ -8158,7 +8158,7 @@ await test("Settings has tabs: Look first, one tab shown at a time, arrow keys m
   await page.click("#openSettings");
   await page.waitForSelector("#settings[open]");
   const names = await page.locator('#settings [role="tab"]').allTextContents();
-  assert.deepEqual(names, ["Look", "Drawing", "Updates", "Sync", "Files", "This device", "Shortcuts", "About", "Privacy"]);
+  assert.deepEqual(names, ["Look", "Drawing", "Updates", "Sync", "Files", "Storage", "This device", "Shortcuts", "About", "Privacy"]);
   assert.equal(await page.getAttribute('#settingsTab-look', "aria-selected"), "true");
   assert.equal(await page.locator('#settings .settings-body:visible').count(), 1, "one tab shown at a time");
   assert.equal(await page.locator("#settings h2").textContent(), "Look");
@@ -8761,7 +8761,7 @@ await test("on a phone Settings is a full-screen list of groups, each opening as
     return { left: d.left, right: d.right, top: d.top, bottom: d.bottom, w: d.width, vw: innerWidth, vh: innerHeight, stacked: rows.every((b, i) => i === 0 || b.top >= rows[i - 1].bottom - 1), count: rows.length, fullWidth: rows.every((b) => b.width > innerWidth * 0.8) };
   });
   assert.ok(r.left >= 0 && r.right <= r.vw && r.bottom <= r.vh + 1 && r.w >= r.vw - 1, JSON.stringify(r));
-  assert.equal(r.count, 9);
+  assert.equal(r.count, 10);
   assert.ok(r.stacked && r.fullWidth, JSON.stringify(r));
   assert.equal(await page.isVisible("#settingsPanel-look"), false);
   if (shots) await page.screenshot({ path: `${shots}/v054-phone-settings-list.png` });
