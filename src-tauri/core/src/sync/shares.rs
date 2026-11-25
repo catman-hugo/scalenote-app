@@ -88,6 +88,9 @@ pub struct Share {
     pub people: BTreeMap<[u8; ID_LEN], Person>,
     pub path: String,
     pub state: State,
+    /// Member: the owner's device has heard the answer. Until then it is sent again when the
+    /// owner's device can be reached (always true for the owner).
+    pub told: bool,
 }
 
 impl Share {
@@ -118,6 +121,7 @@ impl Share {
             "people": people,
             "path": self.path,
             "state": self.state.word(),
+            "told": self.told,
         })
     }
 
@@ -157,12 +161,14 @@ impl Share {
             return None;
         }
         let state = State::from_word(value.get("state")?.as_str()?)?;
-        Some(Share { id, item: item.to_string(), folder, owner, people, path, state })
+        // Missing means told: records only ever lack it when nothing is waiting.
+        let told = value.get("told").and_then(Value::as_bool).unwrap_or(true);
+        Some(Share { id, item: item.to_string(), folder, owner, people, path, state, told })
     }
 }
 
 /// A page or folder name that may be the start of a share: one portable name, not hidden.
-fn item_name_ok(name: &str) -> bool {
+pub(crate) fn item_name_ok(name: &str) -> bool {
     !name.is_empty() && name.len() <= 255 && portable_name(name) && !name.starts_with('.')
 }
 
@@ -260,7 +266,7 @@ impl Shares {
         let mut people = BTreeMap::new();
         people.insert(own_id, Person { name: own.name.clone(), keys: own_keys.iter().take(MAX_KEYS).copied().collect() });
         people.insert(to, Person { name, keys: Vec::new() });
-        self.list.insert(id, Share { id, item: item.to_string(), folder, owner: own_id, people, path: path.to_string(), state: State::Offered });
+        self.list.insert(id, Share { id, item: item.to_string(), folder, owner: own_id, people, path: path.to_string(), state: State::Offered, told: true });
         Ok(id)
     }
 
@@ -312,6 +318,7 @@ impl Shares {
         } else {
             share.state = State::Declined;
         }
+        share.told = false;
         Ok(share)
     }
 
@@ -325,6 +332,31 @@ impl Shares {
         add_keys(person, keys);
         share.state = State::Active;
         Ok(())
+    }
+
+    /// The owner hears that a person said no, or an invitation could not be delivered: that
+    /// person is taken out again, and a share nobody else is in is forgotten.
+    pub fn withdraw(&mut self, id: &[u8; ID_LEN], who: &[u8; ID_LEN]) {
+        let Some(share) = self.list.get_mut(id) else { return };
+        if *who == share.owner {
+            return;
+        }
+        share.people.remove(who);
+        if share.people.len() == 1 && share.state == State::Offered {
+            self.list.remove(id);
+        }
+    }
+
+    /// The member's answer reached the owner's device.
+    pub fn mark_told(&mut self, id: &[u8; ID_LEN]) {
+        if let Some(share) = self.list.get_mut(id) {
+            share.told = true;
+        }
+    }
+
+    /// Invitations waiting for an answer here.
+    pub fn waiting(&self) -> usize {
+        self.list.values().filter(|s| s.state == State::Invited).count()
     }
 
     /// Stops a share (owner) or leaves it (member). Nobody's copy is touched.

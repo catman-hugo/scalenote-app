@@ -465,3 +465,100 @@ fn the_list_of_shares_goes_only_to_devices_that_know_it_and_is_merged_share_by_s
     }
     assert!(names(&p.va.0).is_empty(), "no conflict copies, no pages made");
 }
+
+#[test]
+fn a_person_nearby_is_invited_accepts_and_a_device_that_will_not_be_found_is_not_invited() {
+    use super::shares::State;
+    let port = std::net::UdpSocket::bind("127.0.0.1:0").expect("free port").local_addr().expect("addr").port();
+    let at = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let route = super::discovery::Route { listen: at, join_group: false, send_to: vec![at], interval: std::time::Duration::from_millis(200) };
+    // Rowan has two paired devices (alice, bob); Mila has one, paired with nothing.
+    let p = setup_on("invite", Some(route.clone()));
+    let (dm, vm) = (Dir::new("invite-dm"), Dir::new("invite-vm"));
+    let mila = Service::with_bind(&dm.0, Identity::generate().expect("identity"), "tablet", true, "127.0.0.1", 0).expect("service");
+    mila.set_route(route.clone());
+    mila.set_vault(Some(vm.0.clone()));
+    assert_eq!(mila.status().listening_port, None, "nothing paired and no name: silent");
+    let rowan = p.alice.set_account_name("Rowan").expect("name");
+    let me = mila.set_account_name("Mila").expect("name");
+    assert!(mila.status().listening_port.is_some(), "a name: listens for invitations");
+    mila.set_findable(true).expect("findable");
+    write(&p.va.0, "Biology/Cells.md", "cells");
+    write(&vm.0, "Shared with me/Rowan/Biology/Old.md", "a folder of that name is already here");
+
+    let heard = p.alice.people_nearby(std::time::Duration::from_millis(2500)).expect("listen");
+    let mila_id = heard.iter().find(|person| person.name == "Mila").map(|person| person.account).expect("Mila heard");
+    assert_eq!(Some(mila_id), me.id);
+    let id = p.alice.share_with("Biology", true, &mila_id).expect("invitation delivered");
+    let theirs = mila.shares().expect("list");
+    assert_eq!(theirs.list[&id].state, State::Invited);
+    assert_eq!(theirs.list[&id].path, "Shared with me/Rowan/Biology 2", "an existing folder is not mixed in");
+    let bob_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&p.bob_id).expect("key");
+    assert!(theirs.list[&id].people[&rowan.id.expect("id")].keys.contains(&bob_key), "Rowan's other device is named in the share");
+    assert_eq!(p.alice.shares().expect("list").list[&id].state, State::Offered);
+
+    assert!(mila.answer_invitation(&id, true).expect("answer"), "Rowan's device heard the answer");
+    let mine = mila.shares().expect("list");
+    assert_eq!((mine.list[&id].state, mine.list[&id].told), (State::Active, true));
+    let owner = p.alice.shares().expect("list");
+    assert_eq!(owner.list[&id].state, State::Active);
+    assert!(owner.list[&id].people[&mila_id].keys.len() == 1, "Mila's tablet is in the share");
+    assert!(mila.answer_invitation(&id, false).is_err(), "answered once");
+    // Rowan's other device gets the share with the next syncs of his own devices.
+    sync(&p);
+    sync(&p);
+    assert_eq!(super::shares::Shares::load(&p.vb.0).expect("bob").list[&id].state, State::Active);
+
+    // A second share that Mila declines is forgotten on Rowan's side.
+    write(&p.va.0, "Chemistry.md", "atoms");
+    let second = p.alice.share_with("Chemistry.md", false, &mila_id).expect("second invitation");
+    assert!(mila.answer_invitation(&second, false).expect("answer"));
+    assert!(!p.alice.shares().expect("list").list.contains_key(&second));
+
+    // Someone who was findable and then switched it off takes no invitations.
+    let (dc, vc) = (Dir::new("invite-dc"), Dir::new("invite-vc"));
+    let carol = Service::with_bind(&dc.0, Identity::generate().expect("identity"), "laptop", true, "127.0.0.1", 0).expect("service");
+    carol.set_route(route);
+    carol.set_vault(Some(vc.0.clone()));
+    carol.set_account_name("Carol").expect("name");
+    carol.set_findable(true).expect("findable");
+    let carol_id = p.alice.people_nearby(std::time::Duration::from_millis(2500)).expect("listen").into_iter().find(|person| person.name == "Carol").map(|person| person.account).expect("Carol heard");
+    carol.set_findable(false).expect("not findable");
+    assert!(p.alice.share_with("Chemistry.md", false, &carol_id).is_err());
+    assert!(carol.shares().expect("list").list.is_empty());
+    assert!(!p.alice.shares().expect("list").list.values().any(|s| s.path == "Chemistry.md"), "the undelivered offer is taken back");
+}
+
+#[test]
+fn invitations_and_answers_from_strangers_that_do_not_fit_are_refused_and_change_nothing() {
+    use super::invite::{Answer, Invitation, KIND_INVITE, KIND_INVITE_ANSWER, KIND_INVITE_OK, MAX_PER_MINUTE};
+    let (dm, vm) = (Dir::new("stranger-dm"), Dir::new("stranger-vm"));
+    let mila = Service::with_bind(&dm.0, Identity::generate().expect("identity"), "tablet", true, "127.0.0.1", 0).expect("service");
+    mila.set_vault(Some(vm.0.clone()));
+    let me = mila.set_account_name("Mila").expect("name").id.expect("id");
+    mila.set_findable(true).expect("findable");
+    let port = mila.status().listening_port.expect("listens");
+    let stranger = Identity::generate().expect("identity");
+    let send = |kind: u8, body: Vec<u8>| -> Option<u8> {
+        let stream = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
+        let mut channel = super::channel::Channel::connect(stream, &stranger).ok()?;
+        let mut message = vec![kind];
+        message.extend_from_slice(&body);
+        channel.send(&message).ok()?;
+        channel.recv().ok()?.first().copied()
+    };
+    let invitation = |to| Invitation { id: [5; 16], item: "Notes".to_string(), folder: true, owner: [9; 16], owner_name: "Eve".to_string(), keys: vec![], to, port: 1 };
+    assert_ne!(send(KIND_INVITE, invitation([4; 16]).encode()), Some(KIND_INVITE_OK), "meant for someone else");
+    assert_ne!(send(KIND_INVITE, b"{\"item\":\"../../x\"}".to_vec()), Some(KIND_INVITE_OK));
+    let answer = Answer { id: [5; 16], account: [9; 16], name: "Eve".to_string(), accept: true, keys: vec![] };
+    assert_ne!(send(KIND_INVITE_ANSWER, answer.encode()), Some(KIND_INVITE_OK), "an answer for a share that is not hers");
+    assert!(mila.shares().expect("list").list.is_empty());
+    // A fitting one is taken, but a flood is cut off.
+    assert_eq!(send(KIND_INVITE, invitation(me).encode()), Some(KIND_INVITE_OK));
+    for _ in 0..MAX_PER_MINUTE {
+        send(KIND_INVITE, invitation(me).encode());
+    }
+    assert_ne!(send(KIND_INVITE, invitation(me).encode()), Some(KIND_INVITE_OK), "too many in a minute");
+    assert_eq!(mila.shares().expect("list").list.len(), 1, "the same invitation is kept once");
+    assert!(names(&vm.0).is_empty(), "no file is made by an invitation");
+}

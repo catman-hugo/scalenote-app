@@ -10,6 +10,11 @@
 //! - Nothing happens without a trace: every pairing, refusal and removal is added to a list of
 //!   recent events that the Sync tab shows.
 //! - Limits: 8 connections at a time, 10 seconds for every read and write, small messages only.
+//! - Since 0.6.4 a device that is not paired may also send one invitation to a share, or the
+//!   answer to one (service/sharing.rs, invite.rs); and a device whose person has a name listens
+//!   for those even with nothing paired.
+
+mod sharing;
 
 use super::channel::Channel;
 use super::device::clean_name;
@@ -115,6 +120,12 @@ struct State {
     /// Where each paired device can be reached over Tailscale (tailscale.rs).
     tailscale: AddressBook,
     account: Account,
+    /// People heard nearby by `people_nearby`, by account, to send an invitation to.
+    heard: HashMap<[u8; super::account::ID_LEN], discovery::Person>,
+    /// Where each invitation came from (`ip:port`), to send the answer to.
+    invited_from: HashMap<[u8; super::account::ID_LEN], String>,
+    /// Invitations and answers from devices that are not paired, per minute.
+    limiter: super::invite::Limiter,
 }
 
 #[derive(Default)]
@@ -168,6 +179,8 @@ struct Shared {
     connections: AtomicUsize,
     /// Held for the whole of a sync (either direction), so two syncs never write the same vault.
     session: Mutex<()>,
+    /// Held while the list of shares is read, changed and saved, so two changes never undo each other.
+    shares: Mutex<()>,
 }
 
 struct Listener {
@@ -309,8 +322,8 @@ impl Service {
         let tailscale = AddressBook::load(&tailscale_path);
         let account_path = dir.join(ACCOUNT_FILE);
         let account = Account::load(&account_path);
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account };
-        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, account_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account, heard: HashMap::new(), invited_from: HashMap::new(), limiter: super::invite::Limiter::default() };
+        let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, account_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()), shares: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)
     }
@@ -743,10 +756,14 @@ impl Service {
     /// Sets this person's name (and makes the account id the first time). Paired devices that
     /// have no account yet take it at their next hello.
     pub fn set_account_name(&self, name: &str) -> Result<Account> {
-        let mut state = lock(&self.shared.state);
-        state.account.set_name(name)?;
-        state.account.save(&self.shared.account_path)?;
-        Ok(state.account.clone())
+        let account = {
+            let mut state = lock(&self.shared.state);
+            state.account.set_name(name)?;
+            state.account.save(&self.shared.account_path)?;
+            state.account.clone()
+        };
+        self.refresh()?;
+        Ok(account)
     }
 
     /// Lets people nearby see this person's name (to share with them), or stops it.
@@ -757,7 +774,10 @@ impl Service {
         }
         state.account.findable = findable;
         state.account.save(&self.shared.account_path)?;
-        Ok(state.account.clone())
+        let account = state.account.clone();
+        drop(state);
+        self.refresh()?;
+        Ok(account)
     }
 
     /// The people whose devices let themselves be found on the networks this device is on,
@@ -765,7 +785,12 @@ impl Service {
     pub fn people_nearby(&self, wait: Duration) -> Result<Vec<discovery::Person>> {
         let own = lock(&self.shared.state).account.id;
         let route = lock(&self.shared.route).clone();
-        Ok(discovery::find_people(&route, wait, own.as_ref())?)
+        let people = discovery::find_people(&route, wait, own.as_ref())?;
+        let mut state = lock(&self.shared.state);
+        for person in &people {
+            state.heard.insert(person.account, person.clone());
+        }
+        Ok(people)
     }
 
     /// What a sync with that device would change. Changes nothing on either side.
@@ -961,12 +986,15 @@ impl Service {
 fn announcing(shared: &Shared) -> bool {
     let state = lock(&shared.state);
     let pairing = state.pairing_open && state.codes.is_open(Instant::now());
-    state.enabled && (pairing || (!state.paused && !state.trust.is_empty()))
+    let findable = state.account.findable && state.account.is_set();
+    state.enabled && (pairing || (!state.paused && (!state.trust.is_empty() || findable)))
 }
 
 fn may_listen(shared: &Shared) -> bool {
     let state = lock(&shared.state);
-    should_listen(state.enabled, state.trust.peers().len(), state.pairing_open && state.codes.is_open(Instant::now()))
+    // A person with a name may be sent invitations and answers to them (0.6.4).
+    let sharing = state.account.is_set();
+    should_listen(state.enabled, state.trust.peers().len() + usize::from(sharing), state.pairing_open && state.codes.is_open(Instant::now()))
 }
 
 fn trust_peer(shared: &Shared, peer: Peer) -> Result<()> {
@@ -1122,6 +1150,7 @@ fn handle_connection(shared: &Shared, stream: TcpStream) -> Result<()> {
     stream.set_nodelay(true)?;
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
+    let from_ip = stream.peer_addr().ok().map(|a| a.ip());
     let mut channel = Channel::accept(stream, &shared.identity)?;
     let first = channel.recv()?;
     let remote = *channel.remote();
@@ -1162,6 +1191,9 @@ fn handle_connection(shared: &Shared, stream: TcpStream) -> Result<()> {
             channel.send(&answer)
         }
         Some(kind) if trusted && is_sync_kind(kind) => serve_sync(shared, &mut channel, first, &remote),
+        // Anyone may send an invitation or an answer; sharing.rs decides whether it is taken.
+        Some(super::invite::KIND_INVITE) => sharing::take_invitation(shared, &mut channel, &first[1..], from_ip),
+        Some(super::invite::KIND_INVITE_ANSWER) => sharing::take_answer(shared, &mut channel, &first[1..]),
         _ => {
             // Not paired, or not something a device may ask: say no and hang up.
             let _ = channel.send(&[KIND_REFUSED]);

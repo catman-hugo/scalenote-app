@@ -16,6 +16,7 @@ pub mod files;
 pub mod folders;
 pub mod hex;
 pub mod identity;
+pub mod invite;
 pub mod account;
 pub mod basetext;
 pub mod keep;
