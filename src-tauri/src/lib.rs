@@ -981,6 +981,8 @@ struct ReportReply {
     deleted_here: usize,
     deleted_there: usize,
     conflicts: usize,
+    /// Pages changed on both devices whose changes were joined (0.6.4).
+    merged: usize,
     conflict_copies: Vec<String>,
     left_for_next: usize,
     too_big: Vec<String>,
@@ -994,6 +996,7 @@ fn report_reply(report: Report) -> ReportReply {
         deleted_here: report.deleted_here,
         deleted_there: report.deleted_there,
         conflicts: report.conflicts,
+        merged: report.merged,
         conflict_copies: report.conflict_copies,
         left_for_next: report.left_for_next,
         too_big: report.too_big,

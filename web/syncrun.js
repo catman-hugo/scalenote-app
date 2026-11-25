@@ -183,6 +183,7 @@ export function peerControls(peer, { logProblem, done, paused, wifi = null }) {
       }
       const report = result.report;
       let sentence = reportLine(report, peer.name, text);
+      if (report.merged > 0) sentence += ` ${fill(text.reportMerged, { n: report.merged })}`;
       if (report.conflicts > 0) sentence += ` ${fill(text.reportConflicts, { n: report.conflicts })}`;
       show({ type: "message", text: sentence });
       await done(report);
