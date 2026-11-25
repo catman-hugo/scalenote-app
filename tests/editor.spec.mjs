@@ -5514,6 +5514,38 @@ await test("pinching zooms around the middle of the two fingers, in and out, wit
   assert.equal(await inkAt(page, 250, 200), true, "after zooming out, too");
 }, ctxOpts);
 
+await test("with Finger draws on, two fingers move and zoom the sheet and draw nothing; one finger still draws", async (page) => {
+  await canvasVault(page);
+  await openCanvas(page);
+  await chooseWidth(page, 4);
+  await drawLine(page, [236, 200], [264, 200]);
+  await waitSaved(page);
+  await chooseMore(page, "Finger draws");
+  assert.equal(await inkAt(page, 290, 200), false, "the mark is short to begin with");
+  // The first finger lands and moves a little before the second one comes: that start of a line
+  // must not stay.
+  await touchEvents(page, 21, "pointerdown", 210, 200);
+  await touchEvents(page, 21, "pointermove", 205, 200);
+  await touchEvents(page, 22, "pointerdown", 290, 200);
+  for (let step = 1; step <= 12; step++) {
+    const half = 40 + (80 * step) / 12;
+    await touchEvents(page, 21, "pointermove", 250 - half, 200);
+    await touchEvents(page, 22, "pointermove", 250 + half, 200);
+  }
+  // One finger lifts first; the other one moving on must not start a line either.
+  await touchEvents(page, 22, "pointerup", 370, 200);
+  await touchEvents(page, 21, "pointermove", 140, 220);
+  await touchEvents(page, 21, "pointerup", 140, 220);
+  assert.equal(await inkAt(page, 290, 200) || await inkAt(page, 300, 220), true, "the sheet was zoomed in: the mark is wider now");
+  await page.waitForTimeout(1200);
+  assert.equal((await savedDrawing(page)).strokes.length, 1, "no line was added by the two fingers");
+  await touchEvents(page, 23, "pointerdown", 60, 60);
+  await touchEvents(page, 23, "pointermove", 120, 90);
+  await touchEvents(page, 23, "pointerup", 120, 90);
+  await waitSaved(page);
+  assert.equal((await savedDrawing(page)).strokes.length, 2, "one finger draws again");
+}, { ...ctxOpts, hasTouch: true });
+
 await test("the shape menu opens under its button, shows the shape used last, and closes by choosing, Escape or a press elsewhere", async (page) => {
   await canvasVault(page);
   await openCanvas(page);
@@ -6915,6 +6947,30 @@ await test("a finger moves the page and leaves no mark, unless Finger draws is o
   await waitInkSaved(page);
   // A stroke that crosses blocks is saved as one piece per block it crosses.
   assert.ok((await savedDrawing(page)).ink.length >= 1, "something was drawn");
+}, ctxOpts);
+
+await test("with Finger draws on in the text, two fingers scroll the page and leave no mark", async (page) => {
+  await inkVault(page, null, Array.from({ length: 60 }, (_, i) => `Paragraph number ${i} of a long page.`).join("\n\n") + "\n");
+  await startInk(page);
+  await page.click('.ink-bar [data-action="finger"]');
+  const before = await page.evaluate(() => document.querySelector("#editor").scrollTop);
+  await page.evaluate(() => {
+    const surface = document.querySelector(".ink-surface");
+    const fire = (t, id, x, y) => surface.dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: "touch", isPrimary: id === 31, clientX: x, clientY: y, pressure: 0.5, button: 0, buttons: t === "pointerup" ? 0 : 1, bubbles: true, cancelable: true }));
+    fire("pointerdown", 31, 300, 500);
+    fire("pointermove", 31, 300, 495);
+    fire("pointerdown", 32, 380, 500);
+    for (let y = 480; y >= 200; y -= 20) {
+      fire("pointermove", 31, 300, y);
+      fire("pointermove", 32, 380, y);
+    }
+    fire("pointerup", 31, 300, 200);
+    fire("pointermove", 32, 380, 150);
+    fire("pointerup", 32, 380, 150);
+  });
+  assert.ok((await page.evaluate(() => document.querySelector("#editor").scrollTop)) > before + 150, "the page scrolled");
+  await page.waitForTimeout(1200);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.has("Sketch.md")), false, "nothing was drawn or saved");
 }, ctxOpts);
 
 await test("the eraser removes a stroke, undo brings it back, redo erases it again", async (page) => {

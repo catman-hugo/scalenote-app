@@ -133,6 +133,9 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     editing: null,
     touches: new Map(),
     pinch: null,
+    // With Finger draws on: two fingers on the sheet move and zoom it instead of drawing, until
+    // every finger is lifted (so a finger left behind does not start a line).
+    fingerPinch: false,
     spaceDown: false,
     frame: 0,
     colours: {},
@@ -1064,6 +1067,17 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     } catch {
       // Nothing to do: the events still arrive while the pen is over the sheet.
     }
+    if (event.pointerType === "touch" && state.fingerDraws) {
+      state.touches.set(event.pointerId, localPoint(event));
+      if (state.touches.size >= 2 || state.fingerPinch) {
+        // A second finger: this is a move or a zoom, not drawing. Whatever the first finger
+        // began a moment ago (a line, a move) was not meant, so it is undone.
+        dropFingerGesture();
+        state.fingerPinch = true;
+        beginTouchMove();
+        return;
+      }
+    }
     // A region's grip, or a corner of the selected region, works with any tool and any pointer.
     if (!state.gesture && !state.readOnly && event.button === 0 && regionGesture(event)) return;
     if (event.pointerType === "touch" && !state.fingerDraws) {
@@ -1080,6 +1094,15 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
       return;
     }
     startGesture(event, toolFor(event));
+    scheduleDraw();
+  }
+
+  // Ends, as if cancelled, a gesture a finger started (see fingerPinch).
+  function dropFingerGesture() {
+    const g = state.gesture;
+    if (!g || !state.touches.has(g.id)) return;
+    if (g.kind === "pan") state.gesture = null;
+    else finishGesture(true);
     scheduleDraw();
   }
 
@@ -1112,8 +1135,14 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     } else state.pinch = null;
   }
 
+  // Fingers move and zoom the sheet: always without Finger draws, and with it once two fingers
+  // are down (see fingerPinch).
+  const movesSheet = (event) => event.pointerType === "touch" && (!state.fingerDraws || state.fingerPinch) && state.touches.has(event.pointerId);
+
   function onMove(event) {
-    if (event.pointerType === "touch" && !state.fingerDraws && state.touches.has(event.pointerId)) {
+    // A drawing finger's place is kept, so a second finger can start a pinch from where it is.
+    if (event.pointerType === "touch" && state.fingerDraws && !state.fingerPinch && state.touches.has(event.pointerId)) state.touches.set(event.pointerId, localPoint(event));
+    if (movesSheet(event)) {
       const before = state.touches.get(event.pointerId);
       const now = localPoint(event);
       state.touches.set(event.pointerId, now);
@@ -1186,11 +1215,13 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
   }
 
   function onUp(event) {
-    if (event.pointerType === "touch" && !state.fingerDraws && state.touches.has(event.pointerId)) {
+    if (movesSheet(event)) {
       state.touches.delete(event.pointerId);
+      if (state.touches.size === 0) state.fingerPinch = false;
       beginTouchMove();
       return;
     }
+    if (event.pointerType === "touch") state.touches.delete(event.pointerId);
     const g = state.gesture;
     if (!g || g.id !== event.pointerId) return;
     if (g.kind === "pan") state.gesture = null;
