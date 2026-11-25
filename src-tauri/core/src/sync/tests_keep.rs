@@ -672,3 +672,31 @@ fn a_share_connection_from_a_stranger_or_for_something_outside_the_share_gets_no
     channel.send(&message).expect("send");
     assert_ne!(channel.recv().ok().and_then(|a| a.first().copied()), Some(KIND_INVITE_OK));
 }
+
+#[test]
+fn a_share_is_synced_every_few_seconds_while_its_page_is_open_and_soon_after_a_change_here() {
+    let (p, mila, _dm, vm, _id) = shared_biology("share-often");
+    write(&p.va.0, "Biology/Cells.md", "one");
+    let page = "Shared with me/Rowan/Biology/Cells.md";
+    let wait = |seconds: f32| std::thread::sleep(std::time::Duration::from_secs_f32(seconds));
+    mila.set_open_page(Some(page.to_string()));
+    assert_eq!(mila.share_tick().len(), 1, "never synced: due");
+    assert_eq!(fs::read_to_string(vm.0.join(page)).expect("page"), "one");
+    assert!(mila.share_tick().is_empty(), "just synced: not due");
+    // Rowan types; Mila has the page open, so she sees it within about five seconds.
+    write(&p.va.0, "Biology/Cells.md", "one two");
+    wait(5.2);
+    assert_eq!(mila.share_tick().len(), 1);
+    assert_eq!(fs::read_to_string(vm.0.join(page)).expect("page"), "one two");
+    // With nothing open and nothing changed here, the next round waits for the 30 seconds.
+    mila.set_open_page(None);
+    write(&p.va.0, "Biology/Cells.md", "one two three");
+    wait(5.2);
+    assert!(mila.share_tick().is_empty());
+    // A change here goes out once it has been still for a moment.
+    write(&vm.0, "Shared with me/Rowan/Biology/Mine.md", "mila");
+    wait(2.2);
+    let results = mila.share_tick();
+    assert_eq!(results.len(), 1);
+    assert_eq!(fs::read_to_string(p.va.0.join("Biology/Mine.md")).expect("sent"), "mila");
+}

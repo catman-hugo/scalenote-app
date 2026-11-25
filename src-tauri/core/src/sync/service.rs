@@ -129,6 +129,10 @@ struct State {
     invited_from: HashMap<[u8; super::account::ID_LEN], String>,
     /// Where other people's devices were last reached for a share sync, by device key.
     share_addresses: HashMap<[u8; KEY_LEN], String>,
+    /// When each share was last synced and how its files looked then (sharing.rs, `share_tick`).
+    share_live: HashMap<[u8; super::account::ID_LEN], sharing::ShareLive>,
+    /// The page open in the app now, so the share it is in is synced more often.
+    open_page: Option<String>,
     /// Invitations and answers from devices that are not paired, per minute.
     limiter: super::invite::Limiter,
 }
@@ -327,7 +331,7 @@ impl Service {
         let tailscale = AddressBook::load(&tailscale_path);
         let account_path = dir.join(ACCOUNT_FILE);
         let account = Account::load(&account_path);
-        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account, heard: HashMap::new(), invited_from: HashMap::new(), share_addresses: HashMap::new(), limiter: super::invite::Limiter::default() };
+        let state = State { trust, codes: CodeBook::default(), pairing_open: false, enabled, name: clean_name(name), events: Vec::new(), vault: None, paused: false, wifi_only: HashSet::new(), on_wifi: true, live: HashMap::new(), syncing: None, folders, tailscale, account, heard: HashMap::new(), invited_from: HashMap::new(), share_addresses: HashMap::new(), share_live: HashMap::new(), open_page: None, limiter: super::invite::Limiter::default() };
         let service = Service { shared: Arc::new(Shared { bind_ip, first_port, strict_port, identity, trust_path, folders_path, tailscale_path, account_path, port: std::sync::atomic::AtomicU16::new(0), route: Mutex::new(initial_route(bind_ip)), state: Mutex::new(state), connections: AtomicUsize::new(0), session: Mutex::new(()), shares: Mutex::new(()) }), listener: Mutex::new(None), announcer: Mutex::new(None) };
         service.refresh()?;
         Ok(service)

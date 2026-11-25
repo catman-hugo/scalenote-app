@@ -149,6 +149,35 @@ impl Service {
     }
 }
 
+/// How often the share of the open page is synced.
+pub const SHARE_HOT_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+/// The shortest time between two syncs of a share for a change made here.
+pub const SHARE_SETTLE: std::time::Duration = std::time::Duration::from_secs(2);
+/// How often any other share is synced.
+pub const SHARE_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// When a share was last synced, and the signature of its files then.
+pub struct ShareLive {
+    at: Instant,
+    signature: u64,
+}
+
+/// A cheap number that changes when a file of the share changes here (names, sizes, times).
+fn share_signature(root: &std::path::Path, share: &Share) -> u64 {
+    if share.folder {
+        return super::super::watch::signature(&root.join(&share.path));
+    }
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let stem = share.path.strip_suffix(".md").unwrap_or(&share.path);
+    for file in [share.path.clone(), format!("{stem}.canvas.json")] {
+        if let Ok(meta) = std::fs::metadata(root.join(&file)) {
+            (file, meta.len(), meta.modified().ok()).hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
 /// Whether one more message from a device that is not paired may be taken now.
 fn within_limits(shared: &Shared) -> bool {
     lock(&shared.state).limiter.take(Instant::now())
@@ -236,28 +265,45 @@ impl Service {
         let me = account.id.ok_or(SyncError::Refused("name is empty"))?;
         let root = vault(shared)?;
         let others: Vec<(String, Vec<[u8; KEY_LEN]>)> = share.people.iter().filter(|(who, _)| **who != me).map(|(_, p)| (p.name.clone(), p.keys.clone())).collect();
-        let addresses = self.share_device_addresses(&share);
+        // Where the devices were reached before is tried first; only people none of whose devices
+        // answered there cost a look on the network.
+        let known = self.share_device_addresses(&share, false);
         let mut results = Vec::new();
+        let mut missing = Vec::new();
         for (person, keys) in others {
-            let candidates: Vec<(&[u8; KEY_LEN], &String)> = keys.iter().filter_map(|k| addresses.get(k).map(|a| (k, a))).collect();
-            let mut outcome = Err("not reachable");
-            for (key, address) in candidates {
-                match self.sync_share_with(&share, &root, &account.name, &person, key, address) {
-                    Ok(report) => {
-                        outcome = Ok(report);
-                        break;
-                    }
-                    Err(error) => outcome = Err(error.code()),
-                }
+            let outcome = self.sync_share_person(&share, &root, &account.name, &person, &keys, &known);
+            match outcome {
+                Err("not reachable") => missing.push((person, keys)),
+                outcome => results.push(ShareResult { person, outcome }),
             }
-            results.push(ShareResult { person, outcome });
+        }
+        if !missing.is_empty() {
+            let heard = self.share_device_addresses(&share, true);
+            for (person, keys) in missing {
+                let outcome = self.sync_share_person(&share, &root, &account.name, &person, &keys, &heard);
+                results.push(ShareResult { person, outcome });
+            }
         }
         Ok(results)
     }
 
+    /// Syncs the share with the first device of `person` that answers at an address in `addresses`.
+    fn sync_share_person(&self, share: &Share, root: &std::path::Path, own_name: &str, person: &str, keys: &[[u8; KEY_LEN]], addresses: &std::collections::HashMap<[u8; KEY_LEN], String>) -> std::result::Result<super::super::engine::Report, &'static str> {
+        let mut outcome = Err("not reachable");
+        for key in keys {
+            let Some(address) = addresses.get(key) else { continue };
+            match self.sync_share_with(share, root, own_name, person, key, address) {
+                Ok(report) => return Ok(report),
+                Err(SyncError::Io(_)) | Err(SyncError::Channel(_)) => {}
+                Err(error) => outcome = Err(error.code()),
+            }
+        }
+        outcome
+    }
+
     /// Where the devices of this share's people can be reached: those heard on the network now,
     /// and those reached or heard before.
-    fn share_device_addresses(&self, share: &Share) -> std::collections::HashMap<[u8; KEY_LEN], String> {
+    fn share_device_addresses(&self, share: &Share, look: bool) -> std::collections::HashMap<[u8; KEY_LEN], String> {
         let shared = &self.shared;
         let mut found: std::collections::HashMap<[u8; KEY_LEN], String> = std::collections::HashMap::new();
         {
@@ -274,10 +320,12 @@ impl Service {
                 }
             }
         }
-        let route = lock(&shared.route).clone();
-        if let Ok(heard) = super::discovery::find(&route, super::SHARE_LOOK, shared.identity.public()) {
-            for device in heard {
-                found.insert(device.key, device.address);
+        if look {
+            let route = lock(&shared.route).clone();
+            if let Ok(heard) = super::discovery::find(&route, super::SHARE_LOOK, shared.identity.public()) {
+                for device in heard {
+                    found.insert(device.key, device.address);
+                }
             }
         }
         found
@@ -316,7 +364,56 @@ impl Service {
         }
     }
 
-    /// Syncs every active share. For the automatic rounds.
+    /// Notes which page is open in the app (`None`: none), so its share is synced more often.
+    pub fn set_open_page(&self, path: Option<String>) {
+        lock(&self.shared.state).open_page = path;
+    }
+
+    /// One round of share syncing, called every couple of seconds by the app. A share is synced:
+    /// - while a page in it is open: every `SHARE_HOT_EVERY`, so two people see each other's
+    ///   edits within seconds;
+    /// - when its files here changed and the last sync was at least `SHARE_SETTLE` ago (the app
+    ///   saves a page on a pause in typing, so this follows the pauses);
+    /// - otherwise every `SHARE_EVERY`, like the devices' own sync.
+    /// Answers that the owners' devices have not heard yet are sent again first.
+    pub fn share_tick(&self) -> Vec<ShareResult> {
+        let (root, open) = {
+            let state = lock(&self.shared.state);
+            if !state.enabled || state.paused || !state.account.is_set() {
+                return Vec::new();
+            }
+            let Some(root) = state.vault.clone() else { return Vec::new() };
+            (root, state.open_page.clone())
+        };
+        let Ok(shares) = self.shares() else { return Vec::new() };
+        if shares.list.values().any(|s| !s.told) {
+            self.tell_owners();
+        }
+        let mut results = Vec::new();
+        for share in shares.list.values().filter(|s| s.state == State::Active) {
+            let signature = share_signature(&root, share);
+            let hot = open.as_deref().is_some_and(|page| share.covers(page) || share.path == page);
+            let due = match lock(&self.shared.state).share_live.get(&share.id) {
+                None => true,
+                Some(live) => {
+                    let since = live.at.elapsed();
+                    (live.signature != signature && since >= SHARE_SETTLE) || (hot && since >= SHARE_HOT_EVERY) || since >= SHARE_EVERY
+                }
+            };
+            if !due {
+                continue;
+            }
+            if let Ok(done) = self.sync_share(&share.id) {
+                results.extend(done);
+            }
+            // Noted also after a failed round, so a person who is away is not looked for nonstop.
+            let after = share_signature(&root, share);
+            lock(&self.shared.state).share_live.insert(share.id, ShareLive { at: Instant::now(), signature: after });
+        }
+        results
+    }
+
+    /// Syncs every active share now.
     pub fn sync_shares(&self) -> Vec<ShareResult> {
         let ids: Vec<[u8; ID_LEN]> = match self.shares() {
             Ok(shares) => shares.list.values().filter(|s| s.state == State::Active).map(|s| s.id).collect(),
@@ -364,7 +461,9 @@ pub(super) fn serve_share(shared: &Shared, channel: &mut Channel<TcpStream>, bod
     let keep = |said: &super::super::manifest::Manifest| super::super::engine::keep_share_base(&pair, said);
     let result = super::super::exchange::serve(channel, first, &root, true, super::super::exchange::Scope::Share(&map, &keep));
     drop(guard);
+    let signature = share_signature(&root, &share);
     let mut state = lock(&shared.state);
+    state.share_live.insert(share.id, ShareLive { at: Instant::now(), signature });
     match &result {
         Ok(changed) => record_changed(&mut state, EventKind::Synced, &person, *changed),
         Err(_) => record(&mut state, EventKind::SyncFailed, &person),
