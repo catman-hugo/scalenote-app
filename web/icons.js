@@ -43,6 +43,8 @@ const paths = {
   folderOpen: "M2 13V4.5h4L7.5 6H12v2M2 13l2-5h11l-2 5z",
   // A page or folder that is on another device but not on this one (offline choices, 0.6.3).
   cloud: "M4.5 12.5h7a2.5 2.5 0 0 0 .3-5A3.5 3.5 0 0 0 5 6.3a3 3 0 0 0-.5 6.2z",
+  // Shared with other people (0.6.4): two people.
+  people: "M6 3.5a2 2 0 1 0 0 4a2 2 0 1 0 0-4zM2.5 13c0-2 1.6-3.5 3.5-3.5s3.5 1.5 3.5 3.5M10.5 4a1.8 1.8 0 1 1 0 3.6M11.5 9.6c1.2.3 2 1.6 2 3.4",
 };
 
 export function icon(name, { filled = false } = {}) {

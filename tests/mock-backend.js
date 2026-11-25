@@ -26,7 +26,50 @@
   // Offline choices (0.6.3): the real rules are tested in Rust. Here pages in
   // window.__elsewhere are "on another device"; they are listed until brought.
   const offline = { choices: new Map(), elsewhere: new Map(Object.entries(window.__elsewhere || {})), sets: [] };
+  const account = { id: null, name: "", findable: false };
+  const shares = [];
   const handlers = {
+    share_page_open: ({ path }) => { window.__openPage = path; return null; },
+    // Shares as Rust gives them; tests put invitations in window.__mock.shares.
+    shares_list: () => shares.map((x) => ({ ...x, people: [...x.people] })),
+    share_with: ({ path, folder, person }) => {
+      const who = (window.__peopleNearby || []).find((p) => p.account === person);
+      if (!who) fail("share_not_nearby");
+      if (window.__shareRefused) fail("share_not_taken");
+      let share = shares.find((x) => x.path === path && x.mine && x.state !== "stopped");
+      if (!share) {
+        share = { id: `s${shares.length + 1}`.padEnd(32, "0"), item: path.split("/").pop(), folder, path, state: "offered", mine: true, ownerName: account.name, people: [] };
+        shares.push(share);
+      }
+      share.people.push(who.name);
+      return share.id;
+    },
+    share_answer: ({ id, accept }) => {
+      const share = shares.find((x) => x.id === id);
+      if (!share || share.state !== "invited") fail("share_gone");
+      share.state = accept ? "active" : "declined";
+      return !window.__ownerAway;
+    },
+    share_end: ({ id }) => {
+      const share = shares.find((x) => x.id === id);
+      if (!share) fail("share_gone");
+      share.state = share.mine ? "stopped" : "left";
+      return null;
+    },
+    account_get: () => ({ ...account }),
+    account_set_name: ({ name }) => {
+      const clean = String(name).replace(/\s+/g, " ").trim().slice(0, 40);
+      if (!clean) fail("account_name_empty");
+      account.name = clean;
+      account.id = account.id || "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+      return { ...account };
+    },
+    account_set_findable: ({ findable }) => {
+      if (findable && !account.name) fail("account_name_empty");
+      account.findable = Boolean(findable);
+      return { ...account };
+    },
+    people_nearby: () => window.__peopleNearby || [],
     offline_get: () => ({
       choices: [...offline.choices].map(([path, kinds]) => ({ path, kinds })),
       notHere: [...offline.elsewhere.keys()].filter((p) => !files.has(p)),
@@ -508,5 +551,7 @@
     },
   };
   window.__mock = {
-    offline, emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
+    offline,
+    account,
+    shares, emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();

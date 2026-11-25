@@ -249,13 +249,27 @@ fn create_folder(parent: String, name: String, state: State<AppState>) -> Result
 
 #[tauri::command]
 fn rename_entry(path: String, new_name: String, state: State<AppState>) -> Result<String, String> {
-    with_vault(&state, "rename", |vault| vault.rename(&path, &new_name))
+    let moved = with_vault(&state, "rename", |vault| vault.rename(&path, &new_name))?;
+    follow_share(&state, &path, &moved);
+    Ok(moved)
+}
+
+/// A shared page or folder that was renamed or moved keeps being shared (0.6.4). Best effort:
+/// if the list of shares cannot be changed, the problem is logged and the move stands.
+fn follow_share(state: &State<AppState>, from: &str, to: &str) {
+    if let Ok(service) = running(&state.sync) {
+        if let Err(error) = service.share_moved(from, to) {
+            state.logger.log(Level::Warn, &format!("a share did not follow a move: {}", error.code()));
+        }
+    }
 }
 
 /// Moves a note or folder into another folder. `new_parent` is "" for the top of the vault.
 #[tauri::command]
 fn move_entry(path: String, new_parent: String, state: State<AppState>) -> Result<String, String> {
-    with_vault(&state, "move", |vault| vault.move_entry(&path, &new_parent))
+    let moved = with_vault(&state, "move", |vault| vault.move_entry(&path, &new_parent))?;
+    follow_share(&state, &path, &moved);
+    Ok(moved)
 }
 
 /// Copies a picture into the vault's `attachments` folder. `data` is the picture as base64
@@ -822,6 +836,142 @@ async fn offline_set(path: String, kinds: Option<String>, state: State<'_, AppSt
         .map_err(|error| sync_failed(&state.logger, "offline choice", error))
 }
 
+/// One share as the interface shows it (sync/shares.rs).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShareReply {
+    id: String,
+    item: String,
+    folder: bool,
+    path: String,
+    /// offered, invited, active, declined, left or stopped.
+    state: &'static str,
+    /// This person shared it (and so may stop it).
+    mine: bool,
+    owner_name: String,
+    /// Everyone else in it, by name.
+    people: Vec<String>,
+}
+
+fn share_reply(share: &scalenote_core::sync::shares::Share, me: Option<[u8; 16]>) -> ShareReply {
+    use scalenote_core::sync::shares::State as S;
+    let state = match share.state {
+        S::Offered => "offered",
+        S::Invited => "invited",
+        S::Active => "active",
+        S::Declined => "declined",
+        S::Left => "left",
+        S::Stopped => "stopped",
+    };
+    ShareReply {
+        id: scalenote_core::sync::hex::encode(&share.id),
+        item: share.item.clone(),
+        folder: share.folder,
+        path: share.path.clone(),
+        state,
+        mine: Some(share.owner) == me,
+        owner_name: share.people.get(&share.owner).map(|p| p.name.clone()).unwrap_or_default(),
+        people: share.people.iter().filter(|(id, _)| Some(**id) != me).map(|(_, p)| p.name.clone()).collect(),
+    }
+}
+
+fn share_id(id: &str) -> Result<[u8; 16], String> {
+    scalenote_core::sync::hex::decode::<16>(id).ok_or_else(|| "invalid_path".to_string())
+}
+
+/// Every share of the open notes folder.
+#[tauri::command]
+fn shares_list(state: State<'_, AppState>) -> Result<Vec<ShareReply>, String> {
+    vault_root(&state)?;
+    let service = running(&state.sync).map_err(|error| sync_failed(&state.logger, "shares", error))?;
+    let me = service.account().id;
+    let shares = service.shares().map_err(|error| sync_failed(&state.logger, "shares", error))?;
+    Ok(shares.list.values().map(|s| share_reply(s, me)).collect())
+}
+
+/// Shares a page or folder with a person heard nearby (`person`: their account id).
+#[tauri::command]
+async fn share_with(path: String, folder: bool, person: String, state: State<'_, AppState>) -> Result<String, String> {
+    lock::refuse_if_locked(&state)?;
+    vault_root(&state)?;
+    let person = share_id(&person)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.share_with(&path, folder, &person))).await?;
+    result.map(|id| scalenote_core::sync::hex::encode(&id)).map_err(|error| sync_failed(&state.logger, "share", error))
+}
+
+/// Accepts or declines an invitation. Returns whether the other person's device heard it now.
+#[tauri::command]
+async fn share_answer(id: String, accept: bool, state: State<'_, AppState>) -> Result<bool, String> {
+    lock::refuse_if_locked(&state)?;
+    let id = share_id(&id)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.answer_invitation(&id, accept))).await?;
+    result.map_err(|error| sync_failed(&state.logger, "share answer", error))
+}
+
+/// Stops sharing (owner) or leaves a share. Every copy stays where it is.
+#[tauri::command]
+fn share_end(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    lock::refuse_if_locked(&state)?;
+    let id = share_id(&id)?;
+    running(&state.sync).and_then(|service| service.end_share(&id)).map_err(|error| sync_failed(&state.logger, "share end", error))
+}
+
+/// The page open now (`None`: none), so the share it is in is synced every few seconds.
+#[tauri::command]
+fn share_page_open(path: Option<String>, state: State<'_, AppState>) {
+    if let Ok(service) = running(&state.sync) {
+        service.set_open_page(path.filter(|p| scalenote_core::sync::manifest::safe_path(p)));
+    }
+}
+
+/// Your name for sharing (sync/account.rs, 0.6.4).
+#[derive(Serialize)]
+struct AccountReply {
+    id: Option<String>,
+    name: String,
+    findable: bool,
+}
+
+fn account_reply(account: scalenote_core::sync::account::Account) -> AccountReply {
+    AccountReply { id: account.id.map(|id| scalenote_core::sync::hex::encode(&id)), name: account.name, findable: account.findable }
+}
+
+#[tauri::command]
+fn account_get(state: State<'_, AppState>) -> Result<AccountReply, String> {
+    running(&state.sync).map(|service| account_reply(service.account())).map_err(|error| sync_failed(&state.logger, "account", error))
+}
+
+#[tauri::command]
+fn account_set_name(name: String, state: State<'_, AppState>) -> Result<AccountReply, String> {
+    lock::refuse_if_locked(&state)?;
+    running(&state.sync).and_then(|service| service.set_account_name(&name)).map(account_reply).map_err(|error| sync_failed(&state.logger, "account name", error))
+}
+
+#[tauri::command]
+fn account_set_findable(findable: bool, state: State<'_, AppState>) -> Result<AccountReply, String> {
+    lock::refuse_if_locked(&state)?;
+    running(&state.sync).and_then(|service| service.set_findable(findable)).map(account_reply).map_err(|error| sync_failed(&state.logger, "account findable", error))
+}
+
+/// A person nearby who can be shared with: their account id and name.
+#[derive(Serialize)]
+struct PersonReply {
+    account: String,
+    name: String,
+}
+
+#[tauri::command]
+async fn people_nearby(state: State<'_, AppState>) -> Result<Vec<PersonReply>, String> {
+    lock::refuse_if_locked(&state)?;
+    let sync = state.sync.clone();
+    let result = blocking(move || running(&sync).and_then(|service| service.people_nearby(std::time::Duration::from_millis(2500)))).await?;
+    result
+        .map(|people| people.into_iter().map(|p| PersonReply { account: scalenote_core::sync::hex::encode(&p.account), name: p.name }).collect())
+        .map_err(|error| sync_failed(&state.logger, "people nearby", error))
+}
+
 /// Brings pages that are not on this device from a paired device that can be reached now.
 #[tauri::command]
 async fn offline_fetch(paths: Vec<String>, state: State<'_, AppState>) -> Result<Vec<String>, String> {
@@ -981,6 +1131,8 @@ struct ReportReply {
     deleted_here: usize,
     deleted_there: usize,
     conflicts: usize,
+    /// Pages changed on both devices whose changes were joined (0.6.4).
+    merged: usize,
     conflict_copies: Vec<String>,
     left_for_next: usize,
     too_big: Vec<String>,
@@ -994,6 +1146,7 @@ fn report_reply(report: Report) -> ReportReply {
         deleted_here: report.deleted_here,
         deleted_there: report.deleted_there,
         conflicts: report.conflicts,
+        merged: report.merged,
         conflict_copies: report.conflict_copies,
         left_for_next: report.left_for_next,
         too_big: report.too_big,
@@ -1155,6 +1308,23 @@ fn start_auto_sync(app: tauri::AppHandle) {
     });
 }
 
+/// Starts the share syncing (0.6.4): every 2 seconds the service decides which shares are due
+/// (see `Service::share_tick`: every 5 seconds for the share of the open page, soon after a
+/// change here, otherwise every 30 seconds). It does nothing without a name or an active share.
+fn start_share_sync(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let state = app.state::<AppState>();
+        let Some(service) = state.sync.service() else { return };
+        for result in service.share_tick() {
+            match result.outcome {
+                Ok(report) => state.logger.log(Level::Info, &format!("share sync done, {} files changed", report.changed())),
+                Err(code) => state.logger.log(Level::Warn, &format!("share sync failed: {code}")),
+            }
+        }
+    });
+}
+
 fn build_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
@@ -1258,9 +1428,19 @@ pub fn run() {
             let state = build_state(app)?;
             app.manage(state);
             start_auto_sync(app.handle().clone());
+            start_share_sync(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            share_page_open,
+            shares_list,
+            share_with,
+            share_answer,
+            share_end,
+            account_get,
+            account_set_name,
+            account_set_findable,
+            people_nearby,
             offline_get,
             offline_set,
             offline_fetch,

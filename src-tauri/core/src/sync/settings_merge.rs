@@ -25,22 +25,35 @@ const FORMAT: u64 = 1;
 const MAX_ENTRIES: usize = 5000;
 
 /// The `icons` of a colours file, or `None` when it is not a file this version may merge.
+#[cfg(test)]
 fn icons_of(text: &[u8]) -> Option<(Map<String, Value>, Map<String, Value>)> {
+    entries_of(text, "icons", MAX_ENTRIES)
+}
+
+/// The object under `field` of a format 1 file, and the rest of the file.
+fn entries_of(text: &[u8], field: &str, max: usize) -> Option<(Map<String, Value>, Map<String, Value>)> {
     let Value::Object(mut whole) = serde_json::from_slice::<Value>(text).ok()? else { return None };
     if whole.get("format").and_then(Value::as_u64) != Some(FORMAT) {
         return None;
     }
-    let Some(Value::Object(icons)) = whole.remove("icons") else { return None };
-    (icons.len() <= MAX_ENTRIES).then_some((whole, icons))
+    let Some(Value::Object(entries)) = whole.remove(field) else { return None };
+    (entries.len() <= max).then_some((whole, entries))
 }
 
 /// Merges the two colours files (see the top of this file). `base` is the file both devices had
 /// after the last sync, if known. `local_wins` says which file is newer. Returns the merged file,
 /// or `None` when one of them cannot be merged (then the newer file wins whole, as before).
 pub fn merge(base: Option<&[u8]>, local: &[u8], remote: &[u8], local_wins: bool) -> Option<Vec<u8>> {
-    let (local_rest, local_icons) = icons_of(local)?;
-    let (remote_rest, remote_icons) = icons_of(remote)?;
-    let base_icons = base.and_then(icons_of).map(|(_, icons)| icons).unwrap_or_default();
+    merge_keyed(base, local, remote, local_wins, "icons", MAX_ENTRIES)
+}
+
+/// The same merge for any format 1 file that keeps its entries in one object under `field`, by
+/// key (since 0.6.4 also the share records, shares.rs): an entry changed on one side since the
+/// last sync takes that change; changed on both, the newer file's entry.
+pub fn merge_keyed(base: Option<&[u8]>, local: &[u8], remote: &[u8], local_wins: bool, field: &str, max: usize) -> Option<Vec<u8>> {
+    let (local_rest, local_icons) = entries_of(local, field, max)?;
+    let (remote_rest, remote_icons) = entries_of(remote, field, max)?;
+    let base_icons = base.and_then(|b| entries_of(b, field, max)).map(|(_, icons)| icons).unwrap_or_default();
     let mut merged = Map::new();
     let keys: std::collections::BTreeSet<&String> = local_icons.keys().chain(remote_icons.keys()).collect();
     for key in keys {
@@ -58,7 +71,7 @@ pub fn merge(base: Option<&[u8]>, local: &[u8], remote: &[u8], local_wins: bool)
             r
         };
         if let Some(value) = chosen {
-            if merged.len() < MAX_ENTRIES {
+            if merged.len() < max {
                 merged.insert(key.clone(), value.clone());
             }
         }
@@ -66,7 +79,7 @@ pub fn merge(base: Option<&[u8]>, local: &[u8], remote: &[u8], local_wins: bool)
     // Anything else in the file is taken from the newer one.
     let mut whole = if local_wins { local_rest } else { remote_rest };
     whole.insert("format".to_string(), Value::from(FORMAT));
-    whole.insert("icons".to_string(), Value::Object(merged));
+    whole.insert(field.to_string(), Value::Object(merged));
     serde_json::to_vec(&Value::Object(whole)).ok()
 }
 

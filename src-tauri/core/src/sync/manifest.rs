@@ -41,6 +41,8 @@ pub const MAX_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
 const HEADER: &str = "scalenote-manifest 1";
 /// The one hidden file that is synced: the colours and icons of folders and pages.
 const SETTINGS_FILE: &str = ".scalenote/folder-icons.json";
+/// The list of shares (shares.rs, 0.6.4), synced between a person's own devices.
+const SHARES_FILE: &str = super::shares::SHARES_FILE;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileState {
@@ -100,12 +102,12 @@ pub fn portable_name(name: &str) -> bool {
 }
 
 /// Whether `path` (with `/` between folders) is a path that may be in a manifest: relative,
-/// made only of portable names, not hidden (except the one settings file), not too long.
+/// made only of portable names, not hidden (except the colours and shares files), not too long.
 pub fn safe_path(path: &str) -> bool {
     if path.is_empty() || path.len() > MAX_PATH_BYTES || path.starts_with('/') {
         return false;
     }
-    if path == SETTINGS_FILE {
+    if path == SETTINGS_FILE || path == SHARES_FILE {
         return true;
     }
     let mut depth = 0;
@@ -175,10 +177,12 @@ impl Manifest {
                 };
                 if name.starts_with('.') {
                     if name == SETTINGS_DIR && meta.is_dir() && prefix.is_empty() {
-                        let settings = entry.path().join("folder-icons.json");
-                        if let Ok(file_meta) = fs::symlink_metadata(&settings) {
-                            if file_meta.is_file() {
-                                Self::add(&mut manifest, &mut skipped, SETTINGS_FILE.to_string(), &settings, &file_meta)?;
+                        for (file, relative) in [("folder-icons.json", SETTINGS_FILE), ("shares.json", SHARES_FILE)] {
+                            let settings = entry.path().join(file);
+                            if let Ok(file_meta) = fs::symlink_metadata(&settings) {
+                                if file_meta.is_file() {
+                                    Self::add(&mut manifest, &mut skipped, relative.to_string(), &settings, &file_meta)?;
+                                }
                             }
                         }
                     }

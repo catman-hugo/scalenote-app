@@ -22,6 +22,7 @@ pub mod search;
 pub mod inbox;
 pub mod server;
 pub mod sync;
+pub mod textmerge;
 pub mod tags;
 pub mod trash;
 pub mod vault;

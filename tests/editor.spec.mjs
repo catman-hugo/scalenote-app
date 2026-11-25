@@ -1770,7 +1770,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Share…", "Delete"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -2063,7 +2063,7 @@ await test("moving the open page keeps what was typed and keeps the page open", 
 await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
   await moveSetup(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Share…", "Delete"]);
   await page.click(".context-menu .menu-item:has-text('Move to')");
   const names = await page.locator(".context-menu .menu-item").allTextContents();
   assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
@@ -2970,7 +2970,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Share…", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
@@ -6049,7 +6049,7 @@ await test("a folder starts with the plain folder icon, and a page offers Colour
   await withFolderAndPage(page);
   assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
   await rightClick(page, "Plan.md");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Share…", "Delete"]);
 }, ctxOpts);
 
 await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
@@ -8201,6 +8201,115 @@ await test("Settings has a Sync tab: on by default, the name is kept clean, and 
   assert.equal(await page.inputValue("#syncName"), "Alices-Phone-2");
 }, { settings: existingUser({ updates: false }) });
 
+await test("Settings, Sync has your name for sharing: finding is off and cannot be turned on until a name is set", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "sync");
+  await page.waitForSelector("#accountName:not([disabled])");
+  assert.equal(await page.inputValue("#accountName"), "");
+  assert.equal(await page.isChecked("#accountFindable"), false, "finding is off by default");
+  assert.equal(await page.isDisabled("#accountFindable"), true, "no name, no finding");
+  // An empty name is refused with a calm sentence, not an error code.
+  await page.fill("#accountName", "   ");
+  await page.dispatchEvent("#accountName", "change");
+  await page.waitForFunction(() => document.querySelector("#accountHint").textContent === "Choose your name first.");
+  await page.fill("#accountName", "  Bob   Example ");
+  await page.dispatchEvent("#accountName", "change");
+  await page.waitForFunction(() => document.querySelector("#accountName").value === "Bob Example");
+  await page.waitForSelector("#accountFindable:not([disabled])");
+  await page.check("#accountFindable");
+  await page.waitForFunction(() => window.__mock.account.findable === true);
+  // Rapid clicking never throws and ends on what was saved.
+  for (let i = 0; i < 9; i++) await page.click("#accountFindable");
+  await page.waitForFunction(() => document.querySelector("#accountFindable").checked === window.__mock.account.findable);
+  await page.click("#settings button.primary");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await openSettingsTab(page, "sync");
+  await page.waitForFunction(() => document.querySelector("#accountName").value === "Bob Example");
+}, { settings: existingUser({ updates: false }) });
+
+await test("the sync is told which page is open, so a shared page can be synced often", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#newNote");
+  await page.waitForFunction(() => typeof window.__openPage === "string" && window.__openPage.endsWith(".md"));
+}, { settings: existingUser({ updates: false }) });
+
+await test("Share… on a folder lists the people nearby, asks one, and the folder gets the shared mark", async (page) => {
+  await withFolderAndPage(page);
+  // Without a name there is nobody to share as.
+  await rightClick(page, "Biology");
+  await page.click(".context-menu .menu-item:text-is('Share…')");
+  await page.waitForSelector("#shareBox[open]");
+  assert.ok((await page.textContent("#shareBox")).includes("first choose your name in Settings, Sync"));
+  await page.click("#shareClose");
+  await page.evaluate(() => {
+    window.__mock.account.name = "Rowan";
+    window.__peopleNearby = [{ account: "b".repeat(32), name: "Mila" }, { account: "c".repeat(32), name: "<b>Bob</b>" }];
+  });
+  await rightClick(page, "Biology");
+  await page.click(".context-menu .menu-item:text-is('Share…')");
+  await page.waitForSelector("#shareNearby .share-person");
+  assert.deepEqual(await page.locator("#shareNearby .share-person").allTextContents(), ["Share with Mila", "Share with <b>Bob</b>"], "names from other devices are text");
+  assert.equal(await page.locator("#shareNearby b").count(), 0);
+  // A device that does not take it says why, calmly.
+  await page.evaluate(() => { window.__shareRefused = true; });
+  await page.click("#shareNearby .share-person >> nth=0");
+  await page.waitForFunction(() => document.querySelector("#shareStatus").textContent.includes("Let people nearby see my name"));
+  await page.evaluate(() => { window.__shareRefused = false; });
+  await page.click("#shareNearby .share-person >> nth=0");
+  await page.waitForFunction(() => document.querySelector("#shareStatus").textContent === "Mila was asked. It is shared once they accept.");
+  assert.equal(await page.locator("#shareNearby .share-person").count(), 1, "Mila is no longer offered");
+  await page.click("#shareClose");
+  await page.waitForSelector('.tree-button[data-path="Biology"][data-shared="1"] .tree-shared');
+  // Opened again, it says who it is shared with and offers Stop sharing.
+  await rightClick(page, "Biology");
+  await page.click(".context-menu .menu-item:text-is('Share…')");
+  await page.waitForSelector("#sharePeople li");
+  assert.equal(await page.textContent("#sharePeople li"), "Mila (has not answered yet)");
+  await page.click("#shareStop");
+  await page.waitForSelector("#shareBox", { state: "hidden" });
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-path="Biology"][data-shared]'));
+}, { settings: existingUser({ updates: false }) });
+
+await test("an invitation is asked about once: Accept puts it in the list, No says no, and a member can leave", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    window.__mock.account.name = "Mila";
+    window.__mock.shares.push({ id: "a".repeat(32), item: "Biology", folder: true, path: "Shared with me/Rowan/Biology", state: "invited", mine: false, ownerName: "Rowan", people: ["Rowan"] });
+    window.__mock.folders.add("Shared with me");
+    window.__mock.folders.add("Shared with me/Rowan");
+    window.__mock.folders.add("Shared with me/Rowan/Biology");
+  });
+  await page.waitForSelector("#inviteBox[open]", { timeout: 10000 });
+  assert.equal(await page.textContent("#inviteBox h2"), "Rowan wants to share the folder Biology with you");
+  assert.ok((await page.textContent("#inviteBox")).includes("It will be in Shared with me/Rowan/Biology, on all your devices."));
+  // Rowan's phone is out of reach: accepted here, he hears it later.
+  await page.evaluate(() => { window.__ownerAway = true; });
+  await page.click("#inviteYes");
+  await page.waitForSelector("#inviteBox", { state: "hidden" });
+  await page.waitForFunction(() => document.body.textContent.includes("Rowan's device will hear it when it can be reached"));
+  assert.equal(await page.evaluate(() => window.__mock.shares[0].state), "active");
+  // A second invitation, declined.
+  await page.evaluate(() => window.__mock.shares.push({ id: "d".repeat(32), item: "Plan.md", folder: false, path: "Shared with me/Rowan/Plan.md", state: "invited", mine: false, ownerName: "Rowan", people: ["Rowan"] }));
+  await page.waitForSelector("#inviteBox[open]", { timeout: 10000 });
+  assert.equal(await page.textContent("#inviteBox h2"), "Rowan wants to share the page Plan with you");
+  await page.click("#inviteNo");
+  await page.waitForSelector("#inviteBox", { state: "hidden" });
+  assert.equal(await page.evaluate(() => window.__mock.shares[1].state), "declined");
+  // The member's Share box offers Leave, not Stop sharing or people to add.
+  await page.click('.tree-button[data-path="Shared with me"]');
+  await page.click('.tree-button[data-path="Shared with me/Rowan"]');
+  await page.waitForSelector('.tree-button[data-path="Shared with me/Rowan/Biology"][data-shared="1"]');
+  await rightClick(page, "Shared with me/Rowan/Biology");
+  await page.click(".context-menu .menu-item:text-is('Share…')");
+  await page.waitForSelector("#shareLeave");
+  assert.equal(await page.locator("#shareStop, #shareNearby").count(), 0);
+  assert.ok((await page.textContent("#shareBox")).includes("Rowan shared this with you."));
+  await page.click("#shareLeave");
+  await page.waitForSelector("#shareBox", { state: "hidden" });
+  assert.equal(await page.evaluate(() => window.__mock.shares[0].state), "left");
+  await page.waitForFunction(() => !document.querySelector('.tree-button[data-shared]'));
+}, { settings: existingUser({ updates: false }) });
+
 await test("Sync settings that cannot be saved or read say so calmly and change nothing on screen", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
@@ -9505,8 +9614,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Available offline per folder or page/);
-  assert.doesNotMatch(text, /another of your devices already has|<!--|-->/);
+  assert.match(text, /Share a page or folder with someone nearby/);
+  assert.doesNotMatch(text, /it is just no longer synced|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9515,15 +9624,15 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Available offline per folder or page/);
-  assert.doesNotMatch(text, /another of your devices already has|<!--/i);
+  assert.match(text, /Share a page or folder with someone nearby/);
+  assert.doesNotMatch(text, /it is just no longer synced|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /only for files another of your devices already has/);
+  assert.match(text, /Both devices need 0\.6\.4/);
   // These notes are the same for every system: only the hidden short list must stay out.
   assert.doesNotMatch(text, /<!--|-->|Available offline per folder or page\./i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
@@ -9534,16 +9643,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Available offline per folder or page/);
-  assert.doesNotMatch(text, /another of your devices already has/i);
+  assert.match(text, /Share a page or folder with someone nearby/);
+  assert.doesNotMatch(text, /it is just no longer synced/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Available offline per folder or page/);
-  assert.doesNotMatch(text, /another of your devices already has/);
+  assert.match(text, /Share a page or folder with someone nearby/);
+  assert.doesNotMatch(text, /it is just no longer synced/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
@@ -9793,6 +9902,53 @@ if (process.env.SHOTS_DIR || process.env.ONLY_SHOTS) {
       if (await page.isVisible("#settings .settings-back")) await page.click("#settings .settings-back");
       await page.click('#settings [role="tab"][id="settingsTab-device"]');
       await page.screenshot({ path: `${shots}/v055-${label}-${scheme}-4-this-device.png` });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.6.4 (sharing), in light and dark, on a computer and a phone.
+if (process.env.SHOTS_DIR && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "064")) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(existingUser({ updates: false })));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      const name = (n) => `${shots}/v064-${label}-${scheme}-${n}.png`;
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await openSettingsTab(page, "sync");
+      await page.waitForSelector("#accountName:not([disabled])");
+      await page.fill("#accountName", "Rowan");
+      await page.dispatchEvent("#accountName", "change");
+      await page.waitForSelector("#accountFindable:not([disabled])");
+      await page.locator("#accountHint").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: name("1-your-name") });
+      await page.click("#settings button.primary").catch(() => {});
+      await page.keyboard.press("Escape");
+      await page.evaluate(() => {
+        window.__peopleNearby = [{ account: "b".repeat(32), name: "Mila" }, { account: "c".repeat(32), name: "Sam" }];
+        window.__mock.folders.add("Biology");
+        window.__mock.files.set("Biology/Cells.md", "cells\n");
+        window.__mock.shares.push({ id: "e".repeat(32), item: "Chemistry", folder: true, path: "Chemistry", state: "active", mine: true, ownerName: "Rowan", people: ["Sam"] });
+        window.__mock.folders.add("Chemistry");
+      });
+      await page.click("#newFolder");
+      await page.waitForSelector('.tree-button[data-path="Biology"]');
+      if (label === "phone" && !(await page.isVisible('.tree-button[data-path="Biology"]'))) await page.click("#sidebarToggle").catch(() => {});
+      await page.waitForSelector('.tree-button[data-path="Chemistry"][data-shared="1"]');
+      await page.locator('.tree-button[data-path="Biology"]').click({ button: "right" });
+      await page.click(".context-menu .menu-item:text-is('Share…')");
+      await page.waitForSelector("#shareNearby .share-person");
+      await page.screenshot({ path: name("2-share-box") });
+      await page.click("#shareClose");
+      await page.screenshot({ path: name("3-shared-mark") });
+      await page.evaluate(() => window.__mock.shares.push({ id: "a".repeat(32), item: "Plan.md", folder: false, path: "Shared with me/Mila/Plan.md", state: "invited", mine: false, ownerName: "Mila", people: ["Mila"] }));
+      await page.waitForSelector("#inviteBox[open]", { timeout: 10000 });
+      await page.screenshot({ path: name("4-invitation") });
       await context.close();
     }
   }

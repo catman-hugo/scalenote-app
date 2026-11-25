@@ -50,6 +50,7 @@ import { canMoveInto, enableTreeDrag } from "./treedrag.js";
 import { choosePicture, pathForVault, storePicture } from "./images.js";
 import { pairingRows, privacyRows } from "./syncpairing.js";
 import { openOfflineDialog } from "./offlinedialog.js";
+import { openInvitationDialog, openShareDialog } from "./sharedialog.js";
 import { withMissing } from "./offlinerules.js";
 import { describeSize } from "./pdfrules.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
@@ -60,6 +61,8 @@ import { strings } from "./strings.js";
 
 const SAVE_DELAY_MS = 600;
 const BACKLINK_DELAY_MS = 300;
+// How often the list of shares is read again for invitations and changes (one small file).
+const SHARE_CHECK_MS = 4000;
 const isAndroid = /Android/i.test(navigator.userAgent);
 
 const el = (id) => document.getElementById(id);
@@ -75,6 +78,10 @@ const app = {
   // What this device keeps offline: { choices, notHere } (offlinerules.js). Empty where the
   // backend has no such list (the browser) or before the first answer.
   offline: { choices: [], notHere: [] },
+  // Shares of this notes folder (sharedialog.js, 0.6.4), and invitations already asked about
+  // since the app started (closed without an answer: asked again after a restart).
+  shares: [],
+  askedInvites: new Set(),
   // How folders look (see foldericons.js): the parsed file, read again with every page list.
   folderIcons: parseIcons(null),
   expanded: new Set(),
@@ -843,6 +850,51 @@ function deviceSettingsRows() {
   return [row, hint, ...keepRows, lockRows, divider, reset, resetHint];
 }
 
+// Your name for sharing with other people (0.6.4), and whether people nearby may see it. The
+// name is the same on all your paired devices; finding is off until switched on.
+function accountRows() {
+  const t = strings.sharing;
+  const heading = textElement("h3", t.accountHeading, "setting-heading");
+  const name = document.createElement("input");
+  name.type = "text";
+  name.id = "accountName";
+  name.maxLength = 40;
+  name.disabled = true;
+  name.autocomplete = "off";
+  name.placeholder = t.accountPlaceholder;
+  const nameRow = document.createElement("label");
+  nameRow.className = "setting-row";
+  nameRow.append(textElement("span", t.accountName, "setting-label"), name);
+  const findable = document.createElement("input");
+  findable.type = "checkbox";
+  findable.id = "accountFindable";
+  findable.disabled = true;
+  const findRow = document.createElement("label");
+  findRow.className = "setting-row";
+  findRow.append(textElement("span", t.findable, "setting-label"), findable);
+  const hint = textElement("p", t.accountHint, "setting-hint");
+  hint.id = "accountHint";
+  const show = (account) => {
+    name.value = account.name || "";
+    findable.checked = Boolean(account.findable);
+    findable.disabled = !account.name;
+    name.disabled = false;
+  };
+  const run = async (work) => {
+    try {
+      show(await work());
+      hint.textContent = t.accountHint;
+    } catch (error) {
+      logProblem("saving the account failed", error);
+      hint.textContent = errorText(error);
+    }
+  };
+  name.addEventListener("change", () => run(() => backend.setAccountName(name.value)));
+  findable.addEventListener("change", () => run(() => backend.setFindable(findable.checked)));
+  backend.account().then(show).catch((error) => logProblem("reading the account failed", error));
+  return [heading, nameRow, findRow, hint];
+}
+
 function syncSettingsRows() {
   const s = strings.settings;
   const box = document.createElement("input");
@@ -892,7 +944,11 @@ function syncSettingsRows() {
     });
   // The paired devices and the buttons come first; this device's switch and name further down.
   const deviceRows = [row, nameRow, status, ...(isAndroid ? [textElement("p", s.androidSleepHint, "setting-hint")] : [])];
-  return pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly }, deviceRows });
+  const rows = pairingRows(logProblem, { onVaultChanged: () => refreshAfterOutsideChange(true), wifi: { available: canTellNetwork(), change: changeWifiOnly }, deviceRows });
+  // Sharing with people is its own part, after this device and before the activity list.
+  const activity = rows.findIndex((r) => r.textContent === strings.settings.activityHeading);
+  rows.splice(activity === -1 ? rows.length : activity, 0, ...accountRows());
+  return rows;
 }
 
 // The Privacy tab (0.5.8): what sync does with your pages and everything the app contacts.
@@ -1296,6 +1352,7 @@ async function refreshTree() {
     app.entries = [];
   }
   await loadOffline();
+  await loadShares();
   await loadFolderIcons();
   drawTree();
   syncLinks();
@@ -1311,6 +1368,74 @@ async function loadOffline() {
   } catch {
     app.offline = { choices: [], notHere: [] };
   }
+}
+
+// ---------- sharing with other people (0.6.4) ----------
+
+async function loadShares() {
+  try {
+    app.shares = (await backend.shares()) || [];
+  } catch {
+    app.shares = [];
+  }
+}
+
+// The paths that show the shared mark: shares being synced or waiting for an answer.
+function sharedPaths() {
+  return new Set(app.shares.filter((s) => s.state === "active" || s.state === "offered").map((s) => s.path));
+}
+
+// The share a page or folder is (or is inside), if any.
+function shareOf(path) {
+  return app.shares.find((s) => (s.state === "active" || s.state === "offered") && (s.path === path || (s.folder && path.startsWith(`${s.path}/`))));
+}
+
+async function chooseShare(node) {
+  if (app.autosave) await app.autosave.flush();
+  let account = null;
+  try {
+    account = await backend.account();
+  } catch (error) {
+    logProblem("reading the account failed", error);
+  }
+  const folder = node.kind === "folder";
+  const changed = await openShareDialog(el("shareBox"), {
+    path: node.path,
+    name: node.name.replace(/\.md$/i, ""),
+    folder,
+    share: shareOf(node.path) || null,
+    account,
+    backend,
+  });
+  if (changed) await refreshTree();
+}
+
+// Asks about invitations that are waiting, one at a time, once per start of the app. Called by
+// the share check every few seconds; does nothing while another box is open.
+async function askInvitations() {
+  if (document.querySelector("dialog[open]")) return;
+  const waiting = app.shares.find((s) => s.state === "invited" && !app.askedInvites.has(s.id));
+  if (!waiting) return;
+  app.askedInvites.add(waiting.id);
+  let told = true;
+  const result = await openInvitationDialog(el("inviteBox"), {
+    share: waiting,
+    answer: async (accept) => {
+      told = await backend.shareAnswer(waiting.id, accept);
+    },
+  });
+  if (result === "accepted" && !told) showToast(fill(strings.sharing.acceptedNotTold, { person: waiting.ownerName }));
+  if (result !== "later") await refreshTree();
+}
+
+// Looks for new invitations and changes to shares every few seconds. Cheap: one small file.
+function startShareCheck() {
+  setInterval(async () => {
+    const before = JSON.stringify(app.shares);
+    await loadShares();
+    if (JSON.stringify(app.shares) !== before) drawTree();
+    await askInvitations();
+  }, SHARE_CHECK_MS);
 }
 
 // Opens a page that is only on another device: it is brought here first, then opened.
@@ -1760,6 +1885,7 @@ function drawTree() {
       currentPath: app.current ? app.current.path : null,
       selectedFolder: app.selectedFolder,
       icons: app.folderIcons.icons,
+      shared: sharedPaths(),
     },
     {
       openNote: (path) => openNote(path),
@@ -1819,6 +1945,7 @@ function openEntryMenu(node, x, y, button) {
     items.push({ label: c.move, run: choose });
   }
   items.push(offlineItem);
+  if (node.kind === "folder" || /\.md$/i.test(node.path)) items.push({ label: c.share, run: () => chooseShare(node) });
   // No question is asked: Delete only moves the entry to the trash, where it can be restored.
   items.push({ label: c.delete, run: () => trashEntry(node, button) });
   openContextMenu(x, y, items, { returnFocus: button });
@@ -2164,6 +2291,7 @@ async function goThroughHistory(event) {
 
 async function showNoNote() {
   await closeCurrentNote();
+  tellOpenPage(null);
   el("empty").hidden = false;
   el("editor").hidden = true;
   el("source").hidden = true;
@@ -2186,6 +2314,12 @@ async function closeCurrentNote() {
   if (app.autosave) app.autosave.cancel();
   app.current = null;
   app.lastSavedText = null;
+}
+
+// Tells the sync which page is open, so a shared page is synced every few seconds while it is
+// open. Not being able to tell changes nothing else.
+function tellOpenPage(path) {
+  backend.pageOpen(path).catch((error) => logProblem("telling the open page failed", error));
 }
 
 async function openNote(path) {
@@ -2240,6 +2374,7 @@ function showNote(path, note) {
     serialize: (json) => app.editor.markdown.serialize(json),
   });
   app.current = { path, version: note.version, parts };
+  tellOpenPage(path);
   recordVisit(path);
   rememberLastPage(path);
   app.recent = [path, ...app.recent.filter((p) => p !== path)].slice(0, 20);
@@ -2967,6 +3102,7 @@ async function start() {
   startFlushTriggers();
   startResumeNotice();
   startSyncLine(el("syncLine"));
+  startShareCheck();
   app.watcher = watchVault({
     signature: () => backend.vaultSignature(),
     onChange: () => refreshAfterOutsideChange(false),

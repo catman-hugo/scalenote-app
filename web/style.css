@@ -2173,6 +2173,14 @@ body.is-locked .toast { display: none; }
 /* Offline choices (0.6.3): entries only on other devices, and the Available offline box. */
 .tree-missing .tree-label { color: var(--text-soft); }
 .tree-cloud { margin-left: auto; color: var(--text-soft); flex: none; }
+.tree-shared { margin-left: auto; color: var(--text-soft); flex: none; }
+.tree-shared + .tree-cloud { margin-left: 4px; }
+/* The Share box (0.6.4). */
+.dialog ul.share-people, .dialog ul.share-nearby { list-style: none; margin: 0 0 var(--space-3); padding: 0; }
+.share-people li { padding: 4px 0; }
+.share-nearby li { padding: 2px 0; }
+.share-person { width: 100%; text-align: left; }
+.share-status:empty { display: none; }
 .offline-kinds { margin: var(--space-2) 0 var(--space-2) var(--space-5); }
 .offline-kinds.is-disabled { opacity: 0.55; }
 .offline-mode input, .offline-kind input { margin-right: var(--space-2); }

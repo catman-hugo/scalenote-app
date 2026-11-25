@@ -28,6 +28,20 @@ export const backend = {
   // The folder "Use the default folder" would open, as text for the first-run screen.
   defaultVaultPath: () => call("default_vault_path"),
   tree: () => call("vault_tree"),
+  // Shares (0.6.4): [{ id, item, folder, path, state, mine, ownerName, people }].
+  shares: () => call("shares_list"),
+  shareWith: (path, folder, person) => call("share_with", { path, folder, person }),
+  // Resolves to whether the other person's device heard the answer now.
+  shareAnswer: (id, accept) => call("share_answer", { id, accept }),
+  shareEnd: (id) => call("share_end", { id }),
+  // The page open now, so the share it is in is synced every few seconds (0.6.4).
+  pageOpen: (path) => call("share_page_open", { path }),
+  // Your name for sharing (0.6.4): { id, name, findable }. id is null until a name is set.
+  account: () => call("account_get"),
+  setAccountName: (name) => call("account_set_name", { name }),
+  setFindable: (findable) => call("account_set_findable", { findable }),
+  // People nearby who let themselves be found: [{ account, name }].
+  peopleNearby: () => call("people_nearby"),
   // What this device keeps offline (0.6.3): { choices: [{ path, kinds }], notHere: [paths] }.
   // kinds are letters: t text, d drawings, i pictures, f other files, "-" nothing.
   offline: () => call("offline_get"),
