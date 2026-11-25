@@ -26,7 +26,8 @@ export function buildTree(entries) {
 
 /**
  * Draws the tree into `container`.
- * `state` holds { expanded: Set, currentPath, selectedFolder, icons } (icons: folder path -> look).
+ * `state` holds { expanded: Set, currentPath, selectedFolder, icons, shared } (icons: folder path
+ * -> look; shared: the paths shared with other people).
  * `actions` has { openNote, openMissing, toggleFolder, selectFolder, renameEntry, entryMenu, trashEntry }.
  * An entry with `missing` set is on another device only: it shows a cloud icon, and a page opens
  * through `openMissing(path)`, which brings it here first.
@@ -81,6 +82,7 @@ function renderNode(node, state, actions) {
     if (state.selectedFolder === node.path) row.classList.add("selected-folder");
     button.addEventListener("click", () => actions.toggleFolder(node.path));
     if (!node.missing) button.addEventListener("dblclick", () => actions.renameEntry(node, button));
+    markShared(node, button, state.shared);
     markMissing(node, button, row);
     row.append(button);
     item.append(row);
@@ -96,12 +98,24 @@ function renderNode(node, state, actions) {
       button.setAttribute("aria-current", "page");
     }
     button.addEventListener("click", () => (node.missing && actions.openMissing ? actions.openMissing(node.path, button) : actions.openNote(node.path)));
+    markShared(node, button, state.shared);
     markMissing(node, button, row);
     row.append(button);
     item.append(row);
   }
   wireEntryMenu(button, node, actions);
   return item;
+}
+
+// An entry shared with other people (0.6.4): a small people mark after its name.
+function markShared(node, button, shared) {
+  if (!shared || !shared.has(node.path)) return;
+  button.dataset.shared = "1";
+  const mark = icon("people");
+  mark.classList.add("tree-shared");
+  mark.setAttribute("aria-label", strings.sharing.shared);
+  mark.setAttribute("role", "img");
+  button.append(mark);
 }
 
 // An entry that is only on other devices: dimmed, with a cloud icon after its name.

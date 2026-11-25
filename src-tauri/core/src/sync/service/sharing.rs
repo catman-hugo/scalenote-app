@@ -142,6 +142,17 @@ impl Service {
         told
     }
 
+    /// A page or folder was renamed or moved here: a share of it (or of a folder it is in) follows.
+    pub fn share_moved(&self, from: &str, to: &str) -> Result<()> {
+        if self.shares()?.list.values().all(|s| s.path != from && !s.path.starts_with(&format!("{from}/"))) {
+            return Ok(());
+        }
+        change_shares(&self.shared, |shares, _| {
+            shares.moved(from, to);
+            Ok(())
+        })
+    }
+
     /// Stops sharing (owner) or leaves a share (member). Every copy stays where it is.
     pub fn end_share(&self, id: &[u8; ID_LEN]) -> Result<()> {
         let account = lock(&self.shared.state).account.clone();

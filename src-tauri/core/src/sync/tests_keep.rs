@@ -700,3 +700,17 @@ fn a_share_is_synced_every_few_seconds_while_its_page_is_open_and_soon_after_a_c
     assert_eq!(results.len(), 1);
     assert_eq!(fs::read_to_string(p.va.0.join("Biology/Mine.md")).expect("sent"), "mila");
 }
+
+#[test]
+fn a_renamed_shared_folder_stays_shared_and_keeps_syncing() {
+    let (p, mila, _dm, vm, id) = shared_biology("share-rename");
+    write(&p.va.0, "Biology/Cells.md", "cells");
+    ok_with(&mila.sync_share(&id).expect("sync"), "Rowan");
+    fs::rename(p.va.0.join("Biology"), p.va.0.join("Biology 101")).expect("rename");
+    p.alice.share_moved("Biology", "Biology 101").expect("follow");
+    assert_eq!(p.alice.shares().expect("list").list[&id].path, "Biology 101");
+    write(&p.va.0, "Biology 101/Tissues.md", "tissues");
+    let report = ok_with(&mila.sync_share(&id).expect("sync"), "Rowan");
+    assert_eq!((report.received, report.deleted_here), (1, 0), "nothing looks removed after the rename");
+    assert!(vm.0.join("Shared with me/Rowan/Biology/Tissues.md").is_file());
+}
