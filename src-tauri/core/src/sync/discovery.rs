@@ -45,6 +45,9 @@ pub struct Found {
 #[derive(Clone, Debug)]
 pub struct Route {
     pub listen: SocketAddr,
+    /// The real network. Then notes also go out on every local network this device is on, not
+    /// only along its main connection: a phone that makes a hotspot has mobile data (or nothing)
+    /// as its main connection, and the hotspot is only one of its other networks (networks.rs).
     pub join_group: bool,
     pub send_to: Vec<SocketAddr>,
     pub interval: Duration,
@@ -110,6 +113,10 @@ impl Announcer {
                 for target in &route.send_to {
                     let _ = socket.send_to(&note, target);
                 }
+                if route.join_group {
+                    // Looked up every round: a hotspot or a cable can come and go at any time.
+                    send_on_every_network(&note, route.listen.port());
+                }
                 let until = Instant::now() + route.interval;
                 while Instant::now() < until && !flag.load(Ordering::SeqCst) {
                     thread::sleep(Duration::from_millis(20));
@@ -140,6 +147,21 @@ impl Drop for Announcer {
     }
 }
 
+/// Sends the note on each local network separately, to that network's own broadcast address
+/// (for a hotspot `192.168.43.255`, say). That address belongs to a network this device is
+/// directly on, so the note leaves on that network even when it is not the main connection. The
+/// socket is bound to this device's address there, so the note carries the right sender.
+/// (Multicast per network would need a setting the standard library does not offer; the
+/// broadcast reaches the same devices.)
+fn send_on_every_network(note: &[u8], port: u16) {
+    for net in super::networks::local_networks() {
+        let Ok(socket) = UdpSocket::bind(SocketAddr::from((net.ip, 0))) else { continue };
+        if socket.set_broadcast(true).is_ok() {
+            let _ = socket.send_to(note, SocketAddr::from((net.broadcast(), port)));
+        }
+    }
+}
+
 /// Listens for `wait` and returns the devices heard (each once, at most 16), leaving out the
 /// device with the key `own`.
 pub fn find(route: &Route, wait: Duration, own: &[u8; KEY_LEN]) -> io::Result<Vec<Found>> {
@@ -147,6 +169,11 @@ pub fn find(route: &Route, wait: Duration, own: &[u8; KEY_LEN]) -> io::Result<Ve
     if route.join_group {
         // Joining can fail on a machine without a usable network; broadcast may still work.
         let _ = socket.join_multicast_v4(&GROUP, &Ipv4Addr::UNSPECIFIED);
+        // Also on each local network by its own address: "unspecified" only means the main
+        // connection, which is not the hotspot on a phone that makes one.
+        for net in super::networks::local_networks() {
+            let _ = socket.join_multicast_v4(&GROUP, &net.ip);
+        }
     }
     let end = Instant::now() + wait;
     let mut found: Vec<Found> = Vec::new();
@@ -174,3 +201,31 @@ pub fn find(route: &Route, wait: Duration, own: &[u8; KEY_LEN]) -> io::Result<Ve
     }
     Ok(found)
 }
+
+#[cfg(test)]
+mod network_tests {
+    use super::*;
+
+    /// On a machine with a local network, a note sent "on every network" arrives from this
+    /// machine's own address there. Without one (some build machines), there is nothing to send on.
+    #[test]
+    fn a_note_goes_out_on_each_local_network_from_this_devices_address_there() {
+        let nets = crate::sync::networks::local_networks();
+        let listener = UdpSocket::bind("0.0.0.0:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        listener.set_read_timeout(Some(Duration::from_millis(500))).expect("timeout");
+        let note = encode(&[7u8; KEY_LEN], "alice", 47821);
+        send_on_every_network(&note, port);
+        let mut heard = Vec::new();
+        let mut buffer = [0u8; MAX_NOTE_BYTES + 1];
+        while let Ok((size, from)) = listener.recv_from(&mut buffer) {
+            if let Some(found) = parse(&buffer[..size], from.ip()) {
+                heard.push(found.address);
+            }
+        }
+        for net in &nets {
+            assert!(heard.contains(&format!("{}:47821", net.ip)), "nothing heard from {net:?}; heard {heard:?}");
+        }
+    }
+}
+

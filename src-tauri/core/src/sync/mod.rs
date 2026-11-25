@@ -17,6 +17,7 @@ pub mod folders;
 pub mod hex;
 pub mod identity;
 pub mod keep;
+pub mod networks;
 pub mod manifest;
 pub mod pairing;
 pub mod plan;
