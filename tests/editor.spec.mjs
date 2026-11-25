@@ -1770,7 +1770,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Delete"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -1800,6 +1800,92 @@ await test("right-clicking a page renames it, and an open page follows its new n
   assert.equal(await page.inputValue("#title"), "Schedule");
   const saved = await files(page);
   assert.ok(!("Plan.md" in saved) && /plan more/.test(saved["Schedule.md"]), "what was typed before the rename is kept: " + JSON.stringify(saved["Schedule.md"]));
+}, ctxOpts);
+
+// Offline choices (0.6.3). The rules (what is kept, freed, brought) are tested in Rust; these
+// check what the page list and the Available offline box show and send.
+async function withPagesElsewhere(page) {
+  await withFolderAndPage(page);
+  await page.evaluate(() => {
+    window.__mock.offline.elsewhere.set("Home/Trip.md", "beach\n");
+    window.__mock.offline.elsewhere.set("Biology/Old exam.md", "exam\n");
+    window.__mock.offline.elsewhere.set("attachments/beach.png", "x");
+  });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Home"][data-missing="1"]');
+}
+
+await test("pages only on another device are listed with a cloud icon, in their folder, and open after being brought", async (page) => {
+  await withPagesElsewhere(page);
+  assert.equal(await page.locator('.tree-button[data-path="Home"] .tree-cloud').count(), 1, "a folder that is not here at all");
+  await page.click('.tree-button[data-path="Biology"]');
+  await page.waitForSelector('.tree-button[data-path="Biology/Old exam.md"][data-missing="1"]');
+  const order = await page.evaluate(() => [...document.querySelectorAll('.tree-button[data-path^="Biology/"]')].map((b) => b.dataset.path));
+  assert.deepEqual(order, ["Biology/Cells.md", "Biology/Old exam.md"], "in name order among the pages that are here");
+  assert.equal(await page.locator('.tree-button[data-path="attachments/beach.png"]').count(), 0, "only pages are listed");
+  assert.equal(await page.getAttribute('.tree-button[data-path="Biology/Old exam.md"]', "title"), "Not on this device");
+  await page.click('.tree-button[data-path="Biology/Old exam.md"]');
+  await page.waitForFunction(() => document.querySelector("#title") && document.querySelector("#title").value === "Old exam");
+  assert.equal(await page.locator('.tree-button[data-path="Biology/Old exam.md"][data-missing]').count(), 0, "it is an ordinary page now");
+}, ctxOpts);
+
+await test("a page only on another device says so calmly when no device can be reached, and its menu offers only what works", async (page) => {
+  await withPagesElsewhere(page);
+  await page.evaluate(() => { window.__offlineUnreachable = true; });
+  await page.click('.tree-button[data-path="Home"]');
+  await page.click('.tree-button[data-path="Home/Trip.md"]');
+  await page.waitForFunction(() => /none of your other devices can be reached/.test(document.body.innerText));
+  await page.click('.tree-button[data-path="Home/Trip.md"]', { button: "right" });
+  const items = await page.locator(".context-menu .menu-item").allTextContents();
+  assert.deepEqual(items, ["Open (bring to this device)", "Available offline…"]);
+  await page.keyboard.press("Escape");
+  await page.click('.tree-button[data-path="Home/Trip.md"]');
+  await page.keyboard.press("F2");
+  assert.equal(await page.locator(".inline-rename").count(), 0, "a page that is not here cannot be renamed");
+}, ctxOpts);
+
+await test("Available offline: a folder follows the one above, or keeps the kinds chosen; the choice is sent and shown again", async (page) => {
+  await withFolderAndPage(page);
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.click('.context-menu .menu-item:has-text("Available offline")');
+  await page.waitForSelector("#offlineBox[open]");
+  assert.match(await page.textContent("#offlineBox h2"), /Available offline: Biology/);
+  assert.match(await page.textContent("#offlineBox"), /Follow the folder above: everything is kept/);
+  assert.equal(await page.isDisabled('#offlineBox input[data-kind="t"]'), true, "kinds are chosen only for its own choice");
+  await page.check("#offlineBox input[value=own]");
+  await page.uncheck('#offlineBox input[data-kind="d"]');
+  await page.uncheck('#offlineBox input[data-kind="f"]');
+  await page.click("#offlineSave");
+  await page.waitForFunction(() => !document.getElementById("offlineBox").open);
+  assert.deepEqual(await page.evaluate(() => window.__mock.offline.sets), [{ path: "Biology", kinds: "ti" }]);
+  // A page inside says where its choice comes from.
+  await page.click('.tree-button[data-path="Biology"]');
+  await page.click('.tree-button[data-path="Biology/Cells.md"]', { button: "right" });
+  await page.click('.context-menu .menu-item:has-text("Available offline")');
+  assert.match(await page.textContent("#offlineBox"), /Follow Biology: Text and pictures/);
+  await page.click("#offlineBox button:has-text('Cancel')");
+  // Back to following the folder above.
+  await page.click('.tree-button[data-path="Biology"]', { button: "right" });
+  await page.click('.context-menu .menu-item:has-text("Available offline")');
+  assert.equal(await page.isChecked("#offlineBox input[value=own]"), true);
+  await page.check("#offlineBox input[value=follow]");
+  await page.click("#offlineSave");
+  await page.waitForFunction(() => !document.getElementById("offlineBox").open);
+  assert.deepEqual((await page.evaluate(() => window.__mock.offline.sets))[1], { path: "Biology", kinds: null });
+}, ctxOpts);
+
+await test("Settings, Files chooses what this device keeps of the whole folder, and says what was freed", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => { window.__offlineFreed = { removed: 3, bytes: 5 * 1024 * 1024, onlyHere: 1 }; });
+  await openSettingsTab(page, "files");
+  await page.click("#offlineWhole");
+  await page.waitForSelector("#offlineBox[open]");
+  assert.match(await page.textContent("#offlineBox h2"), /What this device keeps/);
+  assert.equal(await page.locator("#offlineBox input[value=follow]").count(), 0, "nothing above the whole folder to follow");
+  await page.uncheck('#offlineBox input[data-kind="i"]');
+  await page.click("#offlineSave");
+  await page.waitForFunction(() => /5 MB freed on this device\. 1 changed or new files stay here/.test(document.body.innerText));
+  assert.deepEqual(await page.evaluate(() => window.__mock.offline.sets), [{ path: "", kinds: "tdf" }]);
 }, ctxOpts);
 
 await test("the menu closes with Escape or a click elsewhere, and Escape in the name field changes nothing", async (page) => {
@@ -1977,7 +2063,7 @@ await test("moving the open page keeps what was typed and keeps the page open", 
 await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
   await moveSetup(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Delete"]);
   await page.click(".context-menu .menu-item:has-text('Move to')");
   const names = await page.locator(".context-menu .menu-item").allTextContents();
   assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
@@ -2884,7 +2970,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
@@ -5963,7 +6049,7 @@ await test("a folder starts with the plain folder icon, and a page offers Colour
   await withFolderAndPage(page);
   assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
   await rightClick(page, "Plan.md");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Delete"]);
 }, ctxOpts);
 
 await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {

@@ -2169,3 +2169,10 @@ body.is-locked .toast { display: none; }
 .icon-button:disabled { opacity: 0.4; cursor: default; }
 .sync-wifi-row { margin-top: 0.5rem; }
 .icon-button[hidden] { display: none; }
+
+/* Offline choices (0.6.3): entries only on other devices, and the Available offline box. */
+.tree-missing .tree-label { color: var(--text-soft); }
+.tree-cloud { margin-left: auto; color: var(--text-soft); flex: none; }
+.offline-kinds { margin: var(--space-2) 0 var(--space-2) var(--space-5); }
+.offline-kinds.is-disabled { opacity: 0.55; }
+.offline-mode input, .offline-kind input { margin-right: var(--space-2); }
