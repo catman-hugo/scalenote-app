@@ -15,7 +15,7 @@ Done:
 - Setup guide: "Without Wi-Fi or internet: a hotspot or a cable".
 - Version 0.6.1.
 
-Tried here: `cargo test -p scalenote-core` (unit and integration tests), `npm test`, and the browser tests after `npm run build` (counts in the pull request). The sending test had no private network to send on here.
+Tried here: `cargo test -p scalenote-core` (unit and integration tests), `npm test`, and the browser tests after `npm run build` (all passed: 291 core unit tests plus 18 integration tests, 333 unit tests, every browser test). The sending test had no private network to send on here.
 
 Not done / untried:
 - Never tried on a real hotspot or cable. Things to check: the phone making the hotspot with mobile data off and on, the laptop making it (Linux, Windows), USB tethering, and pairing over each.
