@@ -2,9 +2,27 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-25; 0.6.2 built (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-25; 0.6.3 built (offline choices in the app); sharing with other people planned as 0.6.4; 0.6.2 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
-## 0.6.2: built (fixes and requests after testing 0.6.1)
+## 0.6.3: built (offline choices in the app)
+
+Branch `feature/v0.6.3-offline-choices`. Release notes `docs/release-notes/0.6.3.md`; security checklist `docs/security-checklist-0.6.3.md`. Plan: `docs/v0.6-plan.md`.
+
+Done:
+- Default: every device keeps everything until a choice is made (the open question on a phone's default was not answered; this changes nothing for anyone who never chooses).
+- Right-click or long-press menu of folders and pages: **Available offline…** (`web/offlinedialog.js`): follow the folder above (the box says which folder and what it keeps) or choose kinds for this one. Settings, Files: the same for the whole notes folder (`#offlineWhole`).
+- Page list: pages that exist on other devices but not here (`keep::not_here`, now quick: no hashing) are listed with a cloud icon, in their folders, also folders that are not here at all (`withMissing` in `web/offlinerules.js`). Opening one brings it with its drawing and the pictures and PDFs it links to (`engine::fetch`, `Service::fetch_files`, waits up to 15 s for a running sync), then opens it. No device in reach: a calm message (`not_available_offline`). Such entries only offer Open and Available offline.
+- Saving a choice frees what is no longer kept and another device has (`keep::set_choice`) and says how much space was freed.
+- App commands `offline_get`, `offline_set`, `offline_fetch` (`src-tauri/src/lib.rs`, only compiled by CI). Cloud icon in `web/icons.js`.
+- Version 0.6.3.
+
+Tried here: `cargo test -p scalenote-core`, `npm test`, and the browser tests after `npm run build` (counts in the pull request).
+
+Not done / untried:
+- On a device: everything above.
+- Searching the text of pages that are not here (0.6.5, see the plan).
+
+## 0.6.2: released (fixes and requests after testing 0.6.1)
 
 All asked for or reported by the owner on 2026-11-25 while testing 0.6.1. Branch `feature/v0.6.2-fixes`. Release notes `docs/release-notes/0.6.2.md`; security checklist `docs/security-checklist-0.6.2.md`. The 0.6 plan moved up one more number: offline choices in the app are now 0.6.3, storage 0.6.4, sharing in 0.6.5, hardening 0.6.6.
 
@@ -57,7 +75,7 @@ Done (tried here: `cargo test -p scalenote-core` 287 unit tests passed, 15 of th
 - Version 0.6.0.
 
 Not done / untried:
-- No screen uses any of it yet (0.6.3). `src-tauri/src/lib.rs` has no commands for the choices or "Free up space" yet.
+- The screens came in 0.6.3.
 - An app before 0.6 can still send a device files it does not keep (kept there, nothing lost).
 - Never tried between two real devices.
 

@@ -868,3 +868,9 @@ Cost. The person turns on a hotspot or plugs in a cable; nothing is automatic. T
 Context. "Pages as images" refused PDFs over 100 pages and every PDF over 25 MB. Both were safety guesses from when a page took about 5 seconds on a phone.
 Decision. No page limit: a long PDF (over 100 pages or over 100 MB of pictures) is asked about first, with the guessed space. The file limit goes to 64 MB, with a size line above 25 MB. 64 MB stays a hard limit because it is the largest file sync sends (a bigger PDF would never reach the other devices) and because the whole file travels to the interface as one text. Going past it means sending files in parts, in sync and in the interface.
 Cost. A very long PDF as pictures can fill a phone; the question says how much before anything is made.
+
+## 2026-11-25: Offline choices in the app; sharing with other people next
+
+Context. 0.6.3 adds the screens for 0.6.0's partial sync. The owner asked for sharing with other people's accounts before 0.6.5.
+Decision. Every device keeps everything until a choice is made. Choices are made per folder or page from its menu (Available offline), and for the whole folder in Settings, Files. Pages not here stay listed with a cloud icon and are brought on opening. Sharing with other people becomes 0.6.4: shared pages land in "Shared with me/<name>/" and must be accepted first (both decided by the owner); storage and search move to 0.6.5, sharing into ScaleNote to 0.6.6 and hardening to 0.6.7.
+Cost. Sharing needs automatic joining of edits (word by word against the last shared version), which sync does not have yet: today a page changed on two devices is kept twice.
