@@ -8090,6 +8090,20 @@ await test("pairing: the Sync tab shows this device, shows a code with its addre
   assert.match(await page.textContent("#pairActivity"), /paired with alice-phone/);
 }, { settings: existingUser({ updates: false }) });
 
+await test("pairing: a device making a hotspot shows its address there too, and with no address says so", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => { window.__addresses = ["192.168.1.20", "192.168.43.1"]; });
+  await openSettingsTab(page, "sync");
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.match(await page.textContent("#pairAddressText"), /192\.168\.1\.20:47821 or 192\.168\.43\.1:47821/);
+  await page.click("#pairStop");
+  await page.evaluate(() => { window.__noAddress = true; });
+  await page.click("#pairStart");
+  await page.waitForSelector("#pairCodeBox:not([hidden])");
+  assert.match(await page.textContent("#pairAddressText"), /not found/);
+}, { settings: existingUser({ updates: false }) });
+
 await test("pairing: stopping the code, closing Settings while a code shows, and a refused start all end calmly", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
@@ -9296,8 +9310,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Groundwork for offline choices/);
-  assert.doesNotMatch(text, /renamed, moved or deleted|<!--|-->/);
+  assert.match(text, /Sync over a hotspot or USB cable/);
+  assert.doesNotMatch(text, /eduroam|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9306,16 +9320,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Groundwork for offline choices/);
-  assert.doesNotMatch(text, /renamed, moved or deleted|<!--/i);
+  assert.match(text, /Sync over a hotspot or USB cable/);
+  assert.doesNotMatch(text, /eduroam|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /renamed, moved or deleted on a device that has all of them/);
-  assert.doesNotMatch(text, /fingerprint|Linux|Android|phone|<!--/i);
+  assert.match(text, /eduroam keeps devices apart/);
+  // These notes are the same for every system: only the hidden short list must stay out.
+  assert.doesNotMatch(text, /<!--|-->|Sync over a hotspot or USB cable, no internet/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -9324,16 +9339,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Groundwork for offline choices/);
-  assert.doesNotMatch(text, /renamed, moved or deleted/i);
+  assert.match(text, /Sync over a hotspot or USB cable/);
+  assert.doesNotMatch(text, /eduroam/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Groundwork for offline choices/);
-  assert.doesNotMatch(text, /renamed, moved or deleted/);
+  assert.match(text, /Sync over a hotspot or USB cable/);
+  assert.doesNotMatch(text, /eduroam/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
