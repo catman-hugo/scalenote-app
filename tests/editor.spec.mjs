@@ -6997,6 +6997,28 @@ await test("a pen stroke over a paragraph is saved with the paragraph it belongs
   assert.ok((await inkPixels(page, second)) > 50, "the stroke is on screen");
 }, ctxOpts);
 
+await test("ink that arrives from another device (only the drawing file changed) shows without reopening the page", async (page) => {
+  await inkVault(page);
+  const second = await blockBox(page, 1);
+  assert.equal(await inkPixels(page, second).catch(() => 0), 0, "no ink yet");
+  // What a sync does: it writes the drawing file next to the page; the page text stays the same.
+  await page.evaluate(([tag]) => {
+    window.__mock.canvases.set("Sketch.md", JSON.stringify({ format: 5, items: [], ink: [{ tool: "pen", color: "red", width: 4, anchor: { block: 1, tag }, points: [[0.05, 0.5, 0.5], [0.95, 0.5, 0.5]] }] }) + "\n");
+    window.__sigBump = (window.__sigBump || 0) + 1;
+  }, [blockTag("p", "Second paragraph, which is long enough that it wraps onto more than one line when the window gets narrow, so the ink has to move with its words.")]);
+  await page.waitForFunction(() => document.querySelector(".ink-layer") && !document.querySelector(".ink-layer").hidden, null, { timeout: 12000 });
+  await page.waitForTimeout(150);
+  assert.ok((await inkPixels(page, second)) > 50, "the new ink is on screen");
+  // Ink erased on the other device goes away here too.
+  await page.evaluate(() => {
+    window.__mock.canvases.set("Sketch.md", JSON.stringify({ format: 5, items: [], ink: [] }) + "\n");
+    window.__sigBump += 1;
+  });
+  for (let i = 0; i < 120 && (await inkPixels(page, second)) > 0; i++) await page.waitForTimeout(100);
+  assert.equal(await inkPixels(page, second), 0, "the erased ink is gone");
+  assert.equal((await files(page))["Sketch.md"], INK_PAGE, "the page text is untouched");
+}, ctxOpts);
+
 await test("ink moves with its paragraph and keeps its size and shape when the window is narrower", async (page) => {
   await inkVault(page);
   await startInk(page);
@@ -7795,6 +7817,32 @@ await test("a PDF block draws only the pages near the view, and the rest when sc
   await page.waitForFunction(() => document.querySelectorAll(".pdf-page-canvas")[29].width > 0);
   assert.ok(await pdfPageInkSettled(page, 29) > 200, "the last page is drawn when scrolled to");
   assert.equal(await page.evaluate(() => document.querySelectorAll(".pdf-page-canvas")[0].width), 0, "the first page is freed again");
+});
+
+await test("ink beside a PDF is tied to its file, so it stays when other pages of the PDF are drawn", async (page) => {
+  await slashPdf(page, pdfFile(30));
+  await pdfChoice(page, "Scroll through");
+  await page.waitForFunction(() => document.querySelector(".pdf-page-canvas") && document.querySelector(".pdf-page-canvas").width > 0);
+  await waitSaved(page);
+  const at = await page.evaluate(() => [...document.querySelector("#editor .note-body").children].indexOf(document.querySelector(".pdf-block")));
+  assert.equal(await page.evaluate(() => document.querySelector(".pdf-block").dataset.inkText), "attachments/Lecture-1.pdf");
+  await startInk(page);
+  const box = await blockBox(page, at);
+  await inkPen(page, horizontalLine(box, 0.05));
+  await page.waitForFunction(() => window.__mock.canvases.has("Untitled.md"));
+  await page.click("#inkButton");
+  await waitSaved(page);
+  const drawing = await savedDrawing(page, "Untitled.md");
+  assert.deepEqual(drawing.ink.map((item) => item.anchor), [{ block: at, tag: "figure:attachments/Lecture-1.pdf" }]);
+  // Other pages of the PDF are drawn (their words come into the block), and the text is edited,
+  // so the fingerprints are worked out again. The ink must still be found.
+  await page.evaluate(() => { const b = document.querySelector(".pdf-block-scroll"); b.scrollTop = b.scrollHeight; });
+  await page.waitForFunction(() => document.querySelectorAll(".pdf-page-canvas")[29].width > 0);
+  await page.locator("#editor .note-body p", { hasText: "before" }).click();
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  await page.waitForTimeout(200);
+  assert.ok((await inkPixels(page, await blockBox(page, at))) > 50, "the ink is still drawn beside the PDF");
 });
 
 await test("a page with a PDF in it comes back after reopening, byte for byte", async (page) => {

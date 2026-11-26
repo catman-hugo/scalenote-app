@@ -76,3 +76,17 @@ export function pageAction({ onDisk, shown, busy }) {
   if (onDisk === shown) return "keep";
   return busy ? "wait" : "reload";
 }
+
+/**
+ * Decides what to do with the ink over the open page when files changed on disk. The ink lives in
+ * the page's drawing file, so a sync can change it while the text stays the same. `onDisk` is the
+ * version of the drawing file now (null when there is none), `shown` the version the ink on screen
+ * came from, `loaded` whether a drawing is in memory for this page, `busy` whether ink is being
+ * drawn or saved. Returns "keep", "load" (read the drawing and show its ink) or "wait" (the save
+ * will notice the change, as it does for the canvas).
+ */
+export function inkAction({ onDisk, shown, loaded, busy }) {
+  if (busy) return "wait";
+  if (loaded && onDisk === shown) return "keep";
+  return "load";
+}

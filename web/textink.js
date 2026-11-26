@@ -23,16 +23,25 @@ export function blockTag(kind, text) {
  * The index of the block an anchor belongs to now, or -1 when none matches. `tags` are the
  * fingerprints of the blocks of the page as it is. The block at the remembered place wins; when
  * blocks were added or removed above it, the nearest block with the same fingerprint is used.
+ *
+ * `fixed[i]` is true for a block whose fingerprint is its file name or id instead of its words (a
+ * PDF, a canvas region; see `inkText` in inklayer.js). Ink drawn on such a block before 0.6.6 has
+ * an older fingerprint made of whatever the block showed at that moment, so when nothing matches
+ * exactly, a fixed block of the same kind at the remembered place takes the ink.
  */
-export function findBlock(tags, anchor) {
+export function findBlock(tags, anchor, fixed = []) {
   if (tags[anchor.block] === anchor.tag) return anchor.block;
   let best = -1;
   for (let i = 0; i < tags.length; i++) {
     if (tags[i] !== anchor.tag) continue;
     if (best < 0 || Math.abs(i - anchor.block) < Math.abs(best - anchor.block)) best = i;
   }
+  if (best < 0 && fixed[anchor.block] && kindOfTag(tags[anchor.block]) === kindOfTag(anchor.tag)) return anchor.block;
   return best;
 }
+
+// The kind part of a fingerprint ("figure" of "figure:attachments/a.pdf").
+const kindOfTag = (tag) => String(tag).split(":", 1)[0];
 
 /**
  * The block a stroke that starts at height `y` belongs to: the one that contains `y`, or the

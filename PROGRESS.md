@@ -2,11 +2,21 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-26; 0.6.6 built (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-26; fix for ink over the text not showing after a sync (branch `fix/text-ink-sync`); 0.6.6 built (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.7.0: planned (animations in pages)
 
 Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.7 releases the 0.6 line. Nothing is built yet.
+
+## Fix after 0.6.6: ink over the text after a sync (part of 0.6.6)
+
+Branch `fix/text-ink-sync`. Reported by the owner: pen writing over the text of a page reached the other device's files but was not shown there, while canvas drawings were.
+
+- `web/main.js`: after an outside change (a sync, another program) the open page's drawing file is read too, and its ink is shown again when it changed (`reloadOpenInk`, rule `inkAction` in `web/syncrules.js`). Ink being drawn or waiting to be saved is never replaced. A page shown again keeps no ink that was erased elsewhere.
+- `web/inklayer.js`, `web/textink.js`, `web/pdfblock.js`, `web/canvasblock.js`: a PDF block and a canvas region are fingerprinted by their file or id (`data-ink-text`) instead of the words they show at the moment. Older ink on such a block is still found at the same place.
+- Tests: unit tests for `inkAction` and the fixed-fingerprint matching; browser tests for ink arriving and being erased from elsewhere without reopening, and for ink beside a PDF that stays after other PDF pages are drawn and the text is edited. Both browser tests fail without the fix.
+
+NOT tried on a real device: write over the text on one device, sync, and look at the same open page on the other.
 
 ## 0.6.6: built, not tried on a real device (sharing into ScaleNote and quick capture)
 

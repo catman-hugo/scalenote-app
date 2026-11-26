@@ -60,6 +60,12 @@ function plainButton(label, iconName, onClick) {
 // elements the editor adds for itself (cursor markers and so on).
 const isBlock = (node) => node.nodeType === 1 && !/ProseMirror-/.test(node.className || "");
 const kindOf = (node) => node.tagName.toLowerCase() + (node.dataset && node.dataset.type ? `.${node.dataset.type}` : "");
+// A block the editor draws itself (a PDF, a canvas region) shows text that depends on the moment:
+// a page count once the PDF is read, the words of the PDF pages near the screen, a region's label
+// once the drawing is loaded. Fingerprinting that text tied the ink to what one device happened to
+// show, so another device (or the same one a minute later) did not find the block. Such blocks
+// give a fixed text (their file or id) in `data-ink-text` instead.
+const fixedText = (node) => (node.dataset && node.dataset.inkText !== undefined ? node.dataset.inkText : null);
 
 /**
  * `scroller` is the box the text scrolls in, `panes` holds it (the bar goes in front of it),
@@ -81,6 +87,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     frame: 0,
     tagsDirty: true,
     tags: [],
+    fixed: [],
     colours: {},
   };
 
@@ -260,7 +267,9 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   // Fingerprints are only worked out again after the text changed, not on every scroll.
   function tags() {
     if (state.tagsDirty) {
-      state.tags = blocks().map((node) => blockTag(kindOf(node), node.textContent));
+      const nodes = blocks();
+      state.tags = nodes.map((node) => blockTag(kindOf(node), fixedText(node) ?? node.textContent));
+      state.fixed = nodes.map((node) => fixedText(node) !== null);
       state.tagsDirty = false;
     }
     return state.tags;
@@ -328,7 +337,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     const rects = new Map();
     const out = [];
     for (const item of d.canvas.ink) {
-      const at = findBlock(known, item.anchor);
+      const at = findBlock(known, item.anchor, state.fixed);
       if (at < 0 || !nodes[at]) continue;
       if (!rects.has(at)) rects.set(at, blockRect(nodes[at], sheet));
       out.push({ item, points: inkToScreen(item, rects.get(at)) });
@@ -394,7 +403,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     const known = tags();
     const groups = new Map();
     for (const item of d.canvas.ink) {
-      const at = findBlock(known, item.anchor);
+      const at = findBlock(known, item.anchor, state.fixed);
       if (at < 0 || !nodes[at]) continue;
       if (!groups.has(at)) groups.set(at, []);
       groups.get(at).push(item);

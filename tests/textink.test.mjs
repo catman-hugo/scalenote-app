@@ -163,3 +163,13 @@ test("a tablet stroke shown on a wider computer page is not stretched, and the s
   bad.ink[0].size = [0, -1, 16];
   assert.equal(parse2(JSON.stringify(bad)).problem, "broken", "a nonsense size makes it read-only, never half kept");
 });
+
+test("a block with a fixed fingerprint (a PDF, a canvas region) still takes ink saved with its older, changing fingerprint", () => {
+  const tags = ["p:a", "figure:attachments/book.pdf", "p:b"];
+  const fixed = [false, true, false];
+  assert.equal(findBlock(tags, { block: 1, tag: "figure:attachments/book.pdf" }, fixed), 1);
+  assert.equal(findBlock(tags, { block: 1, tag: "figure:book.pdf12 pagesChapter one" }, fixed), 1, "the old fingerprint of the same kind at the same place");
+  assert.equal(findBlock(tags, { block: 1, tag: "p:book.pdf" }, fixed), -1, "another kind of block does not take it");
+  assert.equal(findBlock(tags, { block: 2, tag: "p:gone" }, fixed), -1, "a paragraph still needs its words");
+  assert.equal(findBlock(tags, { block: 1, tag: "figure:old" }), -1, "without the fixed list nothing changes");
+});
