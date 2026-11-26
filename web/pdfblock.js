@@ -55,6 +55,8 @@ export const PdfBlock = Node.create({
     return ({ node, getPos, editor }) => {
       let current = node;
       const dom = make("figure", "pdf-block");
+      // Ink drawn beside the PDF is tied to its file, not to the words it shows (see inklayer.js).
+      dom.dataset.inkText = node.attrs.path;
       const head = make("figcaption", "pdf-block-head");
       const title = make("span", "pdf-block-title");
       const count = make("span", "pdf-block-count");
@@ -409,6 +411,7 @@ export const PdfBlock = Node.create({
           if (updated.type !== current.type) return false;
           const moved = updated.attrs.path !== current.attrs.path;
           current = updated;
+          dom.dataset.inkText = updated.attrs.path;
           if (!drag) paintWidth(current.attrs.width);
           if (moved) void start();
           else showTitle();

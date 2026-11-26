@@ -58,7 +58,7 @@ import { withMissing } from "./offlinerules.js";
 import { describeSize } from "./pdfrules.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
 import { startSyncLine } from "./syncline.js";
-import { pageAction, sameEntries } from "./syncrules.js";
+import { inkAction, pageAction, sameEntries } from "./syncrules.js";
 import { watchVault } from "./vaultwatch.js";
 import { strings } from "./strings.js";
 
@@ -1736,7 +1736,27 @@ async function reloadOpenPage() {
   if (pageAction({ onDisk: fresh.version, shown: shown.version, busy }) === "reload") {
     showNote(shown.path, fresh);
     showToast(strings.messages.pageRefreshed);
+    return;
   }
+  await reloadOpenInk(shown);
+}
+
+// The ink over the text is kept in the page's drawing file, so a sync can bring new ink while the
+// text stayed the same. Without this the other device only showed it after the page was opened
+// again. The canvas view is not reloaded here: it reads the file each time it is opened.
+async function reloadOpenInk(shown) {
+  if (drawingOpen() || pagePrefs(shown.path).view !== "text") return;
+  let file;
+  try {
+    file = await backend.readCanvas(shown.path);
+  } catch (error) {
+    logProblem("reading the drawing after an outside change failed", error);
+    return;
+  }
+  if (app.current !== shown || drawingOpen()) return;
+  const loaded = app.inkPath === shown.path;
+  const action = inkAction({ onDisk: file ? file.version : null, shown: app.canvasVersion, loaded, busy: inkBusy() });
+  if (action === "load") await loadInk(shown.path, loaded, file);
 }
 
 // ---------- folder icons ----------
@@ -2613,7 +2633,9 @@ function showNote(path, note) {
   drawHistoryButton();
   loadBacklinks(path);
   // A page that has ink shows it over the text; a page without costs one small read.
-  if (pagePrefs(path).view === "text") void loadInk(path, false);
+  // The same page shown again (changed on disk) also takes the drawing again, even when the ink
+  // was all erased elsewhere, so no ink from before stays on the screen.
+  if (pagePrefs(path).view === "text") void loadInk(path, app.inkPath === path);
 }
 
 // ---------- canvas (drawing) ----------
@@ -2758,22 +2780,32 @@ async function toggleSplit() {
 // The ink of a page is kept in the same drawing file as the canvas (as `ink`), so it is read and
 // saved by the same code. The canvas view object holds the drawing in memory for both; the ink
 // layer only draws it over the text and adds strokes to it.
+// Whether the ink of the open page has something the file does not: a stroke being drawn, or one
+// waiting to be saved. Reading the file again then would lose it.
+const inkBusy = () => Boolean((app.ink && app.ink.active) || (app.canvasSave && (app.canvasSave.pending || app.canvasSave.running)));
+
 const inkDrawing = () => (app.canvasView && app.inkPath && app.current ? { canvas: app.canvasView.canvas, readOnly: app.canvasView.readOnly, live: app.canvasView.liveItems() } : null);
 
 // Reads the drawing of the open page for the text view. Without `force` it is only used when it
 // already holds ink (a page nobody drew on costs nothing); with `force` an empty drawing is made
 // ready to be drawn on. Returns whether the ink layer now has a drawing.
-async function loadInk(path, force) {
+async function loadInk(path, force, given) {
   if (drawingOpen()) return false;
+  // Ink being drawn or not yet saved is never replaced by the file (see inkBusy).
+  if (app.inkPath === path && inkBusy()) return true;
   let file = null;
-  try {
-    file = await backend.readCanvas(path);
-  } catch (error) {
-    logProblem("opening the drawing for the ink failed", error);
-    if (force) showBanner(strings.canvas.loadFailed);
-    return false;
+  if (given !== undefined) file = given;
+  else {
+    try {
+      file = await backend.readCanvas(path);
+    } catch (error) {
+      logProblem("opening the drawing for the ink failed", error);
+      if (force) showBanner(strings.canvas.loadFailed);
+      return false;
+    }
   }
   if (!app.current || app.current.path !== path || drawingOpen()) return false;
+  if (app.inkPath === path && inkBusy()) return true;
   let canvas = null;
   let problem = "";
   if (file) {

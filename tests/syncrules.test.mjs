@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionLabel, pageAction, previewLines, previewTotal, reportLine, sameEntries, statusLineText } from "../web/syncrules.js";
+import { actionLabel, inkAction, pageAction, previewLines, previewTotal, reportLine, sameEntries, statusLineText } from "../web/syncrules.js";
 import { strings } from "../web/strings.js";
 
 const lines = strings.syncLine;
@@ -55,4 +55,12 @@ test("an open page is only replaced when it changed on disk and nothing of it is
   assert.equal(pageAction({ onDisk: "v1", shown: "v1", busy: true }), "keep");
   assert.equal(pageAction({ onDisk: "v2", shown: "v1", busy: false }), "reload");
   assert.equal(pageAction({ onDisk: "v2", shown: "v1", busy: true }), "wait", "while typing, the save notices and keeps both texts");
+});
+
+test("ink over the open page is read again when only its drawing file changed on disk", () => {
+  assert.equal(inkAction({ onDisk: "v2", shown: "v1", loaded: true, busy: false }), "load", "new ink from a sync");
+  assert.equal(inkAction({ onDisk: "v1", shown: "v1", loaded: true, busy: false }), "keep");
+  assert.equal(inkAction({ onDisk: null, shown: "v1", loaded: true, busy: false }), "load", "the drawing file was removed elsewhere");
+  assert.equal(inkAction({ onDisk: "v1", shown: null, loaded: false, busy: false }), "load", "a page without ink here gets its first ink from elsewhere");
+  assert.equal(inkAction({ onDisk: "v2", shown: "v1", loaded: true, busy: true }), "wait", "ink being drawn or saved is never replaced");
 });

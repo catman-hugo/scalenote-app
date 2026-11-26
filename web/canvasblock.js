@@ -89,6 +89,8 @@ export const CanvasBlock = Node.create({
     return ({ node }) => {
       let current = node;
       const dom = make("figure", "canvas-block");
+      // Ink drawn beside the region is tied to its id, not to its label (see inklayer.js).
+      dom.dataset.inkText = node.attrs.id;
       const title = make("figcaption", "canvas-block-title");
       const surface = make("canvas", "canvas-block-surface");
       surface.setAttribute("role", "img");
@@ -117,6 +119,7 @@ export const CanvasBlock = Node.create({
         update(updated) {
           if (updated.type !== current.type) return false;
           current = updated;
+          dom.dataset.inkText = updated.attrs.id;
           view.paint();
           return true;
         },
