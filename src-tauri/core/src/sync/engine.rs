@@ -131,7 +131,7 @@ pub struct Preview {
     pub files_here: usize,
     pub files_there: usize,
     /// Folders to make or remove (foldersync.rs); empty when the other device does not list
-    /// folders (an app before 0.6.6) or for a share sync.
+    /// folders (an app before 0.6.7) or for a share sync.
     pub folders: Vec<FolderAction>,
 }
 
@@ -150,7 +150,7 @@ pub struct Report {
     pub left_for_next: usize,
     pub too_big: Vec<String>,
     pub clashes: Vec<String>,
-    /// Folders made or removed on either side (0.6.6).
+    /// Folders made or removed on either side (0.6.7).
     pub folders: usize,
 }
 

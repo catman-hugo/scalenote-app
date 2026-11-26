@@ -25,7 +25,7 @@ export function blockTag(kind, text) {
  * blocks were added or removed above it, the nearest block with the same fingerprint is used.
  *
  * `fixed[i]` is true for a block whose fingerprint is its file name or id instead of its words (a
- * PDF, a canvas region; see `inkText` in inklayer.js). Ink drawn on such a block before 0.6.6 has
+ * PDF, a canvas region; see `inkText` in inklayer.js). Ink drawn on such a block before 0.6.7 has
  * an older fingerprint made of whatever the block showed at that moment, so when nothing matches
  * exactly, a fixed block of the same kind at the remembered place takes the ink.
  */

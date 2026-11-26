@@ -1236,7 +1236,7 @@ struct ReportReply {
     left_for_next: usize,
     too_big: Vec<String>,
     clashes: usize,
-    /// Folders made or removed on either device (0.6.6).
+    /// Folders made or removed on either device (0.6.7).
     folders: usize,
 }
 

@@ -85,7 +85,7 @@ pub struct Scan {
     pub manifest: Manifest,
     pub skipped: Vec<Skip>,
     /// Every visible folder, empty or not, with `/` between names and no `/` at the end. Synced
-    /// since 0.6.6 (foldersync.rs), so an empty folder reaches the other device and a folder
+    /// since 0.6.7 (foldersync.rs), so an empty folder reaches the other device and a folder
     /// moved or deleted on one device does not stay behind, empty, on the other.
     pub folders: BTreeSet<String>,
 }
