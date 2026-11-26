@@ -30,6 +30,10 @@ pub const KIND_BYE: u8 = 0x34;
 /// before the goodbye, so the answering device can join edits and see deletions next time it
 /// starts the sync itself. Never sent to apps before 0.6.4 (they are never in a share).
 pub const KIND_BASE: u8 = 0x35;
+/// Whole-folder syncs only (0.6.6): make a folder, or remove it when it is empty
+/// (foldersync.rs). The note is `make\npath` or `remove\npath`. Only sent to a device whose
+/// listing has a folder list, so never to older apps.
+pub const KIND_FOLDER: u8 = 0x36;
 
 pub const KIND_OK: u8 = 0x40;
 pub const KIND_LISTING: u8 = 0x41;
@@ -132,6 +136,9 @@ pub struct Listing {
     pub not_kept: BTreeSet<String>,
     /// What the device keeps. Empty choices (also from apps before 0.6) mean "everything".
     pub rules: KeepRules,
+    /// Every visible folder (0.6.6, foldersync.rs). `None` when the device did not say: an older
+    /// app, or a share sync. Then folders are left alone; an empty list is not "no folders".
+    pub folders: Option<BTreeSet<String>>,
 }
 
 pub fn encode_listing_full(listing: &Listing) -> Vec<u8> {
@@ -156,6 +163,13 @@ pub fn encode_listing_full(listing: &Listing) -> Vec<u8> {
     }
     for path in &listing.rules.linked {
         line(&format!("/linked {path}"));
+    }
+    // Older apps skip lines starting with `/` that they do not know, so this costs them nothing.
+    if let Some(folders) = &listing.folders {
+        line("/folders");
+        for path in folders {
+            line(&format!("/folder {path}"));
+        }
     }
     body
 }
@@ -195,6 +209,14 @@ pub fn decode_listing_full(body: &[u8]) -> Result<Listing> {
                 return Err(SyncError::Damaged("listing choice"));
             }
             listing.rules.linked.insert(path.to_string());
+        } else if line == "/folders" {
+            listing.folders.get_or_insert_with(BTreeSet::new);
+        } else if let Some(path) = line.strip_prefix("/folder ") {
+            let folders = listing.folders.get_or_insert_with(BTreeSet::new);
+            if !safe_path(path) || folders.len() >= super::foldersync::MAX_FOLDERS {
+                return Err(SyncError::Damaged("listing folder"));
+            }
+            folders.insert(path.to_string());
         } else if line.starts_with('/') {
             // A kind of line from a newer app: not understood, so left alone.
         } else if safe_path(line) {
@@ -215,7 +237,7 @@ pub fn own_listing(root: &Path) -> Result<Listing> {
     let skipped = scan.skipped.iter().map(|s| s.path.clone()).collect();
     let not_kept = keep::still_removed(root, &scan.manifest);
     let rules = KeepRules::load_with_links(root, &scan.manifest);
-    Ok(Listing { manifest: scan.manifest, skipped, not_kept, rules })
+    Ok(Listing { manifest: scan.manifest, skipped, not_kept, rules, folders: Some(scan.folders) })
 }
 
 /// How many bytes a listing may have: the manifest limit plus room for the skipped names and,
@@ -339,6 +361,29 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
                     continue;
                 };
                 match files::remove(root, &path, hash) {
+                    Ok(Done::Applied) => {
+                        changed += 1;
+                        answer(channel, KIND_OK)?;
+                    }
+                    Ok(Done::Changed) => answer(channel, KIND_CHANGED)?,
+                    Err(SyncError::Refused(_)) | Err(SyncError::Io(_)) => answer(channel, KIND_NO)?,
+                    Err(other) => return Err(other),
+                }
+            }
+            KIND_FOLDER => {
+                let text = std::str::from_utf8(&request.meta).map_err(|_| SyncError::Refused("bad request"))?;
+                let (what, path) = text.split_once('\n').ok_or(SyncError::Refused("bad request"))?;
+                // Folders are only synced between one's own devices; a share has its own names.
+                if !matches!(scope, Scope::Whole { .. }) {
+                    answer(channel, KIND_NO)?;
+                    continue;
+                }
+                let done = match what {
+                    "make" => files::make_folder(root, path),
+                    "remove" => files::remove_empty_folder(root, path),
+                    _ => return Err(SyncError::Refused("bad request")),
+                };
+                match done {
                     Ok(Done::Applied) => {
                         changed += 1;
                         answer(channel, KIND_OK)?;

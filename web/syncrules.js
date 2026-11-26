@@ -51,7 +51,7 @@ export function actionLabel(action, text) {
 
 /** The sentence after a sync finished. */
 export function reportLine(report, name, text) {
-  const changed = report.sent + report.received + report.deletedHere + report.deletedThere + report.conflicts;
+  const changed = report.sent + report.received + report.deletedHere + report.deletedThere + report.conflicts + (report.folders || 0);
   if (changed === 0 && report.leftForNext === 0) return fill(text.reportNone, { name });
   const line = fill(text.reportDone, { name, n: changed });
   return report.leftForNext > 0 ? `${line} ${fill(text.reportLeft, { n: report.leftForNext })}` : line;

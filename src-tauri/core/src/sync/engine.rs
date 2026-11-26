@@ -27,6 +27,7 @@ use super::exchange::*;
 use super::exchange::Listing;
 use super::space::ShareMap;
 use super::files::{self, Done, Expect, MAX_TRANSFER_BYTES};
+use super::foldersync::{self, FolderAction};
 use super::identity::KEY_LEN;
 use super::keep::{self, KeepRules};
 use super::manifest::{FileState, Manifest};
@@ -108,7 +109,7 @@ pub fn keep_share_base(pair: &Pair, said: &Manifest) -> Result<()> {
 /// The share's listing: its files by share-space name, no choices (a share is kept whole).
 pub fn share_listing(root: &Path, map: &ShareMap) -> Result<Listing> {
     let scan = Manifest::scan(root)?;
-    Ok(Listing { manifest: map.view(&scan.manifest), skipped: map.view_names(scan.skipped.iter().map(|s| &s.path)), not_kept: BTreeSet::new(), rules: KeepRules::default() })
+    Ok(Listing { manifest: map.view(&scan.manifest), skipped: map.view_names(scan.skipped.iter().map(|s| &s.path)), not_kept: BTreeSet::new(), rules: KeepRules::default(), folders: None })
 }
 
 /// What a sync would do, without doing it.
@@ -129,6 +130,9 @@ pub struct Preview {
     /// File names for the preview (the actions, with sizes), capped for display.
     pub files_here: usize,
     pub files_there: usize,
+    /// Folders to make or remove (foldersync.rs); empty when the other device does not list
+    /// folders (an app before 0.6.6) or for a share sync.
+    pub folders: Vec<FolderAction>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -146,12 +150,14 @@ pub struct Report {
     pub left_for_next: usize,
     pub too_big: Vec<String>,
     pub clashes: Vec<String>,
+    /// Folders made or removed on either side (0.6.6).
+    pub folders: usize,
 }
 
 impl Report {
-    /// How many files were changed on either side (the "3 changed" of the status line).
+    /// How many files (and folders) were changed on either side (the "3 changed" of the status line).
     pub fn changed(&self) -> usize {
-        self.sent + self.received + self.deleted_here + self.deleted_there + self.conflicts + self.merged
+        self.sent + self.received + self.deleted_here + self.deleted_there + self.conflicts + self.merged + self.folders
     }
 }
 
@@ -231,6 +237,7 @@ pub fn forget_base(root: &Path, peer_key: &[u8; KEY_LEN]) {
     let _ = fs::remove_file(settings_base_path(root, peer_key));
     let _ = fs::remove_file(shares_base_path(root, peer_key));
     super::basetext::forget(root, &hex::encode(peer_key)[..16]);
+    foldersync::forget(root, &hex::encode(peer_key)[..16]);
 }
 
 /// Whether this device has synced with that device in this vault before.
@@ -324,6 +331,7 @@ fn preview_from(plan: Plan, big: Vec<String>, first: bool, local: &Manifest, rem
         too_big: big,
         files_here: local.files.len(),
         files_there: remote.files.len(),
+        folders: Vec::new(),
     }
 }
 
@@ -363,7 +371,19 @@ fn make_preview<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Resul
     });
     let (plan, big) = finish_plan(plan, &here.manifest, &there.manifest, &local_skipped, &remote_skipped, pair);
     let counts = Counts { skipped_here: here.skipped.len(), skipped_there: there.skipped.len(), not_kept_here: out_here.len(), not_kept_there: out_there.len() };
-    let preview = preview_from(plan, big, first, &here.manifest, &there.manifest, counts);
+    let mut preview = preview_from(plan, big, first, &here.manifest, &there.manifest, counts);
+    if let (None, Some(mine), Some(theirs)) = (pair.map, &here.folders, &there.folders) {
+        let known = foldersync::known(foldersync::load(pair.root, &tag(pair)), base);
+        // A folder is not made on a device that keeps nothing in it (Available offline).
+        preview.folders = foldersync::plan(&known, mine, theirs)
+            .into_iter()
+            .filter(|action| match action {
+                FolderAction::MakeHere(path) => here.rules.keeps_folder(path),
+                FolderAction::MakeThere(path) => there.rules.keeps_folder(path),
+                _ => true,
+            })
+            .collect();
+    }
     Ok((preview, here.manifest, there.manifest))
 }
 
@@ -424,6 +444,10 @@ pub fn run<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, approved: boo
         progress(Progress { done: index, total, path: action.path().to_string() });
         perform(channel, pair, action, &local, &remote, &mut report)?;
     }
+    // After the files, so a folder that was emptied by this sync can be removed.
+    for action in &preview.folders {
+        perform_folder(channel, pair, action, &mut report)?;
+    }
     progress(Progress { done: total, total, path: String::new() });
     finish(channel, pair)?;
     Ok(Outcome::Done(report))
@@ -431,7 +455,9 @@ pub fn run<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, approved: boo
 
 /// After the actions: list both sides again and save what is now the same on both.
 fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> {
-    let scanned = Manifest::scan(pair.root)?.manifest;
+    let scan = Manifest::scan(pair.root)?;
+    let folders_here = scan.folders;
+    let scanned = scan.manifest;
     let mut local = match pair.map {
         Some(map) => map.view(&scanned),
         None => scanned,
@@ -439,7 +465,13 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
     if !pair.shares {
         local.files.remove(SHARES_FILE);
     }
-    let remote = fetch_listing(channel)?.manifest;
+    let there = fetch_listing(channel)?;
+    let remote = there.manifest;
+    // The folders both now have, for the next folder plan (foldersync.rs).
+    if let (None, Some(folders_there)) = (pair.map, &there.folders) {
+        let both = folders_here.intersection(folders_there).cloned().collect();
+        foldersync::save(pair.root, &tag(pair), &both)?;
+    }
     let mut same = Manifest::default();
     for (path, state) in &local.files {
         if remote.files.get(path).is_some_and(|other| other.same_content(state)) {
@@ -555,6 +587,25 @@ fn perform<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &Acti
         }
         Action::Conflict { path, copy, winner } => conflict(channel, pair, path, copy, *winner, local, remote, report),
     }
+}
+
+/// Makes or removes one folder (foldersync.rs). A folder that is not empty is never removed;
+/// that, and a refusal from the other device, only means it is looked at again next time.
+fn perform_folder<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair, action: &FolderAction, report: &mut Report) -> Result<()> {
+    let applied = match action {
+        // A folder that cannot be made or removed here (no permission, a file in the way) is no
+        // reason to stop the sync; it is tried again next time.
+        FolderAction::MakeHere(path) => Ok(matches!(files::make_folder(pair.root, path), Ok(Done::Applied))),
+        FolderAction::RemoveHere(path) => Ok(matches!(files::remove_empty_folder(pair.root, path), Ok(Done::Applied))),
+        FolderAction::MakeThere(path) => ask(channel, KIND_FOLDER, format!("make\n{path}").as_bytes(), &[], 0).map(|a| a.kind == KIND_OK),
+        FolderAction::RemoveThere(path) => ask(channel, KIND_FOLDER, format!("remove\n{path}").as_bytes(), &[], 0).map(|a| a.kind == KIND_OK),
+    };
+    match applied {
+        Ok(true) => report.folders += 1,
+        Ok(false) | Err(SyncError::Refused(_)) => {}
+        Err(other) => return Err(other),
+    }
+    Ok(())
 }
 
 /// The two texts joined against the text both devices had after their last sync, or `None`.

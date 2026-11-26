@@ -14,6 +14,7 @@ pub mod engine;
 pub mod exchange;
 pub mod files;
 pub mod folders;
+pub mod foldersync;
 pub mod hex;
 pub mod identity;
 pub mod invite;

@@ -162,3 +162,45 @@ pub fn remove(root: &Path, relative: &str, expected_hash: &str) -> Result<Done> 
         Some(_) => Ok(Done::Changed),
     }
 }
+
+/// Makes the folder at `relative` (and the folders above it). `Changed` when nothing had to be
+/// made (it is already there, or a file has that name). Refused when a file has that name, or another name in the same place differs
+/// only by upper/lower case (Windows cannot hold both).
+pub fn make_folder(root: &Path, relative: &str) -> Result<Done> {
+    let path = disk_path(root, relative)?;
+    match fs::symlink_metadata(&path) {
+        Ok(_) => return Ok(Done::Changed),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let parent = path.parent().ok_or(SyncError::Refused("path not allowed"))?;
+    let name = path.file_name().and_then(|n| n.to_str()).ok_or(SyncError::Refused("path not allowed"))?;
+    if case_clash(parent, name) {
+        return Err(SyncError::Refused("name differs only by case"));
+    }
+    fs::create_dir_all(&path)?;
+    Ok(Done::Applied)
+}
+
+/// Removes the folder at `relative`, but only when it is empty: a folder never takes anything
+/// with it. A folder that still holds something (a page added on this device since, a file a
+/// sync does not list) is left and `Changed` is returned, and so is a folder that is already
+/// gone (nothing was removed).
+pub fn remove_empty_folder(root: &Path, relative: &str) -> Result<Done> {
+    let path = disk_path(root, relative)?;
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Ok(Done::Changed),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Done::Changed),
+        Err(error) => return Err(error.into()),
+    }
+    // `remove_dir` (not `remove_dir_all`) fails on a folder that is not empty; that is the check.
+    let empty = fs::read_dir(&path)?.next().is_none();
+    if !empty {
+        return Ok(Done::Changed);
+    }
+    match fs::remove_dir(&path) {
+        Ok(()) => Ok(Done::Applied),
+        Err(_) => Ok(Done::Changed),
+    }
+}

@@ -1236,6 +1236,8 @@ struct ReportReply {
     left_for_next: usize,
     too_big: Vec<String>,
     clashes: usize,
+    /// Folders made or removed on either device (0.6.6).
+    folders: usize,
 }
 
 fn report_reply(report: Report) -> ReportReply {
@@ -1250,6 +1252,7 @@ fn report_reply(report: Report) -> ReportReply {
         left_for_next: report.left_for_next,
         too_big: report.too_big,
         clashes: report.clashes.len(),
+        folders: report.folders,
     }
 }
 
