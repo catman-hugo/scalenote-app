@@ -8,6 +8,7 @@ mod lock;
 mod secure;
 mod selfupdate;
 mod tray;
+mod capture;
 
 use scalenote_core::atomic::write_atomic;
 use scalenote_core::attachments::MAX_ATTACHMENT_BASE64;
@@ -1507,6 +1508,41 @@ fn updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("updater-unused").build()
 }
 
+/// One program per computer (0.6.6). "Open with" and "Send to" start the program again with a
+/// file; the second start hands its files to this one (capture.rs) and ends, so one notes folder
+/// never has two programs writing it. Android starts no second copy, so there it is an empty one.
+#[cfg(desktop)]
+fn single_instance_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri_plugin_single_instance::init(|app, args, cwd| {
+        if let Some(waiting) = app.try_state::<capture::Waiting>() {
+            capture::take_arguments(&waiting, &args, std::path::Path::new(&cwd));
+        }
+        tray::show_main(app);
+    })
+}
+#[cfg(not(desktop))]
+fn single_instance_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("single-instance-unused").build()
+}
+
+/// The optional shortcut that opens a new page from anywhere (capture.rs). Nothing is registered
+/// until the person switches it on. Used from Rust only, never from the window's scripts.
+#[cfg(desktop)]
+fn shortcut_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_global_shortcut::ShortcutState;
+    tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(|app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                capture::on_shortcut(app);
+            }
+        })
+        .build()
+}
+#[cfg(not(desktop))]
+fn shortcut_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("global-shortcut-unused").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -1517,6 +1553,10 @@ pub fn run() {
     // Startup is the one place where giving up is allowed: without a window there is
     // nothing to show. We still report why, instead of panicking with unwrap/expect.
     let result = tauri::Builder::default()
+        // First, as the plugin asks: a second start must hand over before anything else runs.
+        .plugin(single_instance_plugin())
+        .manage(capture::Waiting::default())
+        .plugin(shortcut_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(autostart_plugin())
@@ -1525,11 +1565,23 @@ pub fn run() {
         .setup(|app| {
             let state = build_state(app)?;
             app.manage(state);
+            // Files this start was given ("Open with", "Send to"). Not on Android.
+            #[cfg(desktop)]
+            if let Ok(cwd) = std::env::current_dir() {
+                let args: Vec<String> = std::env::args().collect();
+                capture::take_arguments(&app.state::<capture::Waiting>(), &args, &cwd);
+            }
             start_auto_sync(app.handle().clone());
             start_share_sync(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            capture::capture_pending,
+            capture::capture_offer_text,
+            capture::capture_android_file,
+            capture::capture_add,
+            capture::capture_dismiss,
+            capture::shortcut_set,
             share_page_open,
             search_elsewhere,
             storage_report,

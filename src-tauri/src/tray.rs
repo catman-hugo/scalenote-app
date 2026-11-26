@@ -26,6 +26,8 @@ const TRAY_ID: &str = "scalenote-tray";
 const MENU_SHOW: &str = "show";
 #[cfg(desktop)]
 const MENU_QUIT: &str = "quit";
+#[cfg(desktop)]
+const MENU_NEW: &str = "new-page";
 /// A label longer than this is cut: the text comes from the interface, so it is not trusted blindly.
 #[cfg(desktop)]
 const MAX_LABEL_CHARS: usize = 60;
@@ -39,7 +41,7 @@ fn short(label: &str) -> String {
 /// with the tray on takes the whole window away (see `hide_main_window`), so here it is made
 /// again from the same settings as at start; the interface then opens the page that was open.
 #[cfg(desktop)]
-fn show_main(app: &AppHandle) {
+pub fn show_main(app: &AppHandle) {
     if app.get_webview_window("main").is_none() {
         let Some(config) = app.config().app.windows.iter().find(|w| w.label == "main").cloned() else { return };
         if let Err(error) = tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build()) {
@@ -56,10 +58,12 @@ fn show_main(app: &AppHandle) {
 }
 
 #[cfg(desktop)]
-fn build_tray(app: &AppHandle, show_label: &str, quit_label: &str) -> Result<(), String> {
+fn build_tray(app: &AppHandle, show_label: &str, new_label: &str, quit_label: &str) -> Result<(), String> {
     let show = MenuItem::with_id(app, MENU_SHOW, show_label, true, None::<&str>).map_err(|e| e.to_string())?;
+    // "New page" (0.6.6): the window comes back with a new page in the inbox (capture.rs).
+    let new_page = MenuItem::with_id(app, MENU_NEW, new_label, true, None::<&str>).map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(app, MENU_QUIT, quit_label, true, None::<&str>).map_err(|e| e.to_string())?;
-    let menu = Menu::with_items(app, &[&show, &quit]).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(app, &[&show, &new_page, &quit]).map_err(|e| e.to_string())?;
     let icon = app.default_window_icon().ok_or_else(|| "no icon".to_string())?.clone();
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
@@ -70,6 +74,8 @@ fn build_tray(app: &AppHandle, show_label: &str, quit_label: &str) -> Result<(),
         .on_menu_event(|app, event| {
             if event.id == MENU_SHOW {
                 show_main(app);
+            } else if event.id == MENU_NEW {
+                crate::capture::on_shortcut(app);
             } else if event.id == MENU_QUIT {
                 app.exit(0);
             }
@@ -86,7 +92,7 @@ fn build_tray(app: &AppHandle, show_label: &str, quit_label: &str) -> Result<(),
 
 /// Turns the tray icon on or off. Labels come from the language file in the interface.
 #[tauri::command]
-pub fn tray_set(app: AppHandle, enabled: bool, show_label: String, quit_label: String) -> Result<(), String> {
+pub fn tray_set(app: AppHandle, enabled: bool, show_label: String, new_label: String, quit_label: String) -> Result<(), String> {
     #[cfg(desktop)]
     {
         if !enabled {
@@ -98,14 +104,14 @@ pub fn tray_set(app: AppHandle, enabled: bool, show_label: String, quit_label: S
         if app.tray_by_id(TRAY_ID).is_some() {
             return Ok(());
         }
-        build_tray(&app, &short(&show_label), &short(&quit_label)).map_err(|error| {
+        build_tray(&app, &short(&show_label), &short(&new_label), &short(&quit_label)).map_err(|error| {
             eprintln!("tray could not be made: {error}");
             "io".to_string()
         })
     }
     #[cfg(not(desktop))]
     {
-        let _ = (app, enabled, show_label, quit_label);
+        let _ = (app, enabled, show_label, new_label, quit_label);
         Err("unsupported".to_string())
     }
 }

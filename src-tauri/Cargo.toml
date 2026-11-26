@@ -40,6 +40,12 @@ tauri-plugin-autostart = "=2.7.0"
 # Installs a new version from inside the app (0.5.6), in the same kind of file the app came in,
 # after checking its signature. Desktop only, like the line above.
 tauri-plugin-updater = "=2.14.1"
+# "Open with" and "Send to" start the program again with a file (0.6.6). This hands the file to
+# the copy that is already running and ends the new one, so one notes folder never has two
+# programs writing it. Desktop only: Android starts no second copy.
+tauri-plugin-single-instance = "=2.5.5"
+# The optional shortcut that opens a new page from anywhere (0.6.6), off until switched on.
+tauri-plugin-global-shortcut = "=2.4.1"
 
 # Fingerprint or face unlock for the app lock (0.5.6). Android only; on a computer there is
 # nothing to use it with. Exact version, like every dependency here.
