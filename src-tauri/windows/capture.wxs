@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ScaleNote in "Send to" and "Open with" (0.6.6), for the .msi installer. The -setup.exe installer
+  gets the same from windows/hooks.nsh.
+
+  "Open with": a program entry (ScaleNote.Open) and its name under OpenWithProgids of each file
+  type. That adds ScaleNote to the list without making it the default program for anything.
+  "Send to": a shortcut in the Send to folder. Windows Installer removes all of it on uninstall.
+  [!Path] is the installed ScaleNote program (the file with Id "Path" in Tauri's main.wxs).
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment>
+        <DirectoryRef Id="TARGETDIR">
+            <Directory Id="SendToFolder" />
+        </DirectoryRef>
+        <DirectoryRef Id="SendToFolder">
+            <Component Id="ScaleNoteSendTo" Guid="*">
+                <Shortcut Id="ScaleNoteSendToShortcut" Name="ScaleNote" Target="[!Path]" WorkingDirectory="INSTALLDIR" />
+                <RegistryValue Root="HKCU" Key="Software\ScaleNote\Capture" Name="SendTo" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="INSTALLDIR">
+            <Component Id="ScaleNoteOpenWith" Guid="*">
+                <RegistryKey Root="HKLM" Key="Software\Classes\ScaleNote.Open">
+                    <RegistryValue Type="string" Value="ScaleNote" />
+                    <RegistryKey Key="DefaultIcon">
+                        <RegistryValue Type="string" Value="&quot;[!Path]&quot;,0" />
+                    </RegistryKey>
+                    <RegistryKey Key="shell\open\command">
+                        <RegistryValue Type="string" Value="&quot;[!Path]&quot; &quot;%1&quot;" />
+                    </RegistryKey>
+                </RegistryKey>
+                <RegistryValue Root="HKLM" Key="Software\Classes\.png\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.jpg\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.jpeg\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.gif\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.webp\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.pdf\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.md\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKLM" Key="Software\Classes\.markdown\OpenWithProgids" Name="ScaleNote.Open" Type="string" Value="ScaleNote" />
+                <RegistryValue Root="HKCU" Key="Software\ScaleNote\Capture" Name="OpenWith" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        </DirectoryRef>
+    </Fragment>
+</Wix>

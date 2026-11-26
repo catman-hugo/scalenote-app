@@ -2439,7 +2439,7 @@ await test("This device: the tray and open-at-login switches start off, change t
   assert.equal(await page.evaluate(() => window.__tray), undefined, "nothing is made until it is switched on");
   await tray.check();
   await page.waitForFunction(() => window.__tray && window.__tray.enabled === true);
-  assert.deepEqual(await page.evaluate(() => window.__tray), { enabled: true, showLabel: "Show ScaleNote", quitLabel: "Quit" });
+  assert.deepEqual(await page.evaluate(() => window.__tray), { enabled: true, showLabel: "Show ScaleNote", newLabel: "New page", quitLabel: "Quit" });
   assert.equal((await settingsNow(page)).keepInTray, true);
   await login.check();
   await page.waitForFunction(() => window.__autostart === true);
@@ -2714,7 +2714,7 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
   const texts = await rowTexts(page);
   assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
-  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Draw on the text of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
+  assert.deepEqual(texts.slice(1), ["New page", "New page from clipboard", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Draw on the text of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
   assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
   assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
   assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
@@ -8396,6 +8396,111 @@ await test("search finds pages on other devices by title, and asks the other dev
   await page.waitForFunction(() => window.__mock.files.has("Biology/Plants.md"));
 }, { settings: existingUser({ updates: false }) });
 
+await test("a file from Open with asks where it goes: a new page in the inbox, or the end of the open page", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    window.__mock.share({ kind: "file", label: "Lecture notes.md", size: 2048, text: "membranes" });
+    window.__mock.share({ kind: "file", label: "setup.exe", size: 900, text: "" });
+  });
+  await page.waitForSelector("#captureBox[open]");
+  assert.equal(await page.textContent("#captureBox h2"), "Add 2 things to ScaleNote");
+  assert.deepEqual(await page.locator("#captureList .capture-name").allTextContents(), ["Lecture notes.md", "setup.exe"]);
+  assert.equal(await page.locator("#captureToPage").count(), 0, "no page open: only the inbox");
+  await page.click("#captureAdd");
+  await page.waitForSelector("#captureBox", { state: "hidden" });
+  await page.waitForFunction(() => document.querySelector("#title").value === "Lecture notes");
+  assert.equal(await page.evaluate(() => window.__mock.files.get("Inbox/Lecture notes.md")), "membranes\n");
+  await page.waitForFunction(() => document.body.textContent.includes("setup.exe: only text, links, pictures, PDFs and markdown files can be added"));
+  // With that page open, a link shared from another app can go at its end.
+  await page.evaluate(() => window.__mock.share({ kind: "text", label: "Cell walls", size: 30, text: "[Cell walls](https://example.org)" }));
+  await page.waitForSelector("#captureBox[open] #captureToPage");
+  assert.equal(await page.textContent('label:has(#captureToPage) span'), "The end of Lecture notes");
+  await page.check("#captureToPage");
+  await page.click("#captureAdd");
+  await page.waitForSelector("#captureBox", { state: "hidden" });
+  await page.waitForFunction(() => window.__mock.files.get("Inbox/Lecture notes.md") === "membranes\n\n[Cell walls](https://example.org)\n");
+  // Cancel drops what arrived; nothing is made.
+  await page.evaluate(() => window.__mock.share({ kind: "file", label: "<b>x</b>.png", size: 10, text: "x" }));
+  await page.waitForSelector("#captureBox[open]");
+  assert.equal(await page.locator("#captureList b").count(), 0, "names are text");
+  await page.click("#captureCancel");
+  await page.waitForSelector("#captureBox", { state: "hidden" });
+  assert.equal(await page.evaluate(() => window.__mock.incoming.length), 0);
+}, { settings: existingUser({ updates: false }) });
+
+await test("New page from the tray or the shortcut makes an empty page in the inbox folder chosen in Settings", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="New folder"]');
+  await openSettingsTab(page, "files");
+  await page.waitForSelector('#inboxFolder option[value="New folder"]', { state: "attached" });
+  await page.selectOption("#inboxFolder", "New folder");
+  await page.waitForFunction(async () => JSON.parse(await window.__TAURI_INTERNALS__.invoke("get_settings")).inboxFolder === "New folder");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => window.__mock.share({ kind: "newPage", label: "", size: 0 }));
+  await page.waitForFunction(() => window.__mock.files.has("New folder/Untitled.md"));
+  await page.waitForFunction(() => document.activeElement && document.activeElement.id === "title");
+  assert.equal(await page.isVisible("#captureBox"), false, "no question for a new page");
+  assert.equal(await page.evaluate(() => window.__tray?.newLabel ?? "unset"), "unset");
+}, { settings: existingUser({ updates: false }) });
+
+await test("the new-page shortcut is off until switched on, and a computer that refuses it keeps it off", async (page) => {
+  await page.waitForSelector("#newNote");
+  await openSettingsTab(page, "files");
+  await page.waitForSelector("#quickShortcut");
+  assert.equal(await page.isChecked("#quickShortcut"), false);
+  await page.check("#quickShortcut");
+  await page.waitForFunction(() => window.__shortcut === true);
+  await page.uncheck("#quickShortcut");
+  await page.waitForFunction(() => window.__shortcut === false);
+  await page.evaluate(() => { window.__failShortcut = true; });
+  await page.click("#quickShortcut");
+  await page.waitForFunction(() => document.body.textContent.includes("This computer did not allow the shortcut. It stays off."));
+  assert.equal(await page.isChecked("#quickShortcut"), false);
+}, { settings: existingUser({ updates: false }) });
+
+await test("New page from clipboard makes a page from the copied text, or asks to paste where the clipboard cannot be read", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "Buy chalk\nand a ruler" } }); });
+  await page.click("#openSearch");
+  await page.fill("#palette input", "clipboard");
+  await page.click("#palette .palette-row >> text=New page from clipboard");
+  await page.waitForFunction(() => window.__mock.files.get("Inbox/Buy chalk.md") === "Buy chalk\nand a ruler\n");
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => { throw new Error("denied"); } } }); });
+  await page.click("#openSearch");
+  await page.fill("#palette input", "clipboard");
+  await page.click("#palette .palette-row >> text=New page from clipboard");
+  await page.waitForSelector("#pasteField");
+  await page.fill("#pasteField", "pasted words");
+  await page.click("#pasteMake");
+  await page.waitForFunction(() => window.__mock.files.get("Inbox/pasted words.md") === "pasted words\n");
+}, { settings: existingUser({ updates: false }) });
+
+await test("on Android, what other apps share comes through the bridge and gets the same box", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    const queue = [[{ kind: "text", text: "https://example.org/cells", subject: "Cells" }, { kind: "file", path: "/data/user/0/org.example/cache/scalenote-shared/1-scan.pdf", name: "scan.pdf" }, { kind: "file", path: "/etc/passwd", name: "passwd" }]];
+    window.ScaleNoteShare = { take: () => JSON.stringify(queue.shift() || []) };
+  });
+  await page.waitForSelector("#captureBox[open]");
+  assert.deepEqual(await page.locator("#captureList .capture-name").allTextContents(), ["Cells", "scan.pdf"], "a file outside the share folder is refused");
+  await page.click("#captureAdd");
+  await page.waitForFunction(() => window.__mock.files.has("Inbox/Cells.md"));
+}, { settings: existingUser({ updates: false }) });
+
+await test("files dropped on the page list are added through the same box", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(["dropped text"], "Dropped.md", { type: "text/markdown" }));
+    document.getElementById("sidebar").dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+  });
+  await page.waitForSelector("#captureBox[open]");
+  assert.deepEqual(await page.locator("#captureList .capture-name").allTextContents(), ["Dropped.md"]);
+  await page.click("#captureAdd");
+  await page.waitForFunction(() => window.__mock.files.get("Inbox/Dropped.md") === "dropped text\n");
+}, { settings: existingUser({ updates: false }) });
+
 await test("Sync settings that cannot be saved or read say so calmly and change nothing on screen", async (page) => {
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "sync");
@@ -9700,8 +9805,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes|<!--|-->/);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9710,15 +9815,15 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes|<!--/i);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Searching on other devices needs those devices on 0\.6\.5/);
+  assert.match(text, /a second copy of ScaleNote is never started/);
   // These notes are the same for every system: only the hidden short list must stay out.
   assert.doesNotMatch(text, /<!--|-->|Available offline per folder or page\./i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
@@ -9729,16 +9834,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes/i);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes/);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
@@ -10087,6 +10192,49 @@ if (process.env.SHOTS_DIR && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY 
       await page.click("#palette .palette-elsewhere");
       await page.waitForFunction(() => [...document.querySelectorAll("#palette .palette-heading")].some((h) => h.textContent === "Found on Laptop"));
       await page.screenshot({ path: name("3-search-elsewhere") });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.6.6 (Add to ScaleNote, paste box, Settings rows).
+if (process.env.SHOTS_DIR && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "066")) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(existingUser({ updates: false })));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      const name = (n) => `${shots}/v066-${label}-${scheme}-${n}.png`;
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.click("#newNote");
+      await page.waitForSelector("#title");
+      await page.evaluate(() => {
+        window.__mock.share({ kind: "file", label: "Lecture 4 - cell membranes.pdf", size: 3456789, text: "" });
+        window.__mock.share({ kind: "file", label: "whiteboard.jpg", size: 845123, text: "" });
+        window.__mock.share({ kind: "text", label: "Cell walls - Wikipedia", size: 40, text: "" });
+      });
+      await page.waitForSelector("#captureBox[open]");
+      await page.screenshot({ path: name("1-add-box") });
+      await page.click("#captureCancel");
+      await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => { throw new Error("denied"); } } }); });
+      await page.click("#openSearch").catch(async () => { await page.keyboard.press("Control+K"); });
+      await page.fill("#palette input", "clipboard");
+      await page.click("#palette .palette-row >> text=New page from clipboard");
+      await page.waitForSelector("#pasteField");
+      await page.screenshot({ path: name("2-paste") });
+      await page.keyboard.press("Escape");
+      // On a phone an open page covers the page list (and the Settings button); the rows are the
+      // same as on a computer.
+      if (label === "desktop") {
+        await openSettingsTab(page, "files");
+        await page.waitForSelector("#inboxFolder");
+        await page.locator("#inboxFolder").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: name("3-settings") });
+      }
       await context.close();
     }
   }

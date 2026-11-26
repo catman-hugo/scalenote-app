@@ -28,7 +28,36 @@ export function patchManifest(text) {
   if (!text.includes(anchor)) throw new Error("AndroidManifest.xml has no MainActivity entry");
   let out = text;
   if (!out.includes("android:windowSoftInputMode")) out = out.replace(anchor, `${anchor}\n            ${MODE_ATTRIBUTE}`);
-  return addNetwork(addInstaller(out));
+  return addShareTargets(addNetwork(addInstaller(out)));
+}
+
+// ScaleNote in Android's share menu (0.6.6): text and links, pictures, PDFs and markdown, one
+// thing or several. The activity is "singleTask" in the Tauri template, so a share reaches the
+// app that is already open (onNewIntent) instead of starting a second one; that is checked here.
+// What arrives is handled by ShareBridge.kt.
+export const SHARE_FILTERS = `<intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>`;
+
+function addShareTargets(text) {
+  if (text.includes("android.intent.action.SEND")) return text;
+  const start = text.indexOf('android:name=".MainActivity"');
+  const end = text.indexOf("</activity>", start);
+  if (start === -1 || end === -1) throw new Error("AndroidManifest.xml has no closing MainActivity entry");
+  const activity = text.slice(text.lastIndexOf("<activity", start), end);
+  if (!/android:launchMode="singleTask"/.test(activity)) throw new Error("MainActivity is not singleTask; a share would start a second app");
+  return `${text.slice(0, end)}    ${SHARE_FILTERS}\n        ${text.slice(end)}`;
 }
 
 // Sync between devices needs three things Android keeps behind permissions. None of them lets
@@ -105,6 +134,7 @@ export function patchActivity(text) {
   if (!text.includes("TauriActivity")) throw new Error("MainActivity.kt is not a Tauri activity");
   return `package ${match[1]}
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -115,11 +145,22 @@ import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   private val network by lazy { NetworkBridge(this) }
+  private val share by lazy { ShareBridge(this) }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     shortenForKeyboard()
+    // Something shared with ScaleNote, or the "New page" shortcut. Only on a fresh start: after
+    // turning the phone the same request would otherwise be handled twice.
+    if (savedInstanceState == null) share.receive(intent)
+  }
+
+  // The app was already open (singleTask): Android hands the new request here.
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    share.receive(intent)
   }
 
   // The page may start an update install through this object. See ApkInstaller.kt.
@@ -127,6 +168,7 @@ class MainActivity : TauriActivity() {
     super.onWebViewCreate(webView)
     webView.addJavascriptInterface(ApkInstaller(this, webView), "ScaleNoteInstaller")
     webView.addJavascriptInterface(network, "ScaleNoteNetwork")
+    webView.addJavascriptInterface(share, "ScaleNoteShare")
   }
 
   // Devices find each other while the app is on screen. The multicast lock is held only then,
@@ -206,6 +248,183 @@ class NetworkBridge(context: Context) {
     } catch (error: Exception) {
       true
     }
+  }
+}
+`;
+}
+
+// The native part of Android's share menu and the "New page" home-screen shortcut (0.6.6).
+//  - Text (and a link, which arrives as text) is kept as it is, at most 1 MB, with the subject.
+//  - Files (pictures, PDFs, markdown) are copied by the app into its own cache folder
+//    "scalenote-shared", at most 20 at once and 64 MB each, under a random name; the page passes
+//    their place on, and Rust only takes files from that folder (src-tauri/src/capture.rs),
+//    checks what they really are, and removes the copy once added or dismissed. Copies older than
+//    a day are removed at the next start.
+//  - The page asks for what came with take(): a JSON list. Nothing from the share is ever put
+//    into the page as code: it is all JSON text, read with JSON.parse.
+//  - The "New page" shortcut (long-press the app icon) is added once the page gives its label,
+//    so the word comes from the app's language file.
+export function shareBridgeSource(pkg) {
+  return `package ${pkg}
+
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.OpenableColumns
+import android.webkit.JavascriptInterface
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.UUID
+
+class ShareBridge(private val activity: Activity) {
+  private val pending = mutableListOf<JSONObject>()
+  private val maxFileBytes = 64L * 1024 * 1024
+  private val maxFiles = 20
+  private val maxTextChars = 1_000_000
+  private val folder: File by lazy { File(activity.cacheDir, "scalenote-shared").also { it.mkdirs() } }
+
+  init {
+    Thread { removeOldCopies() }.start()
+  }
+
+  fun receive(intent: Intent?) {
+    if (intent == null) return
+    try {
+      when (intent.action) {
+        NEW_PAGE -> add(JSONObject().put("kind", "newPage"))
+        Intent.ACTION_SEND -> {
+          val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+          val subject = intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString()
+          val stream = streamOf(intent)
+          if (stream != null) copyLater(listOf(stream))
+          else if (!text.isNullOrBlank() && text.length <= maxTextChars) {
+            add(JSONObject().put("kind", "text").put("text", text).put("subject", subject?.take(500) ?: JSONObject.NULL))
+          }
+        }
+        Intent.ACTION_SEND_MULTIPLE -> copyLater(streamsOf(intent).take(maxFiles))
+      }
+    } catch (error: Exception) {
+      android.util.Log.w("ScaleNote", "a shared item could not be read", error)
+    }
+    // Handled once: the same request is not read again later.
+    intent.action = null
+  }
+
+  @Suppress("DEPRECATION")
+  private fun streamOf(intent: Intent): Uri? =
+    if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    else intent.getParcelableExtra(Intent.EXTRA_STREAM)
+
+  @Suppress("DEPRECATION")
+  private fun streamsOf(intent: Intent): List<Uri> =
+    (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    else intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)) ?: emptyList()
+
+  // Copying can take a moment for a big PDF, so it is not done on the screen's own thread.
+  private fun copyLater(uris: List<Uri>) {
+    Thread {
+      for (uri in uris) {
+        try {
+          copy(uri)?.let { add(it) }
+        } catch (error: Exception) {
+          android.util.Log.w("ScaleNote", "a shared file could not be copied", error)
+        }
+      }
+    }.start()
+  }
+
+  private fun copy(uri: Uri): JSONObject? {
+    if (uri.scheme != "content" && uri.scheme != "file") return null
+    val name = cleanName(displayName(uri))
+    val target = File(folder, UUID.randomUUID().toString() + "-" + name)
+    val temporary = File(folder, target.name + ".part")
+    var total = 0L
+    activity.contentResolver.openInputStream(uri)?.use { input ->
+      temporary.outputStream().use { output ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+          val read = input.read(buffer)
+          if (read < 0) break
+          total += read
+          if (total > maxFileBytes) {
+            temporary.delete()
+            return null
+          }
+          output.write(buffer, 0, read)
+        }
+      }
+    } ?: return null
+    if (!temporary.renameTo(target)) {
+      temporary.delete()
+      return null
+    }
+    return JSONObject().put("kind", "file").put("path", target.absolutePath).put("name", name)
+  }
+
+  private fun displayName(uri: Uri): String {
+    try {
+      activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) return cursor.getString(0) ?: "file"
+      }
+    } catch (error: Exception) {
+      android.util.Log.w("ScaleNote", "a shared file has no name", error)
+    }
+    return uri.lastPathSegment ?: "file"
+  }
+
+  // Letters, digits and a few signs only, at most 100 characters: the name is only a hint.
+  private fun cleanName(name: String): String {
+    val kept = name.substringAfterLast('/').filter { it.isLetterOrDigit() || it in "._- ()" }.trim().take(100)
+    return if (kept.isEmpty() || kept.startsWith(".")) "file" else kept
+  }
+
+  private fun add(item: JSONObject) {
+    synchronized(pending) {
+      if (pending.size < 100) pending.add(item)
+    }
+  }
+
+  private fun removeOldCopies() {
+    val dayAgo = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+    folder.listFiles()?.filter { it.lastModified() < dayAgo }?.forEach { it.delete() }
+  }
+
+  // What has arrived since the page last asked, as JSON text.
+  @JavascriptInterface
+  fun take(): String = synchronized(pending) {
+    val list = JSONArray()
+    pending.forEach { list.put(it) }
+    pending.clear()
+    list.toString()
+  }
+
+  // Adds (or renames) the "New page" shortcut on the app icon. The label comes from the page.
+  @JavascriptInterface
+  fun offerShortcut(label: String) {
+    val clean = label.filter { !it.isISOControl() }.trim().take(25)
+    if (clean.isEmpty()) return
+    activity.runOnUiThread {
+      try {
+        val intent = Intent(activity, activity.javaClass).setAction(NEW_PAGE)
+        val shortcut = ShortcutInfoCompat.Builder(activity, "new-page")
+          .setShortLabel(clean)
+          .setIcon(IconCompat.createWithResource(activity, R.mipmap.ic_launcher))
+          .setIntent(intent)
+          .build()
+        ShortcutManagerCompat.pushDynamicShortcut(activity, shortcut)
+      } catch (error: Exception) {
+        android.util.Log.w("ScaleNote", "the New page shortcut could not be added", error)
+      }
+    }
+  }
+
+  companion object {
+    const val NEW_PAGE = "org.scalenote.NEW_PAGE"
   }
 }
 `;
@@ -402,6 +621,7 @@ async function main() {
   await writeFile(path.join(path.dirname(activity), "ApkInstaller.kt"), apkInstallerSource(pkg));
   await writeFile(path.join(path.dirname(activity), "ApkFileProvider.kt"), apkFileProviderSource(pkg));
   await writeFile(path.join(path.dirname(activity), "NetworkBridge.kt"), networkBridgeSource(pkg));
+  await writeFile(path.join(path.dirname(activity), "ShareBridge.kt"), shareBridgeSource(pkg));
   await mkdir(path.join(root, "res", "xml"), { recursive: true });
   await writeFile(path.join(root, "res", "xml", "apk_paths.xml"), APK_PATHS_XML);
   console.log("patched", manifest);
