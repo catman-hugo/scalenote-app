@@ -286,6 +286,7 @@ fn an_older_app_reads_removed_files_as_left_out_and_newer_ones_read_the_choices(
         skipped: ["Big.pdf".to_string()].into(),
         not_kept: ["Home/Shopping.md".to_string()].into(),
         rules,
+        folders: None,
     };
     let body = encode_listing_full(&listing);
     assert_eq!(decode_listing_full(&body).expect("new"), listing);
@@ -762,4 +763,17 @@ fn a_paired_device_searches_the_text_of_pages_that_are_not_here_and_another_pers
     channel.send(&super::remotesearch::encode_query("membrane")).expect("send");
     let answer = channel.recv().ok();
     assert_ne!(answer.as_ref().and_then(|a| a.first().copied()), Some(super::remotesearch::KIND_FOUND));
+}
+
+#[test]
+fn a_folder_is_kept_when_its_choice_or_one_inside_it_keeps_something() {
+    let mut rules = KeepRules::default();
+    assert!(rules.keeps_folder("Anything"), "no choices: everything is kept");
+    rules.set("", Some(Kinds::NONE)).expect("set");
+    rules.set("Year 2/Course", Some(Kinds::ALL)).expect("set");
+    assert!(rules.keeps_folder("Year 2"), "a folder inside is kept, so this one is needed");
+    assert!(rules.keeps_folder("Year 2/Course"));
+    assert!(rules.keeps_folder("Year 2/Course/Week 1"));
+    assert!(!rules.keeps_folder("Home"));
+    assert!(!rules.keeps_folder("Year 2/Other"));
 }

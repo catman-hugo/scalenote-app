@@ -227,7 +227,7 @@ export function pairingRows(logProblem, { onVaultChanged = async () => {}, wifi 
   async function afterSync(report) {
     await refresh();
     document.dispatchEvent(new Event("scalenote-sync-changed"));
-    if (report && report.sent + report.received + report.deletedHere + report.deletedThere + report.conflicts > 0) await onVaultChanged();
+    if (report && report.sent + report.received + report.deletedHere + report.deletedThere + report.conflicts + (report.folders || 0) > 0) await onVaultChanged();
   }
 
   function showStatus(status) {

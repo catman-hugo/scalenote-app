@@ -186,6 +186,13 @@ impl KeepRules {
         best.map_or(Kinds::ALL, |(_, k)| k)
     }
 
+    /// Whether this device keeps anything in the folder `folder` (0.6.6, foldersync.rs): its own
+    /// choice keeps some kind, or a choice for a folder inside it does. A folder kept for
+    /// nothing is not made by a sync; its pages are listed from the other devices anyway.
+    pub fn keeps_folder(&self, folder: &str) -> bool {
+        self.choice_for(folder) != Kinds::NONE || self.choices.iter().any(|(rule, kinds)| *kinds != Kinds::NONE && rule != folder && covers(folder, rule))
+    }
+
     /// Whether this device keeps `path`.
     pub fn keeps(&self, path: &str) -> bool {
         if path == SETTINGS_FILE || path == super::shares::SHARES_FILE {

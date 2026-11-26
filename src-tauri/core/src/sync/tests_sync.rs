@@ -590,3 +590,62 @@ fn a_device_paired_while_a_folder_is_open_belongs_to_it_and_two_server_vaults_ne
     again.remove_peer(&bob_id).expect("remove");
     assert!(!fs::read_to_string(da.0.join("sync-folders.txt")).expect("file").contains(&bob_id));
 }
+
+fn folders(root: &Path) -> Vec<String> {
+    super::manifest::Manifest::scan(root).expect("scan").folders.into_iter().collect()
+}
+
+#[test]
+fn an_empty_folder_reaches_the_other_device_and_a_moved_folder_leaves_no_empty_copy_behind() {
+    let p = setup("folders-move");
+    write(&p.va.0, "Cytology/Cells.md", "cells");
+    write(&p.va.0, "Histology/Tissue.md", "tissue");
+    sync(&p);
+    assert_eq!(folders(&p.vb.0), vec!["Cytology", "Histology"]);
+    // On Alice's device: both folders move into Year 2/Course, and an empty folder is made.
+    fs::create_dir_all(p.va.0.join("Year 2/Course")).expect("course");
+    fs::rename(p.va.0.join("Cytology"), p.va.0.join("Year 2/Course/Cytology")).expect("move");
+    fs::rename(p.va.0.join("Histology"), p.va.0.join("Year 2/Course/Histology")).expect("move");
+    fs::create_dir_all(p.va.0.join("Year 2/Empty course")).expect("empty");
+    let report = sync(&p);
+    assert_eq!(folders(&p.vb.0), folders(&p.va.0), "the same folders on both");
+    assert_eq!(folders(&p.vb.0), vec!["Year 2", "Year 2/Course", "Year 2/Course/Cytology", "Year 2/Course/Histology", "Year 2/Empty course"]);
+    assert_eq!(read(&p.vb.0, "Year 2/Course/Cytology/Cells.md"), "cells");
+    assert_eq!(report.folders, 3, "Empty course made there, the two old folders removed there");
+    // Nothing more to do.
+    assert_eq!(sync(&p).changed(), 0);
+}
+
+#[test]
+fn a_folder_removed_on_one_device_stays_where_something_was_added_to_it() {
+    let p = setup("folders-keep");
+    fs::create_dir_all(p.va.0.join("Plans/Empty")).expect("plans");
+    sync(&p);
+    assert_eq!(folders(&p.vb.0), vec!["Plans", "Plans/Empty"], "empty folders reach the other device");
+    // Bob adds a page to Plans while Alice removes the whole folder.
+    write(&p.vb.0, "Plans/New idea.md", "keep me");
+    fs::remove_dir_all(p.va.0.join("Plans")).expect("remove");
+    sync(&p);
+    assert_eq!(read(&p.vb.0, "Plans/New idea.md"), "keep me", "a folder never takes a page with it");
+    assert_eq!(read(&p.va.0, "Plans/New idea.md"), "keep me", "and the page comes back to Alice");
+    assert_eq!(folders(&p.vb.0), vec!["Plans"], "only the empty folder inside was removed");
+    assert_eq!(folders(&p.va.0), vec!["Plans"]);
+}
+
+#[test]
+fn folders_are_left_alone_with_a_device_that_lists_none() {
+    // What an app before 0.6.6 sends: a listing without the folder lines.
+    let dir = Dir::new("folders-old");
+    fs::create_dir_all(dir.0.join("Only here")).expect("dir");
+    let listing = super::exchange::own_listing(&dir.0).expect("listing");
+    assert_eq!(listing.folders, Some(["Only here".to_string()].into()));
+    let old = super::exchange::Listing { folders: None, ..listing.clone() };
+    let decoded = super::exchange::decode_listing_full(&super::exchange::encode_listing_full(&old)).expect("decode");
+    assert_eq!(decoded.folders, None, "no folder list is not an empty folder list");
+    let decoded = super::exchange::decode_listing_full(&super::exchange::encode_listing_full(&listing)).expect("decode");
+    assert_eq!(decoded, listing);
+    // And the lines an older app would see are only ones it skips (they start with `/`).
+    let body = super::exchange::encode_listing_full(&listing);
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("\n/folders\n/folder Only here\n"), "{text}");
+}

@@ -20,7 +20,7 @@ use crate::atomic::TEMP_SUFFIX;
 use crate::foldericons::SETTINGS_DIR;
 use crate::names::RESERVED;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -84,6 +84,10 @@ pub struct Skip {
 pub struct Scan {
     pub manifest: Manifest,
     pub skipped: Vec<Skip>,
+    /// Every visible folder, empty or not, with `/` between names and no `/` at the end. Synced
+    /// since 0.6.6 (foldersync.rs), so an empty folder reaches the other device and a folder
+    /// moved or deleted on one device does not stay behind, empty, on the other.
+    pub folders: BTreeSet<String>,
 }
 
 /// Whether one name (a file or a folder) is something every system can hold.
@@ -154,6 +158,7 @@ impl Manifest {
     pub fn scan(root: &Path) -> Result<Scan> {
         let mut manifest = Manifest::default();
         let mut skipped = Vec::new();
+        let mut folders = BTreeSet::new();
         let mut stack = vec![(root.to_path_buf(), String::new(), 0usize)];
         while let Some((dir, prefix, depth)) = stack.pop() {
             for entry in fs::read_dir(&dir)? {
@@ -194,6 +199,9 @@ impl Manifest {
                     if !portable_name(name) || depth + 1 > MAX_DEPTH {
                         skipped.push(Skip { path: relative, reason: SkipReason::NotPortable });
                     } else {
+                        if safe_path(&relative) && folders.len() < MAX_FILES {
+                            folders.insert(relative.clone());
+                        }
                         stack.push((entry.path(), format!("{relative}/"), depth + 1));
                     }
                 } else if meta.is_file() {
@@ -204,7 +212,7 @@ impl Manifest {
             }
         }
         skipped.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(Scan { manifest, skipped })
+        Ok(Scan { manifest, skipped, folders })
     }
 
     fn add(manifest: &mut Manifest, skipped: &mut Vec<Skip>, relative: String, path: &Path, meta: &fs::Metadata) -> Result<()> {

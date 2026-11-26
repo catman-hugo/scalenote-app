@@ -39,6 +39,7 @@ test("the report after a sync says what changed and what was left for next time"
   const base = { sent: 1, received: 2, deletedHere: 0, deletedThere: 0, conflicts: 0, leftForNext: 0 };
   assert.equal(reportLine(base, "bob", text), "Synced with bob: 3 changed.");
   assert.equal(reportLine({ ...base, sent: 0, received: 0 }, "bob", text), "Synced with bob: nothing to change.");
+  assert.equal(reportLine({ ...base, sent: 0, received: 0, folders: 2 }, "bob", text), "Synced with bob: 2 changed.", "folders made or removed count (0.6.6)");
   assert.match(reportLine({ ...base, leftForNext: 2 }, "bob", text), /2 changed while syncing and will be done next time/);
 });
 
