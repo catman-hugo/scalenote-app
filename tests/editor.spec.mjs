@@ -9805,8 +9805,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes|<!--|-->/);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9815,15 +9815,15 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes|<!--/i);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Searching on other devices needs those devices on 0\.6\.5/);
+  assert.match(text, /a second copy of ScaleNote is never started/);
   // These notes are the same for every system: only the hidden short list must stay out.
   assert.doesNotMatch(text, /<!--|-->|Available offline per folder or page\./i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
@@ -9834,16 +9834,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes/i);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /how much room each folder takes, and Free up space/);
-  assert.doesNotMatch(text, /people you share with cannot search your notes/);
+  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
+  assert.doesNotMatch(text, /hands the file to the open window/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
@@ -10192,6 +10192,49 @@ if (process.env.SHOTS_DIR && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY 
       await page.click("#palette .palette-elsewhere");
       await page.waitForFunction(() => [...document.querySelectorAll("#palette .palette-heading")].some((h) => h.textContent === "Found on Laptop"));
       await page.screenshot({ path: name("3-search-elsewhere") });
+      await context.close();
+    }
+  }
+}
+
+// Screenshots of the screens added in 0.6.6 (Add to ScaleNote, paste box, Settings rows).
+if (process.env.SHOTS_DIR && (!process.env.SHOTS_ONLY || process.env.SHOTS_ONLY === "066")) {
+  const shots = process.env.SHOTS_DIR;
+  for (const scheme of ["light", "dark"]) {
+    for (const [label, viewport] of [["desktop", { width: 1100, height: 760 }], ["phone", { width: 390, height: 800 }]]) {
+      const context = await browser.newContext({ viewport, colorScheme: scheme });
+      await context.addInitScript((text) => { window.__seedSettings = text; }, JSON.stringify(existingUser({ updates: false })));
+      await context.addInitScript({ path: path.join(here, "mock-backend.js") });
+      const page = await context.newPage();
+      const name = (n) => `${shots}/v066-${label}-${scheme}-${n}.png`;
+      await page.route("https://**/*", (route) => (route.request().url() === GITHUB ? route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "[]" }) : route.abort()));
+      await page.goto(url);
+      await page.waitForSelector("#newNote");
+      await page.click("#newNote");
+      await page.waitForSelector("#title");
+      await page.evaluate(() => {
+        window.__mock.share({ kind: "file", label: "Lecture 4 - cell membranes.pdf", size: 3456789, text: "" });
+        window.__mock.share({ kind: "file", label: "whiteboard.jpg", size: 845123, text: "" });
+        window.__mock.share({ kind: "text", label: "Cell walls - Wikipedia", size: 40, text: "" });
+      });
+      await page.waitForSelector("#captureBox[open]");
+      await page.screenshot({ path: name("1-add-box") });
+      await page.click("#captureCancel");
+      await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => { throw new Error("denied"); } } }); });
+      await page.click("#openSearch").catch(async () => { await page.keyboard.press("Control+K"); });
+      await page.fill("#palette input", "clipboard");
+      await page.click("#palette .palette-row >> text=New page from clipboard");
+      await page.waitForSelector("#pasteField");
+      await page.screenshot({ path: name("2-paste") });
+      await page.keyboard.press("Escape");
+      // On a phone an open page covers the page list (and the Settings button); the rows are the
+      // same as on a computer.
+      if (label === "desktop") {
+        await openSettingsTab(page, "files");
+        await page.waitForSelector("#inboxFolder");
+        await page.locator("#inboxFolder").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: name("3-settings") });
+      }
       await context.close();
     }
   }

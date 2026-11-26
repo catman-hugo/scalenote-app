@@ -905,6 +905,14 @@ async function checkIncoming() {
 }
 
 function startIncomingCheck() {
+  // Android: the "New page" shortcut on the app icon, named from the language file.
+  if (window.ScaleNoteShare && typeof window.ScaleNoteShare.offerShortcut === "function") {
+    try {
+      window.ScaleNoteShare.offerShortcut(strings.capture.shortcutName);
+    } catch (error) {
+      logProblem("shortcut not offered", error);
+    }
+  }
   setInterval(checkIncoming, INCOMING_CHECK_MS);
   window.addEventListener("focus", checkIncoming);
   document.addEventListener("visibilitychange", () => {

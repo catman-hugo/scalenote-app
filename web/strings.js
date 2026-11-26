@@ -95,6 +95,7 @@ export const strings = {
     inboxLabel: "Shared things go to",
     inboxHint: "Pages made from things you share with ScaleNote (from other apps, Open with, Send to, the clipboard) go in this folder. It is made when it is missing. When a page is open, you can also add to it instead.",
     shortcutLabel: "Ctrl+Alt+N opens a new page from anywhere",
+    shortcutName: "New page",
     shortcutHint: "Works while ScaleNote runs, also from the tray. Some Linux desktops (Wayland) do not allow such shortcuts.",
     shortcutFailed: "This computer did not allow the shortcut. It stays off.",
     droppedFailed: "The dropped files could not be read.",

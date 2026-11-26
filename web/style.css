@@ -2211,3 +2211,4 @@ button.storage-row:hover { background: var(--bg-hover); }
 .capture-size { color: var(--text-soft); flex: none; font-variant-numeric: tabular-nums; }
 .capture-choice { justify-content: flex-start; gap: var(--space-2); }
 .capture-paste { width: 100%; box-sizing: border-box; font: inherit; }
+.capture-choices { margin-bottom: var(--space-3); }
