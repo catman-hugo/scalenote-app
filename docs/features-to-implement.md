@@ -77,6 +77,7 @@ Every one of these keeps the rule that a page opened and not changed is written 
 - **Drawings as files in the vault**, with a Drawings view in the sidebar and a way to embed a drawing inline in a page.
 - Keep drawing shortcuts to one letter per tool (select, hand, rectangle, diamond, ellipse, arrow, line, pen, text, eraser, frame, laser pointer, keep tool).
 - Test pen behaviour on the Android tablet and on Linux before calling any of this done.
+- **Animations in pages** (asked for on 2026-11-26): `/animation` makes a block of steps drawn on the canvas, shown as steps, a video that plays once, or a loop. Given a version: 0.7.0, see `docs/v0.7.0-animation.md`.
 
 ## Import, export and integrations
 

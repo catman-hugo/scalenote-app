@@ -4,6 +4,10 @@ Status key: not started, in progress, built (tried only where the builder can ru
 
 Last updated: 2026-11-25; 0.6.5 built (storage and search; not tried on real devices yet); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
+## 0.7.0: planned (animations in pages)
+
+Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.7 releases the 0.6 line. Nothing is built yet.
+
 ## 0.6.5: built, not tried on a real device (storage and search)
 
 Branch `feature/v0.6.5-storage-search`. Release notes `docs/release-notes/0.6.5.md`; security checklist `docs/security-checklist-0.6.5.md`.
