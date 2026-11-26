@@ -9853,8 +9853,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
-  assert.doesNotMatch(text, /hands the file to the open window|<!--|-->/);
+  assert.match(text, /Empty, moved and deleted folders sync too/);
+  assert.doesNotMatch(text, /cannot be told apart from new ones|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9863,17 +9863,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
-  assert.doesNotMatch(text, /hands the file to the open window|<!--/i);
+  assert.match(text, /Empty, moved and deleted folders sync too/);
+  assert.doesNotMatch(text, /cannot be told apart from new ones|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /a second copy of ScaleNote is never started/);
+  assert.match(text, /cannot be told apart from new ones/);
   // These notes are the same for every system: only the hidden short list must stay out.
-  assert.doesNotMatch(text, /<!--|-->|Available offline per folder or page\./i);
+  assert.doesNotMatch(text, /<!--|-->|Empty, moved and deleted folders sync too\./i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -9882,16 +9882,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
-  assert.doesNotMatch(text, /hands the file to the open window/i);
+  assert.match(text, /Empty, moved and deleted folders sync too/);
+  assert.doesNotMatch(text, /cannot be told apart from new ones/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Share text, links, pictures and PDFs into ScaleNote from other apps/);
-  assert.doesNotMatch(text, /hands the file to the open window/);
+  assert.match(text, /Empty, moved and deleted folders sync too/);
+  assert.doesNotMatch(text, /cannot be told apart from new ones/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
