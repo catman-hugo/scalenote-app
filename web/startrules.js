@@ -22,6 +22,8 @@ export const RESETTABLE = {
   ...DEFAULT_APPEARANCE,
   updates: true,
   penButton: "erase",
+  penKeyDown: "none",
+  penKeyUp: "none",
   openIn: "text",
   snapShapes: true,
   canvasEdge: "open",

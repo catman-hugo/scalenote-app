@@ -11,6 +11,7 @@
 // - A pen's eraser end erases for as long as it is held. The barrel button does what the
 //   "Pen button" setting says: erase (the default), select with a loop, or nothing.
 // - Everything is stored in canvas units, so zooming only changes how it is drawn.
+import { toggledTool } from "./penkeys.js";
 import { holdTouches } from "./touchhold.js";
 import {
   DrawingHistory, LIMITS, MARGIN_X, NOTE, PAGE_COLOURS, PAPERS, PEN_COLOURS, PEN_WIDTHS, SHAPES, nearestWidthStop, snapToGrid,
@@ -121,6 +122,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     history: new DrawingHistory(),
     readOnly: false,
     tool: "pen",
+    toolBefore: null,
     shape: "rect",
     colour: "ink",
     width: PEN_WIDTHS[1],
@@ -1276,7 +1278,24 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
   });
   new ResizeObserver(scheduleDraw).observe(surface);
 
+  // A pen button that sends a key (penkeys.js): main.js passes its job here while the canvas is
+  // open. Returns whether the job was done, so the key does not also scroll.
+  function penKey(action) {
+    if (state.readOnly) return false;
+    if (action === "eraser") {
+      const next = toggledTool(state.tool, state.toolBefore);
+      state.toolBefore = state.tool;
+      setTool(next);
+      return true;
+    }
+    if (action === "undo") undo();
+    else if (action === "redo") redo();
+    else return false;
+    return true;
+  }
+
   return {
+    penKey,
     /** Shows a drawing. `problem` (a code) makes it read-only with a message. */
     show(canvas, problem) {
       commitNote();

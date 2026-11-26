@@ -11,6 +11,7 @@
 // - Like the canvas view, a pen or a mouse draws and a finger scrolls the page, unless "Finger
 //   draws" is on. The bar sits above the text instead of floating over it, so it never covers
 //   the first lines, and it looks and works like the toolbar of the canvas.
+import { toggledTool } from "./penkeys.js";
 import { holdTouches } from "./touchhold.js";
 import { DrawingHistory, LIMITS, PEN_COLOURS, PEN_WIDTHS, canAddItem, drawnWidth, nearestWidthStop, widthAt } from "./canvasrules.js";
 import { blockTag, findBlock, inkFromScreen, inkToScreen, lineTouched, splitByBlock } from "./textink.js";
@@ -79,6 +80,7 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     active: false,
     visible: false,
     tool: "pen",
+    toolBefore: null,
     colour: "ink",
     width: PEN_WIDTHS[1],
     fingerDraws: false,
@@ -673,6 +675,24 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   }
 
   return {
+    /**
+     * Does the job of a pen button that sends a key (penkeys.js) while drawing over the text.
+     * Returns whether it was done; outside drawing the key keeps its normal job.
+     */
+    penKey(action) {
+      if (!state.active) return false;
+      if (action === "eraser") {
+        const next = toggledTool(state.tool, state.toolBefore);
+        state.toolBefore = state.tool;
+        setTool(next);
+        return true;
+      }
+      if (action === "undo" || action === "redo") {
+        undoRedo(action);
+        return true;
+      }
+      return false;
+    },
     /** Shows the ink of the open page over the text (looking only, until `start`). */
     show() {
       state.visible = true;

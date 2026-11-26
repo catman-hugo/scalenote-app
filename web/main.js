@@ -1,5 +1,6 @@
 // Wires the screens together: settings, the folder, the note list, the editor and saving.
 
+import { cleanPenKey, PEN_KEY_ACTIONS, PEN_KEY_SETTINGS, penKeyAction } from "./penkeys.js";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { applyAppearance, DEFAULT_APPEARANCE, followSystem, nextZoom, normalizeAppearance } from "./appearance.js";
 import { writeImage } from "./richblocks.js";
@@ -78,7 +79,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", penKeyDown: "none", penKeyUp: "none", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
   entries: [],
   // What this device keeps offline: { choices, notHere } (offlinerules.js). Empty where the
   // backend has no such list (the browser) or before the first answer.
@@ -206,6 +207,9 @@ async function loadSettings() {
       // Covers are off until turned on.
       // What the side button of a pen does on the canvas.
       penButton: PEN_BUTTONS.includes(parsed.penButton) ? parsed.penButton : "erase",
+      // What a pen button that sends Page Down or Page Up does while drawing (penkeys.js). Off.
+      penKeyDown: cleanPenKey(parsed.penKeyDown),
+      penKeyUp: cleanPenKey(parsed.penKeyUp),
       // The view a page opens in: its text, its drawing, or both side by side.
       openIn: OPEN_IN.includes(parsed.openIn) ? parsed.openIn : "text",
       // Shapes snap to a grid unless turned off.
@@ -463,7 +467,27 @@ function canvasSettingsRows() {
   const edgeRow = document.createElement("label");
   edgeRow.className = "setting-row";
   edgeRow.append(textElement("span", s.canvasEdge, "setting-label"), edge);
-  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint"), edgeRow];
+  const keyRows = Object.entries(PEN_KEY_SETTINGS).map(([key, name]) => {
+    const pick = document.createElement("select");
+    pick.id = name;
+    for (const value of PEN_KEY_ACTIONS) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = s.penKeyOptions[value];
+      pick.append(option);
+    }
+    pick.value = app.settings[name];
+    pick.setAttribute("aria-label", s.penKeyLabels[key]);
+    pick.addEventListener("change", () => {
+      app.settings[name] = cleanPenKey(pick.value);
+      saveSettings();
+    });
+    const keyRow = document.createElement("label");
+    keyRow.className = "setting-row";
+    keyRow.append(textElement("span", s.penKeyLabels[key], "setting-label"), pick);
+    return keyRow;
+  });
+  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), ...keyRows, textElement("p", s.penKeyHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint"), edgeRow];
 }
 
 
@@ -2692,6 +2716,23 @@ async function saveCanvas() {
 // The drawing is on screen in two views: alone ("canvas") or beside the text ("split").
 const drawingOpen = () => app.mode === "canvas" || app.mode === "split";
 
+// A pen button that sends Page Down or Page Up (penkeys.js) does its chosen job while drawing:
+// on the canvas, or with the pen out over the text. Anywhere else, in a dialog or in a text
+// field, the key keeps its normal job.
+function penKeyShortcut(event) {
+  const target = event.target;
+  const inTextField = Boolean(target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)));
+  const action = penKeyAction({ key: event.key, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: event.shiftKey, metaKey: event.metaKey, repeat: event.repeat, inTextField }, app.settings);
+  if (!action || document.querySelector("dialog[open]")) return;
+  let done = false;
+  if (drawingOpen() && app.canvasView) done = app.canvasView.penKey(action);
+  else if (app.ink && app.ink.active) done = app.ink.penKey(action);
+  if (done) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
 async function enterCanvas(mode = "canvas") {
   if (!app.current || app.mode === mode) return;
   if (!drawingOpen()) await leaveInk();
@@ -3278,6 +3319,7 @@ function wireEvents() {
   document.addEventListener("keydown", shortcutsShortcut, true);
   document.addEventListener("keydown", printShortcut, true);
   document.addEventListener("keydown", findShortcut, true);
+  document.addEventListener("keydown", penKeyShortcut, true);
   el("newNote").addEventListener("click", createNote);
   el("newFolder").addEventListener("click", createFolder);
   el("vaultButton").addEventListener("click", showFolderMenu);

@@ -7707,6 +7707,53 @@ await test("with Start at the top left, the canvas cannot be moved past its top 
   assert.ok(far[0] > 700 && far[1] > 700, JSON.stringify(far));
 }, { settings: existingUser({ updates: false, canvasEdge: "topLeft" }) });
 
+await test("a pen button that sends Page Down or Page Up switches to the eraser and back, or undoes, only while drawing", async (page) => {
+  await inkVault(page);
+  // Off until chosen: Page Down keeps its normal job.
+  await openSettingsTab(page, "drawing");
+  assert.equal(await page.inputValue("#penKeyDown"), "none");
+  await page.selectOption("#penKeyDown", "eraser");
+  await page.selectOption("#penKeyUp", "undo");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).penKeyUp === "undo");
+  if (shots) await page.screenshot({ path: `${shots}/v068-light-pen-keys.png` });
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  // Over the text, while drawing.
+  await startInk(page);
+  const eraser = '.ink-bar button[aria-label="Eraser"]';
+  const pen = '.ink-bar button[aria-label="Pen"]';
+  await page.keyboard.press("PageDown");
+  assert.equal(await page.getAttribute(eraser, "aria-pressed"), "true");
+  await page.keyboard.press("PageDown");
+  assert.equal(await page.getAttribute(pen, "aria-pressed"), "true", "back to the pen");
+  await page.click('.ink-bar button[aria-label="Highlighter"]');
+  await page.keyboard.press("PageDown");
+  await page.keyboard.press("PageDown");
+  assert.equal(await page.getAttribute('.ink-bar button[aria-label="Highlighter"]', "aria-pressed"), "true", "back to the tool before the eraser");
+  await page.click(pen);
+  const box = await blockBox(page, 1);
+  await inkPen(page, horizontalLine(box, 0.5));
+  await page.waitForFunction(() => window.__mock.canvases.has("Sketch.md") && (JSON.parse(window.__mock.canvases.get("Sketch.md")).ink || []).length === 1);
+  await page.keyboard.press("PageUp");
+  await page.waitForFunction(() => (JSON.parse(window.__mock.canvases.get("Sketch.md")).ink || []).length === 0);
+  // Not drawing: the key keeps its job and changes no tool.
+  await page.click("#inkButton");
+  await page.waitForSelector(".ink-bar", { state: "hidden" });
+  const handled = await page.evaluate(() => {
+    const event = new KeyboardEvent("keydown", { key: "PageDown", bubbles: true, cancelable: true });
+    document.querySelector("#editor .note-body").dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  assert.equal(handled, false, "Page Down scrolls as usual outside drawing");
+  // On the canvas.
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await openCanvas(page);
+  await page.keyboard.press("PageDown");
+  assert.equal(await page.getAttribute('.canvas-toolbar button[aria-label="Eraser"]', "aria-pressed"), "true");
+  await page.keyboard.press("PageDown");
+  assert.equal(await page.getAttribute('.canvas-toolbar button[aria-label="Pen"]', "aria-pressed"), "true");
+}, ctxOpts);
+
 await test("by default the canvas is open on every side, and the setting is under Drawing", async (page) => {
   await canvasVault(page);
   await openCanvas(page);

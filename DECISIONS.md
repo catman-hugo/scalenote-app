@@ -921,3 +921,9 @@ Decision. A published version is never rebuilt under the same number: the update
 Context. With three devices that each sync every half minute, a sync is often running. Sync now, Compare and an incoming sync gave up at once, so the button said "busy" nearly every time and other devices logged syncs that "did not finish".
 Decision. Sync now and Compare wait up to 60 seconds (the button says it is syncing meanwhile). A sync started by another device waits up to 5 seconds before it says busy: if two devices start a sync with each other at the same moment, each holds its own session and waits for the other, so the wait must stay short. The automatic round does not wait; it tries again a few seconds later.
 Cost. A Sync now click can take up to a minute before it starts.
+
+## 2026-11-26: Pen buttons that send Page Down and Page Up get a job only while drawing
+
+Context. Some tablet pens have no usual side-button signal. Their buttons send Page Down and Page Up when tapped away from the screen; held on the screen, the tablet's system keeps them for its own shortcuts, and no setting there changes that.
+Decision. Two settings under Drawing, one per key: does nothing (the default), switches to the eraser and back, undoes, or redoes. They act only while drawing (the canvas, or the pen out over the text), never in a dialog or a text field, and never with Ctrl, Alt, Shift or Meta held, so a real keyboard keeps its Page Up and Page Down. The settings are named by key, not by pen, because which button sends which key differs between pens; the Pen test shows it.
+Alternatives. A system-wide remapping app (works in other apps too, but taps fixed spots on the screen and is outside this app). Off by default rather than on: a keyboard's Page Down while drawing would otherwise suddenly erase.
