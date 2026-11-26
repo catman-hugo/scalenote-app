@@ -745,6 +745,43 @@ impl Service {
         Err(SyncError::Refused("not available offline"))
     }
 
+    /// Asks the paired devices that can be reached now to search the text of their pages, and
+    /// keeps the results for pages that are not on this device (remotesearch.rs). Returns, per
+    /// device that answered, its name and results. Devices that cannot be reached, or are too old
+    /// to search, are skipped.
+    pub fn search_elsewhere(&self, query: &str) -> Result<Vec<(String, Vec<crate::search::SearchHit>, bool)>> {
+        let (peers, root) = {
+            let state = lock(&self.shared.state);
+            if !state.enabled || state.paused {
+                return Err(SyncError::Refused("not available offline"));
+            }
+            let root = state.vault.clone().ok_or(SyncError::Refused("no vault is open"))?;
+            let peers: Vec<Peer> = state.trust.peers().iter().filter(|p| state.folders.allows(&p.public, &root)).cloned().collect();
+            (peers, root)
+        };
+        let mut answers = Vec::new();
+        for peer in peers {
+            let Ok(mut channel) = self.reach(&peer) else { continue };
+            let asked = (|| -> Result<Option<(Vec<crate::search::SearchHit>, bool)>> {
+                channel.stream().set_read_timeout(Some(super::remotesearch::WAIT_TIME))?;
+                channel.send(&super::remotesearch::encode_query(query))?;
+                let answer = channel.recv()?;
+                Ok(match answer.split_first() {
+                    Some((&super::remotesearch::KIND_FOUND, body)) => super::remotesearch::decode_answer(body),
+                    _ => None,
+                })
+            })();
+            if let Ok(Some((hits, truncated))) = asked {
+                let elsewhere: Vec<_> = hits.into_iter().filter(|h| !root.join(&h.path).exists()).collect();
+                answers.push((peer.name.clone(), elsewhere, truncated));
+            }
+        }
+        if answers.is_empty() {
+            return Err(SyncError::Refused("not available offline"));
+        }
+        Ok(answers)
+    }
+
     /// Like `take_session`, but waits up to `wait` for a running sync to finish.
     fn wait_for_session(&self, wait: Duration) -> Result<MutexGuard<'_, ()>> {
         let until = Instant::now() + wait;
@@ -1078,6 +1115,29 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
     result.map(|_| ())
 }
 
+/// Answers a search from one of this person's own devices: a search of this notes folder for
+/// at most `ANSWER_TIME`, sent back as one checked message.
+fn serve_search(shared: &Shared, channel: &mut Channel<TcpStream>, query: &[u8]) -> Result<()> {
+    use super::remotesearch::{encode_answer, ANSWER_TIME, KIND_FOUND, MAX_HITS, MAX_QUERY_BYTES};
+    let root = {
+        let state = lock(&shared.state);
+        state.vault.clone().filter(|_| state.enabled && !state.paused)
+    };
+    let (Some(root), Ok(query)) = (root, std::str::from_utf8(query)) else {
+        let _ = channel.send(&[KIND_REFUSED]);
+        return Err(SyncError::Refused("search"));
+    };
+    if query.len() > MAX_QUERY_BYTES {
+        let _ = channel.send(&[KIND_REFUSED]);
+        return Err(SyncError::Refused("search"));
+    }
+    let vault = crate::vault::Vault::open(&root).map_err(|_| SyncError::Refused("no vault is open"))?;
+    let results = vault.search_until(query, MAX_HITS, Some(Instant::now() + ANSWER_TIME)).map_err(|_| SyncError::Refused("search"))?;
+    let mut message = vec![KIND_FOUND];
+    message.extend_from_slice(&encode_answer(&results.hits, results.truncated));
+    channel.send(&message)
+}
+
 fn engine_serve(channel: &mut Channel<TcpStream>, first: Vec<u8>, root: &Path, allowed: bool, shares: bool) -> Result<usize> {
     exchange::serve(channel, first, root, allowed, exchange::Scope::Whole { shares })
 }
@@ -1202,6 +1262,8 @@ fn handle_connection(shared: &Shared, stream: TcpStream) -> Result<()> {
             channel.send(&answer)
         }
         Some(kind) if trusted && is_sync_kind(kind) => serve_sync(shared, &mut channel, first, &remote),
+        // A search by one of this person's own devices (0.6.5); it needs no sync session.
+        Some(super::remotesearch::KIND_SEARCH) if trusted => serve_search(shared, &mut channel, &first[1..]),
         // Anyone may send an invitation or an answer; sharing.rs decides whether it is taken.
         Some(super::invite::KIND_INVITE) => sharing::take_invitation(shared, &mut channel, &first[1..], from_ip),
         Some(super::invite::KIND_INVITE_ANSWER) => sharing::take_answer(shared, &mut channel, &first[1..]),

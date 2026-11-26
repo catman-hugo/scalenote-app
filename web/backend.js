@@ -28,6 +28,11 @@ export const backend = {
   // The folder "Use the default folder" would open, as text for the first-run screen.
   defaultVaultPath: () => call("default_vault_path"),
   tree: () => call("vault_tree"),
+  // Settings, Storage (0.6.5): sizes per folder and kind; "Free up space".
+  storageReport: () => call("storage_report"),
+  storageFree: () => call("storage_free"),
+  // The text of pages not here, searched on paired devices: [{ device, hits, truncated }].
+  searchElsewhere: (query) => call("search_elsewhere", { query }),
   // Shares (0.6.4): [{ id, item, folder, path, state, mine, ownerName, people }].
   shares: () => call("shares_list"),
   shareWith: (path, folder, person) => call("share_with", { path, folder, person }),

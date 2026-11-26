@@ -372,12 +372,20 @@ pub fn left_out<'a>(rules: &KeepRules, held: &Manifest, base: &Manifest, candida
 }
 
 /// The saved lists of this vault ("what both sides had at the last sync"), one per paired device.
+/// Whether a file name is the saved list of a sync with one of this person's own devices:
+/// `sync-base-<16 hex>.txt`. The lists of share syncs with other people (`sync-base-<16 hex>-<16
+/// hex>.txt`, 0.6.4) do not count: a copy on someone else's device is not a copy of one's own, and
+/// their names are share names, not paths in this folder.
+fn own_device_list(name: &str) -> bool {
+    name.strip_prefix("sync-base-").and_then(|n| n.strip_suffix(".txt")).is_some_and(|id| id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 fn base_files(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(root.join(".scalenote")) else { return Vec::new() };
     let mut found: Vec<PathBuf> = entries
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("sync-base-") && n.ends_with(".txt")))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(own_device_list))
         .collect();
     found.sort();
     found
@@ -614,6 +622,30 @@ mod tests {
         let mut bad = KeepRules::default();
         assert!(bad.set("../x", Some(Kinds::ALL)).is_err());
         assert!(bad.set(".scalenote/folder-icons.json", Some(Kinds::NONE)).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_copy_on_someone_elses_device_does_not_count_when_freeing_space() {
+        assert!(own_device_list("sync-base-0123456789abcdef.txt"));
+        assert!(!own_device_list("sync-base-0123456789abcdef-fedcba9876543210.txt"));
+        assert!(!own_device_list("sync-base-zz23456789abcdef.txt"));
+        let dir = std::env::temp_dir().join(format!("sn-keep-share-base-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Bio")).expect("dir");
+        fs::write(dir.join("Bio/Cells.md"), "cells").expect("page");
+        fs::write(dir.join("Bio/Cells.canvas.json"), "{}").expect("drawing");
+        // Only a share sync with another person has this drawing, in exactly this version.
+        let list = Manifest::scan(&dir).expect("scan").manifest;
+        fs::create_dir_all(dir.join(".scalenote")).expect("dir");
+        fs::write(dir.join(".scalenote/sync-base-0123456789abcdef-fedcba9876543210.txt"), list.to_text()).expect("list");
+        let report = set_choice(&dir, "Bio", Some("t")).expect("text only");
+        assert!(report.removed.is_empty(), "nothing removed: no device of one's own has it");
+        assert_eq!(report.only_here, ["Bio/Cells.canvas.json"]);
+        assert!(dir.join("Bio/Cells.canvas.json").is_file());
+        // With one's own device having it, it is freed.
+        fs::write(dir.join(".scalenote/sync-base-0123456789abcdef.txt"), list.to_text()).expect("list");
+        assert_eq!(free_up_space(&dir).expect("free").removed, ["Bio/Cells.canvas.json"]);
         let _ = fs::remove_dir_all(&dir);
     }
 }

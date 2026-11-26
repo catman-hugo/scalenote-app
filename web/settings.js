@@ -93,7 +93,7 @@ function themePicker(state, change) {
   return box;
 }
 
-const TAB_ORDER = ["drawing", "updates", "sync", "files", "device", "shortcuts", "about", "privacy"];
+const TAB_ORDER = ["drawing", "updates", "sync", "files", "storage", "device", "shortcuts", "about", "privacy"];
 
 // The tab that was open last, kept while the app runs so the box opens where it was left.
 let lastTab = "look";

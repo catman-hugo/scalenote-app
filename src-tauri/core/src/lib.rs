@@ -19,6 +19,7 @@ pub mod history;
 pub mod links;
 pub mod obsidian;
 pub mod search;
+pub mod storage;
 pub mod inbox;
 pub mod server;
 pub mod sync;

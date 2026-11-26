@@ -199,14 +199,14 @@ mod tests {
     use super::*;
 
     fn invitation() -> Invitation {
-        Invitation { id: [3; ID_LEN], item: "Biology".to_string(), folder: true, owner: [1; ID_LEN], owner_name: "Rowan".to_string(), keys: vec![[7; KEY_LEN]], to: [2; ID_LEN], port: 47821 }
+        Invitation { id: [3; ID_LEN], item: "Biology".to_string(), folder: true, owner: [1; ID_LEN], owner_name: "Alice".to_string(), keys: vec![[7; KEY_LEN]], to: [2; ID_LEN], port: 47821 }
     }
 
     #[test]
     fn messages_read_back_the_same() {
         let sent = invitation();
         assert_eq!(Invitation::decode(&sent.encode()), Some(sent));
-        let answer = Answer { id: [3; ID_LEN], account: [2; ID_LEN], name: "Mila".to_string(), accept: true, keys: vec![[8; KEY_LEN]] };
+        let answer = Answer { id: [3; ID_LEN], account: [2; ID_LEN], name: "Dana".to_string(), accept: true, keys: vec![[8; KEY_LEN]] };
         assert_eq!(Answer::decode(&answer.encode()), Some(answer));
     }
 
@@ -219,7 +219,7 @@ mod tests {
             ("\"Biology\"", "\".hidden\""),
             ("\"folder\"", "\"page\""), // a page must end in .md
             ("\"folder\"", "\"script\""),
-            ("\"Rowan\"", "\"   \""),
+            ("\"Alice\"", "\"   \""),
             ("47821", "0"),
             ("47821", "70000"),
             ("\"0303", "\"zz03"),
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn the_sending_device_is_always_one_of_the_owners_devices() {
-        let share = invitation().to_share(&[9; KEY_LEN], ([2; ID_LEN], "Mila"));
+        let share = invitation().to_share(&[9; KEY_LEN], ([2; ID_LEN], "Dana"));
         assert_eq!(share.people[&[1; ID_LEN]].keys, vec![[7; KEY_LEN], [9; KEY_LEN]]);
         assert_eq!(share.state, State::Invited);
     }

@@ -5,6 +5,7 @@
 // reads the rows while the person keeps typing. Everything shown from a page (its title and
 // the matching line) is put in with textContent, never as html.
 
+import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
 const SEARCH_DELAY_MS = 150;
@@ -40,9 +41,11 @@ function commandMatches(command, query) {
 /**
  * Opens the box in `dialog`.
  * `recent()` gives page paths opened in this session (newest first), `commands` is a list of
- * { label, run }, `search(query)` resolves to { hits, truncated } and `openPage(path)` opens one.
+ * { label, run }, `search(query)` resolves to { hits, truncated, notHere, notHereCount } and
+ * `openPage(path, away)` opens one (`away`: it is not on this device). `searchElsewhere(query)`, when given, asks the person's other devices
+ * to search the text of the pages that are not here (0.6.5): [{ device, hits, truncated }].
  */
-export function openPalette(dialog, { recent, commands, search, openPage }) {
+export function openPalette(dialog, { recent, commands, search, openPage, searchElsewhere }) {
   const s = strings.search;
   dialog.replaceChildren();
   dialog.classList.add("palette");
@@ -74,6 +77,11 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
   let active = -1;
   let pages = []; // page hits for the current query
   let truncated = false;
+  // Pages not on this device: those whose title fits, and how many there are at all (0.6.5).
+  let notHere = [];
+  let notHereCount = 0;
+  // Asking the other devices: idle, asking, done or failed, with what each device found.
+  let elsewhere = { state: "idle", groups: [] };
   let failed = false;
   let searching = false;
   let counter = 0; // answers that arrive late for an older query are thrown away
@@ -105,11 +113,13 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
     list.append(heading);
   }
 
-  function addRow(node, run) {
+  // `keepOpen`: the row does its job without closing the box (asking other devices).
+  function addRow(node, run, keepOpen = false) {
     node.id = `palette-row-${rows.length}`;
     node.setAttribute("role", "option");
     node.setAttribute("aria-selected", "false");
-    node.addEventListener("click", () => choose(run));
+    if (keepOpen) node.dataset.keepOpen = "1";
+    node.addEventListener("click", () => (keepOpen ? run() : choose(run)));
     node.addEventListener("pointermove", () => {
       const at = rows.findIndex((r) => r.node === node);
       if (at !== active) setActive(at, false);
@@ -118,17 +128,48 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
     rows.push({ node, run });
   }
 
-  function pageRow(path, snippet) {
+  function pageRow(path, snippet, away = false) {
     const row = make("li", "palette-row");
     const folder = folderOf(path);
-    row.append(make("span", "palette-title", titleOf(path)), make("span", "palette-where", folder || s.topLevel));
+    const title = make("span", "palette-title", titleOf(path));
+    if (away) {
+      // Not on this device: opening it brings it from another device.
+      const cloud = icon("cloud");
+      cloud.classList.add("palette-cloud");
+      title.append(cloud);
+      row.dataset.away = "1";
+    }
+    row.append(title, make("span", "palette-where", folder || s.topLevel));
     if (snippet && snippet.length) {
       const line = make("span", "palette-snippet");
       for (const [text, matched] of snippet) line.append(matched ? make("mark", "", text) : document.createTextNode(text));
       row.append(line);
     }
-    row.title = fill(s.inFolder, { folder: folder || s.topLevel });
-    addRow(row, () => openPage(path));
+    row.title = away ? s.notHereTitle : fill(s.inFolder, { folder: folder || s.topLevel });
+    addRow(row, () => openPage(path, away));
+  }
+
+  async function askElsewhere(query) {
+    const mine = counter;
+    elsewhere = { state: "asking", groups: [] };
+    render();
+    try {
+      const groups = await searchElsewhere(query);
+      if (mine !== counter) return;
+      elsewhere = { state: "done", groups: groups || [] };
+    } catch {
+      if (mine !== counter) return;
+      elsewhere = { state: "failed", groups: [] };
+    }
+    render();
+  }
+
+  function elsewhereNote() {
+    if (elsewhere.state === "asking") return s.asking;
+    if (elsewhere.state === "failed") return s.noDevice;
+    if (elsewhere.state === "done" && !elsewhere.groups.some((g) => g.hits.length)) return s.nothingElsewhere;
+    if (elsewhere.state === "idle" && notHereCount) return fill(s.onlyHere, { count: notHereCount });
+    return "";
   }
 
   function commandRow(command) {
@@ -148,11 +189,28 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
     } else {
       if (pages.length) addHeading(s.pagesHeading);
       for (const hit of pages) pageRow(hit.path, hit.snippet);
+      const shown = new Set();
+      for (const group of elsewhere.groups) {
+        const hits = group.hits.filter((h) => !shown.has(h.path));
+        if (!hits.length) continue;
+        addHeading(fill(s.foundOn, { device: group.device }));
+        for (const hit of hits) {
+          shown.add(hit.path);
+          pageRow(hit.path, hit.snippet, true);
+        }
+      }
+      const titlesOnly = notHere.filter((h) => !shown.has(h.path));
+      if (titlesOnly.length) addHeading(s.notHereHeading);
+      for (const hit of titlesOnly) pageRow(hit.path, null, true);
+      if (searchElsewhere && notHereCount && elsewhere.state === "idle" && !searching) {
+        addRow(make("li", "palette-row palette-command palette-elsewhere", s.askElsewhere), () => askElsewhere(query), true);
+      }
       const matching = commands.filter((c) => commandMatches(c, query));
       if (matching.length) addHeading(s.commandsHeading);
       for (const command of matching) commandRow(command);
     }
-    note.textContent = failed ? s.failed : truncated && query ? s.partial : !rows.length && query && !searching ? s.nothingFound : "";
+    const away = query && !failed ? elsewhereNote() : "";
+    note.textContent = failed ? s.failed : truncated && query ? s.partial : away || (!rows.length && query && !searching ? s.nothingFound : "");
     note.hidden = !note.textContent;
     status.textContent = searching ? s.searching : query ? (rows.length === 1 ? s.oneResult : fill(s.resultCount, { count: rows.length })) : "";
     setActive(rows.length ? 0 : -1);
@@ -171,11 +229,16 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
       if (mine !== counter) return;
       pages = result.hits;
       truncated = result.truncated;
+      notHere = result.notHere || [];
+      notHereCount = result.notHereCount || 0;
+      elsewhere = { state: "idle", groups: [] };
       failed = false;
     } catch {
       if (mine !== counter) return;
       pages = [];
       truncated = false;
+      notHere = [];
+      notHereCount = 0;
       failed = true;
     }
     searching = false;
@@ -188,6 +251,9 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
     if (!query) {
       counter++; // anything still on its way is no longer wanted
       pages = [];
+      notHere = [];
+      notHereCount = 0;
+      elsewhere = { state: "idle", groups: [] };
       truncated = false;
       failed = false;
       searching = false;
@@ -197,6 +263,9 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
     // Commands show at once; the pages follow when the person stops typing for a moment.
     searching = true;
     pages = [];
+    notHere = [];
+    elsewhere = { state: "idle", groups: [] };
+    counter++; // an answer from the other devices for the old words is no longer wanted
     render();
     timer = setTimeout(() => {
       timer = null;
@@ -222,7 +291,11 @@ export function openPalette(dialog, { recent, commands, search, openPage }) {
         await latest;
         if (!dialog.open) return;
       }
-      if (active >= 0) choose(rows[active].run);
+      if (active >= 0) {
+        const row = rows[active];
+        if (row.node.dataset.keepOpen) row.run();
+        else choose(row.run);
+      }
     }
   });
 

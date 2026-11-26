@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn names_are_cleaned_and_cut() {
-        assert_eq!(clean_person_name("  Mila \n van  Dam "), Some("Mila van Dam".to_string()));
+        assert_eq!(clean_person_name("  Dana \n van  Dam "), Some("Dana van Dam".to_string()));
         assert_eq!(clean_person_name("\u{7}"), None);
         assert_eq!(clean_person_name(&"x".repeat(80)).map(|n| n.chars().count()), Some(40));
     }
@@ -134,13 +134,13 @@ mod tests {
         let path = dir.join("account.txt");
         let mut mine = Account::default();
         assert_eq!(mine.greeting_part(), "");
-        mine.set_name("Rowan Ä").expect("name");
+        mine.set_name("Alice Ä").expect("name");
         mine.findable = true;
         mine.save(&path).expect("save");
         assert_eq!(Account::load(&path), mine);
         let hello = format!("0.6.4 ts=100.64.0.1:1{}", mine.greeting_part());
         let theirs = Account::read_greeting(&hello).expect("read");
-        assert_eq!((theirs.id, theirs.name.as_str(), theirs.findable), (mine.id, "Rowan Ä", false));
+        assert_eq!((theirs.id, theirs.name.as_str(), theirs.findable), (mine.id, "Alice Ä", false));
         let mut other_device = Account::default();
         assert!(other_device.adopt(&theirs));
         assert!(!other_device.adopt(&Account::default()));
