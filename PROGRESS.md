@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-26; 0.6.8 in progress (Sync now waits for a running sync); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-26; 0.6.8 in progress (Sync now waits for a running sync; the Pen test records keys); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.7.0: planned (animations in pages)
 
@@ -16,6 +16,12 @@ Reported by the owner with a computer, a tablet and a phone: Sync now and Compar
 
 - `sync/service.rs`: Sync now and Compare wait up to 60 seconds for the running sync (`MANUAL_WAIT`); a sync started by another device waits up to 5 seconds (`SERVE_WAIT`; short, so two devices that start a sync with each other at the same moment do not wait for each other long). The automatic round still does not wait. The busy message now says the other sync has been running for over a minute.
 - Test (Rust, two services on loopback): a running sync here and one on the other device are waited for; one that goes on longer than the wait is still refused calmly. It fails without the change (checked).
+
+NOT tried on a real device.
+
+### The Pen test records keys (branch `feature/pen-test-keys`)
+
+A tester's tablet pen has two buttons. Held while touching the screen, the system keeps them for its own shortcuts (its note app, a screenshot), and the Pen test showed no barrel button at all. Tapped away from the screen they may send a key (the maker says they turn pages). The Pen test now lists the keys it hears (`web/pentest.js`; key name, code and number only, at most 20), so we can see whether a tap reaches ScaleNote before building "tap the pen button to switch to the eraser". Browser test added.
 
 NOT tried on a real device.
 
