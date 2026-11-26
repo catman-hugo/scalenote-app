@@ -52,6 +52,8 @@ import { pairingRows, privacyRows } from "./syncpairing.js";
 import { openOfflineDialog } from "./offlinedialog.js";
 import { openInvitationDialog, openShareDialog } from "./sharedialog.js";
 import { storageRows } from "./storagepanel.js";
+import { openCaptureDialog, openPasteDialog, refusedLine } from "./capturebox.js";
+import { readAsBase64 } from "./images.js";
 import { withMissing } from "./offlinerules.js";
 import { describeSize } from "./pdfrules.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
@@ -64,6 +66,8 @@ const SAVE_DELAY_MS = 600;
 const BACKLINK_DELAY_MS = 300;
 // How often the list of shares is read again for invitations and changes (one small file).
 const SHARE_CHECK_MS = 4000;
+// How often things shared from outside the window are looked for (a short list in Rust).
+const INCOMING_CHECK_MS = 2000;
 const isAndroid = /Android/i.test(navigator.userAgent);
 
 const el = (id) => document.getElementById(id);
@@ -74,7 +78,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "" },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
   entries: [],
   // What this device keeps offline: { choices, notHere } (offlinerules.js). Empty where the
   // backend has no such list (the browser) or before the first answer.
@@ -218,6 +222,9 @@ async function loadSettings() {
       lastPage: cleanLastPage(parsed.lastPage),
       // Devices that sync only on Wi-Fi (their ids).
       wifiOnly: cleanWifiOnly(parsed.wifiOnly),
+      // Where shared things go (0.6.6), and the global shortcut (computers only, off by default).
+      inboxFolder: cleanInboxFolder(parsed.inboxFolder),
+      quickShortcut: parsed.quickShortcut === true && !isAndroid,
       // The assistant is off. There is no switch for it in this version.
       aiEnabled: false,
     };
@@ -793,7 +800,206 @@ function trayRows() {
 }
 
 function applyTray(enabled) {
-  return backend.traySet(enabled, strings.settings.trayShow, strings.settings.trayQuit);
+  return backend.traySet(enabled, strings.settings.trayShow, strings.settings.trayNew, strings.settings.trayQuit);
+}
+
+// ---------- things shared from outside the window (0.6.6) ----------
+
+// A folder path from the settings file: plain parts only, never hidden or `..`; else "Inbox".
+function cleanInboxFolder(value) {
+  if (typeof value !== "string") return "Inbox";
+  const parts = value.split("/").map((p) => p.trim());
+  const ok = value.length <= 255 && parts.length && parts.every((p) => p && p !== "." && p !== ".." && !p.startsWith(".") && !/[\\:*?"<>|]/.test(p));
+  return ok ? parts.join("/") : "Inbox";
+}
+
+let incomingBusy = false;
+
+// Android hands what was shared to the page through a small bridge (patch-android.mjs): text goes
+// to Rust's waiting list as text, files as copies in the app's own share folder.
+async function takeFromAndroid() {
+  const bridge = window.ScaleNoteShare;
+  if (!bridge || typeof bridge.take !== "function") return false;
+  let list = [];
+  try {
+    list = JSON.parse(bridge.take() || "[]");
+  } catch (error) {
+    logProblem("shared items unreadable", error);
+    return false;
+  }
+  let newPage = false;
+  for (const item of Array.isArray(list) ? list.slice(0, 50) : []) {
+    try {
+      if (item.kind === "text" && typeof item.text === "string") await backend.captureOfferText(item.text, typeof item.subject === "string" ? item.subject : null);
+      else if (item.kind === "file" && typeof item.path === "string") await backend.captureAndroidFile(item.path, typeof item.name === "string" ? item.name : "");
+      else if (item.kind === "newPage") newPage = true;
+    } catch (error) {
+      logProblem("shared item not taken", error);
+    }
+  }
+  return newPage;
+}
+
+// A new empty page in the inbox, opened with its title ready to type.
+async function newPageInInbox() {
+  try {
+    const path = await backend.captureNewPage(app.settings.inboxFolder, strings.newNoteTitle);
+    for (let dir = parentOf(path); dir; dir = parentOf(dir)) app.expanded.add(dir);
+    await refreshTree();
+    await openNote(path);
+    el("title").focus();
+    el("title").select();
+  } catch (error) {
+    logProblem("new page failed", error);
+    showBanner(errorText(error));
+  }
+}
+
+// Says what could not be added, if anything.
+function tellRefused(refused) {
+  if (!refused || !refused.length) return;
+  showToast(fill(strings.capture.addedWithProblems, { list: refused.map(([name, reason]) => refusedLine(name, reason)).join("; ") }));
+}
+
+// Opens the page things were added to; the open page is read again so the addition shows.
+async function showAdded(page) {
+  if (!page) return;
+  for (let dir = parentOf(page); dir; dir = parentOf(dir)) app.expanded.add(dir);
+  await refreshTree();
+  await openNote(page);
+}
+
+// Looks for things shared from outside. Called every few seconds and when the window comes back.
+// Nothing is asked while another box is open, while the app is locked or without a notes folder.
+async function checkIncoming() {
+  if (incomingBusy || app.locked || !app.settings.vaultPath || document.querySelector("dialog[open]")) return;
+  incomingBusy = true;
+  try {
+    const androidNewPage = await takeFromAndroid();
+    const waiting = (await backend.capturePending()) || [];
+    const newPages = waiting.filter((w) => w.kind === "newPage");
+    const things = waiting.filter((w) => w.kind !== "newPage");
+    if (newPages.length) await backend.captureDismiss(newPages.map((w) => w.id));
+    if (things.length) {
+      if (app.autosave) await app.autosave.flush();
+      const ids = things.map((w) => w.id);
+      const result = await openCaptureDialog(el("captureBox"), {
+        items: things,
+        inbox: app.settings.inboxFolder,
+        openPage: app.current ? app.current.path : null,
+        add: (where) => backend.captureAdd(ids, where),
+        dismiss: () => backend.captureDismiss(ids).catch((error) => logProblem("dismiss failed", error)),
+      });
+      if (result) {
+        await showAdded(result.page);
+        tellRefused(result.refused);
+      }
+    } else if (newPages.length || androidNewPage) {
+      await newPageInInbox();
+    }
+  } catch (error) {
+    logProblem("shared things not checked", error);
+  } finally {
+    incomingBusy = false;
+  }
+}
+
+function startIncomingCheck() {
+  setInterval(checkIncoming, INCOMING_CHECK_MS);
+  window.addEventListener("focus", checkIncoming);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkIncoming();
+  });
+  checkIncoming();
+}
+
+// "New page from clipboard": the copied text (or link) becomes a page in the inbox. Where the
+// clipboard cannot be read directly, a field to paste into is shown instead.
+async function newPageFromClipboard() {
+  let text = null;
+  try {
+    text = navigator.clipboard && navigator.clipboard.readText ? await navigator.clipboard.readText() : null;
+  } catch {
+    text = null;
+  }
+  if (text === null) text = await openPasteDialog(el("captureBox"));
+  if (text === null) return;
+  if (!text.trim()) {
+    showToast(strings.capture.clipboardEmpty);
+    return;
+  }
+  try {
+    const id = await backend.captureOfferText(text, null);
+    const result = await backend.captureAdd([id], { folder: app.settings.inboxFolder });
+    await showAdded(result.page);
+    tellRefused(result.refused);
+  } catch (error) {
+    logProblem("page from clipboard failed", error);
+    showBanner(errorText(error));
+  }
+}
+
+// Files dropped on the page list go through the same box as files from other apps.
+async function dropOnPageList(event) {
+  const files = [...(event.dataTransfer?.files || [])];
+  if (!files.length) return;
+  event.preventDefault();
+  try {
+    for (const file of files.slice(0, 20)) await backend.captureOfferBytes(file.name || "file", await readAsBase64(file));
+  } catch (error) {
+    logProblem("dropped files not taken", error);
+    showToast(error && strings.errors[error.code] ? strings.errors[error.code] : strings.capture.droppedFailed);
+  }
+  await checkIncoming();
+}
+
+// Settings, Files: where shared things go, and the global shortcut on computers.
+function captureSettingsRows() {
+  const t = strings.capture;
+  const select = document.createElement("select");
+  select.id = "inboxFolder";
+  const folders = ["Inbox", ...app.entries.filter((e) => e.kind === "folder").map((e) => e.path)];
+  if (!folders.includes(app.settings.inboxFolder)) folders.push(app.settings.inboxFolder);
+  for (const path of [...new Set(folders)]) {
+    const option = document.createElement("option");
+    option.value = path;
+    option.textContent = path;
+    select.append(option);
+  }
+  select.value = app.settings.inboxFolder;
+  select.addEventListener("change", async () => {
+    app.settings.inboxFolder = cleanInboxFolder(select.value);
+    await saveSettings();
+  });
+  const inboxRow = document.createElement("label");
+  inboxRow.className = "setting-row";
+  inboxRow.append(textElement("span", t.inboxLabel, "setting-label"), select);
+  const rows = [textElement("h3", t.heading, "setting-heading"), inboxRow, textElement("p", t.inboxHint, "setting-hint")];
+  if (!isAndroid) {
+    const status = textElement("p", "", "setting-hint");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.id = "quickShortcut";
+    box.checked = app.settings.quickShortcut;
+    box.addEventListener("change", async () => {
+      const wanted = box.checked;
+      status.textContent = "";
+      try {
+        await backend.shortcutSet(wanted);
+        app.settings.quickShortcut = wanted;
+        await saveSettings();
+      } catch (error) {
+        logProblem("shortcut change failed", error);
+        box.checked = app.settings.quickShortcut;
+        status.textContent = t.shortcutFailed;
+      }
+    });
+    const row = document.createElement("label");
+    row.className = "setting-row";
+    row.append(textElement("span", t.shortcutLabel, "setting-label"), box);
+    rows.push(row, textElement("p", t.shortcutHint, "setting-hint"), status);
+  }
+  return rows;
 }
 
 function deviceSettingsRows() {
@@ -2174,6 +2380,7 @@ function openSearch() {
   const c = strings.search.commands;
   const commands = [
     { label: c.newNote, run: createNote },
+    { label: c.fromClipboard, run: newPageFromClipboard },
     { label: c.newFolder, run: createFolder },
     { label: c.settings, run: () => el("openSettings").click() },
     { label: c.trash, run: openTrashDialog },
@@ -2909,7 +3116,7 @@ function fillStaticText() {
         updates: updateSettingsRows(),
         sync: syncSettingsRows(),
         privacy: privacySettingsRows(),
-        files: [...offlineSettingsRows(), ...historySettingsRows(), ...obsidianRows(), ...backupRows()],
+        files: [...offlineSettingsRows(), ...captureSettingsRows(), ...historySettingsRows(), ...obsidianRows(), ...backupRows()],
         storage: storageRows({
           backend,
           logProblem,
@@ -3114,6 +3321,11 @@ async function start() {
   startResumeNotice();
   startSyncLine(el("syncLine"));
   startShareCheck();
+  startIncomingCheck();
+  el("sidebar").addEventListener("dragover", (event) => {
+    if ([...(event.dataTransfer?.types || [])].includes("Files")) event.preventDefault();
+  });
+  el("sidebar").addEventListener("drop", dropOnPageList);
   app.watcher = watchVault({
     signature: () => backend.vaultSignature(),
     onChange: () => refreshAfterOutsideChange(false),
@@ -3127,6 +3339,15 @@ async function start() {
   repaintCanvasBlocks();
   // The tray comes back at every start while it is switched on. If it cannot be made, the switch
   // is turned off again so closing the window never hides it with no way to get it back.
+  // The new-page shortcut comes back at every start while it is on; if this computer refuses it,
+  // it is turned off so the setting never says something that is not true.
+  if (app.settings.quickShortcut) {
+    backend.shortcutSet(true).catch(async (error) => {
+      logProblem("shortcut not started", error);
+      app.settings.quickShortcut = false;
+      await saveSettings();
+    });
+  }
   if (app.settings.keepInTray) {
     applyTray(true).catch(async (error) => {
       logProblem("tray not started", error);

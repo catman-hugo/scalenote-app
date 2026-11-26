@@ -1579,6 +1579,8 @@ pub fn run() {
             capture::capture_pending,
             capture::capture_offer_text,
             capture::capture_android_file,
+            capture::capture_offer_bytes,
+            capture::capture_new_page,
             capture::capture_add,
             capture::capture_dismiss,
             capture::shortcut_set,

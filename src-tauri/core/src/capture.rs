@@ -199,6 +199,13 @@ impl Vault {
         }
     }
 
+    /// A new empty page in `folder` (made when missing), for "New page" from the tray, the
+    /// global shortcut or the Android home-screen shortcut. Returns its path.
+    pub fn new_page_in(&self, folder: &str, title: &str) -> Result<String> {
+        self.ensure_folder(folder)?;
+        self.create_note(folder, title)
+    }
+
     /// Makes `folder` (and the folders above it) when missing. Only inside the notes folder.
     fn ensure_folder(&self, folder: &str) -> Result<()> {
         let path = self.resolve(folder)?;
@@ -308,6 +315,15 @@ mod tests {
         let added = v.add_shared(&Target::NewPageIn("Inbox".into()), many).expect("added");
         assert_eq!(added.refused.len(), 3);
         assert!(added.refused.iter().all(|(_, r)| *r == "too_many"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_new_empty_page_is_made_in_the_inbox_even_when_it_is_missing() {
+        let (v, dir) = vault("newpage");
+        assert_eq!(v.new_page_in("Inbox/Quick", "Untitled").expect("page"), "Inbox/Quick/Untitled.md");
+        assert_eq!(v.new_page_in("Inbox/Quick", "Untitled").expect("page"), "Inbox/Quick/Untitled 2.md");
+        assert!(v.new_page_in("../x", "Untitled").is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 

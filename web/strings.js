@@ -64,6 +64,42 @@ export const strings = {
     bringHere: "Open (bring to this device)",
   },
 
+  // Adding things from other apps (capturebox.js, 0.6.6).
+  capture: {
+    titleOne: "Add to ScaleNote",
+    titleMany: "Add {count} things to ScaleNote",
+    text: "Text",
+    newPageIn: "A new page in {folder}",
+    endOf: "The end of {page}",
+    cancel: "Cancel",
+    add: "Add",
+    adding: "Adding…",
+    failed: "It could not be added. Nothing was changed.",
+    refusedOne: "{name}: {reason}",
+    reasons: {
+      unsupported: "only text, links, pictures, PDFs and markdown files can be added",
+      too_large: "too large",
+      not_utf8: "not plain text",
+      gone: "the file is no longer there",
+      too_many: "too many things at once",
+      empty: "empty",
+      failed: "could not be added",
+    },
+    addedWithProblems: "Added. Not added: {list}",
+    pasteTitle: "New page from clipboard",
+    pasteHint: "ScaleNote cannot read the clipboard here. Paste it below (Ctrl+V, or press and hold).",
+    pasteLabel: "Text to make a page from",
+    makePage: "Make page",
+    clipboardEmpty: "The clipboard has no text.",
+    heading: "Adding from other apps",
+    inboxLabel: "Shared things go to",
+    inboxHint: "Pages made from things you share with ScaleNote (from other apps, Open with, Send to, the clipboard) go in this folder. It is made when it is missing. When a page is open, you can also add to it instead.",
+    shortcutLabel: "Ctrl+Alt+N opens a new page from anywhere",
+    shortcutHint: "Works while ScaleNote runs, also from the tray. Some Linux desktops (Wayland) do not allow such shortcuts.",
+    shortcutFailed: "This computer did not allow the shortcut. It stays off.",
+    droppedFailed: "The dropped files could not be read.",
+  },
+
   // Settings, Storage (storagepanel.js, 0.6.5).
   storage: {
     counting: "Counting…",
@@ -323,6 +359,7 @@ export const strings = {
     keepInTray: "Keep running in the tray when the window is closed",
     keepInTrayHint: "Closing the window hides it and leaves ScaleNote running, so your other devices can still sync with this computer. Open it again from the tray icon, or quit from the tray menu. Off by default.",
     trayShow: "Show ScaleNote",
+    trayNew: "New page",
     trayQuit: "Quit",
     openAtLogin: "Open ScaleNote when I sign in",
     openAtLoginHint: "Adds ScaleNote to this computer's list of programs that start at sign-in. You can remove it here at any time. Off by default.",
@@ -950,6 +987,7 @@ export const strings = {
     hint: "Up and down to choose, Enter to open, Escape to close.",
     commands: {
       newNote: "New page",
+      fromClipboard: "New page from clipboard",
       newFolder: "New folder",
       settings: "Open settings",
       trash: "Open trash",

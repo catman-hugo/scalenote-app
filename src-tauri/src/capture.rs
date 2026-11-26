@@ -23,6 +23,8 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
 pub const MAX_WAITING: usize = 100;
+/// Dropped files wait in memory; together they never take more than this.
+const MAX_WAITING_BYTES: usize = 128 * 1024 * 1024;
 const MAX_FILE_BYTES: u64 = MAX_PDF_BYTES as u64;
 /// The folder (inside the app's cache) the Android side copies shared files into.
 pub const ANDROID_SHARE_DIR: &str = "scalenote-shared";
@@ -30,6 +32,8 @@ pub const ANDROID_SHARE_DIR: &str = "scalenote-shared";
 enum What {
     File { path: PathBuf, name: String, size: u64, cached: bool },
     Text { text: String, subject: Option<String> },
+    /// A file dropped on the window (its bytes, read by the page).
+    Bytes { name: String, bytes: Vec<u8> },
     NewPage,
 }
 
@@ -45,15 +49,26 @@ pub struct Waiting {
 }
 
 impl Waiting {
-    fn push(&self, what: What) -> bool {
-        let Ok(mut guard) = self.inner.lock() else { return false };
+    /// Puts something on the list; its id, or `None` when the list is full.
+    fn push_id(&self, what: What) -> Option<u32> {
+        let Ok(mut guard) = self.inner.lock() else { return None };
         let (next, list) = &mut *guard;
         if list.len() >= MAX_WAITING {
-            return false;
+            return None;
+        }
+        if let What::Bytes { bytes, .. } = &what {
+            let held: usize = list.iter().map(|i| if let What::Bytes { bytes, .. } = &i.what { bytes.len() } else { 0 }).sum();
+            if held + bytes.len() > MAX_WAITING_BYTES {
+                return None;
+            }
         }
         *next = next.wrapping_add(1);
         list.push(Incoming { id: *next, what });
-        true
+        Some(*next)
+    }
+
+    fn push(&self, what: What) -> bool {
+        self.push_id(what).is_some()
     }
 
     /// Takes the things with these ids out of the list.
@@ -126,14 +141,16 @@ pub fn capture_pending(state: State<'_, AppState>, waiting: State<'_, Waiting>) 
                 let first = subject.clone().unwrap_or_else(|| text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_string());
                 IncomingReply { id: i.id, kind: "text", label: first.chars().filter(|c| !c.is_control()).take(120).collect(), size: text.len() as u64 }
             }
+            What::Bytes { name, bytes } => IncomingReply { id: i.id, kind: "file", label: name.clone(), size: bytes.len() as u64 },
             What::NewPage => IncomingReply { id: i.id, kind: "newPage", label: String::new(), size: 0 },
         })
         .collect())
 }
 
-/// Text from the clipboard or Android's share menu, to be added like anything else.
+/// Text from the clipboard or Android's share menu, to be added like anything else. Returns its
+/// id on the waiting list.
 #[tauri::command]
-pub fn capture_offer_text(text: String, subject: Option<String>, state: State<'_, AppState>, waiting: State<'_, Waiting>) -> Result<(), String> {
+pub fn capture_offer_text(text: String, subject: Option<String>, state: State<'_, AppState>, waiting: State<'_, Waiting>) -> Result<u32, String> {
     lock::refuse_if_locked(&state)?;
     if text.trim().is_empty() {
         return Err("empty".to_string());
@@ -141,7 +158,27 @@ pub fn capture_offer_text(text: String, subject: Option<String>, state: State<'_
     if text.len() > MAX_TEXT_BYTES || subject.as_ref().is_some_and(|s| s.len() > 1000) {
         return Err("too_large".to_string());
     }
-    if waiting.push(What::Text { text, subject }) {
+    waiting.push_id(What::Text { text, subject }).ok_or_else(|| "too_many".to_string())
+}
+
+/// A new empty page in the inbox folder (empty: `Inbox`), named by the interface.
+#[tauri::command]
+pub fn capture_new_page(folder: Option<String>, title: String, state: State<'_, AppState>) -> Result<String, String> {
+    let folder = folder.filter(|f| !f.trim().is_empty()).unwrap_or_else(|| DEFAULT_INBOX.to_string());
+    crate::with_vault(&state, "new page", |vault| vault.new_page_in(&folder, &title))
+}
+
+/// A file dropped on the page list (0.6.6): its name and bytes (base64, like `save_attachment`).
+#[tauri::command]
+pub fn capture_offer_bytes(name: String, data: String, state: State<'_, AppState>, waiting: State<'_, Waiting>) -> Result<(), String> {
+    lock::refuse_if_locked(&state)?;
+    // The length is checked before decoding, so a huge text is never turned into bytes.
+    if data.len() > scalenote_core::attachments::MAX_ATTACHMENT_BASE64 {
+        return Err("too_large".to_string());
+    }
+    let bytes = crate::base64::decode(&data).ok_or_else(|| "unsupported_type".to_string())?;
+    let name: String = name.chars().filter(|c| !c.is_control()).take(200).collect();
+    if waiting.push(What::Bytes { name, bytes }) {
         Ok(())
     } else {
         Err("too_many".to_string())
@@ -225,6 +262,7 @@ pub fn capture_add(ids: Vec<u32>, to_page: Option<String>, folder: Option<String
                 Err(reason) => refused.push((name.clone(), reason.to_string())),
             },
             What::Text { text, subject } => items.push(from_shared_text(text, subject.as_deref())),
+            What::Bytes { name, bytes } => items.push(Item::File { name: name.clone(), bytes: bytes.clone() }),
             What::NewPage => {}
         }
     }

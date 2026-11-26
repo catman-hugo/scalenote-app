@@ -28,6 +28,16 @@ export const backend = {
   // The folder "Use the default folder" would open, as text for the first-run screen.
   defaultVaultPath: () => call("default_vault_path"),
   tree: () => call("vault_tree"),
+  // Things shared from outside the window (0.6.6): [{ id, kind, label, size }] waiting in Rust.
+  capturePending: () => call("capture_pending"),
+  captureOfferText: (text, subject) => call("capture_offer_text", { text, subject: subject || null }),
+  captureOfferBytes: (name, data) => call("capture_offer_bytes", { name, data }),
+  captureAndroidFile: (path, name) => call("capture_android_file", { path, name }),
+  // where: { toPage } or { folder }. Resolves to { page, refused: [[name, reason]], newPage }.
+  captureAdd: (ids, where) => call("capture_add", { ids, toPage: where.toPage || null, folder: where.folder || null }),
+  captureDismiss: (ids) => call("capture_dismiss", { ids }),
+  captureNewPage: (folder, title) => call("capture_new_page", { folder, title }),
+  shortcutSet: (enabled) => call("shortcut_set", { enabled }),
   // Settings, Storage (0.6.5): sizes per folder and kind; "Free up space".
   storageReport: () => call("storage_report"),
   storageFree: () => call("storage_free"),
@@ -99,7 +109,7 @@ export const backend = {
   lockNow: () => call("lock_now"),
   lockSetBiometric: (on) => call("lock_set_biometric", { on }),
   lockBiometricUnlock: (title) => call("lock_biometric_unlock", { title }),
-  traySet: (enabled, showLabel, quitLabel) => call("tray_set", { enabled, showLabel, quitLabel }),
+  traySet: (enabled, showLabel, newLabel, quitLabel) => call("tray_set", { enabled, showLabel, newLabel, quitLabel }),
   hideWindow: () => call("hide_main_window"),
   autostartGet: () => call("autostart_get"),
   autostartSet: (enabled) => call("autostart_set", { enabled }),
