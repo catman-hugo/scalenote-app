@@ -2439,7 +2439,7 @@ await test("This device: the tray and open-at-login switches start off, change t
   assert.equal(await page.evaluate(() => window.__tray), undefined, "nothing is made until it is switched on");
   await tray.check();
   await page.waitForFunction(() => window.__tray && window.__tray.enabled === true);
-  assert.deepEqual(await page.evaluate(() => window.__tray), { enabled: true, showLabel: "Show ScaleNote", quitLabel: "Quit" });
+  assert.deepEqual(await page.evaluate(() => window.__tray), { enabled: true, showLabel: "Show ScaleNote", newLabel: "New page", quitLabel: "Quit" });
   assert.equal((await settingsNow(page)).keepInTray, true);
   await login.check();
   await page.waitForFunction(() => window.__autostart === true);
@@ -2714,7 +2714,7 @@ await test("Ctrl+K opens the search box with recent pages and commands, and Esca
   assert.equal(await page.evaluate(() => document.activeElement.className), "palette-input");
   const texts = await rowTexts(page);
   assert.match(texts[0], /^Biology/, "the page that is open is not offered, the one before it is");
-  assert.deepEqual(texts.slice(1), ["New page", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Draw on the text of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
+  assert.deepEqual(texts.slice(1), ["New page", "New page from clipboard", "New folder", "Open settings", "Open trash", "Open tags", "Show or hide the page list", "Add or remove this page from favorites", "Show the history of this page", "Draw on the text of this page", "Switch between the text and the canvas of this page", "Show the text and the drawing of this page side by side", "Show or hide the markdown text of this page", "Export this page as markdown", "Print this page or save it as PDF"]);
   assert.equal(await page.getAttribute(".palette-input", "role"), "combobox");
   assert.equal(await page.getAttribute("#palette .palette-list", "role"), "listbox");
   assert.equal(await page.getAttribute(".palette-row >> nth=0", "aria-selected"), "true");
