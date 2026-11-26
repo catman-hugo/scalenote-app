@@ -13,7 +13,7 @@
 //   the first lines, and it looks and works like the toolbar of the canvas.
 import { toggledTool } from "./penkeys.js";
 import { holdTouches } from "./touchhold.js";
-import { DrawingHistory, LIMITS, PEN_COLOURS, PEN_WIDTHS, canAddItem, drawnWidth, nearestWidthStop, widthAt } from "./canvasrules.js";
+import { DrawingHistory, LIMITS, PEN_COLOURS, PEN_WIDTHS, canAddItem, drawnWidth, nearestWidthStop, readableInk, widthAt } from "./canvasrules.js";
 import { blockTag, findBlock, inkFromScreen, inkToScreen, lineTouched, splitByBlock } from "./textink.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
@@ -290,8 +290,10 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
   // ---- painting ----
   function readColours() {
     const style = getComputedStyle(document.documentElement);
+    const background = style.getPropertyValue("--bg").trim() || "#fff";
     for (const name of PEN_COLOURS) {
-      state.colours[name] = style.getPropertyValue(name === "ink" ? "--text" : `--pen-${name}`).trim() || "#000";
+      // A pen colour too dark to see on a dark theme is drawn lighter (readableInk).
+      state.colours[name] = readableInk(style.getPropertyValue(name === "ink" ? "--text" : `--pen-${name}`).trim() || "#000", background);
     }
   }
   function paintLine(stroke, points, context = surfaceContext, colours = state.colours) {

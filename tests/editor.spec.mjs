@@ -1770,7 +1770,7 @@ await test("right-clicking a folder opens a menu with Rename, and renaming keeps
   }));
   assert.equal(prevented, true, "the browser's own menu is replaced");
   await page.waitForSelector(".context-menu");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Share…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Keep on this device…", "Share…", "Delete"]);
   await page.click(".context-menu .menu-item");
   assert.equal(await page.locator(".context-menu").count(), 0, "the menu closes after choosing");
   const input = page.locator(".inline-rename");
@@ -1837,19 +1837,19 @@ await test("a page only on another device says so calmly when no device can be r
   await page.waitForFunction(() => /none of your other devices can be reached/.test(document.body.innerText));
   await page.click('.tree-button[data-path="Home/Trip.md"]', { button: "right" });
   const items = await page.locator(".context-menu .menu-item").allTextContents();
-  assert.deepEqual(items, ["Open (bring to this device)", "Available offline…"]);
+  assert.deepEqual(items, ["Open (bring to this device)", "Keep on this device…"]);
   await page.keyboard.press("Escape");
   await page.click('.tree-button[data-path="Home/Trip.md"]');
   await page.keyboard.press("F2");
   assert.equal(await page.locator(".inline-rename").count(), 0, "a page that is not here cannot be renamed");
 }, ctxOpts);
 
-await test("Available offline: a folder follows the one above, or keeps the kinds chosen; the choice is sent and shown again", async (page) => {
+await test("Keep on this device: a folder follows the one above, or keeps the kinds chosen; the choice is sent and shown again", async (page) => {
   await withFolderAndPage(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  await page.click('.context-menu .menu-item:has-text("Available offline")');
+  await page.click('.context-menu .menu-item:has-text("Keep on this device")');
   await page.waitForSelector("#offlineBox[open]");
-  assert.match(await page.textContent("#offlineBox h2"), /Available offline: Biology/);
+  assert.match(await page.textContent("#offlineBox h2"), /Keep on this device: Biology/);
   assert.match(await page.textContent("#offlineBox"), /Follow the folder above: everything is kept/);
   assert.equal(await page.isDisabled('#offlineBox input[data-kind="t"]'), true, "kinds are chosen only for its own choice");
   await page.check("#offlineBox input[value=own]");
@@ -1861,12 +1861,12 @@ await test("Available offline: a folder follows the one above, or keeps the kind
   // A page inside says where its choice comes from.
   await page.click('.tree-button[data-path="Biology"]');
   await page.click('.tree-button[data-path="Biology/Cells.md"]', { button: "right" });
-  await page.click('.context-menu .menu-item:has-text("Available offline")');
+  await page.click('.context-menu .menu-item:has-text("Keep on this device")');
   assert.match(await page.textContent("#offlineBox"), /Follow Biology: Text and pictures/);
   await page.click("#offlineBox button:has-text('Cancel')");
   // Back to following the folder above.
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  await page.click('.context-menu .menu-item:has-text("Available offline")');
+  await page.click('.context-menu .menu-item:has-text("Keep on this device")');
   assert.equal(await page.isChecked("#offlineBox input[value=own]"), true);
   await page.check("#offlineBox input[value=follow]");
   await page.click("#offlineSave");
@@ -2063,7 +2063,7 @@ await test("moving the open page keeps what was typed and keeps the page open", 
 await test("the right-click menu has Move to, which lists only folders it can go to", async (page) => {
   await moveSetup(page);
   await page.click('.tree-button[data-path="Biology"]', { button: "right" });
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Available offline…", "Share…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Icon", "Move to", "Keep on this device…", "Share…", "Delete"]);
   await page.click(".context-menu .menu-item:has-text('Move to')");
   const names = await page.locator(".context-menu .menu-item").allTextContents();
   assert.ok(names.includes("Archive") && names.includes("Old") && !names.includes("Biology"), JSON.stringify(names));
@@ -2970,7 +2970,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Share…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Keep on this device…", "Share…", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
@@ -6049,7 +6049,7 @@ await test("a folder starts with the plain folder icon, and a page offers Colour
   await withFolderAndPage(page);
   assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
   await rightClick(page, "Plan.md");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Available offline…", "Share…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Keep on this device…", "Share…", "Delete"]);
 }, ctxOpts);
 
 await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
@@ -9900,8 +9900,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Empty, moved and deleted folders sync too/);
-  assert.doesNotMatch(text, /cannot be told apart from new ones|<!--|-->/);
+  assert.match(text, /undo or redo \(Settings, Drawing\)/);
+  assert.doesNotMatch(text, /had security fixes this week|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -9910,17 +9910,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /Empty, moved and deleted folders sync too/);
-  assert.doesNotMatch(text, /cannot be told apart from new ones|<!--/i);
+  assert.match(text, /undo or redo \(Settings, Drawing\)/);
+  assert.doesNotMatch(text, /had security fixes this week|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /cannot be told apart from new ones/);
+  assert.match(text, /had security fixes this week/);
   // These notes are the same for every system: only the hidden short list must stay out.
-  assert.doesNotMatch(text, /<!--|-->|Empty, moved and deleted folders sync too\./i);
+  assert.doesNotMatch(text, /<!--|-->|undo or redo \(Settings, Drawing\)/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew button");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -9929,16 +9929,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Empty, moved and deleted folders sync too/);
-  assert.doesNotMatch(text, /cannot be told apart from new ones/i);
+  assert.match(text, /undo or redo \(Settings, Drawing\)/);
+  assert.doesNotMatch(text, /had security fixes this week/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /Empty, moved and deleted folders sync too/);
-  assert.doesNotMatch(text, /cannot be told apart from new ones/);
+  assert.match(text, /undo or redo \(Settings, Drawing\)/);
+  assert.doesNotMatch(text, /had security fixes this week/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Pen test records keys a pen button sends, so a button tapped away from the screen can be found", async (page) => {

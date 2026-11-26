@@ -117,6 +117,37 @@ function toRgb(hex) {
 const toHex = (rgb) => "#" + rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
 const isLightColour = (rgb) => (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 > 0.5;
 
+// Relative luminance and contrast as in WCAG 2 (https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio).
+const channel = (v) => {
+  const c = v / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (rgb) => 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+const contrast = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+/** The contrast a pen line needs on a dark page (WCAG's level for graphics). */
+export const INK_CONTRAST = 3;
+
+/**
+ * The colour a pen line is drawn in on `background`. On a dark page, a pen colour too dark to see
+ * (charcoal, navy, indigo) is mixed with white just until it can be seen, so writing done on a
+ * light page does not vanish when the page turns dark. On a light page the colour is kept as it
+ * is: the light colours there (silver, yellow) are faint on purpose. Only the drawing changes;
+ * the stored colour name stays the same.
+ */
+export function readableInk(colour, background) {
+  const ink = toRgb(colour);
+  const page = toRgb(background);
+  if (!ink || !page || isLightColour(page) || contrast(ink, page) >= INK_CONTRAST) return colour;
+  for (let step = 1; step <= 10; step++) {
+    const mixed = ink.map((v) => v + (255 - v) * (step / 10));
+    if (contrast(mixed, page) >= INK_CONTRAST) return toHex(mixed);
+  }
+  return "#ffffff";
+}
+
 /** Whether a background colour (a "#rrggbb" string) is light. A colour that cannot be read counts as light. */
 export function isLightBackground(background) {
   const rgb = toRgb(background);

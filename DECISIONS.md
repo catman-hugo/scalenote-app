@@ -927,3 +927,19 @@ Cost. A Sync now click can take up to a minute before it starts.
 Context. Some tablet pens have no usual side-button signal. Their buttons send Page Down and Page Up when tapped away from the screen; held on the screen, the tablet's system keeps them for its own shortcuts, and no setting there changes that.
 Decision. Two settings under Drawing, one per key: does nothing (the default), switches to the eraser and back, undoes, or redoes. They act only while drawing (the canvas, or the pen out over the text), never in a dialog or a text field, and never with Ctrl, Alt, Shift or Meta held, so a real keyboard keeps its Page Up and Page Down. The settings are named by key, not by pen, because which button sends which key differs between pens; the Pen test shows it.
 Alternatives. A system-wide remapping app (works in other apps too, but taps fixed spots on the screen and is outside this app). Off by default rather than on: a keyboard's Page Down while drawing would otherwise suddenly erase.
+
+## 2026-11-26: On a dark page, pen colours too dark to see are drawn lighter
+
+Context. The pen palette was the same in light and dark ("ink" alone follows the theme). Writing in charcoal on a light page nearly vanished when the page turned dark on another device.
+Decision. When a pen colour has a contrast below 3 (WCAG's level for graphics) against a dark page, it is mixed with white just until it reaches 3. Only drawing changes; the stored colour name stays. On light pages nothing changes, so the faint colours there (silver, yellow) stay faint on purpose. The owner was asked whether to change only charcoal and grey or to use a general rule and did not answer before asking for 0.6.8 to be finished; this takes the general rule, limited to dark pages, because navy and indigo vanished too.
+Alternatives. Only charcoal and grey get a dark-theme shade (simpler, but navy and indigo stay hard to see). The rule on light pages too (would darken silver and yellow, which are meant to be light).
+
+## 2026-11-26: "Available offline" is called "Keep on this device"
+
+Context. All notes are local files, so "available offline" suggested a cloud that ScaleNote does not have and confused the owner.
+Decision. The menu item and the box are called "Keep on this device"; they choose what this device keeps a copy of.
+
+## 2026-11-26: Introducing paired devices to each other is not in 0.6
+
+Context. With a computer, a tablet and a phone, the tablet and phone each paired with the computer did not know each other. Each pairing is between two devices by design.
+Decision. Not built in a hardening release. The setup guide explains that the computer carries changes between them and how to pair them directly. An offer to introduce two devices that one device already trusts (confirmed on both) can be planned for 0.7 or later if the owner wants it.
