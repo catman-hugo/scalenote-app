@@ -11,6 +11,7 @@ pub mod canvas;
 pub mod foldericons;
 pub mod applock;
 pub mod backup;
+pub mod capture;
 pub mod base64;
 pub mod logger;
 pub mod names;
