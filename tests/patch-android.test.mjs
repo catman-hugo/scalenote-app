@@ -2,7 +2,7 @@
 // (the Tauri 2.12.4 template, with the example identifier used everywhere in this repository).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { patchManifest, patchActivity, networkBridgeSource, apkInstallerSource, apkFileProviderSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
+import { patchManifest, patchActivity, networkBridgeSource, apkInstallerSource, apkFileProviderSource, shareBridgeSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
 
 const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -180,4 +180,42 @@ test("our provider has a name of its own, so no component name appears twice", (
   assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), [], "no component is declared twice: " + names.join(", "));
   assert.ok(names.includes(".ApkFileProvider"));
   assert.match(apkFileProviderSource("local.example.scalenote"), /class ApkFileProvider : FileProvider\(\)/);
+});
+
+test("the share menu lists ScaleNote for text, pictures, PDFs and markdown, inside the main activity, once", () => {
+  const out = patchManifest(MANIFEST);
+  const activity = out.slice(out.indexOf("<activity"), out.indexOf("</activity>"));
+  for (const want of ["android.intent.action.SEND\"", "android.intent.action.SEND_MULTIPLE", 'android:mimeType="text/plain"', 'android:mimeType="image/*"', 'android:mimeType="application/pdf"', 'android:mimeType="text/markdown"']) {
+    assert.ok(activity.includes(want), want);
+  }
+  assert.equal(patchManifest(out), out, "a second run adds nothing");
+  assert.equal(out.split("SEND_MULTIPLE").length, 2);
+  assert.doesNotMatch(out, /android.intent.action.VIEW/, "not offered as the app that opens files");
+});
+
+test("a share is refused at build time when the activity could start twice", () => {
+  assert.throws(() => patchManifest(MANIFEST.replace(' android:launchMode="singleTask"', "")), /singleTask/);
+});
+
+test("the activity hands shares and the New page shortcut to the bridge, once per request", () => {
+  const out = patchActivity(ACTIVITY);
+  assert.match(out, /if \(savedInstanceState == null\) share\.receive\(intent\)/);
+  assert.match(out, /override fun onNewIntent\(intent: Intent\)[\s\S]*share\.receive\(intent\)/);
+  assert.match(out, /addJavascriptInterface\(share, "ScaleNoteShare"\)/);
+});
+
+test("the share bridge copies files into its own folder with limits and gives the page JSON only", () => {
+  const src = shareBridgeSource("local.example.scalenote");
+  assert.match(src, /^package local\.example\.scalenote$/m);
+  assert.match(src, /File\(activity\.cacheDir, "scalenote-shared"\)/, "the folder Rust takes files from");
+  assert.match(src, /maxFileBytes = 64L \* 1024 \* 1024/);
+  assert.match(src, /total > maxFileBytes/);
+  assert.match(src, /maxFiles = 20/);
+  assert.match(src, /UUID\.randomUUID\(\)/, "names are never taken as they come");
+  assert.match(src, /substringAfterLast\('\/'\)/);
+  assert.match(src, /uri\.scheme != "content" && uri\.scheme != "file"/);
+  assert.match(src, /intent\.action = null/, "handled once");
+  assert.doesNotMatch(src, /evaluateJavascript/, "nothing shared is ever put into the page as code");
+  assert.match(src, /@JavascriptInterface\n  fun take\(\): String/);
+  assert.match(src, /take\(25\)/, "the shortcut label is short and comes from the page");
 });

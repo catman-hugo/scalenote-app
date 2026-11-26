@@ -2,7 +2,22 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-25; 0.6.5 built (storage and search; not tried on real devices yet); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-26; 0.6.6 built (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+
+## 0.6.6: built, not tried on a real device (sharing into ScaleNote and quick capture)
+
+Branch `feature/v0.6.6-capture`. Release notes `docs/release-notes/0.6.6.md`; security checklist `docs/security-checklist-0.6.6.md`.
+
+- Core: `core/src/capture.rs` checks and writes everything shared into ScaleNote, whatever road it came by: safe links only (`http`, `https`, `mailto`), pictures and PDFs by their bytes, markdown and text files as UTF-8, size and count limits; to a new page in a folder (made when missing) or to the end of a page (checked against the version read). `Vault::new_page_in` for an empty page in the inbox.
+- App: `src-tauri/src/capture.rs` keeps a short waiting list in Rust (things can arrive while there is no window): command-line files ("Open with", "Send to"), text, dropped files, Android copies (only from `cache/scalenote-shared`), "New page". Commands `capture_pending`, `capture_offer_text`, `capture_offer_bytes`, `capture_android_file`, `capture_add`, `capture_dismiss`, `capture_new_page`, `shortcut_set`. New dependencies, pinned, computers only: `tauri-plugin-single-instance =2.5.5` (a second start hands its files over and ends) and `tauri-plugin-global-shortcut =2.4.1` (Ctrl+Alt+N, off by default). The tray menu has "New page".
+- Interface: `web/capturebox.js` (the "Add to ScaleNote" box: what came, a new page in the inbox or the end of the open page; the paste box), polling every 2 seconds and when the window comes back, "New page from clipboard" in the search box, files dropped on the page list, Settings, Files: "Shared things go to" and the shortcut.
+- Android (`scripts/patch-android.mjs`): share-menu intent filters for text, markdown, pictures and PDFs (one or several) on the singleTask activity (the build stops if it is not singleTask), `ShareBridge.kt` (copies files into its own cache folder with limits, `take()` gives JSON, the "New page" app-icon shortcut named by the page).
+- Windows: `src-tauri/windows/hooks.nsh` (the -setup.exe) and `src-tauri/windows/capture.wxs` (the .msi) add "Send to" and "Open with" for pictures, PDFs and markdown, through `OpenWithProgids` only, so ScaleNote never becomes the default program; removed on uninstall. Tauri's own file associations are not used, because they make the app the default.
+- Linux: `src-tauri/linux/scalenote.desktop` (Tauri's template plus `%F` and the file types) for the .deb and .rpm.
+- Tests: Rust core and app capture tests; patch-script and installer-text tests; browser tests for the box (inbox, end of page, refused file, Cancel), New page, the shortcut switch, the clipboard (read and paste), the Android bridge and dropped files. Screenshots in light and dark checked.
+- Tried here on the packaged app: the .deb was built and its desktop entry has `Exec=scalenote %F` and the file types; starting the packaged program a second time with a file ends at once while the first keeps running (under a virtual display).
+
+NOT tried on a real device: Android's share menu and the New page shortcut (the Kotlin is only compiled in CI), Send to and Open with on Windows (both installers), Open with and dropping on Linux, the tray's New page and Ctrl+Alt+N.
 
 ## 0.7.0: planned (animations in pages)
 

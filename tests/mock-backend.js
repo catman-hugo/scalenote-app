@@ -27,6 +27,13 @@
   // window.__elsewhere are "on another device"; they are listed until brought.
   const offline = { choices: new Map(), elsewhere: new Map(Object.entries(window.__elsewhere || {})), sets: [] };
   const account = { id: null, name: "", findable: false };
+  const incoming = [];
+  let nextIncoming = 0;
+  const pushIncoming = (item) => {
+    nextIncoming += 1;
+    incoming.push({ id: nextIncoming, ...item });
+    return nextIncoming;
+  };
   const shares = [];
   const handlers = {
     share_page_open: ({ path }) => { window.__openPage = path; return null; },
@@ -226,9 +233,53 @@
         lock_biometric_unlock: () => { seed(); if (!window.__biometricOk) return false; lock.locked = false; return true; },
       };
     })(),
-    tray_set: ({ enabled, showLabel, quitLabel }) => {
+    tray_set: ({ enabled, showLabel, newLabel, quitLabel }) => {
       if (window.__failTray) fail(window.__failTray);
-      window.__tray = { enabled, showLabel, quitLabel };
+      window.__tray = { enabled, showLabel, newLabel, quitLabel };
+    },
+    // Things shared from outside (0.6.6). Tests put them with window.__mock.share(...).
+    capture_pending: () => incoming.map(({ id, kind, label, size }) => ({ id, kind, label, size })),
+    capture_offer_text: ({ text, subject }) => {
+      if (!text.trim()) fail("empty");
+      return pushIncoming({ kind: "text", label: (subject || text.split("\n").find((l) => l.trim()) || "").slice(0, 120), size: text.length, text });
+    },
+    capture_offer_bytes: ({ name, data }) => { pushIncoming({ kind: "file", label: name, size: Math.floor((data.length * 3) / 4), text: atob(data) }); return null; },
+    capture_android_file: ({ path, name }) => {
+      if (!path.includes("/cache/scalenote-shared/")) fail("invalid_path");
+      pushIncoming({ kind: "file", label: name, size: 3, text: `![${name}](attachments/${name})` });
+      return null;
+    },
+    capture_add: ({ ids, toPage, folder }) => {
+      const taken = incoming.filter((i) => ids.includes(i.id));
+      if (!taken.length) fail("gone");
+      incoming.splice(0, incoming.length, ...incoming.filter((i) => !ids.includes(i.id)));
+      const refused = taken.filter((i) => /\.exe$/i.test(i.label)).map((i) => [i.label, "unsupported"]);
+      const usable = taken.filter((i) => i.kind !== "newPage" && !/\.exe$/i.test(i.label));
+      if (!usable.length) return { page: "", refused, newPage: taken.some((i) => i.kind === "newPage") };
+      const text = usable.map((i) => i.text).join("\n\n");
+      if (toPage) {
+        if (!files.has(toPage)) fail("not_found");
+        files.set(toPage, `${files.get(toPage).replace(/\n+$/, "")}\n\n${text}\n`);
+        return { page: toPage, refused, newPage: false };
+      }
+      const dir = folder || "Inbox";
+      dir.split("/").forEach((_, i, parts) => folders.add(parts.slice(0, i + 1).join("/")));
+      const page = unique(dir, (usable[0].label || "Shared").replace(/\.[a-z]+$/i, ""), ".md", (x) => files.has(x));
+      files.set(page, `${text}\n`);
+      return { page, refused, newPage: false };
+    },
+    capture_dismiss: ({ ids }) => { incoming.splice(0, incoming.length, ...incoming.filter((i) => !ids.includes(i.id))); return null; },
+    capture_new_page: ({ folder, title }) => {
+      const dir = folder || "Inbox";
+      dir.split("/").forEach((_, i, parts) => folders.add(parts.slice(0, i + 1).join("/")));
+      const p = unique(dir, title, ".md", (x) => files.has(x));
+      files.set(p, "");
+      return p;
+    },
+    shortcut_set: ({ enabled }) => {
+      if (window.__failShortcut) fail("unsupported");
+      window.__shortcut = enabled;
+      return null;
     },
     hide_main_window: () => { window.__hidden = (window.__hidden || 0) + 1; },
     autostart_get: () => {
@@ -575,6 +626,8 @@
   };
   window.__mock = {
     offline,
+    incoming,
+    share: (item) => pushIncoming(item),
     account,
     shares, emit: (event, payload) => { for (const l of listeners) if (l.event === event && callbacks.has(l.handler)) callbacks.get(l.handler)({ event, id: l.handler, payload }); }, installed: [], syncPeers: () => syncPairing.peers, peerPairs: (id) => { syncPairing.peers.push({ id: id || "p" + syncPairing.peers.length, name: "alice-phone", fingerprint: "9999 8888 7777 6666 5555", added: syncStamp(), lastSync: "", lastChanged: 0, hasHistory: false }); syncPairing.events.push({ when: syncStamp(), kind: "paired", name: "alice-phone" }); }, canvases, folderIcons, opened: [], setSettings: (t) => { settings = t; }, files, folders, attachments, trashed, history, logs, hash, getSettings: () => settings };
 })();
