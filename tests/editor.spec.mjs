@@ -9894,6 +9894,18 @@ await test("after an update a phone always shows the short list, even when the a
   assert.doesNotMatch(text, /cannot be told apart from new ones/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
+await test("the Pen test records keys a pen button sends, so a button tapped away from the screen can be found", async (page) => {
+  await page.goto(url.replace(/[^/]*$/, "pentest.html"));
+  await page.waitForSelector("#pad");
+  assert.match(await page.textContent("#report"), /Nothing recorded yet/);
+  await page.keyboard.press("PageDown");
+  await page.keyboard.press("PageUp");
+  await page.keyboard.press("PageDown");
+  const report = await page.textContent("#report");
+  assert.match(report, /Keys pressed: PageDown \/ PageDown \/ 34; PageUp \/ PageUp \/ 33$/m, report);
+  assert.match(await page.textContent("#live"), /Key pressed/);
+});
+
 await test("the Find button shows only with a page open and opens the find bar", async (page) => {
   await page.waitForSelector("#newNote");
   assert.equal(await page.isVisible("#findButton"), false);
