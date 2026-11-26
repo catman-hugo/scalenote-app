@@ -2,13 +2,17 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-26; folders now sync (branch `fix/folder-sync`); fix for ink over the text not showing after a sync (branch `fix/text-ink-sync`); 0.6.6 built (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-26; 0.6.7 built (folders sync, ink over the text shows after a sync; not tried on real devices yet); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.7.0: planned (animations in pages)
 
-Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.7 releases the 0.6 line. Nothing is built yet.
+Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.
 
-## Fix after 0.6.6: folders sync (part of 0.6.6)
+## 0.6.7: folders sync (built, not tried on a real device)
+
+The two fixes below were found while testing the released 0.6.6 and are released as 0.6.7 (`docs/release-notes/0.6.7.md`, `docs/security-checklist-0.6.7.md`), so the updater offers them; a published version is never rebuilt. The hardening planned as 0.6.7 is now 0.6.8.
+
+### Folders sync
 
 Branch `fix/folder-sync`. Reported by the owner: folders moved into another folder on the computer stayed, empty, at their old place on the phone, and a new empty folder did not reach the phone.
 
@@ -18,7 +22,7 @@ Branch `fix/folder-sync`. Reported by the owner: folders moved into another fold
 
 NOT tried on a real device: move a folder and make an empty one on the computer, sync, look at the phone. Both devices need this version.
 
-## Fix after 0.6.6: ink over the text after a sync (part of 0.6.6)
+### Ink over the text after a sync
 
 Branch `fix/text-ink-sync`. Reported by the owner: pen writing over the text of a page reached the other device's files but was not shown there, while canvas drawings were.
 
@@ -28,7 +32,7 @@ Branch `fix/text-ink-sync`. Reported by the owner: pen writing over the text of 
 
 NOT tried on a real device: write over the text on one device, sync, and look at the same open page on the other.
 
-## 0.6.6: built, not tried on a real device (sharing into ScaleNote and quick capture)
+## 0.6.6: released, not tried on a real device (sharing into ScaleNote and quick capture)
 
 Branch `feature/v0.6.6-capture`. Release notes `docs/release-notes/0.6.6.md`; security checklist `docs/security-checklist-0.6.6.md`.
 

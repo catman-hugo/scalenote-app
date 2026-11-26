@@ -30,7 +30,7 @@ pub const KIND_BYE: u8 = 0x34;
 /// before the goodbye, so the answering device can join edits and see deletions next time it
 /// starts the sync itself. Never sent to apps before 0.6.4 (they are never in a share).
 pub const KIND_BASE: u8 = 0x35;
-/// Whole-folder syncs only (0.6.6): make a folder, or remove it when it is empty
+/// Whole-folder syncs only (0.6.7): make a folder, or remove it when it is empty
 /// (foldersync.rs). The note is `make\npath` or `remove\npath`. Only sent to a device whose
 /// listing has a folder list, so never to older apps.
 pub const KIND_FOLDER: u8 = 0x36;
@@ -136,7 +136,7 @@ pub struct Listing {
     pub not_kept: BTreeSet<String>,
     /// What the device keeps. Empty choices (also from apps before 0.6) mean "everything".
     pub rules: KeepRules,
-    /// Every visible folder (0.6.6, foldersync.rs). `None` when the device did not say: an older
+    /// Every visible folder (0.6.7, foldersync.rs). `None` when the device did not say: an older
     /// app, or a share sync. Then folders are left alone; an empty list is not "no folders".
     pub folders: Option<BTreeSet<String>>,
 }

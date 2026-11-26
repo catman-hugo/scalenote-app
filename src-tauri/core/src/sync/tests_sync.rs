@@ -634,7 +634,7 @@ fn a_folder_removed_on_one_device_stays_where_something_was_added_to_it() {
 
 #[test]
 fn folders_are_left_alone_with_a_device_that_lists_none() {
-    // What an app before 0.6.6 sends: a listing without the folder lines.
+    // What an app before 0.6.7 sends: a listing without the folder lines.
     let dir = Dir::new("folders-old");
     fs::create_dir_all(dir.0.join("Only here")).expect("dir");
     let listing = super::exchange::own_listing(&dir.0).expect("listing");

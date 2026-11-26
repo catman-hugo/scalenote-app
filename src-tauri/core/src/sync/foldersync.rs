@@ -1,4 +1,4 @@
-//! Syncing folders themselves, not only the files in them (0.6.6).
+//! Syncing folders themselves, not only the files in them (0.6.7).
 //!
 //! Before this, a sync only listed files. Two things went wrong because of that: a new empty
 //! folder never reached the other device (there was no file to send), and a folder moved or
