@@ -1099,7 +1099,7 @@ export const strings = {
     sync_off: "Sync is turned off on this device.",
     sync_unavailable: "Sync could not start on this device.",
     sync_paused: "Sync is paused on this device. Resume it first.",
-    sync_busy: "A sync is already running. Try again when it is done.",
+    sync_busy: "Another sync has been running for over a minute. Try again when it is done.",
     sync_other_folder: "That device belongs to another notes folder on this device. Open that folder to sync with it, or move it to this folder in Settings, Sync.",
     sync_peer_other_folder: "The other device has this device tied to another of its notes folders. Open that folder there, or move this device to the folder open there.",
     sync_wifi_only: "This device is set to sync only on Wi-Fi, and this phone is not on Wi-Fi now. Connect to Wi-Fi, or turn the setting off.",

@@ -915,3 +915,9 @@ Cost. Empty folders left behind by an earlier version cannot be told apart from 
 
 Context. 0.6.6 was already tagged and published when the ink and folder sync fixes were merged.
 Decision. A published version is never rebuilt under the same number: the updater compares numbers, so devices on 0.6.6 would never be offered a rebuilt 0.6.6, and a bug report naming 0.6.6 must point to one build. The fixes are 0.6.7; the hardening and release of the 0.6 line becomes 0.6.8; 0.7.0 (animations) follows it.
+
+## 2026-11-26: Sync now waits for a running sync; a sync from another device waits a little
+
+Context. With three devices that each sync every half minute, a sync is often running. Sync now, Compare and an incoming sync gave up at once, so the button said "busy" nearly every time and other devices logged syncs that "did not finish".
+Decision. Sync now and Compare wait up to 60 seconds (the button says it is syncing meanwhile). A sync started by another device waits up to 5 seconds before it says busy: if two devices start a sync with each other at the same moment, each holds its own session and waits for the other, so the wait must stay short. The automatic round does not wait; it tries again a few seconds later.
+Cost. A Sync now click can take up to a minute before it starts.

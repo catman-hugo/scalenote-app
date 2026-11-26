@@ -13,6 +13,7 @@ use super::service::Service;
 use crate::vault::{Vault, VaultError};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 struct Dir(PathBuf);
 
@@ -776,4 +777,34 @@ fn a_folder_is_kept_when_its_choice_or_one_inside_it_keeps_something() {
     assert!(rules.keeps_folder("Year 2/Course/Week 1"));
     assert!(!rules.keeps_folder("Home"));
     assert!(!rules.keeps_folder("Year 2/Other"));
+}
+
+#[test]
+fn sync_now_waits_for_a_sync_that_is_running_here_or_on_the_other_device() {
+    let p = setup("busy-wait");
+    write(&p.va.0, "One.md", "one");
+    sync(&p);
+    // A sync is running here (an automatic one): Sync now waits for it instead of saying "busy".
+    write(&p.va.0, "Two.md", "two");
+    let started = Instant::now();
+    let holder = p.alice.hold_session_for(Duration::from_millis(1500));
+    let report = sync(&p);
+    assert!(started.elapsed() >= Duration::from_millis(1400), "it waited");
+    assert_eq!(report.sent, 1);
+    holder.join().expect("holder");
+    // A sync is running on the other device: it waits a little before it answers.
+    write(&p.va.0, "Three.md", "three");
+    let holder = p.bob.hold_session_for(Duration::from_millis(1500));
+    assert_eq!(sync(&p).sent, 1);
+    holder.join().expect("holder");
+    assert_eq!(names(&p.vb.0), vec!["One.md", "Three.md", "Two.md"]);
+    // A sync on the other device that goes on for longer is still refused calmly, so the two
+    // devices never wait for each other for ever.
+    write(&p.va.0, "Four.md", "four");
+    let holder = p.bob.hold_session_for(Duration::from_secs(8));
+    match p.alice.sync_peer(&p.bob_id, true, &mut |_| {}) {
+        Err(error) => assert_eq!(error.code(), "sync_peer_refused"),
+        Ok(_) => panic!("the busy device took part"),
+    }
+    holder.join().expect("holder");
 }
