@@ -55,6 +55,14 @@ const SHARE_LOOK: Duration = Duration::from_millis(1500);
 /// start a sync itself (asked for in 0.6.1; it was five minutes). A sync that finds nothing costs
 /// two file lists over the local network.
 const RESYNC_AFTER: Duration = Duration::from_secs(30);
+/// How long Sync now and Compare wait for a sync that is running (an automatic one, or one
+/// another device started here). With three or more devices syncing every half minute, one is
+/// running often; failing at once made the button say "busy" nearly every time (0.6.8).
+const MANUAL_WAIT: Duration = Duration::from_secs(60);
+/// How long a sync another device starts here waits for the one that is running. Short: the
+/// other device is waiting on its side, and if both devices start a sync with each other at
+/// the same moment each waits for the other, until this runs out and one says busy.
+const SERVE_WAIT: Duration = Duration::from_secs(5);
 const TRUST_FILE: &str = "sync-peers.txt";
 /// Which notes folder each paired device belongs to (folders.rs). Never synced.
 const FOLDERS_FILE: &str = "sync-folders.txt";
@@ -782,6 +790,21 @@ impl Service {
         Ok(answers)
     }
 
+    /// For tests: holds the sync session for `time` on another thread, as a running sync would.
+    /// Returns once it is held.
+    #[cfg(test)]
+    pub(super) fn hold_session_for(&self, time: Duration) -> std::thread::JoinHandle<()> {
+        let shared = Arc::clone(&self.shared);
+        let (held, wait) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let _guard = shared.session.lock();
+            let _ = held.send(());
+            std::thread::sleep(time);
+        });
+        let _ = wait.recv();
+        handle
+    }
+
     /// Like `take_session`, but waits up to `wait` for a running sync to finish.
     fn wait_for_session(&self, wait: Duration) -> Result<MutexGuard<'_, ()>> {
         let until = Instant::now() + wait;
@@ -842,7 +865,7 @@ impl Service {
     /// What a sync with that device would change. Changes nothing on either side.
     pub fn compare_peer(&self, id: &str) -> Result<Preview> {
         let (peer, root, own_name) = self.prepare(id)?;
-        let _session = self.take_session()?;
+        let _session = self.wait_for_session(MANUAL_WAIT)?;
         let mut channel = self.reach(&peer)?;
         let shares = self.knows_shares(&peer.public);
         engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today(), shares, map: None })
@@ -851,8 +874,14 @@ impl Service {
     /// Syncs with one paired device. The first sync with a device changes nothing until
     /// `approved` is true. `on_progress` is called as files are done.
     pub fn sync_peer(&self, id: &str, approved: bool, on_progress: &mut dyn FnMut(Progress)) -> Result<Outcome> {
+        self.sync_peer_waiting(id, approved, MANUAL_WAIT, on_progress)
+    }
+
+    /// `sync_peer`, waiting at most `wait` for a sync that is running. The automatic round does
+    /// not wait: it tries again a few seconds later anyway.
+    fn sync_peer_waiting(&self, id: &str, approved: bool, wait: Duration, on_progress: &mut dyn FnMut(Progress)) -> Result<Outcome> {
         let (peer, root, own_name) = self.prepare(id)?;
-        let _session = self.take_session()?;
+        let _session = self.wait_for_session(wait)?;
         let result = self.sync_locked(&peer, &root, &own_name, approved, on_progress);
         let mut state = lock(&self.shared.state);
         state.syncing = None;
@@ -938,7 +967,7 @@ impl Service {
                 },
             };
             lock(&self.shared.state).live.entry(peer.public).or_default().address = Some(address);
-            let outcome = match self.sync_peer(&hex::encode(&peer.public), false, &mut |_| {}) {
+            let outcome = match self.sync_peer_waiting(&hex::encode(&peer.public), false, Duration::ZERO, &mut |_| {}) {
                 Ok(Outcome::Done(report)) => Ok(report),
                 Ok(Outcome::NeedsApproval(_)) => continue,
                 Err(error) => Err(error.code()),
@@ -1087,11 +1116,7 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
         let _ = exchange::send_blob(channel, KIND_NO, exchange::NO_OTHER_FOLDER, &[]);
         return Err(SyncError::Refused("paired with another folder"));
     }
-    let guard = match shared.session.try_lock() {
-        Ok(guard) => Some(guard),
-        Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
-        Err(std::sync::TryLockError::WouldBlock) => None,
-    };
+    let guard = wait_for(&shared.session, SERVE_WAIT);
     let (Some(root), Some(_guard)) = (root, guard) else {
         // No vault open, or another sync is running: say so and let the other device try later.
         let _ = exchange::send_blob(channel, KIND_NO, &[], &[]);
@@ -1113,6 +1138,19 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
         Err(_) => record(&mut state, EventKind::SyncFailed, &peer_name),
     }
     result.map(|_| ())
+}
+
+/// The sync session, waiting at most `wait` for the sync that holds it; `None` when it stays busy.
+fn wait_for(session: &Mutex<()>, wait: Duration) -> Option<MutexGuard<'_, ()>> {
+    let until = Instant::now() + wait;
+    loop {
+        match session.try_lock() {
+            Ok(guard) => return Some(guard),
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => return Some(poisoned.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) if Instant::now() >= until => return None,
+            Err(std::sync::TryLockError::WouldBlock) => std::thread::sleep(Duration::from_millis(200)),
+        }
+    }
 }
 
 /// Answers a search from one of this person's own devices: a search of this notes folder for
