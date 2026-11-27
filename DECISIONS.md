@@ -943,3 +943,9 @@ Decision. The menu item and the box are called "Keep on this device"; they choos
 
 Context. With a computer, a tablet and a phone, the tablet and phone each paired with the computer did not know each other. Each pairing is between two devices by design.
 Decision. Not built in a hardening release. The setup guide explains that the computer carries changes between them and how to pair them directly. An offer to introduce two devices that one device already trusts (confirmed on both) can be planned for 0.7 or later if the owner wants it.
+
+## 2026-11-27: Both devices keep the sync list, sent by the device that started the sync
+Context. Only the device that started a sync saved the list of what both had. A device that only answered (a phone, when the laptop always started) saw renames as new pages, edits as clashes, and a "first sync" when it started one itself.
+Decision. At the end of a sync between one's own devices the starting device sends the list and the folders both have (`KIND_BASE`, the same request share syncs use). The answering device keeps only the files that are exactly so on its side, so a list from the network can never make it think a file it changed is unchanged. Only sent to devices that say `base=1` in their greeting; older apps end a sync on a request they do not know.
+Alternatives. Each side working out the list itself from the other's listing at the end: the answering side never sees the caller's final listing, so it would need an extra listing request in the other direction, which is more traffic for the same result.
+Cost. One more message per sync. Undoing it means removing the greeting part; older lists stay valid.

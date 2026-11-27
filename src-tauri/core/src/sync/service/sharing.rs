@@ -364,7 +364,7 @@ impl Service {
         let scan = super::super::manifest::Manifest::scan(root)?.manifest;
         let map = ShareMap::new(share, root, &scan);
         let today = super::today();
-        let pair = Pair { root, peer_key: key, own_name, peer_name: person, today: &today, shares: false, map: Some(&map) };
+        let pair = Pair { root, peer_key: key, own_name, peer_name: person, today: &today, shares: false, base: false, map: Some(&map) };
         let outcome = super::super::engine::run(&mut channel, &pair, true, &mut |_| {});
         let mut state = lock(&shared.state);
         match outcome {
@@ -489,7 +489,7 @@ pub(super) fn serve_share(shared: &Shared, channel: &mut Channel<TcpStream>, bod
     let first = channel.recv()?;
     let person = share.people.iter().find(|(_, p)| p.keys.contains(&remote)).map(|(_, p)| p.name.clone()).unwrap_or_default();
     let (own_name, today) = (lock(&shared.state).account.name.clone(), super::today());
-    let pair = Pair { root: &root, peer_key: &remote, own_name: &own_name, peer_name: &person, today: &today, shares: false, map: Some(&map) };
+    let pair = Pair { root: &root, peer_key: &remote, own_name: &own_name, peer_name: &person, today: &today, shares: false, base: false, map: Some(&map) };
     let keep = |said: &super::super::manifest::Manifest| super::super::engine::keep_share_base(&pair, said);
     let result = super::super::exchange::serve(channel, first, &root, true, super::super::exchange::Scope::Share(&map, &keep));
     drop(guard);

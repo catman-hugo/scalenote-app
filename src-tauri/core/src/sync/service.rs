@@ -155,6 +155,9 @@ struct Live {
     version: String,
     /// Whether it knows the list of shares (it said `shares=1` in its greeting, 0.6.4 and later).
     shares: bool,
+    /// Whether it keeps the list of what both have when this device starts the sync (it said
+    /// `base=1` in its greeting, 0.6.9 and later; engine.rs, `Pair::base`).
+    base: bool,
     /// The vault's change signature right after the last sync, and when that was.
     synced_signature: Option<u64>,
     synced_at: Option<Instant>,
@@ -479,6 +482,14 @@ impl Service {
     }
 
     /// For tests: a code that runs out quickly.
+    /// Where a paired device can be reached, as discovery would find it (tests on loopback).
+    #[cfg(test)]
+    pub(crate) fn set_address_for_test(&self, id: &str, address: &str) {
+        if let Some(key) = hex::decode::<KEY_LEN>(id) {
+            lock(&self.shared.state).live.entry(key).or_default().address = Some(address.to_string());
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn set_code_lifetime(&self, lifetime: Duration) {
         lock(&self.shared.state).codes.set_lifetime(lifetime);
@@ -868,7 +879,7 @@ impl Service {
         let _session = self.wait_for_session(MANUAL_WAIT)?;
         let mut channel = self.reach(&peer)?;
         let shares = self.knows_shares(&peer.public);
-        engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today(), shares, map: None })
+        engine::compare(&mut channel, &Pair { root: &root, peer_key: &peer.public, own_name: &own_name, peer_name: &peer.name, today: &today(), shares, base: false, map: None })
     }
 
     /// Syncs with one paired device. The first sync with a device changes nothing until
@@ -882,6 +893,11 @@ impl Service {
     fn sync_peer_waiting(&self, id: &str, approved: bool, wait: Duration, on_progress: &mut dyn FnMut(Progress)) -> Result<Outcome> {
         let (peer, root, own_name) = self.prepare(id)?;
         let _session = self.wait_for_session(wait)?;
+        // Say hello first when the other device's greeting is not known yet (after this app
+        // started), so the first sync already knows whether it keeps the list at the end.
+        if !self.greeted(&peer.public) {
+            self.exchange_version(&peer);
+        }
         let result = self.sync_locked(&peer, &root, &own_name, approved, on_progress);
         let mut state = lock(&self.shared.state);
         state.syncing = None;
@@ -908,6 +924,16 @@ impl Service {
     /// Whether that device said it knows the list of shares (see `Live::shares`).
     fn knows_shares(&self, key: &[u8; KEY_LEN]) -> bool {
         lock(&self.shared.state).live.get(key).is_some_and(|l| l.shares)
+    }
+
+    /// Whether that device's greeting was heard since this app started (it sent its version).
+    fn greeted(&self, key: &[u8; KEY_LEN]) -> bool {
+        lock(&self.shared.state).live.get(key).is_some_and(|l| !l.version.is_empty())
+    }
+
+    /// Whether that device said it keeps the list at the end of a sync (see `Live::base`).
+    fn keeps_base(&self, key: &[u8; KEY_LEN]) -> bool {
+        lock(&self.shared.state).live.get(key).is_some_and(|l| l.base)
     }
 
     /// Asks a paired device for its app version over a short connection and tells it ours. Best effort:
@@ -938,7 +964,8 @@ impl Service {
             on_progress(progress);
         };
         let shares = self.knows_shares(&peer.public);
-        engine::run(&mut channel, &Pair { root, peer_key: &peer.public, own_name, peer_name: &peer.name, today: &today(), shares, map: None }, approved, &mut report)
+        let base = self.keeps_base(&peer.public);
+        engine::run(&mut channel, &Pair { root, peer_key: &peer.public, own_name, peer_name: &peer.name, today: &today(), shares, base, map: None }, approved, &mut report)
     }
 
     /// One round of automatic syncing, called every little while by the app. Does nothing (and
@@ -1122,7 +1149,7 @@ fn serve_sync(shared: &Shared, channel: &mut Channel<TcpStream>, first: Vec<u8>,
         let _ = exchange::send_blob(channel, KIND_NO, &[], &[]);
         return Err(SyncError::Refused("sync is busy"));
     };
-    let result = engine_serve(channel, first, &root, allowed, shares);
+    let result = engine_serve(channel, first, &root, allowed, shares, remote);
     let mut state = lock(&shared.state);
     match &result {
         Ok(changed) => {
@@ -1176,8 +1203,9 @@ fn serve_search(shared: &Shared, channel: &mut Channel<TcpStream>, query: &[u8])
     channel.send(&message)
 }
 
-fn engine_serve(channel: &mut Channel<TcpStream>, first: Vec<u8>, root: &Path, allowed: bool, shares: bool) -> Result<usize> {
-    exchange::serve(channel, first, root, allowed, exchange::Scope::Whole { shares })
+fn engine_serve(channel: &mut Channel<TcpStream>, first: Vec<u8>, root: &Path, allowed: bool, shares: bool, remote: &[u8; KEY_LEN]) -> Result<usize> {
+    let keep = |said: &exchange::Listing| engine::keep_own_base(root, remote, shares, said);
+    exchange::serve(channel, first, root, allowed, exchange::Scope::Whole { shares, keep: &keep })
 }
 
 /// The `ip:port` a typed address leads to (the default port when none was typed).
@@ -1200,7 +1228,7 @@ pub fn is_older(theirs: &str, ours: &str) -> bool {
 fn greeting(shared: &Shared) -> String {
     let port = shared.port.load(Ordering::Relaxed);
     let account = lock(&shared.state).account.greeting_part();
-    format!("{APP_VERSION}{}{account} shares=1", tailscale::greeting_part((port != 0).then_some(port)))
+    format!("{APP_VERSION}{}{account} shares=1 base=1", tailscale::greeting_part((port != 0).then_some(port)))
 }
 
 /// Reads a greeting from a paired device: its version, and its Tailscale address if it sent one.
@@ -1219,6 +1247,7 @@ fn read_hello(shared: &Shared, key: [u8; KEY_LEN], raw: &[u8]) {
             live.version = version;
         }
         live.shares = text.split_whitespace().any(|part| part == "shares=1");
+        live.base = text.split_whitespace().any(|part| part == "base=1");
     }
     Service::keep_tailscale(shared, key, address);
     // A device without an account takes the one of its paired device (account.rs).
