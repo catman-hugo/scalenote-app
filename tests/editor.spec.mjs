@@ -8290,6 +8290,31 @@ await test("on a touch screen a sideways swipe on the drawing changes the step a
   assert.ok(buttons.every((h) => h >= 44), `Back and Next are big enough for a finger: ${buttons}`);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA, hasTouch: true });
 
+await test("on paper an animation shows every step one after another with its caption, also a loop", async (page) => {
+  await showPage(page, "loop", 2);
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  await page.emulateMedia({ media: "print" });
+  const paper = await page.evaluate(() => ({
+    steps: document.querySelectorAll(".animation-block-paper-step canvas").length,
+    captions: [...document.querySelectorAll(".animation-block-paper-step figcaption")].map((c) => c.textContent),
+    player: getComputedStyle(document.querySelector(".animation-block-stage")).display,
+    shown: getComputedStyle(document.querySelector(".animation-block-paper")).display,
+  }));
+  assert.deepEqual(paper, { steps: 3, captions: ["1. Step 1", "2. Step 2", "3. Step 3"], player: "none", shown: "grid" });
+  // The ink on paper is black on white, whatever the theme (the red stays red).
+  const white = await page.evaluate(() => {
+    const c = document.querySelector(".animation-block-paper-step canvas");
+    const d = c.getContext("2d").getImageData(2, 2, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  });
+  assert.deepEqual(white, [255, 255, 255]);
+  if (shots) await page.screenshot({ path: `${shots}/v070-print-animation.png`, fullPage: true });
+  await page.emulateMedia({ media: "screen" });
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  assert.equal(await page.locator(".animation-block-paper-step").count(), 0);
+  assert.equal(await page.isVisible(".animation-block-surface"), true);
+}, { ...ctxOpts, scheme: "dark" });
+
 await test("two /canvas blocks on a page are two different regions", async (page) => {
   await start(page);
   await page.click("#newNote");
@@ -10666,8 +10691,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /sizes every page of a PDF at once/);
-  assert.doesNotMatch(text, /One undo puts them all back|<!--|-->/);
+  assert.match(text, /Update every device before you make one/);
+  assert.doesNotMatch(text, /which makes a study sheet|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -10676,17 +10701,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /sizes every page of a PDF at once/);
-  assert.doesNotMatch(text, /One undo puts them all back|<!--/i);
+  assert.match(text, /Update every device before you make one/);
+  assert.doesNotMatch(text, /which makes a study sheet|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /One undo puts them all back/);
+  assert.match(text, /which makes a study sheet/);
   // These notes are the same for every system: only the hidden short list must stay out.
-  assert.doesNotMatch(text, /<!--|-->|sizes every page of a PDF at once/i);
+  assert.doesNotMatch(text, /<!--|-->|Update every device before you make one/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -10695,16 +10720,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /sizes every page of a PDF at once/);
-  assert.doesNotMatch(text, /One undo puts them all back/i);
+  assert.match(text, /Update every device before you make one/);
+  assert.doesNotMatch(text, /which makes a study sheet/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /sizes every page of a PDF at once/);
-  assert.doesNotMatch(text, /One undo puts them all back/);
+  assert.match(text, /Update every device before you make one/);
+  assert.doesNotMatch(text, /which makes a study sheet/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Pen test records keys a pen button sends, so a button tapped away from the screen can be found", async (page) => {

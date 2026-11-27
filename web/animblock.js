@@ -33,6 +33,16 @@ if (typeof document !== "undefined") {
   });
 }
 
+// On paper (printing, Save as PDF) every step is shown, small, one after another, each with its
+// caption: a video or a loop cannot play on paper, and a list of steps makes a study sheet.
+let onPaper = false;
+export function printAnimationBlocks(on) {
+  onPaper = on;
+  for (const view of views) view.paper();
+}
+// The width of one step on paper, in CSS pixels (three fit across an A4 page).
+const PAPER_STEP = 210;
+
 /**
  * The items of the block's menu: Show as (steps, video, loop), the speed for video and loop (the
  * owner's six choices and one of your own), Edit in canvas and Remove from page.
@@ -118,7 +128,9 @@ export const AnimationBlock = Node.create({
       const text = make("span", "animation-block-text");
       caption.append(title, text);
       const missing = make("p", "animation-block-missing", t.missing);
-      dom.append(stage, controls, caption, missing);
+      const sheet = make("div", "animation-block-paper");
+      sheet.hidden = true;
+      dom.append(stage, controls, caption, missing, sheet);
       // A double click (or double tap) opens the animation on the canvas, to draw its steps.
       surface.addEventListener("dblclick", () => edit(current.attrs.id));
 
@@ -250,6 +262,24 @@ export const AnimationBlock = Node.create({
           clearTimeout(view.timer);
           view.timer = 0;
         },
+        // Fills (or empties) the list of every step for paper.
+        paper() {
+          sheet.replaceChildren();
+          sheet.hidden = !onPaper;
+          const animation = view.animation;
+          if (!onPaper || !animation) return;
+          animation.steps.forEach((_, i) => {
+            const item = make("figure", "animation-block-paper-step");
+            const picture = make("canvas");
+            paintStep(picture, view.canvas, animation, i, PAPER_STEP, { paper: true, ratio: 2 });
+            const words = stepCaption(animation, i);
+            const label = make("figcaption");
+            label.append(make("strong", "", words.title));
+            if (words.text) label.append(make("span", "", words.text));
+            item.append(picture, label);
+            sheet.append(item);
+          });
+        },
       };
       views.add(view);
 
@@ -318,6 +348,7 @@ export const AnimationBlock = Node.create({
       const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => view.paint()) : null;
       if (resize) resize.observe(dom);
       view.paint();
+      if (onPaper) view.paper();
       return {
         dom,
         update(updated) {
