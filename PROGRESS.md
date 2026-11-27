@@ -74,9 +74,17 @@ Asked by the owner after looking at a laptop and a phone.
 
 NOT tried on a real device.
 
-## 0.7.0: planned (animations in pages)
+## 0.7.0: in progress (animations in pages)
 
-Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.
+Plan: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. Built in the plan's six slices, each on its own branch; each starts from the one before.
+
+### Slice 1: the file format (branch `feature/animation-format`)
+
+- Format 7 of the drawing file (`web/canvasrules.js`): a list `animations`, written only when a page has one. Each has an id, a box, a label, a `background` and `steps` (`{ id, title, text, items }`); items are stored relative to the box's corner. Every field is checked when read, with the plan's limits (50 animations, 300 steps, a title of 120 and a text of 1000 characters), and the items of all steps count towards the limits of the whole file. Anything wrong makes the drawing read-only, as before. An older app sees format 7 as newer and saves nothing over it.
+- `web/animrules.js`: a new animation below everything on the sheet; duplicate, add, move, place, caption and delete a step (an animation keeps one step); items between the box and the sheet; a resize from a corner that keeps the drawing in place. Every change gives new lists, so Undo can keep the old ones; `DrawingHistory` puts back a changed, added or removed animation.
+- Unit tests call the real functions: reading back, every kind of bad and too big file, the older-app rule, each step action, undo and redo. The tests that used format 7 as "a newer format" now use 8. Browser tests about the canvas pass.
+
+Nothing shows in the app yet: that starts with slice 2.
 
 ## 0.6.8: built, not tried on a real device (hardening and release of 0.6)
 

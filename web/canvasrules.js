@@ -31,7 +31,12 @@
 // words at any window width. It is only written when there is such ink; an older ScaleNote shows it
 // read-only, because opening and saving it there would drop the ink.
 
-export const FORMAT = 6;
+// Format 7 (0.7.0) is a drawing that also has `animations`: boxes of steps that a page shows one
+// after another (see the section on animations below). It is only written when the page has an
+// animation; an older ScaleNote sees a newer format and shows the drawing read-only, so it never
+// saves over the steps.
+
+export const FORMAT = 7;
 // The pen colours, in the order of the picker: three rows of six, six, and four. The first
 // version had only ink, red, blue, green, orange and purple; those names still mean the same
 // colour family, so older drawings open as before (a little brighter than they were).
@@ -174,7 +179,7 @@ export function paperInks(fill) {
   return isLightBackground(fill) ? { line: "#c9e0f0", margin: "#e0605a" } : { line: "#1f4a75", margin: "#8a2a2a" };
 }
 
-export const emptyCanvas = () => ({ items: [], paper: "none", page: "none", ink: [], frames: [] });
+export const emptyCanvas = () => ({ items: [], paper: "none", page: "none", ink: [], frames: [], animations: [] });
 
 // ---- frames (format 6) ----
 // A frame is a rectangle of the sheet that a canvas block in the text shows, named by an id the
@@ -247,6 +252,44 @@ export function nextFrameRect(canvas) {
 }
 
 const cleanFrame = (frame) => ({ id: frame.id, x: frame.x, y: frame.y, w: frame.w, h: frame.h, label: frame.label });
+
+// ---- animations (format 7) ----
+// An animation is a box on the sheet with steps that are shown one after another, in the text or
+// on the canvas. `background` holds what every step shows (a membrane, labels); each step holds
+// what only it shows, and a title and a line of text. The items of the background and the steps
+// are stored relative to the box's top-left corner, so moving the box moves every step with it.
+// The box has the same id rules and sizes as a frame; the block in the text names it by its id.
+export const ANIMATION_LIMITS = { count: 50, steps: 300, title: 120, text: 1_000 };
+
+function validStep(step, tools) {
+  if (!isObject(step) || typeof step.id !== "string" || !FRAME_ID.test(step.id)) return false;
+  if (typeof step.title !== "string" || step.title.length > ANIMATION_LIMITS.title) return false;
+  if (typeof step.text !== "string" || step.text.length > ANIMATION_LIMITS.text) return false;
+  return Array.isArray(step.items) && step.items.length <= LIMITS.items && step.items.every((item) => validItem(item, tools, FORMAT));
+}
+
+function validAnimation(animation, tools) {
+  if (!validFrame(animation)) return false;
+  if (!Array.isArray(animation.background) || animation.background.length > LIMITS.items || !animation.background.every((item) => validItem(item, tools, FORMAT))) return false;
+  const steps = animation.steps;
+  if (!Array.isArray(steps) || steps.length === 0 || steps.length > ANIMATION_LIMITS.steps || !steps.every((step) => validStep(step, tools))) return false;
+  return new Set(steps.map((step) => step.id)).size === steps.length;
+}
+
+const cleanStep = (step) => ({ id: step.id, title: step.title, text: step.text, items: step.items.map(cleanItem) });
+const cleanAnimation = (a) => ({ ...cleanFrame(a), background: a.background.map(cleanItem), steps: a.steps.map(cleanStep) });
+
+// The items of an animation, all steps and the background together, for the limits on the file.
+export const animationItems = (animation) => [...animation.background, ...animation.steps.flatMap((step) => step.items)];
+
+// One animation per line block: the box, then the background and each step with one item a line,
+// so a change to one stroke is a small change in the file.
+function animationText(a) {
+  const list = (items) => (items.length ? "\n" + items.map(itemLine).join(",\n") + "\n" : "");
+  const head = frameLine(a).slice(0, -1);
+  const steps = a.steps.map((step) => `{"id":${JSON.stringify(step.id)},"title":${JSON.stringify(step.title)},"text":${JSON.stringify(step.text)},"items":[${list(step.items)}]}`);
+  return `${head},"background":[${list(a.background)}],"steps":[\n${steps.join(",\n")}\n]}`;
+}
 const frameLine = (frame) => JSON.stringify({ id: frame.id, x: round(frame.x, 1), y: round(frame.y, 1), w: round(frame.w, 1), h: round(frame.h, 1), label: frame.label });
 
 const isNumber = (value) => typeof value === "number" && Number.isFinite(value);
@@ -361,6 +404,13 @@ export function parseCanvas(text) {
   const frameList = data.format >= 6 && data.frames !== undefined ? data.frames : [];
   if (!Array.isArray(frameList) || frameList.length > FRAME_LIMITS.count || !frameList.every(validFrame)) return { problem: "broken" };
   if (new Set(frameList.map((frame) => frame.id)).size !== frameList.length) return { problem: "broken" };
+  // Animations exist from format 7 on. A bad one, or a repeated id, makes the drawing read-only.
+  const animationList = data.format >= 7 && data.animations !== undefined ? data.animations : [];
+  const fullTools = ["pen", "highlighter", "shape", "note"];
+  if (!Array.isArray(animationList) || animationList.length > ANIMATION_LIMITS.count || !animationList.every((a) => validAnimation(a, fullTools))) return { problem: "broken" };
+  if (new Set(animationList.map((a) => a.id)).size !== animationList.length) return { problem: "broken" };
+  const animationCount = animationList.reduce((sum, a) => sum + animationItems(a).length, 0);
+  if (list.length + animationCount > LIMITS.items) return { problem: "too-big" };
   const paper = data.format >= 3 && data.paper !== undefined ? data.paper : "none";
   const page = data.format >= 3 && data.page !== undefined ? data.page : "none";
   if (!PAPERS.includes(paper) || !PAGE_COLOURS.includes(page)) return { problem: "broken" };
@@ -370,8 +420,9 @@ export function parseCanvas(text) {
     if (item.points) total += item.points.length;
   }
   for (const item of inkList) total += item.points.length;
+  for (const a of animationList) for (const item of animationItems(a)) if (item.points) total += item.points.length;
   if (total > LIMITS.totalPoints) return { problem: "too-big" };
-  return { canvas: { items: list.map(cleanItem), paper, page, ink: inkList.map(cleanInk), frames: frameList.map(cleanFrame) } };
+  return { canvas: { items: list.map(cleanItem), paper, page, ink: inkList.map(cleanInk), frames: frameList.map(cleanFrame), animations: animationList.map(cleanAnimation) } };
 }
 
 const round = (value, places) => Number(value.toFixed(places));
@@ -401,6 +452,13 @@ export function serializeCanvas(canvas) {
   const clipped = canvas.items.some((item) => item.clip);
   const ink = canvas.ink || [];
   const frames = canvas.frames || [];
+  const animations = canvas.animations || [];
+  if (animations.length) {
+    const inkPart = ink.length ? `,"ink":[${"\n" + ink.map(inkLine).join(",\n") + "\n"}]` : "";
+    const framePart = frames.length ? `,"frames":[${"\n" + frames.map(frameLine).join(",\n") + "\n"}]` : "";
+    const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
+    return `{"format":7,"items":[${body}]${inkPart}${framePart},"animations":[\n${animations.map(animationText).join(",\n")}\n]${extra}}\n`;
+  }
   if (frames.length) {
     const inkPart = ink.length ? `,"ink":[${"\n" + ink.map(inkLine).join(",\n") + "\n"}]` : "";
     const extra = (paper ? `,"paper":${JSON.stringify(paper)}` : "") + (page ? `,"page":${JSON.stringify(page)}` : "");
@@ -423,12 +481,15 @@ export function serializeCanvas(canvas) {
 /** The number of stroke points in the whole drawing, to stop a drawing from growing without limit. */
 export function totalPoints(canvas) {
   const count = (list) => list.reduce((sum, item) => sum + (item.points ? item.points.length : 0), 0);
-  return count(canvas.items) + count(canvas.ink || []);
+  return count(canvas.items) + count(canvas.ink || []) + (canvas.animations || []).reduce((sum, a) => sum + count(animationItems(a)), 0);
 }
+
+// The number of items of every kind, for the limit on items in one file.
+const itemCount = (canvas) => canvas.items.length + (canvas.ink || []).length + (canvas.animations || []).reduce((sum, a) => sum + animationItems(a).length, 0);
 
 /** True when one more item with `points` stroke points (0 for a shape or note) still fits the limits. */
 export function canAddItem(canvas, points = 0) {
-  return canvas.items.length + (canvas.ink || []).length < LIMITS.items && points <= LIMITS.pointsPerStroke && totalPoints(canvas) + points <= LIMITS.totalPoints;
+  return itemCount(canvas) < LIMITS.items && points <= LIMITS.pointsPerStroke && totalPoints(canvas) + points <= LIMITS.totalPoints;
 }
 
 // ---- geometry ----
@@ -800,6 +861,12 @@ export class DrawingHistory {
     for (const one of [].concat(entry.frames || [])) Object.assign(one.frame, one.before);
     if (entry.frameRemove) canvas.frames.splice(entry.frameRemove.index, 0, entry.frameRemove.frame);
     if (entry.setting) canvas[entry.setting.key] = entry.setting.before;
+    // An animation changed as a whole (its steps, background or box; animrules.js): its fields
+    // are put back as they were. The step lists are replaced, never changed in place, so the
+    // lists kept here stay as they were.
+    for (const one of [].concat(entry.animations || [])) Object.assign(one.animation, one.before);
+    if (entry.animationAdd) canvas.animations.splice(canvas.animations.indexOf(entry.animationAdd), 1);
+    if (entry.animationRemove) canvas.animations.splice(entry.animationRemove.index, 0, entry.animationRemove.animation);
     this.redoList.push(entry);
     return true;
   }
@@ -817,6 +884,12 @@ export class DrawingHistory {
       if (at >= 0) canvas.frames.splice(at, 1);
     }
     if (entry.setting) canvas[entry.setting.key] = entry.setting.after;
+    for (const one of [].concat(entry.animations || [])) Object.assign(one.animation, one.after);
+    if (entry.animationAdd) canvas.animations.push(entry.animationAdd);
+    if (entry.animationRemove) {
+      const at = canvas.animations.indexOf(entry.animationRemove.animation);
+      if (at >= 0) canvas.animations.splice(at, 1);
+    }
     this.undoList.push(entry);
     return true;
   }
