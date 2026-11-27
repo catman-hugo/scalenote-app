@@ -47,6 +47,7 @@ import { ANIMATION_LIMITS, FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas
 import { drawingPicture, paintForPaper, repaintCanvasBlocks as repaintRegionBlocks } from "./canvasblock.js";
 import { repaintAnimationBlocks } from "./animblock.js";
 import { newAnimation, takenIds } from "./animrules.js";
+import { parseFps } from "./animfence.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
@@ -3065,6 +3066,52 @@ async function createAnimation() {
   return animation.id;
 }
 
+// Asks for a speed of one's own for an animation block (0.5 to 30 steps a second, decimals
+// allowed). Resolves to the number, or null when the box was closed without one.
+function askSpeed(now) {
+  const t = strings.animationBlock;
+  const dialog = el("speedBox");
+  return new Promise((resolve) => {
+    const form = document.createElement("form");
+    form.method = "dialog";
+    const heading = textElement("h2", t.speedTitle);
+    const label = document.createElement("label");
+    label.className = "dialog-field";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.inputMode = "decimal";
+    input.id = "speedInput";
+    input.value = String(now);
+    label.append(textElement("span", t.speedLabel), input);
+    const wrong = textElement("p", t.speedWrong, "dialog-error");
+    wrong.hidden = true;
+    wrong.setAttribute("role", "alert");
+    const actions = document.createElement("div");
+    actions.className = "dialog-actions";
+    let answer = null;
+    const cancel = buttonElement(t.speedCancel, () => dialog.close());
+    const ok = buttonElement(t.speedOk, () => {}, true);
+    ok.type = "submit";
+    actions.append(cancel, ok);
+    form.append(heading, label, wrong, actions);
+    form.addEventListener("submit", (event) => {
+      const fps = parseFps(input.value);
+      if (fps === null) {
+        // Nothing is saved until the number is one the block can use.
+        event.preventDefault();
+        wrong.hidden = false;
+        input.focus();
+        return;
+      }
+      answer = fps;
+    });
+    dialog.replaceChildren(form);
+    dialog.addEventListener("close", () => resolve(answer), { once: true });
+    dialog.showModal();
+    input.select();
+  });
+}
+
 // Opens the canvas beside the text (the split view) and starts editing an animation there.
 async function openAnimation(id, step = 0) {
   if (!app.current) return;
@@ -3555,6 +3602,7 @@ async function start() {
     createCanvasRegion,
     createAnimation,
     editAnimation: (id) => void openAnimation(id),
+    askSpeed,
     noteKey: () => (app.current ? app.current.path : null),
     noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
     notify: showToast,

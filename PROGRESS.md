@@ -106,6 +106,19 @@ NOT tried on a real device.
 
 NOT tried on a real device.
 
+### Slice 5: showing it in the text (branch `feature/animation-show`, starts from `feature/animation-onion`)
+
+- The block (`web/animblock.js`) shows the animation one of three ways, from `show:` in the block:
+  - **Steps**: Back and Next, a dot for each step (tap to jump), the caption; the arrow keys when the block has the focus; on a touch screen a sideways swipe on the drawing (40 points, further sideways than up or down, so the page still scrolls). Back, Next and the dots are at least 44 points on a touch screen.
+  - **Video**: a Play button; plays once at the set speed and stops on the last step; Pause while playing; Play after the end starts again.
+  - **Loop (GIF)**: plays by itself, round and round, unless the system asks for reduced motion (then it waits for Play). It stops when scrolled out of view or the window is hidden, and carries on when back; a Pause is kept.
+  - Video and Loop paint each step once into a picture and show those in turn; one timer per block, only while it plays and can be seen.
+- Right-click or long press on the block: Show as steps / video / loop (GIF), the speed for video and loop (1, 2, 4, 8, 12, 24 steps a second, or Other speed…, which asks for 0.5 to 30 with up to two decimals, a comma allowed, and refuses anything else with a message), Edit in canvas, Remove from page (the animation stays in the drawing). The choice is written into the block's `show:` and `fps:`.
+- Not built from the plan: stopping a loop while the page is being edited around it.
+- Tests (browser, a loop and a video run on a controlled clock): the steps with Back, Next, the dots and the keys; the menu writes `show:` and `fps:`, a wrong speed is refused and `1,5` is kept as 1.5, Remove from page keeps the drawing; a loop steps at its speed, waits out of view and carries on, and keeps a pause; a video plays once and starts again; reduced motion waits for Play; on a touch screen a sideways swipe changes the step and an up-and-down one does not. Screenshots in light and dark of the steps and the menu looked at. Full browser run: 486 passed.
+
+NOT tried on a real device.
+
 ## 0.6.8: built, not tried on a real device (hardening and release of 0.6)
 
 Branch `feature/v0.6.8-release` (starts from `feature/pen-keys`). Release notes `docs/release-notes/0.6.8.md`, security checklists `docs/security-checklist-0.6.8.md` and, for the whole line, `docs/security-checklist-0.6.md`.

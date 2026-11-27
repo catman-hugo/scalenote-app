@@ -8132,6 +8132,164 @@ await test("Before and after shows the steps around the one being drawn faintly,
   assert.equal(await page.isChecked(".step-bar-switch:has-text('Before and after') input"), true);
 }, ctxOpts);
 
+// ---------- 0.7.0, slice 5: showing an animation in the text ----------
+const THREE_STEPS = JSON.stringify({ format: 7, items: [], animations: [{
+  id: "srp00001", x: 0, y: 0, w: 600, h: 340, label: "",
+  background: [],
+  steps: [1, 2, 3].map((n) => ({ id: `step000${n}`, title: `${n}. Step ${n}`, text: "", items: [{ tool: "shape", kind: "rect", color: "red", width: 4, a: [n * 60, 20], b: [n * 60 + 40, 60] }] })),
+}] });
+async function showPage(page, show = "steps", fps = 2, before = "Intro") {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([d, s, f, b]) => {
+    window.__mock.canvases.set("Cell.md", d);
+    window.__mock.files.set("Cell.md", `${b}\n\n\`\`\`scalenote-animation\nid: srp00001\nshow: ${s}\nfps: ${f}\n\`\`\`\n`);
+  }, [THREE_STEPS, show, fps, before]);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Cell.md"]');
+  await page.waitForSelector(".animation-block-surface:not([hidden])");
+}
+const shownStep = (page) => page.evaluate(() => [...document.querySelectorAll(".animation-block-dot")].findIndex((d) => d.getAttribute("aria-current") === "true") + 1);
+const blockFence = async (page) => /```scalenote-animation\n[^`]*```/.exec(bodyOfPage((await files(page))["Cell.md"]))[0];
+
+await test("Steps: Back, Next, the dots and the arrow keys go through the steps with their captions", async (page) => {
+  await showPage(page);
+  assert.equal(await page.textContent(".animation-block-title"), "1. Step 1");
+  assert.equal(await page.isDisabled(".animation-block-button:text-is('Back')"), true);
+  await page.click(".animation-block-button:text-is('Next')");
+  assert.equal(await shownStep(page), 2);
+  assert.equal(await page.textContent(".animation-block-title"), "2. Step 2");
+  await page.click(".animation-block-dot >> nth=2");
+  assert.equal(await shownStep(page), 3);
+  assert.equal(await page.isDisabled(".animation-block-button:text-is('Next')"), true);
+  await page.focus(".animation-block");
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await shownStep(page), 2);
+  assert.equal(await page.isVisible(".animation-block-play"), false, "no play button in steps");
+  await shotBoth(page, "animation-steps-in-text");
+}, ctxOpts);
+
+await test("the block's menu sets Show as and the speed in the block, with a speed of one's own checked first", async (page) => {
+  await showPage(page);
+  await page.click(".animation-block-surface", { button: "right" });
+  const items = await page.locator(".context-menu .menu-item").allTextContents();
+  assert.deepEqual(items, ["Show as steps", "Show as video", "Show as loop (GIF)", "Edit in canvas", "Remove from page"], "no speed for steps");
+  await page.click(".context-menu .menu-item:has-text('Show as loop (GIF)')");
+  await waitSaved(page);
+  assert.equal(await blockFence(page), "```scalenote-animation\nid: srp00001\nshow: loop\nfps: 2\n```");
+  await page.click(".animation-block-surface", { button: "right" });
+  await shotBoth(page, "animation-block-menu");
+  await page.click(".context-menu .menu-item:has-text('12 steps a second')");
+  await waitSaved(page);
+  assert.match(await blockFence(page), /fps: 12\n/);
+  // Other speed: a wrong number is refused with a message; a right one, with a comma, is kept.
+  await page.click(".animation-block-surface", { button: "right" });
+  await page.click(".context-menu .menu-item:has-text('Other speed')");
+  await page.waitForSelector("#speedBox[open]");
+  await page.fill("#speedInput", "40");
+  await page.click("#speedBox button:has-text('Use this speed')");
+  assert.equal(await page.isVisible("#speedBox .dialog-error"), true);
+  assert.equal(await page.isVisible("#speedBox[open]"), true);
+  await page.fill("#speedInput", "1,5");
+  await page.click("#speedBox button:has-text('Use this speed')");
+  await page.waitForSelector("#speedBox", { state: "hidden" });
+  // The change reaches the file with the next save.
+  await page.waitForFunction(() => /fps: 1\.5\n/.test(window.__mock.files.get("Cell.md")));
+  await page.click(".animation-block-surface", { button: "right" });
+  assert.equal(await page.locator(".context-menu .menu-item[aria-checked='true']:has-text('Other speed')").count(), 1);
+  await page.keyboard.press("Escape");
+  // Remove from page: the block goes, the animation stays in the drawing.
+  const drawing = await page.evaluate(() => window.__mock.canvases.get("Cell.md"));
+  await page.click(".animation-block-surface", { button: "right" });
+  await page.click(".context-menu .menu-item:has-text('Remove from page')");
+  await waitSaved(page);
+  assert.doesNotMatch(bodyOfPage((await files(page))["Cell.md"]), /scalenote-animation/);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Cell.md")), drawing);
+}, ctxOpts);
+
+await test("Loop plays by itself at its speed, stops when scrolled out of view, carries on when back, and keeps a pause", async (page) => {
+  await showPage(page, "loop", 2, "Intro\n\n" + Array.from({ length: 60 }, (_, i) => `Line ${i}`).join("\n\n"));
+  // The page's clock was replaced before it loaded (below); from here on it only moves when told.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
+  // Scrolled into view first (it is below a long page).
+  await page.locator(".animation-block").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
+  await page.clock.runFor(100);
+  const start = await shownStep(page);
+  await page.clock.runFor(500);
+  assert.equal(await shownStep(page), (start % 3) + 1, "one step on after half a second at 2 a second");
+  await page.clock.runFor(1000);
+  assert.equal(await shownStep(page), ((start + 2) % 3) + 1, "and round again after the last");
+  assert.equal(await page.textContent(".animation-block-play"), "Pause");
+  // Out of view: it waits.
+  await page.evaluate(() => { document.querySelector("#editor").scrollTop = 0; });
+  await page.waitForTimeout(100);
+  await page.clock.runFor(100);
+  const away = await shownStep(page);
+  await page.clock.runFor(3000);
+  assert.equal(await shownStep(page), away, "no steps while out of view");
+  await page.locator(".animation-block").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
+  await page.clock.runFor(600);
+  assert.notEqual(await shownStep(page), away, "it carries on in view");
+  // Pause is kept.
+  await page.click(".animation-block-play");
+  const paused = await shownStep(page);
+  await page.clock.runFor(3000);
+  assert.equal(await shownStep(page), paused);
+}, { ...ctxOpts, before: (page) => page.clock.install() });
+
+await test("Video plays once and stops on the last step; play after the end starts again", async (page) => {
+  await showPage(page, "video", 4);
+  await page.clock.install();
+  assert.equal(await shownStep(page), 1);
+  await page.clock.runFor(2000);
+  assert.equal(await shownStep(page), 1, "a video waits for play");
+  await page.click(".animation-block-play");
+  await page.clock.runFor(260);
+  assert.equal(await shownStep(page), 2);
+  await page.clock.runFor(3000);
+  assert.equal(await shownStep(page), 3, "stops on the last step");
+  assert.equal(await page.textContent(".animation-block-play"), "Play");
+  await page.click(".animation-block-play");
+  assert.equal(await shownStep(page), 1, "again from the start");
+  await shotBoth(page, "animation-video-in-text");
+}, ctxOpts);
+
+await test("with reduced motion asked for, a loop waits for play", async (page) => {
+  await showPage(page, "loop", 2);
+  await page.clock.install();
+  await page.clock.runFor(3000);
+  assert.equal(await shownStep(page), 1);
+  assert.equal(await page.textContent(".animation-block-play"), "Play");
+  await page.click(".animation-block-play");
+  await page.clock.runFor(600);
+  assert.equal(await shownStep(page), 2);
+}, { ...ctxOpts, before: (page) => page.emulateMedia({ reducedMotion: "reduce" }) });
+
+await test("on a touch screen a sideways swipe on the drawing changes the step and an up-and-down one does not", async (page) => {
+  await showPage(page);
+  const swipe = (dx, dy) => page.evaluate(([x, y]) => {
+    const surface = document.querySelector(".animation-block-surface");
+    const box = surface.getBoundingClientRect();
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const fire = (type, px, py) => surface.dispatchEvent(new PointerEvent(type, { pointerId: 41, pointerType: "touch", isPrimary: true, clientX: px, clientY: py, bubbles: true }));
+    fire("pointerdown", cx, cy);
+    for (let i = 1; i <= 5; i++) fire("pointermove", cx + (x * i) / 5, cy + (y * i) / 5);
+    fire("pointerup", cx + x, cy + y);
+  }, [dx, dy]);
+  await swipe(-80, 5);
+  assert.equal(await shownStep(page), 2, "a swipe to the left: the next step");
+  await swipe(10, -90);
+  assert.equal(await shownStep(page), 2, "mostly up: the page scrolls, the step stays");
+  await swipe(25, 0);
+  assert.equal(await shownStep(page), 2, "too short");
+  await swipe(70, -10);
+  assert.equal(await shownStep(page), 1, "a swipe to the right: the step before");
+  const buttons = await page.locator(".animation-block-button").evaluateAll((list) => list.map((b) => b.getBoundingClientRect().height));
+  assert.ok(buttons.every((h) => h >= 44), `Back and Next are big enough for a finger: ${buttons}`);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA, hasTouch: true });
+
 await test("two /canvas blocks on a page are two different regions", async (page) => {
   await start(page);
   await page.click("#newNote");

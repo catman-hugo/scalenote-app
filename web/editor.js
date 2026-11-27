@@ -503,7 +503,7 @@ export function createEditor(element, onChange, options = {}) {
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))), words: options.loadWords || (() => Promise.reject(new Error("no words"))) }),
       PdfBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),
-      AnimationBlock.configure({ drawing: options.canvasDrawing || (() => null), edit: options.editAnimation || (() => {}) }),
+      AnimationBlock.configure({ drawing: options.canvasDrawing || (() => null), edit: options.editAnimation || (() => {}), askSpeed: options.askSpeed || (async () => null) }),
       ...tableExtensions,
       SlashMenu,
       LinkShortcut,
