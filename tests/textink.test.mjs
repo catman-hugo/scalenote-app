@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { blockAtY, blockTag, findBlock, fromFractions, inkFromScreen, inkToScreen, lineTouched, toFractions, TAG_LENGTH } from "../web/textink.js";
+import { blockAtY, blockTag, findBlock, fromFractions, inkFromScreen, inkToScreen, insideBox, lineTouched, toFractions, TAG_LENGTH } from "../web/textink.js";
 import { emptyCanvas, parseCanvas, serializeCanvas, canAddItem, totalPoints } from "../web/canvasrules.js";
 
 const ink = (extra = {}) => ({ tool: "pen", color: "red", width: 4, anchor: { block: 2, tag: "p:Hello" }, points: [[0.1, 0.5, 0.5], [0.9, 0.5, 0.7]], ...extra });
@@ -172,4 +172,30 @@ test("a block with a fixed fingerprint (a PDF, a canvas region) still takes ink 
   assert.equal(findBlock(tags, { block: 1, tag: "p:book.pdf" }, fixed), -1, "another kind of block does not take it");
   assert.equal(findBlock(tags, { block: 2, tag: "p:gone" }, fixed), -1, "a paragraph still needs its words");
   assert.equal(findBlock(tags, { block: 1, tag: "figure:old" }), -1, "without the fixed list nothing changes");
+});
+
+test("ink on a picture is kept as shares of the picture and follows it at any size (0.6.9)", () => {
+  const picture = { left: 100, top: 50, width: 600, height: 400, em: 16 };
+  const stroke = { tool: "pen", color: "red", width: 4, points: [[220, 250, 0.5], [580, 250, 0.6]] };
+  const item = inkFromScreen(stroke, picture, { block: 1, tag: "figure:attachments/slide.png" }, true);
+  assert.equal(item.fit, true);
+  assert.deepEqual(item.points.map(([x, y]) => [x, y]), [[0.2, 0.5], [0.8, 0.5]]);
+  // On a phone the picture is smaller and starts at the left: the ink is on the same words.
+  const small = { left: 10, top: 300, width: 300, height: 200, em: 16 };
+  assert.deepEqual(inkToScreen(item, small).map(([x, y]) => [x, y]), [[70, 400], [250, 400]]);
+  // Without `fit` nothing changes: ink beside a picture keeps its distance from the block's edge.
+  const beside = inkFromScreen(stroke, picture, { block: 1, tag: "x" });
+  assert.equal(beside.fit, undefined);
+  assert.ok(insideBox(220, 250, picture) && !insideBox(90, 250, picture) && !insideBox(200, 460, picture) && !insideBox(0, 0, null));
+});
+
+test("the picture flag is written and read back, and anything but true is refused", () => {
+  const saved = serializeCanvas(withInk(ink({ size: [600, 400, 16], fit: true }), ink()));
+  const read = parseCanvas(saved).canvas;
+  assert.equal(read.ink[0].fit, true);
+  assert.equal(read.ink[1].fit, undefined, "ink from before stays without it");
+  assert.doesNotMatch(serializeCanvas(withInk(ink())), /"fit"/);
+  for (const bad of [false, 1, "true", null]) {
+    assert.ok(parseCanvas(JSON.stringify({ format: 5, items: [], ink: [ink({ fit: bad })] })).problem, String(bad));
+  }
 });

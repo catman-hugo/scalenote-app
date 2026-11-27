@@ -14,7 +14,7 @@
 import { toggledTool } from "./penkeys.js";
 import { holdTouches } from "./touchhold.js";
 import { DrawingHistory, LIMITS, PEN_COLOURS, PEN_WIDTHS, canAddItem, drawnWidth, nearestWidthStop, readableInk, widthAt } from "./canvasrules.js";
-import { blockTag, findBlock, inkFromScreen, inkToScreen, lineTouched, splitByBlock } from "./textink.js";
+import { blockTag, findBlock, inkFromScreen, inkToScreen, insideBox, lineTouched, splitByBlock } from "./textink.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -71,9 +71,10 @@ const fixedText = (node) => (node.dataset && node.dataset.inkText !== undefined 
 /**
  * `scroller` is the box the text scrolls in, `panes` holds it (the bar goes in front of it),
  * `body()` gives the editor's root element, `drawing()` gives `{ canvas, readOnly }` for the open
- * page or null when none is loaded.
+ * page or null when none is loaded. `pictureColours()` says whether ink on a picture keeps the
+ * colours of a light page in a dark theme (a setting, off by default).
  */
-export function createInkLayer({ scroller, panes, body, drawing, onChange, onNotice }) {
+export function createInkLayer({ scroller, panes, body, drawing, onChange, onNotice, pictureColours = () => false }) {
   const t = strings.canvas;
   const s = strings.ink;
   const state = {
@@ -91,6 +92,8 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     tags: [],
     fixed: [],
     colours: {},
+    // The colours on a picture (a page of a PDF is white): as on a light page.
+    pictureInk: {},
   };
 
   // A sticky box at the top of the scrolling text, with the sheet inside. Its own height is zero, so
@@ -286,6 +289,17 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     const em = parseFloat(getComputedStyle(node).fontSize) || 16;
     return { left: box.left - sheet.left, top: box.top - sheet.top, width: box.width, height: box.height, bottom: box.bottom - sheet.top, em };
   }
+  // The picture of a picture block (the box exactly around it), or null for other blocks.
+  const pictureOf = (node) => node.querySelector(":scope .image-sizer");
+  // The box of the picture in a block, in sheet pixels, or null when the block has none.
+  function pictureRect(node, sheet) {
+    const picture = pictureOf(node);
+    if (!picture) return null;
+    const box = picture.getBoundingClientRect();
+    if (!(box.width > 0 && box.height > 0)) return null;
+    const em = parseFloat(getComputedStyle(node).fontSize) || 16;
+    return { left: box.left - sheet.left, top: box.top - sheet.top, width: box.width, height: box.height, bottom: box.bottom - sheet.top, em };
+  }
 
   // ---- painting ----
   function readColours() {
@@ -294,6 +308,8 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     for (const name of PEN_COLOURS) {
       // A pen colour too dark to see on a dark theme is drawn lighter (readableInk).
       state.colours[name] = readableInk(style.getPropertyValue(name === "ink" ? "--text" : `--pen-${name}`).trim() || "#000", background);
+      // On a picture: the pen's own colour, and black for the colour of the text, as on paper.
+      state.pictureInk[name] = name === "ink" ? "#000000" : style.getPropertyValue(`--pen-${name}`).trim() || "#000";
     }
   }
   function paintLine(stroke, points, context = surfaceContext, colours = state.colours) {
@@ -339,12 +355,17 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     const nodes = blocks();
     const known = tags();
     const rects = new Map();
+    const pictures = new Map();
     const out = [];
     for (const item of d.canvas.ink) {
       const at = findBlock(known, item.anchor, state.fixed);
       if (at < 0 || !nodes[at]) continue;
       if (!rects.has(at)) rects.set(at, blockRect(nodes[at], sheet));
-      out.push({ item, points: inkToScreen(item, rects.get(at)) });
+      if (!pictures.has(at)) pictures.set(at, pictureRect(nodes[at], sheet));
+      const picture = pictures.get(at);
+      // Ink that follows a picture whose picture is not drawn yet waits for it.
+      if (item.fit && !picture) continue;
+      out.push({ item, points: inkToScreen(item, item.fit ? picture : rects.get(at)), picture: Boolean(picture) });
     }
     return out;
   }
@@ -379,9 +400,10 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     const sheet = sheetBox();
     const g = state.gesture;
     const hidden = g && g.kind === "erase" ? g.hit : null;
-    for (const { item, points } of inkOnScreen(sheet)) {
+    const onPictures = pictureColours();
+    for (const { item, points, picture } of inkOnScreen(sheet)) {
       if (hidden && hidden.has(item)) continue;
-      paintLine(item, points);
+      paintLine(item, points, surfaceContext, onPictures && picture ? state.pictureInk : state.colours);
     }
     if (g && g.kind === "pen" && g.stroke.points.length) paintLine(g.stroke, g.stroke.points);
   }
@@ -438,7 +460,12 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
       const ctx = canvas.getContext("2d");
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       const rect = { left: 0, top: 0, width, height, bottom: height, em: parseFloat(getComputedStyle(node).fontSize) || 16 };
-      for (const item of items) paintLine(item, inkToScreen(item, rect), ctx, colours);
+      // Ink that follows a picture is placed on the picture's box inside the block.
+      const picture = pictureRect(node, box);
+      for (const item of items) {
+        if (item.fit && !picture) continue;
+        paintLine(item, inkToScreen(item, item.fit ? picture : rect), ctx, colours);
+      }
       const url = canvas.toDataURL("image/png");
       canvas.width = 0;
       canvas.height = 0;
@@ -603,12 +630,20 @@ export function createInkLayer({ scroller, panes, body, drawing, onChange, onNot
     const sheet = sheetBox();
     const rects = nodes.map((node) => blockRect(node, sheet));
     const pieces = splitByBlock(points, rects);
+    // A piece that starts on a picture follows the picture (textink.js).
+    const onPicture = (piece) => {
+      const picture = pictureRect(nodes[piece.block], sheet);
+      return picture && insideBox(piece.points[0][0], piece.points[0][1], picture) ? picture : null;
+    };
     if (!canAddItem(d.canvas, points.length + pieces.length) || d.canvas.items.length + d.canvas.ink.length + pieces.length > LIMITS.items) {
       onNotice(t.full);
       return scheduleDraw();
     }
     const known = tags();
-    const added = pieces.map((piece) => inkFromScreen({ ...g.stroke, points: piece.points }, rects[piece.block], { block: piece.block, tag: known[piece.block] }));
+    const added = pieces.map((piece) => {
+      const picture = onPicture(piece);
+      return inkFromScreen({ ...g.stroke, points: piece.points }, picture || rects[piece.block], { block: piece.block, tag: known[piece.block] }, Boolean(picture));
+    });
     d.canvas.ink.push(...added);
     historyOf(d).record({ add: added });
     changed();

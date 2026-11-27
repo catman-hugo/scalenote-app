@@ -79,7 +79,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", penKeyDown: "none", penKeyUp: "none", openIn: "text", snapShapes: true, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", penKeyDown: "none", penKeyUp: "none", openIn: "text", snapShapes: true, pictureInk: false, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
   entries: [],
   // What this device keeps offline: { choices, notHere } (offlinerules.js). Empty where the
   // backend has no such list (the browser) or before the first answer.
@@ -214,6 +214,8 @@ async function loadSettings() {
       openIn: OPEN_IN.includes(parsed.openIn) ? parsed.openIn : "text",
       // Shapes snap to a grid unless turned off.
       snapShapes: parsed.snapShapes !== false,
+      // Ink on a picture keeps the colours of a light page in a dark theme. Off unless turned on.
+      pictureInk: parsed.pictureInk === true,
       canvasEdge: CANVAS_EDGES.includes(parsed.canvasEdge) ? parsed.canvasEdge : "open",
       // The notes box after an update is shown unless turned off.
       showWhatsNew: parsed.showWhatsNew !== false,
@@ -448,6 +450,18 @@ function canvasSettingsRows() {
   const snapRow = document.createElement("label");
   snapRow.className = "setting-row";
   snapRow.append(textElement("span", s.snapShapes, "setting-label"), snap);
+  const pictureInk = document.createElement("input");
+  pictureInk.type = "checkbox";
+  pictureInk.id = "pictureInk";
+  pictureInk.checked = app.settings.pictureInk;
+  pictureInk.addEventListener("change", () => {
+    app.settings.pictureInk = pictureInk.checked;
+    saveSettings();
+    if (app.ink) app.ink.refresh();
+  });
+  const pictureInkRow = document.createElement("label");
+  pictureInkRow.className = "setting-row";
+  pictureInkRow.append(textElement("span", s.pictureInk, "setting-label"), pictureInk);
   // Where the sheet ends: open on every side, or an edge at the top and left like a page.
   const edge = document.createElement("select");
   edge.id = "canvasEdge";
@@ -487,7 +501,7 @@ function canvasSettingsRows() {
     keyRow.append(textElement("span", s.penKeyLabels[key], "setting-label"), pick);
     return keyRow;
   });
-  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), ...keyRows, textElement("p", s.penKeyHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint"), edgeRow];
+  return [openRow, textElement("p", s.openInHint, "setting-hint"), row, textElement("p", s.penButtonHint, "setting-hint"), ...keyRows, textElement("p", s.penKeyHint, "setting-hint"), snapRow, textElement("p", s.snapShapesHint, "setting-hint"), pictureInkRow, textElement("p", s.pictureInkHint, "setting-hint"), edgeRow];
 }
 
 
@@ -3396,6 +3410,7 @@ async function start() {
     drawing: inkDrawing,
     onChange: () => app.canvasSave.touch(),
     onNotice: (text) => showToast(text),
+    pictureColours: () => app.settings.pictureInk,
   });
   app.editor.on("update", () => app.ink.refresh());
   app.find = createPageFind({ editor: () => app.editor, after: document.querySelector(".topbar"), onClose: closeFind });

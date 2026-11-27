@@ -32,6 +32,17 @@ Found by the owner in a screen recording (computer, a page with an imported PDF 
 
 NOT tried on a real device.
 
+### Ink on pictures (branch `fix/ink-on-pictures`, starts from `fix/find-in-page`)
+
+Found by the owner with a phone and a laptop on the same page: writing across a PDF slide on the phone sat on the empty margin left of the slide on the laptop; writing beside a slide on the laptop did not show on the phone (it lands past the phone's screen); and black writing was pale grey on the white slide on the phone in a dark theme.
+
+- Ink that starts on a picture is kept as shares of the picture (`fit` in the drawing file), so it grows, shrinks and moves with the picture on every screen (`web/textink.js`, `pictureRect` in `web/inklayer.js`, read and written in `web/canvasrules.js`). Ink beside a picture and ink from before are kept as before. An older app reads such ink but places it from the block's edge.
+- A setting in Drawing, off by default (the owner's choice): "Writing on pictures keeps its light-page colours". On, writing on a picture in a dark theme uses the colours of a light page (the text colour is black), so black writing stays black on a white slide. Words in `web/strings.js`.
+- Not changed: the 0.6.8 rule that lightens dark pen colours on a dark page (the owner was asked whether the new setting should cover it too; no answer yet, so it stays as it was).
+- Tests: unit tests for the picture shares and the file flag; browser tests that ink on a picture stays across the middle of it at a narrow and a wide window, that ink beside a picture keeps the old way, and the setting (off by default, then black on the slide). The two browser tests fail without the change (checked). Full browser run: 466 passed.
+
+NOT tried on a real device.
+
 ## 0.7.0: planned (animations in pages)
 
 Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.

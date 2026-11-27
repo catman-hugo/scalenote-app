@@ -567,6 +567,8 @@ export const strings = {
     canvasEdgeOptions: { open: "Open on every side", topLeft: "Start at the top left, like a page" },
     snapShapes: "Snap shapes to a grid",
     snapShapesHint: "Corners of rectangles, ellipses, lines and arrows land on an invisible grid, so shapes drawn at different times line up exactly. Shapes already drawn are not moved.",
+    pictureInk: "Writing on pictures keeps its light-page colours",
+    pictureInkHint: "In a dark theme, writing on a picture, such as a page of a PDF, is shown in the colours it has on a light page, so black writing stays black on a white slide. Off: it is shown like writing on the page around it.",
     historyHeading: "Page history",
     historyHint: "Older versions of your pages are kept automatically in a hidden folder inside your notes folder. They also hold text you have since deleted. Deleting the history removes the older versions of every page; the pages themselves are not changed.",
     historyButton: "Delete all history",

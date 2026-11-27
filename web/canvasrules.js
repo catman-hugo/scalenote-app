@@ -304,6 +304,8 @@ function validInk(item) {
   if (!PEN_COLOURS.includes(item.color) || !validWidth(item.width) || !validAnchor(item.anchor)) return false;
   // The size of the block when it was drawn, from 0.5.7 on (see textink.js). Optional.
   if (item.size !== undefined && !validInkSize(item.size)) return false;
+  // Ink that follows a picture, from 0.6.9 on (see textink.js). Optional.
+  if (item.fit !== undefined && item.fit !== true) return false;
   const points = item.points;
   if (!Array.isArray(points) || points.length === 0 || points.length > LIMITS.pointsPerStroke) return false;
   return points.every((point) => Array.isArray(point) && point.length === 3 && inkNumber(point[0]) && inkNumber(point[1]) && isNumber(point[2]) && point[2] >= 0 && point[2] <= 1);
@@ -316,6 +318,7 @@ function cleanInk(item) {
     width: item.width,
     anchor: { block: item.anchor.block, tag: item.anchor.tag },
     ...(item.size ? { size: [item.size[0], item.size[1], item.size[2]] } : {}),
+    ...(item.fit === true ? { fit: true } : {}),
     points: item.points.map((p) => [p[0], p[1], p[2]]),
   };
 }
@@ -377,7 +380,8 @@ const corner = ([x, y]) => [round(x, 1), round(y, 1)];
 function inkLine(item) {
   const points = item.points.map(([x, y, p]) => [round(x, 4), round(y, 4), round(p, 2)]);
   const size = item.size ? { size: item.size.map((v) => round(v, 1)) } : {};
-  return JSON.stringify({ tool: item.tool, color: item.color, width: item.width, anchor: { block: item.anchor.block, tag: item.anchor.tag }, ...size, points });
+  const fit = item.fit === true ? { fit: true } : {};
+  return JSON.stringify({ tool: item.tool, color: item.color, width: item.width, anchor: { block: item.anchor.block, tag: item.anchor.tag }, ...size, ...fit, points });
 }
 
 function itemLine(item) {
