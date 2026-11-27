@@ -1,7 +1,7 @@
 // Editor nodes for callouts, toggles, images and tables. How they are read from and written
 // to markdown lives in richblocks.js; this file is only how they look and behave on screen.
 
-import { HANDLES, keyDelta, resizeBy } from "./imagesize.js";
+import { HANDLES, keyDelta, pdfSeries, resizeBy } from "./imagesize.js";
 import { attachImageFinder } from "./imagefind.js";
 import { Node } from "@tiptap/core";
 import { liftEmptyBlock } from "@tiptap/pm/commands";
@@ -265,6 +265,11 @@ export const ImageBlock = Node.create({
       const reset = make("button", "image-reset", strings.image.resetSize);
       reset.type = "button";
       reset.setAttribute("aria-label", strings.image.resetSizeLabel);
+      // A page of a PDF added as pictures that was given a size can give it to every other page
+      // of the same PDF on this page in one go (asked for slides of different sizes).
+      const applyAll = make("button", "image-apply-all", strings.image.applyAll);
+      applyAll.type = "button";
+      applyAll.setAttribute("aria-label", strings.image.applyAllLabel);
       const handles = HANDLES.map((place) => {
         const handle = make("span", `image-handle image-handle-${place}`);
         handle.dataset.handle = place;
@@ -282,7 +287,7 @@ export const ImageBlock = Node.create({
       frame.append(sizer, missing);
       // The reset button sits next to the description, not on the picture, so it never covers a handle.
       const caption = make("div", "image-caption");
-      caption.append(alt, reset);
+      caption.append(alt, applyAll, reset);
       dom.append(frame, caption);
 
       // Shows a size without saving it; null sides mean the natural size.
@@ -291,9 +296,25 @@ export const ImageBlock = Node.create({
         sizer.style.width = width ? `${width}px` : "";
         img.style.aspectRatio = width && height ? `${width} / ${height}` : "";
       };
+      // The other pages of the same PDF in the page, as editor positions.
+      const sameSeries = () => {
+        const series = pdfSeries(current.attrs.path);
+        const found = [];
+        if (!series) return found;
+        const self = getPos();
+        editor.state.doc.descendants((child, position) => {
+          if (child.type === current.type && position !== self && pdfSeries(child.attrs.path) === series) found.push(position);
+          return child.isBlock && child.type !== current.type;
+        });
+        return found;
+      };
       const paintSaved = () => {
         paint(current.attrs.width, current.attrs.height);
         reset.hidden = !current.attrs.width;
+        applyAll.hidden = !current.attrs.width || sameSeries().every((position) => {
+          const other = editor.state.doc.nodeAt(position);
+          return other && other.attrs.width === current.attrs.width && other.attrs.height === current.attrs.height;
+        });
       };
       const commit = (width, height) => {
         setAttrs(editor, getPos, current, { width, height });
@@ -376,6 +397,19 @@ export const ImageBlock = Node.create({
           commit(next.width, next.height);
         });
       });
+      applyAll.addEventListener("click", () => {
+        if (!editor.isEditable) return;
+        const { width, height } = current.attrs;
+        let tr = editor.state.tr;
+        for (const position of sameSeries()) {
+          const other = tr.doc.nodeAt(position);
+          if (other) tr = tr.setNodeMarkup(position, undefined, { ...other.attrs, width, height });
+        }
+        // One step, so Ctrl+Z puts every page back at once.
+        if (tr.docChanged) editor.view.dispatch(tr);
+        paintSaved();
+        editor.commands.focus();
+      });
       reset.addEventListener("click", () => {
         if (!editor.isEditable) return;
         commit(null, null);
@@ -407,7 +441,7 @@ export const ImageBlock = Node.create({
           show();
           return true;
         },
-        stopEvent: (event) => alt.contains(event.target) || handles.some((h) => h.contains(event.target)) || reset.contains(event.target),
+        stopEvent: (event) => alt.contains(event.target) || handles.some((h) => h.contains(event.target)) || reset.contains(event.target) || applyAll.contains(event.target),
         ignoreMutation: () => true,
       };
     };

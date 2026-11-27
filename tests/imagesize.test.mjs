@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resizeBy, keyDelta, HANDLES, MIN_SIDE, MAX_SIDE } from "../web/imagesize.js";
+import { pdfSeries } from "../web/imagesize.js";
 
 const natural = { width: 400, height: 200, explicitHeight: false };
 
@@ -59,4 +60,14 @@ test("arrow keys move a handle by 10 px and other keys do nothing", () => {
   assert.deepEqual(keyDelta("ArrowLeft"), [-10, 0]);
   assert.deepEqual(keyDelta("ArrowDown"), [0, 10]);
   assert.equal(keyDelta("a"), null);
+});
+
+test("pages of the same PDF added as pictures are told apart from other pictures by their names", () => {
+  assert.equal(pdfSeries("attachments/Cell biology-p01.jpg"), "attachments/Cell biology");
+  assert.equal(pdfSeries("attachments/Cell biology-p120.jpg"), "attachments/Cell biology");
+  assert.equal(pdfSeries("attachments/leaf.png"), null);
+  assert.equal(pdfSeries("attachments/photo-p1.png"), null, "only the JPEG pages the import makes");
+  assert.equal(pdfSeries("-p1.jpg"), null);
+  assert.equal(pdfSeries(""), null);
+  assert.equal(pdfSeries(undefined), null);
 });

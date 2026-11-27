@@ -58,3 +58,13 @@ export function keyDelta(key) {
     default: return null;
   }
 }
+
+/**
+ * The PDF a picture was made from, when it is a page of a PDF added as pictures: the part of its
+ * path before "-p<number>.jpg" (pdfimport.js names the pages like that), or null for any other
+ * picture. Pictures with the same answer are pages of the same PDF ("Apply to all slides").
+ */
+export function pdfSeries(path) {
+  const found = /^(.+)-p\d{1,5}\.jpg$/.exec(String(path || ""));
+  return found ? found[1] : null;
+}

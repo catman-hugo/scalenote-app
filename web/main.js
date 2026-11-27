@@ -21,6 +21,7 @@ import { hideNoteId, newNoteId, restoreNoteId, withNoteId } from "./blocks.js";
 import { Autosave } from "./autosave.js";
 import { createEditor } from "./editor.js";
 import { applyFolds, foldFlags } from "./togglefold.js";
+import { placeOf, scrollFor } from "./pageplace.js";
 import { createPageText } from "./pagetext.js";
 import { createNavHistory } from "./navhistory.js";
 import { cleanLastPage, resetSettings } from "./startrules.js";
@@ -128,6 +129,9 @@ const app = {
   // Which toggles are folded, per page (path -> true or false for each toggle, top to bottom).
   // Kept only while the app is open: a page seen for the first time has every toggle folded.
   folds: new Map(),
+  // Where each page was left (pageplace.js): a block and its distance from the top of the window,
+  // and the cursor. Kept only while the app is open.
+  places: new Map(),
   placingPage: false,
   pageInEditor: null,
   // Draws markdown as the page looks, for reading only (pagetext.js).
@@ -1517,6 +1521,7 @@ async function openVaultFrom(choice) {
   app.expanded = new Set();
   app.selectedFolder = "";
   app.folds = new Map();
+  app.places = new Map();
   app.nav = createNavHistory();
   await showNoNote();
   await refreshTree();
@@ -1772,6 +1777,7 @@ async function reloadOpenPage() {
   if (app.current !== shown) return;
   const busy = Boolean(app.autosave.pending || app.autosave.running);
   if (pageAction({ onDisk: fresh.version, shown: shown.version, busy }) === "reload") {
+    rememberPlace();
     showNote(shown.path, fresh);
     showToast(strings.messages.pageRefreshed);
     return;
@@ -2311,6 +2317,7 @@ function remapPaths(oldPath, newPath) {
   app.selectedFolder = fix(app.selectedFolder);
   if (app.current) app.current.path = fix(app.current.path);
   app.folds = new Map([...app.folds].map(([path, flags]) => [fix(path), flags]));
+  app.places = new Map([...app.places].map(([path, place]) => [fix(path), place]));
   if (app.pageInEditor) app.pageInEditor = fix(app.pageInEditor);
   // What the moved pages remember goes along (pageprefs.js).
   app.settings.pageViews = movePages(app.settings.pageViews, oldPath, newPath);
@@ -2592,7 +2599,69 @@ function closeFind(place) {
   chain.focus(null, { scrollIntoView: false }).run();
 }
 
+// ---- the place a page was left (pageplace.js) ----
+
+// The tops and bottoms of the text's blocks, and the top of the box the text scrolls in.
+function blockEdges() {
+  const nodes = [...app.editor.view.dom.children];
+  const boxes = nodes.map((node) => node.getBoundingClientRect());
+  return { tops: boxes.map((b) => b.top), bottoms: boxes.map((b) => b.bottom), viewTop: el("editor").getBoundingClientRect().top };
+}
+
+// Remembers where the open page is, before it is left or loaded again.
+function rememberPlace() {
+  if (!app.current || app.pageInEditor !== app.current.path || el("editor").hidden) return;
+  const { tops, bottoms, viewTop } = blockEdges();
+  const place = placeOf(tops, bottoms, viewTop);
+  if (!place) return;
+  const { from, to } = app.editor.state.selection;
+  app.places.set(app.current.path, { ...place, from, to });
+}
+
+// Puts the page back where it was left, or at the top for a page not seen since the app started.
+// Pictures above the place change the page's height as they load, so the place is put back again
+// each time one loads, until the person scrolls, types or touches the page.
+let placeWatch = null;
+function restorePlace(path) {
+  if (placeWatch) placeWatch();
+  placeWatch = null;
+  const scroller = el("editor");
+  const place = app.places.get(path);
+  if (!place) {
+    scroller.scrollTop = 0;
+    return;
+  }
+  const size = app.editor.state.doc.content.size;
+  const clamp = (n) => Math.max(0, Math.min(n, size));
+  try {
+    app.editor.commands.setTextSelection({ from: clamp(place.from), to: clamp(place.to) });
+  } catch {
+    // A place that is no text any more: the cursor stays where the page put it.
+  }
+  const apply = () => {
+    if (app.current?.path !== path) return;
+    const { tops, viewTop } = blockEdges();
+    const top = scrollFor(place, tops, viewTop, scroller.scrollTop);
+    if (top !== null) scroller.scrollTop = top;
+  };
+  apply();
+  requestAnimationFrame(apply);
+  const root = app.editor.view.dom;
+  const stop = () => {
+    clearTimeout(timer);
+    root.removeEventListener("load", apply, true);
+    for (const name of ["wheel", "touchstart", "keydown", "pointerdown"]) scroller.removeEventListener(name, stop, true);
+    if (placeWatch === stop) placeWatch = null;
+  };
+  root.addEventListener("load", apply, true);
+  for (const name of ["wheel", "touchstart", "keydown", "pointerdown"]) scroller.addEventListener(name, stop, true);
+  // Long enough for the pictures of a long PDF to load; after that the page is left alone.
+  const timer = setTimeout(stop, 4000);
+  placeWatch = stop;
+}
+
 async function closeCurrentNote() {
+  rememberPlace();
   if (app.find) app.find.close({ quiet: true });
   await leaveInk();
   await leaveCanvas();
@@ -2680,6 +2749,7 @@ function showNote(path, note) {
   drawCover();
   drawHistoryButton();
   loadBacklinks(path);
+  restorePlace(path);
   // A page that has ink shows it over the text; a page without costs one small read.
   // The same page shown again (changed on disk) also takes the drawing again, even when the ink
   // was all erased elsewhere, so no ink from before stays on the screen.

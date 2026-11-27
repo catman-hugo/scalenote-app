@@ -7042,6 +7042,38 @@ await test("ink moves with its paragraph and keeps its size and shape when the w
   assert.ok(Math.abs(saved.ink[0].size[0] - wide.w) < 2, "the paragraph's width when drawn");
 }, ctxOpts);
 
+// ---------- 0.6.9: a page opens where it was left ----------
+// Asked by the owner: going to another page and back put the page at the cursor or at the top.
+await test("going to another page and back puts the page at the height where it was left, not at the cursor", async (page) => {
+  await start(page);
+  const long = Array.from({ length: 80 }, (_, i) => `Line number ${i} of a long page.`).join("\n\n") + "\n";
+  await seed(page, "Long.md", long);
+  await seed(page, "Other.md", "Another page.\n");
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Long.md"]');
+  await page.waitForSelector(".note-body");
+  // The cursor at the top, then reading further down.
+  await page.locator(".note-body p").first().click();
+  await page.evaluate(() => { document.querySelector("#editor").scrollTop = 1500; });
+  await page.waitForTimeout(100);
+  const firstSeen = () => page.evaluate(() => {
+    const top = document.querySelector("#editor").getBoundingClientRect().top;
+    const p = [...document.querySelectorAll(".note-body p")].find((n) => n.getBoundingClientRect().bottom > top);
+    return { text: p.textContent, offset: Math.round(p.getBoundingClientRect().top - top) };
+  });
+  const before = await firstSeen();
+  assert.notEqual(before.text, "Line number 0 of a long page.");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.waitForFunction(() => document.querySelector(".note-body").textContent.includes("Another page."));
+  assert.equal(await page.evaluate(() => document.querySelector("#editor").scrollTop), 0, "a page not seen before opens at the top");
+  await page.click('.tree-button[data-path="Long.md"]');
+  await page.waitForFunction(() => document.querySelector(".note-body").textContent.includes("Line number 79"));
+  await page.waitForTimeout(150);
+  const after = await firstSeen();
+  assert.equal(after.text, before.text, "the same line is at the top");
+  assert.ok(Math.abs(after.offset - before.offset) <= 2, JSON.stringify({ before, after }));
+});
+
 // ---------- 0.6.9: ink on a picture follows the picture ----------
 // Found by the owner: writing on a PDF slide on a phone sat on the empty margin next to the slide
 // on a laptop, and writing beside a slide on the laptop was off the phone's screen.
@@ -7457,6 +7489,44 @@ await test("a corner scales the picture with its proportions and writes only the
   await page.click('.tree-button[data-path="Pic.md"]');
   await page.waitForSelector(".image-img[src]");
   assert.deepEqual(await picBox(page).then((b) => [b.width, b.height]), [320, 160]);
+});
+
+// 0.6.9, asked by the owner: one size for every page of a PDF added as pictures.
+await test("Apply to all slides gives every page of the same PDF the size of the one that was resized, in one undo step", async (page) => {
+  await start(page);
+  const page3 = "![Lecture p1](attachments/Lecture-p1.jpg)\n\n![Lecture p2](attachments/Lecture-p2.jpg)\n\n![Other](attachments/leaf.png)\n\n![Lecture p3](attachments/Lecture-p3.jpg)\n";
+  await page.evaluate(([png, body]) => {
+    for (const name of ["Lecture-p1.jpg", "Lecture-p2.jpg", "Lecture-p3.jpg", "leaf.png"]) window.__mock.attachments.set(`attachments/${name}`, png);
+    window.__mock.files.set("Slides.md", body);
+  }, [PIC_200x100, page3]);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Slides.md"]');
+  await page.waitForFunction(() => [...document.querySelectorAll(".image-img")].every((img) => img.naturalWidth > 0));
+  await page.locator(".image-img").first().click();
+  await page.waitForSelector(".image-block.ProseMirror-selectednode");
+  assert.equal(await page.locator(".image-apply-all:visible").count(), 0, "only after a size was given");
+  const corner = await page.locator(".image-block.ProseMirror-selectednode .image-handle-se").boundingBox();
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(corner.x + corner.width / 2 + 30, corner.y + corner.height / 2, { steps: 4 });
+  await page.mouse.move(corner.x + corner.width / 2 + 60, corner.y + corner.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForSelector(".image-apply-all:visible");
+  assert.equal(await page.locator(".image-apply-all:visible").textContent(), "Apply to all slides");
+  // Later than the editor joins steps into one undo (a person reads the button first).
+  await page.waitForTimeout(700);
+  await page.click(".image-apply-all:visible");
+  await waitSaved(page);
+  const text = (await files(page))["Slides.md"];
+  for (const n of [1, 2, 3]) assert.match(text, new RegExp(`!\\[Lecture p${n}\\|320\\]\\(attachments/Lecture-p${n}\\.jpg\\)`), text);
+  assert.match(text, /!\[Other\]\(attachments\/leaf\.png\)/, "a picture that is not a page of that PDF keeps its size");
+  assert.equal(await page.locator(".image-apply-all:visible").count(), 0, "nothing left to apply");
+  // One undo puts the other pages back.
+  await page.keyboard.press("Control+z");
+  await waitSaved(page);
+  const undone = (await files(page))["Slides.md"];
+  assert.match(undone, /!\[Lecture p2\]\(attachments\/Lecture-p2\.jpg\)/, undone);
+  assert.match(undone, /!\[Lecture p1\|320\]/, "the resized one keeps its own size");
 });
 
 await test("an edge stretches one side, writes both sizes, and a corner then keeps that shape", async (page) => {

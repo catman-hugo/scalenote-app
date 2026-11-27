@@ -43,6 +43,16 @@ Found by the owner with a phone and a laptop on the same page: writing across a 
 
 NOT tried on a real device.
 
+### A page opens where it was left; Apply to all slides (branch `feature/keep-page-place`, starts from `fix/ink-on-pictures`)
+
+Asked by the owner.
+
+- Going to another page and back put the page at the cursor or at the top. Each page now remembers, while the app is open, the first block on screen and its distance from the top, and the cursor; it is put back when the page opens again, also after a sync reloads it. Pictures that load later change the page's height, so the place is put back after each one loads, until the person scrolls, types or touches the page (at most 4 seconds). A page not seen since the app started opens at the top. `web/pageplace.js` (rules), `rememberPlace` and `restorePlace` in `web/main.js`.
+- "Apply to all slides": a page of a PDF added as pictures that was given a size has a button next to "Original size" that gives every other page of the same PDF on the page that size, in one undo step. Pages of the same PDF are known by their names (`<pdf>-p<number>.jpg`, `pdfSeries` in `web/imagesize.js`); other pictures are not changed.
+- Tests: unit tests for both rules; browser tests for going back to a page (the same line at the same height; a new page at the top) and for Apply to all slides (every page of that PDF, not another picture, one undo). The page place test fails without the change (checked). A full browser run found two older picture tests that broke because the new button first shared the "Original size" button's class; it has its own class now and those two pass.
+
+NOT tried on a real device.
+
 ## 0.7.0: planned (animations in pages)
 
 Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.
