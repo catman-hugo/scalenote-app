@@ -928,7 +928,7 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
   await page.waitForSelector("#whatsnew[open]");
   const m = await page.evaluate(() => {
     const d = document.querySelector("#whatsnew").getBoundingClientRect();
-    const b = document.querySelector("#whatsnew .dialog-actions button").getBoundingClientRect();
+    const b = document.querySelector("#whatsnew .dialog-actions .primary").getBoundingClientRect();
     const n = document.querySelector("#whatsnew .notes");
     return { top: d.top, bottom: d.bottom, left: d.left, right: d.right, buttonBottom: b.bottom, scrolls: n.scrollHeight <= n.clientHeight || ["auto", "scroll"].includes(getComputedStyle(n).overflowY), notesHeight: n.clientHeight, view: [innerWidth, innerHeight] };
   });
@@ -940,7 +940,7 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
   if (mustScroll) assert.ok(m.scrolls, "on a short screen the notes scroll inside the box: " + JSON.stringify(m));
   const atEnd = await page.evaluate(() => { const n = document.querySelector("#whatsnew .notes"); n.scrollTop = n.scrollHeight; return n.scrollTop + n.clientHeight >= n.scrollHeight - 1; });
   assert.ok(atEnd, "the end of the notes can be reached");
-  await page.click("#whatsnew .dialog-actions button");
+  await page.click("#whatsnew .dialog-actions .primary");
   assert.equal(await page.isVisible("#whatsnew"), false);
 }, { viewport, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
 
@@ -957,7 +957,7 @@ await test("with Show what's new off, an update shows no box but is still rememb
 
 await test("Show what's new is on unless turned off, and turning it off is saved", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "updates");
   const box = page.locator('#settings label.setting-row:has-text("Show what\'s new after an update") input');
@@ -975,7 +975,7 @@ await test("a newer release shows a notice with a download button and its notes 
   assert.equal(dialog.imgs, 0, "no html from the notes became elements");
   assert.equal(dialog.pwned, 0);
   assert.ok(dialog.text.includes("<img src=x"), "the notes are shown as text");
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.click("#updateDownload");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
 }, { settings: existingUser(), before: githubReturns(NEWER) });
@@ -1045,7 +1045,7 @@ await test("on a computer the Download button remembers the version, so after th
   await page.waitForSelector("#whatsnew[open]");
   // Before updating, the notes are the full ones: the person has not been to GitHub.
   assert.equal(await page.isVisible("#whatsNewFull"), false);
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.click("#updateDownload");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "9.9.9");
 }, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: WINDOWS_UA });
@@ -1237,7 +1237,7 @@ await test("Check now says when the version is current, and a failed check is ca
 await test("after an update the new notes are shown once; a new install sees nothing", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   assert.match(await page.textContent("#whatsnew h2"), new RegExp("ScaleNote was updated to " + VERSION.replace(/\./g, "\\.")));
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForSelector("#newNote");
   assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).lastSeenVersion, VERSION);
 }, { settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
@@ -2970,7 +2970,7 @@ await test("on a touch screen, holding still for longer opens the menu, and noth
   await page.waitForSelector(".context-menu", { timeout: 2000 });
   await send("touchEnd");
   await page.waitForTimeout(200);
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Keep on this device…", "Share…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Icon", "Move to", "Keep on this device…", "Share…", "Delete"]);
   assert.equal(await page.isVisible("#editor"), false, "lifting the finger did not open the page");
   assert.ok("Plan.md" in (await files(page)));
 }, { userAgent: ANDROID_UA, viewport: { width: 412, height: 860 }, hasTouch: true });
@@ -3539,7 +3539,7 @@ if (shots && !process.env.SHOTS_ONLY) {
       await up.goto(url);
       await up.waitForSelector("#whatsnew[open]");
       await up.screenshot({ path: name("8-whats-new") });
-      await up.click("#whatsnew button");
+      await up.click("#whatsnew .dialog-actions .primary");
       await up.waitForSelector("#updateNotice:not([hidden])");
       await phoneClose(up, label);
       await up.screenshot({ path: name("9-update-notice") });
@@ -6049,7 +6049,7 @@ await test("a folder starts with the plain folder icon, and a page offers Colour
   await withFolderAndPage(page);
   assert.equal(await iconFile(page), null, "nothing is written until a choice is made");
   await rightClick(page, "Plan.md");
-  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Colour", "Move to", "Keep on this device…", "Share…", "Delete"]);
+  assert.deepEqual(await page.locator(".context-menu .menu-item").allTextContents(), ["Rename", "Add cover", "Show “Linked from”", "Icon", "Move to", "Keep on this device…", "Share…", "Delete"]);
 }, ctxOpts);
 
 await test("the Icon menu offers three styles and sixteen colours plus none, and a choice is saved to the hidden file", async (page) => {
@@ -6105,17 +6105,19 @@ await test("the icon is kept after the list is drawn again, and follows a rename
   assert.equal((await glyphColour(page, "Plants")).colour, "rgb(47, 158, 68)");
 }, ctxOpts);
 
-await test("a page can be given a colour, offers no icon styles, keeps it when renamed, and a folder entry is untouched", async (page) => {
+await test("a page can be given an icon and a colour, keeps them when renamed, and a folder entry is untouched", async (page) => {
   await withFolderAndPage(page);
   await page.evaluate(() => { window.__mock.folderIcons.text = JSON.stringify({ format: 1, icons: { Biology: { style: "notebook", colour: "green" } } }); });
   await page.click("#newFolder");
   await page.waitForSelector('.tree-button[data-path="Plan.md"]');
   await rightClick(page, "Plan.md");
-  await page.click('.context-menu .menu-item:has-text("Colour")');
+  // 0.6.9: pages have the same Icon item as folders, with the shapes drawn as pages.
+  await page.click('.context-menu .menu-item:has-text("Icon")');
   await page.waitForSelector(".icon-menu");
-  assert.equal(await page.locator(".icon-menu [data-icon-style]").count(), 0, "no icon styles for a page");
+  assert.deepEqual(await page.locator(".icon-menu [data-icon-style]").evaluateAll((list) => list.map((b) => b.getAttribute("aria-label"))), ["Page", "Notebook", "Line"]);
   assert.equal(await page.locator(".icon-menu [data-icon-colour]").count(), 17);
   await page.click('.icon-menu [data-icon-colour="red"]');
+  await shotBoth(page, "page-icon-menu");
   assert.deepEqual(JSON.parse(await iconFile(page)).icons, {
     Biology: { style: "notebook", colour: "green" },
     "Plan.md": { style: "folder", colour: "red" },
@@ -6130,7 +6132,10 @@ await test("a page can be given a colour, offers no icon styles, keeps it when r
   assert.deepEqual(Object.keys(JSON.parse(await iconFile(page)).icons).sort(), ["Biology", "Outline.md"]);
   assert.equal(await pageGlyphColour(page, "Outline.md"), "rgb(217, 69, 59)");
   await rightClick(page, "Outline.md");
-  await page.click('.context-menu .menu-item:has-text("Colour")');
+  await page.click('.context-menu .menu-item:has-text("Icon")');
+  await page.click('.icon-menu [data-icon-style="notebook"]');
+  assert.deepEqual(JSON.parse(await iconFile(page)).icons["Outline.md"], { style: "notebook", colour: "red" }, "a page can have another shape");
+  await page.click('.icon-menu [data-icon-style="folder"]');
   await page.click('.icon-menu [data-icon-colour="none"]');
   assert.deepEqual(Object.keys(JSON.parse(await iconFile(page)).icons), ["Biology"], "no colour removes the entry");
 }, ctxOpts);
@@ -7042,6 +7047,139 @@ await test("ink moves with its paragraph and keeps its size and shape when the w
   assert.ok(Math.abs(saved.ink[0].size[0] - wide.w) < 2, "the paragraph's width when drawn");
 }, ctxOpts);
 
+// ---------- 0.6.9: the page list, menus and Settings ----------
+
+// A screenshot in the light and the dark theme, for the design check of each version.
+async function shotBoth(page, name) {
+  if (!shots) return;
+  const before = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+    await page.waitForTimeout(50);
+    await page.screenshot({ path: `${shots}/v069-${name}-${theme}.png` });
+  }
+  await page.evaluate((t) => (t === null ? document.documentElement.removeAttribute("data-theme") : document.documentElement.setAttribute("data-theme", t)), before);
+}
+
+await test("the inbox and Shared with me are at the top of the page list, above the other folders", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    for (const name of ["Art/A.md", "Biology/B.md", "Inbox/Idea.md", "Shared with me/Alice/C.md", "Zoology/Z.md", "Loose page.md"]) {
+      window.__mock.files.set(name, "x\n");
+      const parts = name.split("/");
+      for (let i = 1; i < parts.length; i++) window.__mock.folders.add(parts.slice(0, i).join("/"));
+    }
+  });
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Inbox"]');
+  // (New folder is the one the button above the list just made to read the list again.)
+  const top = await page.evaluate(() => [...document.querySelectorAll("#tree > .tree-list > li > .tree-row > .tree-button")].map((b) => b.dataset.path).filter((p) => !p.startsWith("New folder")));
+  assert.deepEqual(top.slice(0, 2), ["Inbox", "Shared with me"], JSON.stringify(top));
+  await shotBoth(page, "page-list-pinned");
+  assert.deepEqual([...top.slice(2)].sort(), ["Art", "Biology", "Loose page.md", "Zoology"], "the rest follows, once each");
+  assert.ok(top.indexOf("Art") < top.indexOf("Biology") && top.indexOf("Biology") < top.indexOf("Zoology"), "in their usual order");
+}, ctxOpts);
+
+await test("a page's icon lines up with the folder icons next to it, and an empty folder has no arrow", async (page) => {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(() => {
+    for (const folder of ["School", "School/Empty", "School/Cell biology"]) window.__mock.folders.add(folder);
+    window.__mock.files.set("School/Week 1.md", "x\n");
+    window.__mock.files.set("School/Cell biology/Week 2.md", "x\n");
+  });
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="School"]');
+  await page.waitForSelector('.tree-button[data-path="School/Week 1.md"]');
+  const left = (path) => page.evaluate((p) => {
+    const button = document.querySelector(`.tree-button[data-path="${CSS.escape(p)}"]`);
+    const glyph = [...button.querySelectorAll("svg.icon")].at(-1);
+    return Math.round(glyph.getBoundingClientRect().left);
+  }, path);
+  // A page's icon is in the same column as the icons of the folders beside it.
+  assert.equal(await left("School/Week 1.md"), await left("School/Cell biology"));
+  const school = await left("School");
+  assert.ok((await left("School/Week 1.md")) > school + 8, "one step in from its folder's icon");
+  // An empty folder: no arrow, nothing to open, and its icon in the same column.
+  const empty = page.locator('.tree-button[data-path="School/Empty"]');
+  assert.equal(await empty.locator("svg.icon").count(), 1, "only its folder icon");
+  assert.equal(await page.locator('li:has(> .tree-row > .tree-button[data-path="School/Empty"])').getAttribute("aria-expanded"), null);
+  assert.equal(await left("School/Empty"), await left("School/Cell biology"));
+}, ctxOpts);
+
+await test("a ticked item of a menu starts at the same place as the others, with the tick at the end", async (page) => {
+  await withFolderAndPage(page);
+  await page.click("#newFolder");
+  await page.waitForSelector('.tree-button[data-path="Plan.md"]');
+  await rightClick(page, "Plan.md");
+  const starts = await page.evaluate(() => [...document.querySelectorAll(".context-menu .menu-item")].map((item) => {
+    const range = document.createRange();
+    const words = [...item.querySelectorAll("span")].find((span) => span.textContent.trim()) || item;
+    range.selectNodeContents(words.firstChild || words);
+    return { text: item.textContent, left: Math.round(range.getBoundingClientRect().left) };
+  }));
+  await shotBoth(page, "page-menu");
+  const linked = starts.find((s) => s.text.includes("Linked from"));
+  const rename = starts.find((s) => s.text === "Rename");
+  assert.equal(linked.left, rename.left, JSON.stringify(starts));
+}, ctxOpts);
+
+async function settingsButtons(page) {
+  return page.evaluate(() => {
+    const box = (sel) => { const n = document.querySelector(sel); if (!n || !n.offsetParent) return null; const r = n.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
+    const dialog = document.querySelector("#settings").getBoundingClientRect();
+    return { close: box("#settings .settings-footer .primary"), back: box("#settings .settings-back"), dialog: { right: Math.round(dialog.right), bottom: Math.round(dialog.bottom) } };
+  });
+}
+
+await test("Settings has Close at the bottom right on every screen, and on a phone Back just left of it", async (page) => {
+  await start(page);
+  await page.click("#openSettings");
+  let at = await settingsButtons(page);
+  assert.ok(at.close && at.dialog.right - at.close.right < 40 && at.dialog.bottom - at.close.bottom < 40, "computer: bottom right " + JSON.stringify(at));
+  assert.equal(at.back, null, "no Back on a computer");
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.click("#openSettings");
+  at = await settingsButtons(page);
+  assert.ok(at.close && at.dialog.right - at.close.right < 40 && at.dialog.bottom - at.close.bottom < 40, "phone, the list: bottom right " + JSON.stringify(at));
+  assert.equal(at.back, null, "no Back on the list");
+  await shotBoth(page, "phone-settings-list");
+  await page.click("#settingsTab-drawing");
+  at = await settingsButtons(page);
+  assert.ok(at.close && at.dialog.right - at.close.right < 40 && at.dialog.bottom - at.close.bottom < 40, "phone, a group: bottom right " + JSON.stringify(at));
+  assert.ok(at.back && at.back.right <= at.close.left && Math.abs(at.back.top - at.close.top) < 6, "Back on the same line, left of Close " + JSON.stringify(at));
+  await shotBoth(page, "phone-settings-drawing");
+  await page.click(".settings-back");
+  await page.waitForSelector("#settingsTab-drawing", { state: "visible" });
+}, { userAgent: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36" });
+
+await test("a conflicts button shows next to the sync status while there are conflict copies, and opens them", async (page) => {
+  await start(page);
+  await page.evaluate(() => {
+    window.__conflicts = [
+      { copy: "Week 3 (conflict phone 2026-11-27).md", original: "Week 3.md", device: "phone", date: "2026-11-27", is_page: true },
+      { copy: "Plan (conflict phone 2026-11-27).md", original: "Plan.md", device: "phone", date: "2026-11-27", is_page: true },
+    ];
+  });
+  await seed(page, "Week 3.md", "x\n");
+  await page.click("#newFolder");
+  await page.waitForSelector("#conflictsButton:not([hidden])");
+  assert.equal(await page.textContent("#conflictsButton"), "2 conflicts");
+  await shotBoth(page, "conflicts-button");
+  await page.click("#conflictsButton");
+  await page.waitForSelector(".conflict-dialog[open]");
+  await page.click("#conflictsClose");
+  // One dealt with somewhere: the count follows the next time the page list is read.
+  await page.evaluate(() => { window.__conflicts.pop(); });
+  await seed(page, "New.md", "x\n");
+  await page.click("#newFolder");
+  await page.waitForFunction(() => document.querySelector("#conflictsButton").textContent === "1 conflict");
+  await page.evaluate(() => { window.__conflicts = []; });
+  await seed(page, "Newer.md", "x\n");
+  await page.click("#newFolder");
+  await page.waitForSelector("#conflictsButton", { state: "hidden" });
+});
+
 // ---------- 0.6.9: a page opens where it was left ----------
 // Asked by the owner: going to another page and back put the page at the cursor or at the top.
 await test("going to another page and back puts the page at the height where it was left, not at the cursor", async (page) => {
@@ -7155,7 +7293,7 @@ await test("Settings, Drawing: writing on pictures keeps its light-page colours 
   assert.equal(await page.isChecked("#pictureInk"), false, "off by default");
   await page.check("#pictureInk");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).pictureInk === true);
-  if (shots) await page.screenshot({ path: `${shots}/v069-dark-picture-ink-setting.png` });
+  await shotBoth(page, "picture-ink-setting");
   await page.keyboard.press("Escape");
   await page.waitForSelector("#settings", { state: "hidden" });
   await page.waitForTimeout(200);
@@ -7513,6 +7651,7 @@ await test("Apply to all slides gives every page of the same PDF the size of the
   await page.mouse.up();
   await page.waitForSelector(".image-apply-all:visible");
   assert.equal(await page.locator(".image-apply-all:visible").textContent(), "Apply to all slides");
+  await shotBoth(page, "apply-all-slides");
   // Later than the editor joins steps into one undo (a person reads the button first).
   await page.waitForTimeout(700);
   await page.click(".image-apply-all:visible");
@@ -10129,7 +10268,7 @@ await test("after an update downloaded with the app's Download button, a compute
   // These notes are the same for every system: only the hidden short list must stay out.
   assert.doesNotMatch(text, /<!--|-->|undo or redo \(Settings, Drawing\)/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: WINDOWS_UA });
 

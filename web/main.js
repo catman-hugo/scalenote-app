@@ -60,6 +60,7 @@ import { withMissing } from "./offlinerules.js";
 import { describeSize } from "./pdfrules.js";
 import { canTellNetwork, cleanWifiOnly, watchNetwork, withWifiOnly } from "./netstate.js";
 import { startSyncLine } from "./syncline.js";
+import { openConflictReview } from "./conflictreview.js";
 import { inkAction, pageAction, sameEntries } from "./syncrules.js";
 import { watchVault } from "./vaultwatch.js";
 import { strings } from "./strings.js";
@@ -305,12 +306,12 @@ function showNotes(title, notes, { full = false, page = RELEASE_PAGE } = {}) {
   renderNotes(body, notesFor(appNotes(notes, short ? "short" : "full"), platform));
   const actions = document.createElement("div");
   actions.className = "dialog-actions";
-  actions.append(buttonElement(strings.update.close, () => dialog.close(), true));
   if (short) {
     const more = buttonElement(strings.update.fullNotes, () => openUrlOrWarn(page));
     more.id = "whatsNewFull";
     actions.append(more);
   }
+  actions.append(buttonElement(strings.update.close, () => dialog.close(), true));
   dialog.append(body, actions);
   if (!dialog.open) dialog.showModal();
   return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
@@ -1615,6 +1616,40 @@ async function refreshTree() {
   drawTree();
   syncLinks();
   refreshIndex();
+  void countConflicts();
+}
+
+// ---------- the conflicts button next to the sync status (0.6.9) ----------
+
+// The bar at the bottom of the page list shows while it has something to show.
+function paintSyncBar() {
+  el("syncBar").hidden = el("syncLine").hidden && el("conflictsButton").hidden;
+}
+
+// Counts the conflict copies in the notes folder now (not only those of the last sync), so the
+// button stays until each one is dealt with, on any device, and goes away by itself after the
+// last. Asked again whenever the page list changes; one count at a time.
+let counting = null;
+async function countConflicts() {
+  if (counting) return counting;
+  counting = (async () => {
+    let count = 0;
+    try {
+      count = app.settings.vaultPath ? (await backend.conflictsList()).length : 0;
+    } catch (error) {
+      logProblem("counting conflict copies failed", error);
+    }
+    const button = el("conflictsButton");
+    const t = strings.syncLine;
+    button.textContent = count === 1 ? t.conflictsOne : t.conflictsMany.replace("{n}", String(count));
+    button.hidden = count === 0;
+    paintSyncBar();
+  })();
+  try {
+    await counting;
+  } finally {
+    counting = null;
+  }
 }
 
 // ---------- offline choices (0.6.3) ----------
@@ -1855,9 +1890,9 @@ function openFolderIconMenu(node, x, y, button) {
   const isPage = node.kind !== "folder";
   openIconMenu(x, y, look, {
     returnFocus: button,
-    colourOnly: isPage,
+    page: isPage,
     async choose(style, colour) {
-      await changeFolderIcons((parsed) => withIcon(parsed, node.path, isPage ? "folder" : style, colour));
+      await changeFolderIcons((parsed) => withIcon(parsed, node.path, style, colour));
       drawTree();
       const now = app.folderIcons.icons;
       return has(now, node.path) ? now[node.path] : { style: "folder", colour: "none" };
@@ -2155,6 +2190,10 @@ function loadBacklinks(path) {
   }, BACKLINK_DELAY_MS);
 }
 
+// The folder that things shared with you arrive in (shares.rs, SHARED_FOLDER). Its name is the
+// same on every device, so it is not translated.
+const SHARED_WITH_ME = "Shared with me";
+
 function drawTree() {
   renderTree(
     el("tree"),
@@ -2165,6 +2204,8 @@ function drawTree() {
       selectedFolder: app.selectedFolder,
       icons: app.folderIcons.icons,
       shared: sharedPaths(),
+      // The inbox and Shared with me go above the other folders, so they are noticed (0.6.9).
+      pinned: [app.settings.inboxFolder, SHARED_WITH_ME].filter((path) => path && !path.includes("/")),
     },
     {
       openNote: (path) => openNote(path),
@@ -2213,7 +2254,7 @@ function openEntryMenu(node, x, y, button) {
   }
   const items = [{ label: c.rename, run: () => renameEntryInline(node, button) }];
   if (node.kind !== "folder" && /\.md$/i.test(node.path)) items.push(...pageItems(node.path));
-  items.push({ label: node.kind === "folder" ? c.icon : c.colour, run: () => openFolderIconMenu(node, x, y, button) });
+  items.push({ label: c.icon, run: () => openFolderIconMenu(node, x, y, button) });
   const targets = moveTargets(node.path);
   if (targets.length) {
     const choose = () =>
@@ -3496,7 +3537,10 @@ async function start() {
   keepCaretVisible();
   startFlushTriggers();
   startResumeNotice();
-  startSyncLine(el("syncLine"));
+  startSyncLine(el("syncLine"), paintSyncBar);
+  el("conflictsButton").addEventListener("click", () => openConflictReview({ logProblem, onSettled: () => refreshAfterOutsideChange(true) }));
+  el("conflictsButton").setAttribute("aria-label", strings.syncLine.conflictsLabel);
+  void countConflicts();
   startShareCheck();
   startIncomingCheck();
   el("sidebar").addEventListener("dragover", (event) => {

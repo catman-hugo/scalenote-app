@@ -347,6 +347,12 @@ body:not(.sidebar-open) .sidebar {
   -webkit-touch-callout: none;
 }
 
+.tree-arrow-space {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
 .tree-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -791,8 +797,8 @@ body.block-dragging .float-bar { visibility: hidden; }
 .source-toggle[aria-pressed="true"] { background: var(--accent-soft); }
 .source-toggle[hidden] { display: none; }
 
-.menu-item-choice { display: flex; align-items: center; gap: var(--space-2); }
-.menu-tick { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.menu-item-choice { display: flex; align-items: center; gap: var(--space-3); }
+.menu-tick { display: inline-flex; width: 16px; height: 16px; flex: none; margin-left: auto; }
 
 .view-button,
 .source-toggle { display: inline-flex; align-items: center; gap: var(--space-1); }
@@ -1188,9 +1194,12 @@ body.block-dragging .float-bar { visibility: hidden; }
   margin-bottom: var(--space-2);
 }
 
+/* The buttons of every box sit at the bottom right, the closing one last, so Close or the main
+   choice is always in the same place (0.6.9). */
 .dialog-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin: var(--space-4) 0;
 }
@@ -1282,16 +1291,16 @@ body.block-dragging .float-bar { visibility: hidden; }
   :root { --screen-scale: 0.8125; }
 }
 #settings[open].settings-dialog { display: block; }
-.settings-layout { display: flex; height: 100%; }
-.settings-tabs { display: flex; flex-direction: column; gap: var(--space-1); flex: 0 0 12rem; padding: var(--space-4) var(--space-3); border-right: 1px solid var(--line); background: var(--bg-side); overflow-y: auto; }
+.settings-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }
+.settings-footer { grid-column: 2; display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); padding: 0 var(--space-5) var(--space-4); }
+.settings-tabs { grid-row: 1 / 3; display: flex; flex-direction: column; gap: var(--space-1); flex: 0 0 12rem; padding: var(--space-4) var(--space-3); border-right: 1px solid var(--line); background: var(--bg-side); overflow-y: auto; }
 .settings-tab { text-align: left; padding: var(--space-2) var(--space-3); border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; border-radius: var(--radius); cursor: pointer; }
 .settings-tab:hover { background: var(--bg-hover); }
 .settings-tab[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
-.settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--space-4) var(--space-5); }
+.settings-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: var(--space-4) var(--space-5) 0; }
 .settings-main h2 { margin: 0 0 var(--space-3); }
 .settings-main .settings-body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 0 var(--space-3); padding-right: var(--space-2); }
 .settings-main .settings-body[hidden] { display: none; }
-.settings-main > .primary { align-self: flex-end; }
 .settings-body .setting-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
 /* Theme picker: a three-way mode switch and one card per theme. Cards have a flat swatch painted with the
    theme's own colours (themes.css), a name, and a plain outline when chosen. */
@@ -1314,16 +1323,17 @@ body.block-dragging .float-bar { visibility: hidden; }
   /* On a phone the settings fill the screen: first a list of the groups, then one group as its own page. */
   /* It covers the whole screen, so it keeps clear of the clock and the system bars itself. */
   #settings.settings-dialog { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-  .settings-layout { flex-direction: column; }
+  .settings-layout { display: flex; flex-direction: column; }
+  .settings-footer { padding: var(--space-2) var(--space-3) var(--space-3); border-top: 1px solid var(--line); }
   .settings-tabs { flex: 1 1 auto; flex-direction: column; border-right: 0; border-bottom: 0; padding: var(--space-2) var(--space-3); gap: 0; }
   .settings-tab { padding: var(--space-3); border-bottom: 1px solid var(--line); border-radius: 0; min-height: 44px; }
   .settings-tab[aria-selected="true"] { background: transparent; border-color: transparent; border-bottom-color: var(--line); font-weight: 400; }
   .settings-main { padding: var(--space-3); flex: 0 0 auto; }
   .settings-back { display: none; }
-  .settings-layout[data-view="list"] .settings-main > :not(.settings-search):not(.primary) { display: none; }
+  .settings-layout[data-view="list"] .settings-main > :not(.settings-search) { display: none; }
   .settings-layout[data-view="list"] .settings-main { order: -1; }
   .settings-layout[data-view="page"] .settings-tabs { display: none; }
-  .settings-layout[data-view="page"] .settings-back { display: inline-block; align-self: flex-start; margin-bottom: var(--space-2); }
+  .settings-layout[data-view="page"] .settings-back { display: inline-block; }
   .settings-layout[data-view="page"] .settings-main { flex: 1 1 auto; min-height: 0; }
   /* The two fields of the pairing form stack on a phone: label above, field below. */
   .settings-body .pair-field { flex-direction: column; align-items: stretch; gap: var(--space-1); }
@@ -2129,7 +2139,15 @@ body.is-locked .toast { display: none; }
 
 /* Sync: the status line at the bottom of the page list, the per-device controls, the preview
    panel and the conflict review. Solid colours and the same spacing scale as the rest. */
-.sync-line { padding: var(--space-2) var(--space-4); border-top: 1px solid var(--line); font-size: var(--text-s); color: var(--text-soft); overflow-wrap: anywhere; }
+.sync-bar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-top: 1px solid var(--line); }
+.sync-bar[hidden] { display: none; }
+.sync-line { flex: 1 1 auto; min-width: 0; font-size: var(--text-s); color: var(--text-soft); overflow-wrap: anywhere; }
+.sync-line[hidden] { display: none; }
+/* A small button next to the status line while there are conflict copies; its colour says that
+   something needs a look. */
+.conflicts-button { flex: none; padding: var(--space-1) var(--space-2); font: inherit; font-size: var(--text-s); color: var(--text); background: var(--bg); border: 1px solid var(--kind-warn); border-radius: var(--radius); cursor: pointer; white-space: nowrap; }
+.conflicts-button:hover { background: var(--bg-hover); }
+.conflicts-button[hidden] { display: none; }
 /* Each paired device is a card that stands out from the text around it (0.5.8): the name in the
    normal text size and bold, the details small under it. */
 .pair-list li.pair-peer { display: block; margin: 0 0 var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); font-size: var(--text-m); }

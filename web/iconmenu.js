@@ -3,7 +3,7 @@
 // and closes with Escape or a click outside.
 
 import { COLOURS, COLOUR_HEX, STYLES } from "./foldericons.js";
-import { folderGlyph } from "./sidebar.js";
+import { folderGlyph, pageGlyph } from "./sidebar.js";
 import { strings } from "./strings.js";
 
 function heading(text) {
@@ -14,17 +14,20 @@ function heading(text) {
 }
 
 /**
- * Opens the menu at (x, y). `look` is the folder's current {style, colour}.
+ * Opens the menu at (x, y). `look` is the folder's or page's current {style, colour}.
  * `choose(style, colour)` saves a choice and returns the look that is now in effect (or the old
- * one when saving failed). `close` is called with no argument when the menu is closed.
+ * one when saving failed). `close` is called with no argument when the menu is closed. `page`:
+ * the menu is for a page, whose three styles are drawn as pages (sidebar.js, `pageGlyph`).
  */
-export function openIconMenu(x, y, look, { choose, onClose, returnFocus, colourOnly = false }) {
+export function openIconMenu(x, y, look, { choose, onClose, returnFocus, page = false }) {
   const t = strings.folderIcon;
+  const glyph = page ? pageGlyph : folderGlyph;
+  const styleNames = page ? t.pageStyles : t.styles;
   let current = { ...look };
   const menu = document.createElement("div");
   menu.className = "gutter-menu icon-menu";
   menu.setAttribute("role", "dialog");
-  menu.setAttribute("aria-label", colourOnly ? t.pageLabel : t.label);
+  menu.setAttribute("aria-label", page ? t.pageLabel : t.label);
 
   const styleButtons = new Map();
   const colourButtons = new Map();
@@ -36,8 +39,8 @@ export function openIconMenu(x, y, look, { choose, onClose, returnFocus, colourO
     button.type = "button";
     button.className = "icon-menu-style";
     button.dataset.iconStyle = style;
-    button.title = t.styles[style];
-    button.setAttribute("aria-label", t.styles[style]);
+    button.title = styleNames[style];
+    button.setAttribute("aria-label", styleNames[style]);
     styleRow.append(button);
     styleButtons.set(style, button);
   }
@@ -65,7 +68,7 @@ export function openIconMenu(x, y, look, { choose, onClose, returnFocus, colourO
   // Shows the current choice: the style buttons are drawn in the current colour.
   function refresh() {
     for (const [style, button] of styleButtons) {
-      button.replaceChildren(folderGlyph({ style, colour: current.colour }));
+      button.replaceChildren(glyph({ style, colour: current.colour }));
       button.setAttribute("aria-pressed", String(style === current.style));
     }
     for (const [name, button] of colourButtons) button.setAttribute("aria-pressed", String(name === current.colour));
@@ -78,9 +81,7 @@ export function openIconMenu(x, y, look, { choose, onClose, returnFocus, colourO
   for (const [style, button] of styleButtons) button.addEventListener("click", () => pick(style, current.colour));
   for (const [name, button] of colourButtons) button.addEventListener("click", () => pick(current.style, name));
 
-  // A page has one icon only; the menu offers just its colour.
-  if (colourOnly) menu.append(heading(t.colour), colourGrid, none);
-  else menu.append(heading(t.style), styleRow, heading(t.colour), colourGrid, none);
+  menu.append(heading(t.style), styleRow, heading(t.colour), colourGrid, none);
   refresh();
 
   let closed = false;
@@ -107,6 +108,6 @@ export function openIconMenu(x, y, look, { choose, onClose, returnFocus, colourO
   menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8))}px`;
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", keys, true);
-  (colourOnly ? colourButtons.get(current.colour) : styleButtons.get(current.style)).focus();
+  styleButtons.get(current.style).focus();
   return close;
 }

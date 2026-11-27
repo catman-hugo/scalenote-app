@@ -26,8 +26,9 @@ export function buildTree(entries) {
 
 /**
  * Draws the tree into `container`.
- * `state` holds { expanded: Set, currentPath, selectedFolder, icons, shared } (icons: folder path
- * -> look; shared: the paths shared with other people).
+ * `state` holds { expanded: Set, currentPath, selectedFolder, icons, shared, pinned } (icons: folder
+ * path -> look; shared: the paths shared with other people; pinned: top folders that go first, in
+ * that order, such as the inbox and Shared with me, so they are seen straight away).
  * `actions` has { openNote, openMissing, toggleFolder, selectFolder, renameEntry, entryMenu, trashEntry }.
  * An entry with `missing` set is on another device only: it shows a cloud icon, and a page opens
  * through `openMissing(path)`, which brings it here first.
@@ -43,7 +44,13 @@ export function renderTree(container, entries, state, actions) {
     container.append(empty);
     return;
   }
-  container.append(renderList(root.children, state, actions));
+  container.append(renderList(pinFirst(root.children, state.pinned || []), state, actions));
+}
+
+/** The top entries with the pinned folders first, in the order given; the rest keep their order. */
+export function pinFirst(nodes, pinned) {
+  const first = pinned.map((path) => nodes.find((node) => node.kind === "folder" && node.path === path)).filter(Boolean);
+  return [...first, ...nodes.filter((node) => !first.includes(node))];
 }
 
 // The icon of a folder: its own style and colour from the folder icon file, or the plain folder.
@@ -53,6 +60,24 @@ export function folderGlyph(look) {
   const glyph = icon(style === "line" ? "bar" : style, { filled: style === "line" });
   if (look && look.colour !== "none") glyph.style.color = COLOUR_HEX[look.colour];
   return glyph;
+}
+
+// The look of a page: the same file and the same three choices as a folder, drawn as a page.
+// "folder" is the plain page, which is also what pages were given before 0.6.9 had icons for them.
+export function pageGlyph(look) {
+  const style = look ? look.style : "folder";
+  const glyph = style === "notebook" ? icon("notebook") : style === "line" ? icon("bar", { filled: true }) : icon("note");
+  if (look && look.colour !== "none") glyph.style.color = COLOUR_HEX[look.colour];
+  return glyph;
+}
+
+// The space of the open/close arrow, for a row that has none (a page, an empty folder), so its icon
+// lines up with the folder icons above and below it.
+function arrowSpace() {
+  const space = document.createElement("span");
+  space.className = "tree-arrow-space";
+  space.setAttribute("aria-hidden", "true");
+  return space;
 }
 
 function renderList(nodes, state, actions) {
@@ -76,9 +101,11 @@ function renderNode(node, state, actions) {
 
   if (node.kind === "folder") {
     const open = state.expanded.has(node.path);
-    item.setAttribute("aria-expanded", String(open));
-    button.append(icon(open ? "chevronDown" : "chevronRight"), folderGlyph(state.icons && has(state.icons, node.path) ? state.icons[node.path] : null), label(node.name));
-    button.title = open ? strings.sidebar.collapse : strings.sidebar.expand;
+    // A folder with nothing in it has nothing to open: no arrow.
+    const empty = node.children.length === 0;
+    if (!empty) item.setAttribute("aria-expanded", String(open));
+    button.append(empty ? arrowSpace() : icon(open ? "chevronDown" : "chevronRight"), folderGlyph(state.icons && has(state.icons, node.path) ? state.icons[node.path] : null), label(node.name));
+    if (!empty) button.title = open ? strings.sidebar.collapse : strings.sidebar.expand;
     if (state.selectedFolder === node.path) row.classList.add("selected-folder");
     button.addEventListener("click", () => actions.toggleFolder(node.path));
     if (!node.missing) button.addEventListener("dblclick", () => actions.renameEntry(node, button));
@@ -88,11 +115,9 @@ function renderNode(node, state, actions) {
     item.append(row);
     if (open && node.children.length) item.append(renderList(node.children, state, actions));
   } else {
-    // A page can have a colour in the same icon file as the folders, keyed by its path.
-    const noteIcon = icon("note");
+    // A page has an icon in the same icon file as the folders, keyed by its path.
     const look = state.icons && has(state.icons, node.path) ? state.icons[node.path] : null;
-    if (look && look.colour !== "none") noteIcon.style.color = COLOUR_HEX[look.colour];
-    button.append(noteIcon, label(node.name.replace(/\.md$/i, "")));
+    button.append(arrowSpace(), pageGlyph(look), label(node.name.replace(/\.md$/i, "")));
     if (state.currentPath === node.path) {
       row.classList.add("current");
       button.setAttribute("aria-current", "page");

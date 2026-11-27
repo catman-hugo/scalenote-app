@@ -58,7 +58,6 @@ export const strings = {
     renameFolderLabel: "Folder name",
     renamePageLabel: "Page name",
     icon: "Icon",
-    colour: "Colour",
     offline: "Keep on this device…",
     share: "Share…",
     bringHere: "Open (bring to this device)",
@@ -191,10 +190,11 @@ export const strings = {
 
   folderIcon: {
     label: "Folder icon",
-    pageLabel: "Page colour",
+    pageLabel: "Page icon",
     style: "Icon",
     colour: "Colour",
     styles: { folder: "Folder", notebook: "Notebook", line: "Line" },
+    pageStyles: { folder: "Page", notebook: "Notebook", line: "Line" },
     none: "No colour",
     colours: {
       blue: "Blue", yellow: "Yellow", green: "Green", red: "Red",
@@ -345,6 +345,9 @@ export const strings = {
     syncing: "Syncing with {name}",
     syncingOf: "Syncing with {name} · {done} of {total}",
     failed: "Last sync did not finish",
+    conflictsOne: "1 conflict",
+    conflictsMany: "{n} conflicts",
+    conflictsLabel: "Review the conflict copies in your notes folder",
   },
   settings: {
     open: "Settings",

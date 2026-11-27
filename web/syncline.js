@@ -8,7 +8,8 @@ import { strings } from "./strings.js";
 
 const LOOK_MS = 4000;
 
-export function startSyncLine(node) {
+/** `onShown()` is called after the line was shown or hidden (the bar around it follows). */
+export function startSyncLine(node, onShown = () => {}) {
   async function look() {
     if (document.hidden) return;
     try {
@@ -18,6 +19,7 @@ export function startSyncLine(node) {
     } catch {
       node.hidden = true;
     }
+    onShown();
   }
   look();
   setInterval(look, LOOK_MS);
