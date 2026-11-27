@@ -4887,7 +4887,7 @@ await test("a drawing that cannot be read is shown but never changed or saved ov
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only with its own message", async (page) => {
-  await canvasVault(page, '{"format":7,"items":[]}');
+  await canvasVault(page, '{"format":8,"items":[]}');
   await openCanvas(page);
   assert.match(await page.locator(".canvas-problem").innerText(), /newer version/);
 }, ctxOpts);
@@ -7423,7 +7423,7 @@ await test("the sheet keeps the ink when something is drawn on the canvas, and t
 }, ctxOpts);
 
 await test("a drawing from a newer version is read-only for ink, and the file is left alone", async (page) => {
-  const saved = '{"format":7,"items":[],"ink":[]}\n';
+  const saved = '{"format":8,"items":[],"ink":[]}\n';
   await inkVault(page, saved);
   await startInk(page);
   assert.equal(await page.locator('.ink-bar button[aria-label="Pen"]').isDisabled(), true);
@@ -7889,7 +7889,7 @@ await test("two /canvas blocks on a page are two different regions", async (page
 
 await test("a drawing that cannot be changed gets no new region, and says so", async (page) => {
   await start(page);
-  await blockVault(page, '{"format":7,"items":[]}', "text\n");
+  await blockVault(page, '{"format":8,"items":[]}', "text\n");
   await page.click(".note-body p");
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
@@ -7898,7 +7898,7 @@ await test("a drawing that cannot be changed gets no new region, and says so", a
   await page.keyboard.press("Enter");
   await page.waitForSelector(".toast");
   assert.equal(await page.locator(".canvas-block").count(), 0);
-  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), '{"format":7,"items":[]}');
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Sketch.md")), '{"format":8,"items":[]}');
 });
 
 await test("drawing on the full canvas keeps the regions, and shows the block's new lines", async (page) => {
