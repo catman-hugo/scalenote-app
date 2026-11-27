@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-26; 0.6.8 in progress (Sync now waits for a running sync; the Pen test records keys); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-26; 0.6.8 in progress (Sync now waits for a running sync; the Pen test records keys; pen buttons that send keys can switch to the eraser); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.7.0: planned (animations in pages)
 
@@ -19,7 +19,16 @@ Reported by the owner with a computer, a tablet and a phone: Sync now and Compar
 
 NOT tried on a real device.
 
-### The Pen test records keys (branch `feature/pen-test-keys`)
+### Pen buttons that send keys (branch `feature/pen-keys`)
+
+The tester's pen sends Page Down (front button) and Page Up (back button) when tapped away from the screen; the Pen test showed both reach the app. Two settings under Drawing give each key a job while drawing: does nothing (default), switches to the eraser and back to the tool before it, undoes, or redoes. They act on the canvas and while drawing over the text; anywhere else, in a dialog or in a text field, the keys keep their normal job, so a real keyboard's Page Up and Page Down still scroll.
+
+- `web/penkeys.js` (rules), `penKey` in `web/canvasview.js` and `web/inklayer.js`, `penKeyShortcut` and the settings rows in `web/main.js`, defaults in `web/startrules.js`, words in `web/strings.js`.
+- Tests: unit tests for the rules; a browser test for switching and undoing over the text and on the canvas, and for the key keeping its job outside drawing. Design check on screenshots of the Drawing tab, light and dark.
+
+NOT tried on a real device.
+
+### The Pen test records keys (merged)
 
 A tester's tablet pen has two buttons. Held while touching the screen, the system keeps them for its own shortcuts (its note app, a screenshot), and the Pen test showed no barrel button at all. Tapped away from the screen they may send a key (the maker says they turn pages). The Pen test now lists the keys it hears (`web/pentest.js`; key name, code and number only, at most 20), so we can see whether a tap reaches ScaleNote before building "tap the pen button to switch to the eraser". Browser test added.
 
