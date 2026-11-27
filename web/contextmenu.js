@@ -56,7 +56,9 @@ export function openContextMenu(x, y, items, { returnFocus = null, label = strin
       if (entry.current) tick.append(icon("check"));
       const name = document.createElement("span");
       name.textContent = entry.label;
-      button.append(tick, name);
+      // The tick goes after the words, at the right edge, so a ticked item starts at the same
+      // place as the plain items above and below it.
+      button.append(name, tick);
     }
     if (entry.indent) button.style.paddingLeft = `calc(var(--space-3) + ${entry.indent} * var(--space-3))`;
     // The menu is closed before the action runs, so an action that opens an input can take the focus.

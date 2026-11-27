@@ -53,6 +53,20 @@ Asked by the owner.
 
 NOT tried on a real device.
 
+### The page list, menus and Settings (branch `feature/sidebar-and-menus`, starts from `feature/keep-page-place`)
+
+Asked by the owner after looking at a laptop and a phone.
+
+- The inbox and Shared with me are pinned above the other folders when they exist (`pinFirst` in `web/sidebar.js`; the owner chose pinning over always showing them).
+- Page rows keep the space of the open/close arrow, so a page's icon sits in the column of the folder icons beside it, one step in from its folder; an empty folder has no arrow and nothing to open.
+- Pages have the same "Icon" item and picker as folders (Page, Notebook, Line, and a colour), stored in the same file; "Page" is what pages had before, so old colours stay and older apps still show the colour.
+- A ticked menu item (Show "Linked from") has its tick after the words, so it starts where the other items start (`web/contextmenu.js`).
+- Settings: Close is at the bottom right on every screen, and on a phone Back sits just left of it inside a group (a footer in `web/settings.js`). The other boxes (What's new, Trash, Keep on this device) already had Close at the bottom right.
+- A "N conflicts" button next to the sync status while the notes folder has conflict copies; it opens Review conflict copies and goes away after the last one. Counted again whenever the page list is read (`countConflicts` in `web/main.js`).
+- Browser tests for each; the old page-colour test now checks the Icon picker. Design check: screenshots in light and dark of the page list, the page menu, the icon picker, Settings on a phone (list and group), the conflicts button, Apply to all slides and the picture ink setting. Full browser run: 473 passed.
+
+NOT tried on a real device.
+
 ## 0.7.0: planned (animations in pages)
 
 Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.

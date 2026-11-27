@@ -270,8 +270,12 @@ export function openSettings(dialog, current, onChange, groups = {}) {
   const close = make("button", "primary", s.close);
   close.type = "button";
   close.addEventListener("click", () => dialog.close());
-  main.append(back, search, heading, nothing, ...panels.values(), close);
-  layout.append(nav, main);
+  // Close is always at the bottom right, on every screen of Settings; on a phone, Back (only
+  // inside a group) sits just left of it, where the thumb is.
+  const footer = make("div", "settings-footer");
+  footer.append(back, close);
+  main.append(search, heading, nothing, ...panels.values());
+  layout.append(nav, main, footer);
   dialog.append(layout);
   show(lastTab);
   if (!dialog.open) dialog.showModal();
