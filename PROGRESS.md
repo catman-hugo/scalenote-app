@@ -2,11 +2,18 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-27; 0.6.9 in progress (fixes after testing 0.6.8; the sync list is now kept on both devices); 0.6.8 released (the last version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-27; 0.6.9 built, not tried on a real device (fixes and requests after testing 0.6.8: the sync list on both devices, Find in page, ink on slides, the page place, the page list and Settings); 0.6.8 released (the last version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
-## 0.6.9: in progress (fixes and requests after testing 0.6.8)
+## 0.6.9: built, not tried on a real device (fixes and requests after testing 0.6.8)
 
-The list comes from the owner's tests on a laptop and a phone on 2026-11-27 (sync, Find in page, ink on PDF pages, the sidebar, Settings). Each part has its own branch and pull request.
+The list comes from the owner's tests on a laptop and a phone on 2026-11-27 (sync, Find in page, ink on PDF pages, the sidebar, Settings). Each part has its own branch and pull request; they build on each other and are merged in order (#108 to #113).
+
+### Finishing 0.6.9 (branch `feature/v0.6.9-release`, starts from `feature/sidebar-and-menus`)
+
+- Version 0.6.9 everywhere; release notes `docs/release-notes/0.6.9.md`; security checklist `docs/security-checklist-0.6.9.md` (`npm audit` 0, `cargo audit` 0 vulnerabilities with the same 6 allowed warnings as before). What's new tests point at the 0.6.9 notes.
+- Packaged: `npx tauri build --bundles deb` made `ScaleNote_0.6.9_amd64.deb` (8.7 MB); the built app started on a virtual screen here and stayed up for 15 seconds with no error. Not opened on a real screen.
+- Not done: the Year 1 folder colour that did not reach the phone. It could not be made to happen in a test, and nothing in the code explains it yet. To look at again after testing with 0.6.9 on both devices, with the colours file (`.scalenote/folder-icons.json`) of each.
+- The owner's question about the new picture ink setting covering the 0.6.8 dark-ink rule is still open; that rule is unchanged.
 
 ### Both devices keep the sync list (branch `fix/sync-base-both-sides`)
 

@@ -10246,8 +10246,8 @@ await test("About copies the app's log so it can be sent from a phone", async (p
 await test("What's new on Android is the short list for Android, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /undo or redo \(Settings, Drawing\)/);
-  assert.doesNotMatch(text, /had security fixes this week|<!--|-->/);
+  assert.match(text, /sizes every page of a PDF at once/);
+  assert.doesNotMatch(text, /One undo puts them all back|<!--|-->/);
   assert.doesNotMatch(text, /^(Android|Computers|Linux|Windows):/m);
   await page.click("#whatsNewFull");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [`https://github.com/catman-hugo/scalenote-app/releases/tag/v${VERSION}`]);
@@ -10256,17 +10256,17 @@ await test("What's new on Android is the short list for Android, with a button t
 await test("What's new from About on Windows is the short list for computers, with a button to the full notes", async (page) => {
   await openAboutNotes(page);
   const text = await whatsNewText(page);
-  assert.match(text, /undo or redo \(Settings, Drawing\)/);
-  assert.doesNotMatch(text, /had security fixes this week|<!--/i);
+  assert.match(text, /sizes every page of a PDF at once/);
+  assert.doesNotMatch(text, /One undo puts them all back|<!--/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update downloaded with the app's Download button, a computer shows the full notes for its system once", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /had security fixes this week/);
+  assert.match(text, /One undo puts them all back/);
   // These notes are the same for every system: only the hidden short list must stay out.
-  assert.doesNotMatch(text, /<!--|-->|undo or redo \(Settings, Drawing\)/i);
+  assert.doesNotMatch(text, /<!--|-->|sizes every page of a PDF at once/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
   await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
@@ -10275,16 +10275,16 @@ await test("after an update downloaded with the app's Download button, a compute
 await test("after an update downloaded from GitHub, a computer shows the short list and a button to the full notes", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /undo or redo \(Settings, Drawing\)/);
-  assert.doesNotMatch(text, /had security fixes this week/i);
+  assert.match(text, /sizes every page of a PDF at once/);
+  assert.doesNotMatch(text, /One undo puts them all back/i);
   assert.equal(await page.isVisible("#whatsNewFull"), true);
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }), userAgent: WINDOWS_UA });
 
 await test("after an update a phone always shows the short list, even when the app downloaded it", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   const text = await whatsNewText(page);
-  assert.match(text, /undo or redo \(Settings, Drawing\)/);
-  assert.doesNotMatch(text, /had security fixes this week/);
+  assert.match(text, /sizes every page of a PDF at once/);
+  assert.doesNotMatch(text, /One undo puts them all back/);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: ANDROID_UA });
 
 await test("the Pen test records keys a pen button sends, so a button tapped away from the screen can be found", async (page) => {
