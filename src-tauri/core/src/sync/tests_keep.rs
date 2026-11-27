@@ -100,7 +100,7 @@ fn sync_from_bob(p: &Pair) -> super::engine::Report {
     let stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
     let mut channel = super::channel::Channel::connect(stream, p.bob.identity_for_tests()).expect("channel");
     let alice_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&p.alice_id).expect("key");
-    let pair = super::engine::Pair { root: &p.vb.0, peer_key: &alice_key, own_name: "bob", peer_name: "alice", today: "2026-11-24", shares: true, map: None };
+    let pair = super::engine::Pair { root: &p.vb.0, peer_key: &alice_key, own_name: "bob", peer_name: "alice", today: "2026-11-24", shares: true, base: false, map: None };
     done(super::engine::run(&mut channel, &pair, true, &mut |_| {}).expect("sync from bob"))
 }
 
@@ -445,8 +445,11 @@ fn the_list_of_shares_goes_only_to_devices_that_know_it_and_is_merged_share_by_s
     let mut list = Shares::default();
     let first = list.offer(&me, &[], "Biology", true, [2; ID_LEN], "Dana").expect("offer");
     list.save(&p.va.0).expect("save");
-    // Before the devices have greeted each other, neither knows the other reads the list (an
-    // app before 0.6.4 would refuse it), so it stays here.
+    // A device that did not say it knows the list (an app before 0.6.4 would refuse it) does not
+    // get it. Since 0.6.9 a sync says hello first when the greeting is not known yet, so this
+    // pretends Bob's greeting was an older one.
+    let bob_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&p.bob_id).expect("key");
+    super::service::read_hello_for_test(&p.alice, bob_key, b"0.6.3");
     sync(&p);
     assert!(!p.vb.0.join(SHARES_FILE).exists(), "not sent to a device that did not say it knows the file");
     // After the sync they said hello (and `shares=1`); now it goes along.

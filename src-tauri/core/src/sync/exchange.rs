@@ -26,9 +26,11 @@ pub const KIND_GET: u8 = 0x31;
 pub const KIND_PUT: u8 = 0x32;
 pub const KIND_DEL: u8 = 0x33;
 pub const KIND_BYE: u8 = 0x34;
-/// Share syncs only (0.6.4): the calling device's list of what both now have alike, sent just
-/// before the goodbye, so the answering device can join edits and see deletions next time it
-/// starts the sync itself. Never sent to apps before 0.6.4 (they are never in a share).
+/// The calling device's list of what both now have alike, sent just before the goodbye, so the
+/// answering device can join edits and see deletions and renames next time it starts the sync
+/// itself. Share syncs since 0.6.4 (the body is a manifest). Syncs between one's own devices
+/// since 0.6.9 (the body is a listing, with the folders both have), only to a device that said
+/// `base=1` in its greeting; older apps would end the sync on a request they do not know.
 pub const KIND_BASE: u8 = 0x35;
 /// Whole-folder syncs only (0.6.7): make a folder, or remove it when it is empty
 /// (foldersync.rs). The note is `make\npath` or `remove\npath`. Only sent to a device whose
@@ -261,8 +263,9 @@ fn answer<S: Read + Write>(channel: &mut Channel<S>, kind: u8) -> Result<()> {
 /// What a connection may see and change.
 pub enum Scope<'a> {
     /// One's own device: the whole notes folder. `shares`: whether it knows the list of shares
-    /// (engine.rs, `Pair::shares`).
-    Whole { shares: bool },
+    /// (engine.rs, `Pair::shares`). `keep`: keeps the list the caller sends at the end
+    /// (`KIND_BASE`, 0.6.9), before the answer, like a share does.
+    Whole { shares: bool, keep: &'a dyn Fn(&Listing) -> Result<()> },
     /// Another person's device: one share, by its share-space names only (space.rs). The list
     /// the caller sends at the end (`KIND_BASE`) is handed to the function before the answer, so
     /// it is kept before the caller goes on.
@@ -301,7 +304,7 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
         match request.kind {
             KIND_LIST => {
                 let listing = match &scope {
-                    Scope::Whole { shares } => super::engine::listing_for(root, *shares)?,
+                    Scope::Whole { shares, .. } => super::engine::listing_for(root, *shares)?,
                     Scope::Share(map, _) => super::engine::share_listing(root, map)?,
                 };
                 send_blob(channel, KIND_LISTING, &[], &encode_listing_full(&listing))?;
@@ -312,7 +315,10 @@ pub fn serve<S: Read + Write>(channel: &mut Channel<S>, head: Vec<u8>, root: &Pa
                     keep(&Manifest::from_text(text)?)?;
                     answer(channel, KIND_OK)?;
                 }
-                Scope::Whole { .. } => return Err(SyncError::Refused("unknown request")),
+                Scope::Whole { keep, .. } => {
+                    keep(&decode_listing_full(&request.body)?)?;
+                    answer(channel, KIND_OK)?;
+                }
             },
             KIND_GET => {
                 let asked = std::str::from_utf8(&request.meta).map_err(|_| SyncError::Refused("path not allowed"))?;

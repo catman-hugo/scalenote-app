@@ -66,6 +66,11 @@ pub struct Pair<'a> {
     /// greeting). Older apps refuse a list with a file they do not know, so for them the shares
     /// file is left out of this device's list.
     pub shares: bool,
+    /// Whether the other device keeps the list of what both have at the end of a sync between
+    /// one's own devices (0.6.9; it says `base=1` in its greeting). Before this only the device
+    /// that started a sync kept the list, so the other one saw a rename as a new page and an edit
+    /// as a clash the next time it started a sync itself, or showed "first sync" when it never had.
+    pub base: bool,
     /// When syncing one share with another person's device (0.6.4): how its share-space names
     /// map to this notes folder (space.rs). `None` for a sync between one's own devices.
     pub map: Option<&'a ShareMap>,
@@ -468,9 +473,12 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
     let there = fetch_listing(channel)?;
     let remote = there.manifest;
     // The folders both now have, for the next folder plan (foldersync.rs).
-    if let (None, Some(folders_there)) = (pair.map, &there.folders) {
-        let both = folders_here.intersection(folders_there).cloned().collect();
-        foldersync::save(pair.root, &tag(pair), &both)?;
+    let folders_both: Option<BTreeSet<String>> = match (pair.map, &there.folders) {
+        (None, Some(folders_there)) => Some(folders_here.intersection(folders_there).cloned().collect()),
+        _ => None,
+    };
+    if let Some(both) = &folders_both {
+        foldersync::save(pair.root, &tag(pair), both)?;
     }
     let mut same = Manifest::default();
     for (path, state) in &local.files {
@@ -500,7 +508,43 @@ fn finish<S: Read + Write>(channel: &mut Channel<S>, pair: &Pair) -> Result<()> 
     keep::still_removed(pair.root, &local);
     // What the other device has, kept for the page list and the rename check (keep.rs).
     write_atomic(&tree_path(pair.root, pair.peer_key), remote.to_text().as_bytes())?;
+    if pair.base {
+        // The other device keeps the same list (see `keep_own_base`), so the next sync it starts
+        // itself starts from what both had now, not from an older list or none.
+        let listing = Listing { manifest: same, folders: folders_both, ..Listing::default() };
+        ask(channel, KIND_BASE, &[], &encode_listing_full(&listing), 0)?;
+    }
     send_blob(channel, KIND_BYE, &[], &[])
+}
+
+/// The answering side of a sync between one's own devices (0.6.9) keeps the list the calling
+/// device says both now have alike, as the calling side does in `finish`: the files (only those
+/// that are exactly so here, as for a share), the page texts for joining edits, the folders both
+/// have (only those that are here) and the colours and shares files both have, for the next merge.
+pub fn keep_own_base(root: &Path, peer_key: &[u8; KEY_LEN], shares: bool, said: &Listing) -> Result<()> {
+    let pair = Pair { root, peer_key, own_name: "", peer_name: "", today: "", shares, base: true, map: None };
+    let scan = Manifest::scan(root)?;
+    let mut same = Manifest::default();
+    for (path, state) in &said.manifest.files {
+        if (shares || path != SHARES_FILE) && scan.manifest.files.get(path).is_some_and(|mine| mine.same_content(state)) {
+            same.files.insert(path.clone(), state.clone());
+        }
+    }
+    if let Some(folders) = &said.folders {
+        let both = folders.intersection(&scan.folders).cloned().collect();
+        foldersync::save(root, &tag(&pair), &both)?;
+    }
+    let before = load_base(&pair);
+    save_base(&pair, &same)?;
+    super::basetext::update_mapped(root, &tag(&pair), before.as_ref(), &same, &|path| Some(path.to_string()))?;
+    for path in [SETTINGS_FILE, SHARES_FILE] {
+        if same.files.contains_key(path) {
+            if let Some(text) = read_small(&root.join(path)) {
+                write_atomic(&merge_base_path(root, peer_key, path), &text)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn state<'a>(manifest: &'a Manifest, path: &str) -> Result<&'a FileState> {

@@ -649,3 +649,139 @@ fn folders_are_left_alone_with_a_device_that_lists_none() {
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains("\n/folders\n/folder Only here\n"), "{text}");
 }
+
+// ---------- 0.6.9: both devices keep the list at the end of a sync ----------
+
+/// Bob as a device that starts syncs too: where Alice listens, and how Bob names her.
+fn bob_can_reach_alice(p: &Pair) -> String {
+    let alice_id = p.bob.status().peers[0].id.clone();
+    let port = p.alice.status().listening_port.expect("alice listens");
+    p.bob.set_address_for_test(&alice_id, &format!("127.0.0.1:{port}"));
+    alice_id
+}
+
+fn bob_syncs(p: &Pair, alice_id: &str) -> super::engine::Report {
+    match p.bob.sync_peer(alice_id, false, &mut |_| {}).expect("sync") {
+        Outcome::Done(report) => report,
+        Outcome::NeedsApproval(_) => panic!("bob was asked for a first sync although alice and bob had synced"),
+    }
+}
+
+/// The answering side notes a sync when it sees the goodbye, a moment after the caller is done.
+fn wait_until(check: impl Fn() -> bool) -> bool {
+    (0..100).any(|_| {
+        if check() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(30));
+        false
+    })
+}
+
+#[test]
+fn the_device_that_only_answered_does_not_see_its_first_sync_when_it_starts_one() {
+    // Reported: a phone that had synced for weeks, always started by the laptop, showed "First
+    // sync with …" the first time Sync now was pressed on the phone.
+    let p = setup("base-first");
+    write(&p.va.0, "A.md", "from alice\n");
+    sync(&p);
+    let alice_id = bob_can_reach_alice(&p);
+    assert!(wait_until(|| p.bob.status().peers[0].has_history), "bob kept the list too");
+    let report = bob_syncs(&p, &alice_id);
+    assert_eq!(report.changed(), 0);
+}
+
+#[test]
+fn a_page_renamed_on_the_device_that_started_the_syncs_is_not_sent_back_under_its_old_name() {
+    // Reported: a new page reached the phone unnamed; after it was named on the laptop, the
+    // phone sent the unnamed page back, so it was there twice.
+    let p = setup("base-rename");
+    write(&p.va.0, "Untitled.md", "lecture notes\n");
+    sync(&p);
+    assert_eq!(read(&p.vb.0, "Untitled.md"), "lecture notes\n");
+    fs::rename(p.va.0.join("Untitled.md"), p.va.0.join("Cell biology.md")).expect("rename");
+    let alice_id = bob_can_reach_alice(&p);
+    assert!(wait_until(|| p.bob.status().peers[0].has_history));
+    bob_syncs(&p, &alice_id);
+    assert_eq!(names(&p.va.0), vec!["Cell biology.md"], "the old name did not come back");
+    assert_eq!(names(&p.vb.0), vec!["Cell biology.md"], "and it is renamed on bob too");
+}
+
+#[test]
+fn an_edit_on_the_device_that_started_the_syncs_is_not_a_conflict_when_the_other_starts_the_next() {
+    // Reported: editing a page on the laptop and syncing made a conflict copy.
+    let p = setup("base-edit");
+    write(&p.va.0, "Week 3.md", "first line\n");
+    sync(&p);
+    write(&p.va.0, "Week 3.md", "first line\nsecond line\n");
+    let alice_id = bob_can_reach_alice(&p);
+    assert!(wait_until(|| p.bob.status().peers[0].has_history));
+    let report = bob_syncs(&p, &alice_id);
+    assert!(report.clashes.is_empty(), "{:?}", report.clashes);
+    assert_eq!(names(&p.va.0), vec!["Week 3.md"], "no conflict copy");
+    assert_eq!(read(&p.vb.0, "Week 3.md"), "first line\nsecond line\n");
+}
+
+#[test]
+fn edits_on_both_devices_are_joined_when_the_answering_device_starts_the_next_sync() {
+    // The page texts are kept on both sides too, so the answering device can join edits.
+    let p = setup("base-join");
+    write(&p.va.0, "Notes.md", "one\n\ntwo\n\nthree\n");
+    sync(&p);
+    write(&p.va.0, "Notes.md", "one changed\n\ntwo\n\nthree\n");
+    write(&p.vb.0, "Notes.md", "one\n\ntwo\n\nthree changed\n");
+    let alice_id = bob_can_reach_alice(&p);
+    assert!(wait_until(|| p.bob.status().peers[0].has_history));
+    bob_syncs(&p, &alice_id);
+    assert_eq!(read(&p.vb.0, "Notes.md"), "one changed\n\ntwo\n\nthree changed\n");
+    assert_eq!(read(&p.va.0, "Notes.md"), "one changed\n\ntwo\n\nthree changed\n");
+    assert_eq!(names(&p.vb.0), vec!["Notes.md"], "no conflict copy");
+}
+
+#[test]
+fn a_folder_removed_on_the_device_that_started_the_syncs_is_removed_when_the_other_starts_the_next() {
+    let p = setup("base-folder");
+    fs::create_dir_all(p.va.0.join("Old plans")).expect("folder");
+    sync(&p);
+    assert!(p.vb.0.join("Old plans").is_dir());
+    fs::remove_dir(p.va.0.join("Old plans")).expect("remove");
+    let alice_id = bob_can_reach_alice(&p);
+    assert!(wait_until(|| p.bob.status().peers[0].has_history));
+    bob_syncs(&p, &alice_id);
+    assert!(!p.va.0.join("Old plans").exists(), "the folder did not come back");
+    assert!(!p.vb.0.join("Old plans").exists());
+}
+
+#[test]
+fn a_device_that_did_not_say_base_gets_no_list() {
+    // An app before 0.6.9 would end the sync on a request it does not know.
+    let p = setup("base-old");
+    let bob_key = super::hex::decode::<{ super::identity::KEY_LEN }>(&p.bob_id).expect("key");
+    super::service::read_hello_for_test(&p.alice, bob_key, b"0.6.8 shares=1");
+    write(&p.va.0, "A.md", "a\n");
+    // One sync: its greeting is known, so no hello first. (After the sync the real greeting is
+    // asked again, and a 0.6.9 app would say `base=1` there.)
+    sync(&p);
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!p.bob.status().peers[0].has_history, "no list was sent");
+    assert_eq!(read(&p.vb.0, "A.md"), "a\n", "and the sync itself worked as before");
+}
+
+#[test]
+fn the_answering_device_keeps_only_files_that_are_exactly_so_on_its_side() {
+    let dir = Dir::new("base-keep");
+    write(&dir.0, "Same.md", "same\n");
+    write(&dir.0, "Changed here.md", "mine now\n");
+    fs::create_dir_all(dir.0.join("Kept folder")).expect("folder");
+    let mut said = super::exchange::own_listing(&dir.0).expect("listing");
+    said.manifest.files.get_mut("Changed here.md").expect("file").hash = "0".repeat(64);
+    said.manifest.files.insert("Not here.md".to_string(), said.manifest.files["Same.md"].clone());
+    said.folders = Some(["Kept folder".to_string(), "Gone folder".to_string()].into());
+    let key = [7u8; super::identity::KEY_LEN];
+    super::engine::keep_own_base(&dir.0, &key, true, &said).expect("keep");
+    let tag = &super::hex::encode(&key)[..16];
+    let base = fs::read_to_string(dir.0.join(format!(".scalenote/sync-base-{tag}.txt"))).expect("base");
+    let base = super::manifest::Manifest::from_text(&base).expect("parse");
+    assert_eq!(base.files.keys().cloned().collect::<Vec<_>>(), vec!["Same.md"]);
+    assert_eq!(super::foldersync::load(&dir.0, tag), Some(["Kept folder".to_string()].into()));
+}
