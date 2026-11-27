@@ -8092,6 +8092,46 @@ await test("on a phone the step bar is at the bottom, a swipe on it changes the 
   assert.deepEqual((await animSaved(page)).steps.map((s) => s.title), ["2. Next", "1. Start"]);
 }, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA });
 
+await test("Before and after shows the steps around the one being drawn faintly, is remembered on the device, and never changes the drawing", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  await page.locator(".canvas-surface").focus();
+  await page.keyboard.press(".");
+  assert.equal(await stepLabel(page), "Step 2 of 2");
+  // Step 1 has a red rectangle at (20, 20)-(120, 80) in the box; step 2 is empty.
+  const tintAt = () => page.evaluate(() => {
+    const surface = document.querySelector(".canvas-surface");
+    const [left, top, width] = document.querySelector(".canvas-stage").dataset.animationBox.split(",").map(Number);
+    const scale = width / 600;
+    const ratio = surface.width / surface.getBoundingClientRect().width;
+    // The rectangle's top edge, from its left corner to its right one.
+    const y = Math.round((top + 20 * scale) * ratio);
+    const data = surface.getContext("2d").getImageData(Math.round((left + 30 * scale) * ratio), y - 2, Math.round(80 * scale * ratio), 5).data;
+    let blue = 0;
+    let red = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 2] > data[i] + 30) blue++;
+      if (data[i] > data[i + 2] + 60) red++;
+    }
+    return { blue, red };
+  });
+  // Off at first: what is there is only the page itself (its colour depends on the theme).
+  const before = await tintAt();
+  const file = await page.evaluate(() => window.__mock.canvases.get("Cell.md"));
+  await page.check(".step-bar-switch:has-text('Before and after') input");
+  await page.waitForTimeout(100);
+  const on = await tintAt();
+  assert.ok(on.blue > before.blue + 5 && on.red <= before.red, `step 1 shows faintly in a cool colour: ${JSON.stringify({ before, on })}`);
+  await shotBoth(page, "animation-before-after");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).onionSkin === true);
+  await page.waitForTimeout(800);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Cell.md")), file, "the drawing file is not changed");
+  // Ending and starting editing again: the switch is still on.
+  await page.click(".step-bar-button[aria-label='Done']");
+  await editAnimationFromBlock(page);
+  assert.equal(await page.isChecked(".step-bar-switch:has-text('Before and after') input"), true);
+}, ctxOpts);
+
 await test("two /canvas blocks on a page are two different regions", async (page) => {
   await start(page);
   await page.click("#newNote");

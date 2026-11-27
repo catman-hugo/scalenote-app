@@ -987,6 +987,8 @@ export const strings = {
     text: "Text of this step",
     textPlaceholder: "A line of text",
     background: "Background (all steps)",
+    onion: "Before and after",
+    onionHint: "Shows the step before in a cool colour and the step after in a warm one, faintly, as a guide. They are never printed or saved in the drawing.",
     done: "Done",
     more: "More step actions and the caption",
   },

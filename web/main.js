@@ -90,7 +90,7 @@ const app = {
   // The pages seen in this run, for Back and Forward; `navigating` is true while one of them is being opened.
   nav: createNavHistory(),
   navigating: false,
-  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", penKeyDown: "none", penKeyUp: "none", openIn: "text", snapShapes: true, pictureInk: false, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
+  settings: { vaultPath: null, recentVaults: [], folderColours: {}, keepInTray: false, disclosureAccepted: false, aiEnabled: false, ...DEFAULT_APPEARANCE, updates: true, pageViews: {}, penButton: "erase", penKeyDown: "none", penKeyUp: "none", openIn: "text", snapShapes: true, pictureInk: false, onionSkin: false, canvasEdge: "open", showWhatsNew: true, wifiOnly: [], reopenLast: true, lastPage: null, lastSeenVersion: null, downloadedInApp: "", lastUpdateCheck: 0, dismissedUpdate: "", inboxFolder: "Inbox", quickShortcut: false },
   entries: [],
   // What this device keeps offline: { choices, notHere } (offlinerules.js). Empty where the
   // backend has no such list (the browser) or before the first answer.
@@ -230,6 +230,7 @@ async function loadSettings() {
       snapShapes: parsed.snapShapes !== false,
       // Ink on a picture keeps the colours of a light page in a dark theme. Off unless turned on.
       pictureInk: parsed.pictureInk === true,
+      onionSkin: parsed.onionSkin === true,
       canvasEdge: CANVAS_EDGES.includes(parsed.canvasEdge) ? parsed.canvasEdge : "open",
       // The notes box after an update is shown unless turned off.
       showWhatsNew: parsed.showWhatsNew !== false,
@@ -2826,6 +2827,14 @@ function ensureCanvasView() {
     penButton: () => app.settings.penButton,
     snapShapes: () => app.settings.snapShapes,
     topLeftEdge: () => app.settings.canvasEdge === "topLeft",
+    // The steps before and after an animation's step, while drawing it (0.7.0); this device only.
+    onionSkin: {
+      get: () => app.settings.onionSkin,
+      set(on) {
+        app.settings.onionSkin = on;
+        saveSettings();
+      },
+    },
   });
   app.canvasSave = new Autosave({ delayMs: SAVE_DELAY_MS, save: saveCanvas, onStatus: setStatus });
   // Leaving the window (or the app being put away on a phone) ends a note being typed, so its

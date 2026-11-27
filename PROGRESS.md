@@ -99,6 +99,13 @@ Built together, because the block opens the editing and the tests of one need th
 
 NOT tried on a real device.
 
+### Slice 4: before and after (branch `feature/animation-onion`, starts from `feature/animation-block`)
+
+- A "Before and after" switch on the step bar, off at first: while a step is drawn, the step before shows faintly in a cool colour (blue) and the step after in a warm one (orange), taken from the theme's pen colours (`onionSkin` in `web/animrules.js`, painted in `paintEditing` in `web/canvasview.js`). They are guides only: painted on the canvas while editing and nowhere else, so they cannot be selected or erased and are never printed, exported or saved. Off while drawing the background. Remembered on this device (`onionSkin` setting).
+- Tests: a unit test for the tinted copies; a browser test that the step before shows in a cool colour only when the switch is on, that the setting is saved and still on after editing again, and that the drawing file does not change. Screenshots in light and dark looked at.
+
+NOT tried on a real device.
+
 ## 0.6.8: built, not tried on a real device (hardening and release of 0.6)
 
 Branch `feature/v0.6.8-release` (starts from `feature/pen-keys`). Release notes `docs/release-notes/0.6.8.md`, security checklists `docs/security-checklist-0.6.8.md` and, for the whole line, `docs/security-checklist-0.6.md`.
