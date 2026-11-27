@@ -20,6 +20,18 @@ Cause: at the end of a sync only the device that started it saved the list of wh
 
 NOT tried on a real device.
 
+### Find in page (branch `fix/find-in-page`, starts from `fix/sync-base-both-sides`)
+
+Found by the owner in a screen recording (computer, a page with an imported PDF as pictures, searching "trans").
+
+- Marks stayed on the PDF pictures and their descriptions after the box was emptied and after the bar was closed: emptying the box only took away the "current" mark and forgot the PDFs and pictures, so closing could not reach them either. Now emptying and closing take the marks off every PDF and picture of the page (`unmarkAll` in `web/pagefind.js`).
+- The marks that looked misplaced were left over from that: a block that is reused for another picture (when the page is reloaded after a sync with blocks above it changed) kept the boxes of the old picture's words. A picture block now drops its marks when it shows another picture (`pictureChanged` in `web/imagefind.js`, called from `web/richnodes.js`). While the bar was open the boxes were right.
+- Closing the bar jumped to where the text cursor had been. Now the cursor goes to the text hit on show and the page is not scrolled (`closeFind` in `web/main.js`).
+- Marks carrying over to another page were not a separate fault: on the recording, Week 1 and Week 2 show no marks; the marks seen were Week 3's, still on screen before the other page opened.
+- Browser tests: emptying the box and closing take every mark off pictures and descriptions; closing keeps the page where it is and typing goes to the hit. Both fail without the change (checked). Full browser run: 463 passed.
+
+NOT tried on a real device.
+
 ## 0.7.0: planned (animations in pages)
 
 Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.

@@ -9465,6 +9465,54 @@ await test("the words of PDF pages added as pictures, and the pictures' descript
   assert.equal(await page.locator(".image-alt-marks:not([hidden])").count(), 0);
 });
 
+// 0.6.9, found by the owner in a screen recording: marks stayed on the PDF pictures and their
+// descriptions after the box was cleared and the bar closed.
+await test("clearing the find box and closing the bar take every mark off the pictures and their descriptions", async (page) => {
+  await slashPdf(page, pdfFile(3));
+  await pdfChoice(page, "Pages as images");
+  await page.waitForFunction(() => document.querySelectorAll(".image-block").length === 3);
+  await page.waitForFunction(() => !document.querySelector("#pdfBox").open);
+  await findKey(page);
+  await page.keyboard.type("page");
+  await waitFindStatus(page, "1 of 6");
+  assert.ok((await page.locator(".image-find-hit").count()) > 0);
+  assert.ok((await page.locator(".image-alt-marks:not([hidden]) .find-hit").count()) > 0);
+  // The box is emptied: nothing is found, so nothing is marked.
+  await page.fill(".find-input", "");
+  await page.waitForFunction(() => document.querySelectorAll(".image-find-hit").length === 0 && !document.querySelector(".image-alt-marks:not([hidden])"));
+  assert.equal(await findStatus(page), "");
+  // Searched again, then the box emptied and the bar closed: still nothing left.
+  await page.keyboard.type("page");
+  await waitFindStatus(page, "1 of 6");
+  await page.fill(".find-input", "");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator(".image-find-hit").count(), 0);
+  assert.equal(await page.locator(".image-alt-marks:not([hidden])").count(), 0);
+  assert.equal(await page.locator(".find-hit").count(), 0);
+});
+
+// 0.6.9: closing the bar jumped to where the cursor was before searching, far from the hit.
+await test("closing the find bar keeps the page where it is and puts the cursor on the hit", async (page) => {
+  await start(page);
+  const many = Array.from({ length: 60 }, (_, i) => `Line number ${i} of a long page.`).join("\n\n");
+  await findOpen(page, `The needle is at the top.\n\n${many}\n\nThe last line.\n`);
+  // The cursor is at the end of the page, far below.
+  await page.locator(".note-body p", { hasText: "The last line." }).click();
+  await findKey(page);
+  await page.keyboard.type("needle");
+  await waitFindStatus(page, "1 of 1");
+  const top = () => page.evaluate(() => Math.round(document.querySelector(".find-hit-current").getBoundingClientRect().top));
+  const before = await top();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => Math.round([...document.querySelectorAll(".note-body p")].find((p) => p.textContent.includes("needle")).getBoundingClientRect().top));
+  assert.ok(Math.abs(after - before) < 60, `the page did not move: hit at ${before}, now ${after}`);
+  // Typing goes where the hit was, not at the end of the page.
+  await page.keyboard.type("!");
+  await page.waitForFunction(() => document.querySelector(".note-body p").textContent.includes("needle!"));
+});
+
 await test("a word split by bold text, and a link, are found, and a hit in a folded toggle opens it", async (page) => {
   await findOpen(page, "say he**llo** world\n\nsee [[Other page]] now\n\n<details>\n<summary>Folded</summary>\n\nhidden needle inside\n\n</details>\n");
   await findKey(page);

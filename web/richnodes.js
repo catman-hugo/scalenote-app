@@ -401,7 +401,9 @@ export const ImageBlock = Node.create({
         destroy: () => finding.destroy(),
         update(updated) {
           if (updated.type !== current.type) return false;
+          const before = current.attrs.path;
           current = updated;
+          if (current.attrs.path !== before) finding.pictureChanged();
           show();
           return true;
         },

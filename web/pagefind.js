@@ -33,7 +33,8 @@ const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, name) => String(va
 
 /**
  * `editor()` gives the page's editor (or null), `after` is the element the bar goes after (the
- * top bar). Returns `{ open(prefill), close(), refresh(), get isOpen }`.
+ * top bar). `onClose(place)` is called when the person closes the bar; `place` is the text hit
+ * that was on show (`{ from, to }`), or null. Returns `{ open(prefill), close(), refresh(), get isOpen }`.
  */
 export function createPageFind({ editor, after, onClose = () => {} }) {
   const t = strings.find;
@@ -79,6 +80,13 @@ export function createPageFind({ editor, after, onClose = () => {} }) {
     for (const block of state.pdf) block.finder.reveal(-1);
   }
 
+  // Takes the marks off every PDF and picture of the page, not only the ones of the last search:
+  // the list of the last search is empty after the box was cleared, and a mark left behind would
+  // stay on the page after the bar is closed.
+  function unmarkAll() {
+    for (const finder of allFinders()) void finder.search("");
+  }
+
   // Makes the hit `index` of the list the one on show and scrolls to it.
   function show(index, { scroll = true } = {}) {
     const ed = editor();
@@ -114,7 +122,7 @@ export function createPageFind({ editor, after, onClose = () => {} }) {
     const word = input.value.trim();
     if (!ed) return;
     if (!word) {
-      clearPdf();
+      unmarkAll();
       state.order = [];
       state.text = [];
       state.pdf = [];
@@ -125,10 +133,10 @@ export function createPageFind({ editor, after, onClose = () => {} }) {
     }
     showStatus(true);
     const text = collectHits(ed.state.doc, word).map((hit) => ({ ...hit, pos: hit.from }));
-    const pdf = allFinders()
-      .map((finder) => ({ finder, pos: finder.pos() }))
-      .filter((block) => block.pos >= 0)
-      .sort((a, b) => a.pos - b.pos);
+    const placed = allFinders().map((finder) => ({ finder, pos: finder.pos() }));
+    // A finder with no place in the page is on its way out; it keeps no marks.
+    for (const block of placed) if (block.pos < 0) void block.finder.search("");
+    const pdf = placed.filter((block) => block.pos >= 0).sort((a, b) => a.pos - b.pos);
     const counts = await Promise.all(pdf.map((block) => block.finder.search(word)));
     if (token !== state.token || !state.open) return;
     pdf.forEach((block, i) => {
@@ -166,16 +174,20 @@ export function createPageFind({ editor, after, onClose = () => {} }) {
     clearTimeout(state.timer);
     state.timer = 0;
     const ed = editor();
+    // A text hit on show is where the person is looking: the cursor goes there when the bar
+    // closes, so the page does not jump back to where the cursor was before (onClose).
+    const hit = state.at >= 0 ? state.order[state.at] : null;
+    const place = hit && hit.kind === "text" ? state.text[hit.index] : null;
     clearPdf();
     // The marks of the text are taken away; the page itself was never touched.
     if (ed) setFindMarks(ed, [], -1);
-    for (const block of state.pdf) void block.finder.search("");
+    unmarkAll();
     state.order = [];
     state.text = [];
     state.pdf = [];
     state.at = -1;
     bar.hidden = true;
-    if (!quiet) onClose();
+    if (!quiet) onClose(place ? { from: place.from, to: place.to } : null);
   }
 
   input.addEventListener("input", () => later());
