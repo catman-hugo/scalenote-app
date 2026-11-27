@@ -1194,9 +1194,12 @@ body.block-dragging .float-bar { visibility: hidden; }
   margin-bottom: var(--space-2);
 }
 
+/* The buttons of every box sit at the bottom right, the closing one last, so Close or the main
+   choice is always in the same place (0.6.9). */
 .dialog-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin: var(--space-4) 0;
 }

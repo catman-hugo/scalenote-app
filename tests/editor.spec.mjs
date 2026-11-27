@@ -928,7 +928,7 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
   await page.waitForSelector("#whatsnew[open]");
   const m = await page.evaluate(() => {
     const d = document.querySelector("#whatsnew").getBoundingClientRect();
-    const b = document.querySelector("#whatsnew .dialog-actions button").getBoundingClientRect();
+    const b = document.querySelector("#whatsnew .dialog-actions .primary").getBoundingClientRect();
     const n = document.querySelector("#whatsnew .notes");
     return { top: d.top, bottom: d.bottom, left: d.left, right: d.right, buttonBottom: b.bottom, scrolls: n.scrollHeight <= n.clientHeight || ["auto", "scroll"].includes(getComputedStyle(n).overflowY), notesHeight: n.clientHeight, view: [innerWidth, innerHeight] };
   });
@@ -940,7 +940,7 @@ for (const [label, viewport, mustScroll] of [["phone", { width: 390, height: 640
   if (mustScroll) assert.ok(m.scrolls, "on a short screen the notes scroll inside the box: " + JSON.stringify(m));
   const atEnd = await page.evaluate(() => { const n = document.querySelector("#whatsnew .notes"); n.scrollTop = n.scrollHeight; return n.scrollTop + n.clientHeight >= n.scrollHeight - 1; });
   assert.ok(atEnd, "the end of the notes can be reached");
-  await page.click("#whatsnew .dialog-actions button");
+  await page.click("#whatsnew .dialog-actions .primary");
   assert.equal(await page.isVisible("#whatsnew"), false);
 }, { viewport, settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
 
@@ -957,7 +957,7 @@ await test("with Show what's new off, an update shows no box but is still rememb
 
 await test("Show what's new is on unless turned off, and turning it off is saved", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForSelector("#newNote");
   await openSettingsTab(page, "updates");
   const box = page.locator('#settings label.setting-row:has-text("Show what\'s new after an update") input');
@@ -975,7 +975,7 @@ await test("a newer release shows a notice with a download button and its notes 
   assert.equal(dialog.imgs, 0, "no html from the notes became elements");
   assert.equal(dialog.pwned, 0);
   assert.ok(dialog.text.includes("<img src=x"), "the notes are shown as text");
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.click("#updateDownload");
   assert.deepEqual(await page.evaluate(() => window.__mock.opened), [RELEASE_URL]);
 }, { settings: existingUser(), before: githubReturns(NEWER) });
@@ -1045,7 +1045,7 @@ await test("on a computer the Download button remembers the version, so after th
   await page.waitForSelector("#whatsnew[open]");
   // Before updating, the notes are the full ones: the person has not been to GitHub.
   assert.equal(await page.isVisible("#whatsNewFull"), false);
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.click("#updateDownload");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "9.9.9");
 }, { settings: existingUser(), before: githubReturns(WITH_FILES), userAgent: WINDOWS_UA });
@@ -1237,7 +1237,7 @@ await test("Check now says when the version is current, and a failed check is ca
 await test("after an update the new notes are shown once; a new install sees nothing", async (page) => {
   await page.waitForSelector("#whatsnew[open]");
   assert.match(await page.textContent("#whatsnew h2"), new RegExp("ScaleNote was updated to " + VERSION.replace(/\./g, "\\.")));
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForSelector("#newNote");
   assert.equal(JSON.parse(await page.evaluate(() => window.__mock.getSettings())).lastSeenVersion, VERSION);
 }, { settings: existingUser({ lastSeenVersion: "0.0.1", updates: false }) });
@@ -3539,7 +3539,7 @@ if (shots && !process.env.SHOTS_ONLY) {
       await up.goto(url);
       await up.waitForSelector("#whatsnew[open]");
       await up.screenshot({ path: name("8-whats-new") });
-      await up.click("#whatsnew button");
+      await up.click("#whatsnew .dialog-actions .primary");
       await up.waitForSelector("#updateNotice:not([hidden])");
       await phoneClose(up, label);
       await up.screenshot({ path: name("9-update-notice") });
@@ -10268,7 +10268,7 @@ await test("after an update downloaded with the app's Download button, a compute
   // These notes are the same for every system: only the hidden short list must stay out.
   assert.doesNotMatch(text, /<!--|-->|undo or redo \(Settings, Drawing\)/i);
   assert.equal(await page.isVisible("#whatsNewFull"), false);
-  await page.click("#whatsnew button");
+  await page.click("#whatsnew .dialog-actions .primary");
   await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).downloadedInApp === "");
 }, { viewport: { width: 1000, height: 800 }, settings: existingUser({ lastSeenVersion: "0.0.1", downloadedInApp: VERSION, updates: false }), userAgent: WINDOWS_UA });
 

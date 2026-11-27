@@ -306,12 +306,12 @@ function showNotes(title, notes, { full = false, page = RELEASE_PAGE } = {}) {
   renderNotes(body, notesFor(appNotes(notes, short ? "short" : "full"), platform));
   const actions = document.createElement("div");
   actions.className = "dialog-actions";
-  actions.append(buttonElement(strings.update.close, () => dialog.close(), true));
   if (short) {
     const more = buttonElement(strings.update.fullNotes, () => openUrlOrWarn(page));
     more.id = "whatsNewFull";
     actions.append(more);
   }
+  actions.append(buttonElement(strings.update.close, () => dialog.close(), true));
   dialog.append(body, actions);
   if (!dialog.open) dialog.showModal();
   return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
