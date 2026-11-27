@@ -7,7 +7,7 @@
 //   pageFill  the colour of the page
 //   font      the font family for sticky notes
 //   wrapped   a WeakMap used to remember how a note's text was cut into lines
-import { NOTE, MARGIN_X, PEN_COLOURS, arrowHead, boxOf, drawnWidth, ellipseOutline, paperInks, paperLayout, tidyStroke, widthAt, wrapText } from "./canvasrules.js";
+import { NOTE, MARGIN_X, PEN_COLOURS, readableInk, arrowHead, boxOf, drawnWidth, ellipseOutline, paperInks, paperLayout, tidyStroke, widthAt, wrapText } from "./canvasrules.js";
 
 export const HIGHLIGHT_ALPHA = 0.35;
 export const NOTE_FILL_ALPHA = 0.22;
@@ -26,8 +26,10 @@ export function readEnv(env) {
 }
 
 export function createPainter(ctx, env) {
+  // The colour of a pen name on this page, made lighter on a dark page if it would vanish there.
+  const inkOf = (name) => readableInk(env.colours[name] || "#000", env.pageFill || env.background);
   function stroke_(stroke) {
-    const colour = env.colours[stroke.color] || "#000";
+    const colour = inkOf(stroke.color);
     const points = stroke.points;
     ctx.strokeStyle = colour;
     ctx.fillStyle = colour;
@@ -64,7 +66,7 @@ export function createPainter(ctx, env) {
   }
 
   function shape(shape) {
-    ctx.strokeStyle = env.colours[shape.color] || "#000";
+    ctx.strokeStyle = inkOf(shape.color);
     ctx.lineWidth = shape.width;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -103,7 +105,7 @@ export function createPainter(ctx, env) {
 
   // The box of a note (its fill and edge). The text is painted later, on top of everything else.
   function note_(note, box) {
-    const colour = env.colours[note.color] || "#000";
+    const colour = inkOf(note.color);
     ctx.fillStyle = env.pageFill;
     ctx.fillRect(box.x, box.y, box.w, box.h);
     ctx.save();

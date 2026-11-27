@@ -59,7 +59,7 @@ export const strings = {
     renamePageLabel: "Page name",
     icon: "Icon",
     colour: "Colour",
-    offline: "Available offline…",
+    offline: "Keep on this device…",
     share: "Share…",
     bringHere: "Open (bring to this device)",
   },
@@ -165,7 +165,7 @@ export const strings = {
 
   // What this device keeps of the notes folder (offlinedialog.js, 0.6.3).
   offline: {
-    title: "Available offline: {name}",
+    title: "Keep on this device: {name}",
     titleWhole: "What this device keeps",
     followDefault: "Follow the folder above: everything is kept",
     followFrom: "Follow {folder}: {what}",
@@ -186,7 +186,7 @@ export const strings = {
     onlyHere: "{count} changed or new files stay here until another device has them.",
     settingsLabel: "What this device keeps",
     settingsButton: "Choose…",
-    settingsHint: "Which folders and pages stay on this device. Folders and pages have their own choice too, under Available offline in their menu.",
+    settingsHint: "Which folders and pages stay on this device. Folders and pages have their own choice too, under Keep on this device in their menu.",
   },
 
   folderIcon: {
@@ -562,7 +562,7 @@ export const strings = {
     penButtonHint: "What the button on the side of a pen does while you hold it on the canvas. The eraser end of a pen always erases.",
     penKeyLabels: { PageDown: "Pen button that sends Page Down", PageUp: "Pen button that sends Page Up" },
     penKeyOptions: { none: "Does nothing", eraser: "Switches to the eraser and back", undo: "Undoes", redo: "Redoes" },
-    penKeyHint: "Some tablet pens send a key when a button is tapped with the pen away from the screen. The Pen test shows which key each button sends. These only act while you draw; elsewhere the keys scroll as usual.",
+    penKeyHint: "Some tablet pens send a key when a button is tapped with the pen away from the screen; the Pen test shows which key each button sends. Tap once to switch, again to switch back. These only act while you draw; elsewhere the keys scroll as usual.",
     canvasEdge: "Canvas edges",
     canvasEdgeOptions: { open: "Open on every side", topLeft: "Start at the top left, like a page" },
     snapShapes: "Snap shapes to a grid",

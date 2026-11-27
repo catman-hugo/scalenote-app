@@ -626,8 +626,8 @@ fn a_shared_folder_syncs_both_ways_joins_edits_and_never_shows_anything_else() {
     // Removing a page in the share moves it to the other person's trash, never further.
     fs::remove_file(vm.0.join(format!("{here}/Week 2/Tissues.md"))).expect("remove");
     ok_with(&dana.sync_share(&id).expect("sync"), "Alice");
-    let rowan_has: Vec<String> = names(&p.va.0).into_iter().filter(|n| n.contains("Tissues")).collect();
-    assert!(rowan_has.is_empty(), "gone from Alice's folder: {rowan_has:?}");
+    let alice_has: Vec<String> = names(&p.va.0).into_iter().filter(|n| n.contains("Tissues")).collect();
+    assert!(alice_has.is_empty(), "gone from Alice's folder: {alice_has:?}");
     assert!(trash_has(&p.va.0) || trash_has(&p.vb.0), "it is in a trash");
     assert!(!vm.0.join("Diary.md").exists() && !vm.0.join("attachments/private.png").exists());
 }

@@ -36,7 +36,7 @@ Both devices need ScaleNote and must be on the same network (the same Wi-Fi at h
 
 1. On both devices, open the notes folder you want to sync, then Settings, Sync, and make sure **Sync is on**.
 2. On the first device choose **Pair a device**. It shows an 8-digit code.
-3. On the second device choose **Find devices**, choose **Use** next to the first device, type the code and choose **Pair**. If the device is not found, type the address the first device shows instead.
+3. On the second device choose **Enter a code**, then **Find devices**, choose **Use** next to the first device, type the code and choose **Pair**. If the device is not found, type the address the first device shows instead.
 4. Choose **Sync now**. The first sync between two devices changes nothing until you have seen what it would do and chosen **Start the sync**.
 
 After that, the devices sync by themselves while both are on and can see each other. Some things worth knowing:
@@ -48,6 +48,22 @@ After that, the devices sync by themselves while both are on and can see each ot
 - **Android in the background:** on Android, syncing happens while ScaleNote is open, so open the app to catch up.
 - **Pausing:** **Pause sync** stops all syncing until you resume it or close the app.
 - **Privacy:** the connection between two devices is encrypted. Other devices on the network can see that they talk, but not what they send.
+
+### Three or more devices
+
+Each pairing is between two devices: a device only syncs with devices you paired with it yourself. With a computer, a tablet and a phone, pairing both the tablet and the phone with the computer is enough while the computer is on: changes go from the tablet to the computer and from there to the phone. Pair the tablet and the phone with each other too if they should also stay in step without the computer.
+
+Only one sync runs at a time on a device. **Sync now** waits up to a minute for a sync that is already running before it starts.
+
+### What each device keeps
+
+By default every device keeps everything. A phone or tablet with little room can keep less:
+
+1. For the whole notes folder: Settings, Files, **What this device keeps** (Choose…). For one folder or page: its menu, **Keep on this device…**.
+2. For the whole notes folder, a folder or a page, choose to follow the folder above or choose for this one: text, drawings, pictures, PDFs and other files, each on or off.
+3. Settings, **Storage** shows what takes room. **Free up space** removes the copies this device no longer keeps.
+
+What a device does not keep is still listed, with a cloud icon, and opens as soon as another device that has it can be reached. Removing a copy here never removes it from your other devices, and a page changed here stays until another device has it. Keep at least one device (a computer, or a home server) that keeps everything.
 
 ### Without Wi-Fi or internet: a hotspot or a cable
 
@@ -94,6 +110,9 @@ Old backups are not removed by themselves, so delete the ones you no longer need
 | "That device belongs to another notes folder" | Open the folder shown next to the device in Settings, Sync, or move the pairing to the open folder there. |
 | "Last sync did not finish" | Choose **Sync now** again when both devices are on. A sync that was cut off is simply redone; nothing is half written. |
 | A copy of a page with a device name in it | Both devices changed that page. Compare the two, keep what you want, and delete the other. |
+| "A sync is still running" after a minute | Another device is syncing a lot with this one. Try again when it is done, or pause sync on the other device for a moment. |
+| Pen writing is hard to see in a dark theme | Dark pen colours (charcoal, navy, indigo) are drawn lighter on a dark page. If writing still looks faint, update ScaleNote on that device. |
+| A tablet pen's buttons do nothing in ScaleNote | Open **Pen test** (bottom of the page list) and press each button with the pen away from the screen. If it lists Page Down or Page Up, give them a job under Settings, Drawing. Holding a button on the screen is often kept by the tablet for its own shortcuts. |
 | The app is too big or too small | Ctrl + and Ctrl − zoom (Ctrl 0 goes back), or change Text size and Zoom under Settings, Look. |
 
 To report a problem, open an [issue](../../../issues). Say which system and which ScaleNote version you use (Settings, About), and what you did before it went wrong. Do not paste private notes into an issue.

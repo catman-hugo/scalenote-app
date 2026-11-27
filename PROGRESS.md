@@ -2,13 +2,28 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-26; 0.6.8 in progress (Sync now waits for a running sync; the Pen test records keys; pen buttons that send keys can switch to the eraser); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-26; 0.6.8 built (the last version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.7.0: planned (animations in pages)
 
 Plan written 2026-11-26: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. It comes after 0.6.8 releases the 0.6 line. Nothing is built yet.
 
-## 0.6.8: in progress (hardening and release of 0.6)
+## 0.6.8: built, not tried on a real device (hardening and release of 0.6)
+
+Branch `feature/v0.6.8-release` (starts from `feature/pen-keys`). Release notes `docs/release-notes/0.6.8.md`, security checklists `docs/security-checklist-0.6.8.md` and, for the whole line, `docs/security-checklist-0.6.md`.
+
+Still to do before 0.6 counts as finished: the owner's test of several days with a laptop and a phone that each keep only part of the folder (plan, 0.6.8), and the device tests listed under each 0.6 version below.
+
+### Finishing the line (branch `feature/v0.6.8-release`)
+
+- "Available offline" is now "Keep on this device" (menu item and box title, `web/strings.js`); its two choices sit next to their words (`web/style.css`). Found by the owner on a computer.
+- Pen colours too dark for a dark page (charcoal, navy, indigo) are drawn lighter there, only as far as needed for a contrast of 3 (`readableInk` in `web/canvasrules.js`, used by `web/canvaspaint.js` and `web/inklayer.js`). The stored colour stays the same; light pages are unchanged. Found by the owner: charcoal writing nearly vanished on a phone in dark mode. Unit test against every theme and page colour.
+- The pen-key hint says to tap once to switch and again to switch back.
+- Setup guide: three or more devices, what each device keeps, and three new rows in "When something is odd".
+- Security check of the whole line: `npm audit` 0; `cargo audit` found two new advisories in Tauri's own dependencies (`cookie`, `url`), updated to the fixed versions in the lock file, then 0; no `unwrap()`/`expect()` outside tests; one real first name left in a test variable renamed; the app lock covers every new page command.
+- Version 0.6.8 everywhere; What's new tests point at the 0.6.8 notes.
+
+NOT tried on a real device.
 
 ### Sync now waits for a sync that is running (branch `fix/sync-busy`)
 

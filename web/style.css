@@ -2183,7 +2183,9 @@ body.is-locked .toast { display: none; }
 .share-status:empty { display: none; }
 .offline-kinds { margin: var(--space-2) 0 var(--space-2) var(--space-5); }
 .offline-kinds.is-disabled { opacity: 0.55; }
-.offline-mode input, .offline-kind input { margin-right: var(--space-2); }
+/* A radio sits right before its words, like a checkbox (it was pushed to the far side). */
+.setting-row.offline-mode { justify-content: flex-start; gap: var(--space-2); cursor: pointer; }
+.offline-mode input, .offline-kind input { margin: 0; flex: none; }
 
 /* Settings, Storage (0.6.5). */
 .storage-total { margin: 0 0 var(--space-1); font-weight: 600; }
