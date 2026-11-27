@@ -7042,6 +7042,95 @@ await test("ink moves with its paragraph and keeps its size and shape when the w
   assert.ok(Math.abs(saved.ink[0].size[0] - wide.w) < 2, "the paragraph's width when drawn");
 }, ctxOpts);
 
+// ---------- 0.6.9: ink on a picture follows the picture ----------
+// Found by the owner: writing on a PDF slide on a phone sat on the empty margin next to the slide
+// on a laptop, and writing beside a slide on the laptop was off the phone's screen.
+const SLIDE_PAGE = "Before the slide.\n\n![Slide](attachments/slide.png)\n\nAfter the slide.\n";
+async function slideVault(page) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate((png) => window.__mock.attachments.set("attachments/slide.png", png), solidPng(600, 400));
+  await inkVault(page, null, SLIDE_PAGE);
+  await page.waitForFunction(() => { const img = document.querySelector(".image-sizer img"); return img && img.naturalWidth > 0 && img.getBoundingClientRect().width > 0; });
+}
+const slideBox = (page) => page.evaluate(() => {
+  const r = document.querySelector(".image-sizer").getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+});
+const acrossSlide = (box) => [[box.x + box.w * 0.2, box.y + box.h * 0.5, 0.5], [box.x + box.w * 0.5, box.y + box.h * 0.5, 0.6], [box.x + box.w * 0.8, box.y + box.h * 0.5, 0.5]];
+// The ink in a band across the middle of the slide, and outside the slide on the same height.
+async function slideInk(page) {
+  const box = await slideBox(page);
+  const band = { x: box.x + box.w * 0.3, y: box.y + box.h * 0.5 - 5, w: box.w * 0.4, h: 10 };
+  return inkPixels(page, band);
+}
+
+await test("ink written on a picture stays on the same place of the picture when the window is narrower or wider", async (page) => {
+  await slideVault(page);
+  await startInk(page);
+  const wide = await slideBox(page);
+  await inkPen(page, acrossSlide(wide));
+  await waitInkSaved(page);
+  const saved = (await savedDrawing(page)).ink;
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].fit, true, "kept as shares of the picture");
+  assert.ok(saved[0].points.every(([x, y]) => x > 0.15 && x < 0.85 && Math.abs(y - 0.5) < 0.02), JSON.stringify(saved[0].points));
+  assert.ok((await slideInk(page)) > 30, "on the slide");
+  await page.setViewportSize({ width: 380, height: 700 });
+  await page.waitForTimeout(300);
+  const narrow = await slideBox(page);
+  assert.ok(narrow.w < wide.w - 50, "the picture is smaller now");
+  assert.ok((await slideInk(page)) > 20, "still across the middle of the slide");
+  // Opened again (as on another device), the file gives the same place.
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.waitForTimeout(300);
+  assert.ok((await slideInk(page)) > 30, "and back on a wide window");
+}, ctxOpts);
+
+await test("ink beside a picture is kept from its block, as before", async (page) => {
+  await slideVault(page);
+  await startInk(page);
+  const box = await slideBox(page);
+  const block = await blockBox(page, 1);
+  // Left of the picture, in the block's empty margin (the picture is centred or narrower).
+  const left = Math.max(block.x + 4, box.x - 40);
+  assert.ok(box.x - block.x > 30, `the picture is centred in its block: ${JSON.stringify({ box, block })}`);
+  await inkPen(page, [[left, box.y + 20, 0.5], [left + 10, box.y + 60, 0.5]]);
+  await waitInkSaved(page);
+  assert.equal((await savedDrawing(page)).ink[0].fit, undefined, "not on the picture: kept from the block");
+}, ctxOpts);
+
+await test("Settings, Drawing: writing on pictures keeps its light-page colours in a dark theme, when turned on", async (page) => {
+  const colourOf = () => page.evaluate(() => {
+    const surface = document.querySelector(".ink-surface");
+    const r = document.querySelector(".image-sizer").getBoundingClientRect();
+    const sheet = surface.getBoundingClientRect();
+    const ratio = surface.width / sheet.width;
+    const data = surface.getContext("2d").getImageData(Math.round((r.x + r.width * 0.5 - sheet.x) * ratio), Math.round((r.y + r.height * 0.5 - sheet.y) * ratio) - 3, 1, 7).data;
+    let best = null;
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 200) best = [data[i], data[i + 1], data[i + 2]];
+    return best ? Math.round((best[0] + best[1] + best[2]) / 3) : -1;
+  });
+  await slideVault(page);
+  await startInk(page);
+  await inkPen(page, acrossSlide(await slideBox(page)));
+  await waitInkSaved(page);
+  await page.waitForTimeout(150);
+  const off = await colourOf();
+  assert.ok(off > 150, `off by default: the dark theme's light writing colour (${off})`);
+  // Turned on in Settings, Drawing.
+  await page.click("#inkButton");
+  await openSettingsTab(page, "drawing");
+  assert.equal(await page.isChecked("#pictureInk"), false, "off by default");
+  await page.check("#pictureInk");
+  await page.waitForFunction(() => JSON.parse(window.__mock.getSettings()).pictureInk === true);
+  if (shots) await page.screenshot({ path: `${shots}/v069-dark-picture-ink-setting.png` });
+  await page.keyboard.press("Escape");
+  await page.waitForSelector("#settings", { state: "hidden" });
+  await page.waitForTimeout(200);
+  const on = await colourOf();
+  assert.ok(on >= 0 && on < 60, `on: black writing stays black on the slide (${on})`);
+}, { scheme: "dark", settings: existingUser({ updates: false }) });
+
 await test("a finger moves the page and leaves no mark, unless Finger draws is on", async (page) => {
   await inkVault(page, null, Array.from({ length: 60 }, (_, i) => `Paragraph number ${i} of a long page.`).join("\n\n") + "\n");
   await startInk(page);

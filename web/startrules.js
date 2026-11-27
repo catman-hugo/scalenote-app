@@ -26,6 +26,7 @@ export const RESETTABLE = {
   penKeyUp: "none",
   openIn: "text",
   snapShapes: true,
+  pictureInk: false,
   canvasEdge: "open",
   reopenLast: true,
   showWhatsNew: true,

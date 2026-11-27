@@ -115,25 +115,41 @@ export function fromFractions(fx, fy, rect) {
 // Ink from before has no size and is drawn as before.
 const tenth = (value) => Math.round(value * 10) / 10;
 
+// Ink on a picture (0.6.9). A picture, such as a page of an imported PDF, is centred in its block
+// and grows and shrinks with the window, unlike text. Ink kept as a distance from the block's
+// left edge slid off the slide on a wider screen and out of sight on a narrower one. Ink that
+// starts on a picture is therefore kept as shares of the picture itself (`fit`), so it grows,
+// shrinks and moves with it; `rect` is then the picture's box. Ink beside a picture stays as it was.
+
 /**
  * Turns a stroke drawn in screen positions into stroke ink: `points` are `[x, y, pressure]` on
  * the screen, `rect` is the block the first point is in (`{ left, top, width, height, em }`,
- * em being its text size), `anchor` says which block that is.
+ * em being its text size), `anchor` says which block that is. With `fit`, `rect` is the box of
+ * the picture in that block and the ink follows the picture (see above).
  */
-export function inkFromScreen(stroke, rect, anchor) {
+export function inkFromScreen(stroke, rect, anchor, fit = false) {
   return {
     tool: stroke.tool,
     color: stroke.color,
     width: stroke.width,
     anchor: { block: anchor.block, tag: anchor.tag },
     size: [tenth(span(rect.width)), tenth(span(rect.height)), tenth(rect.em || 16)],
+    ...(fit ? { fit: true } : {}),
     points: stroke.points.map(([x, y, pressure]) => [...toFractions(x, y, rect).map(keep), pressure]),
   };
 }
 
-/** The screen positions `[x, y, pressure]` of a piece of ink, for the block it is on now. */
+/** Whether a screen point lies on a box `{ left, top, width, height }`. */
+export function insideBox(x, y, box) {
+  return Boolean(box) && x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height;
+}
+
+/**
+ * The screen positions `[x, y, pressure]` of a piece of ink, for the block it is on now. For ink
+ * that follows a picture (`fit`), `rect` is the picture's box now.
+ */
 export function inkToScreen(item, rect) {
-  if (!item.size) return item.points.map(([fx, fy, pressure]) => [...fromFractions(fx, fy, rect), pressure]);
+  if (item.fit || !item.size) return item.points.map(([fx, fy, pressure]) => [...fromFractions(fx, fy, rect), pressure]);
   const [drawnWidth, drawnHeight, drawnEm] = item.size;
   const scale = (rect.em || drawnEm) / drawnEm;
   return item.points.map(([fx, fy, pressure]) => [rect.left + fx * drawnWidth * scale, rect.top + fy * drawnHeight * scale, pressure]);
