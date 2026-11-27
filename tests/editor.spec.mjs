@@ -7957,6 +7957,8 @@ async function editAnimationFromBlock(page) {
 }
 // A point inside the box on the canvas, as a fraction of the box ([0.5, 0.5] is its middle).
 async function inBoxPoint(page, fx, fy) {
+  // The box's place is known once the canvas has painted it (on the next frame after the bar shows).
+  await page.waitForFunction(() => Boolean(document.querySelector(".canvas-stage").dataset.animationBox));
   return page.evaluate(([x, y]) => {
     const bar = document.querySelector(".canvas-surface").getBoundingClientRect();
     const [left, top, width, height] = document.querySelector(".canvas-stage").dataset.animationBox.split(",").map(Number);
@@ -8099,6 +8101,7 @@ await test("Before and after shows the steps around the one being drawn faintly,
   await page.keyboard.press(".");
   assert.equal(await stepLabel(page), "Step 2 of 2");
   // Step 1 has a red rectangle at (20, 20)-(120, 80) in the box; step 2 is empty.
+  await page.waitForFunction(() => Boolean(document.querySelector(".canvas-stage").dataset.animationBox));
   const tintAt = () => page.evaluate(() => {
     const surface = document.querySelector(".canvas-surface");
     const [left, top, width] = document.querySelector(".canvas-stage").dataset.animationBox.split(",").map(Number);
