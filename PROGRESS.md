@@ -86,6 +86,19 @@ Plan: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page'
 
 Nothing shows in the app yet: that starts with slice 2.
 
+### Slices 2 and 3: the block, and editing the steps on the canvas (branch `feature/animation-block`, starts from `feature/animation-format`)
+
+Built together, because the block opens the editing and the tests of one need the other.
+
+- `/animation` (slash menu) makes an animation in the page's drawing and a block in the text, and opens the canvas beside the text on it (`createAnimation` and `openAnimation` in `web/main.js`). A double click on the block opens it there again.
+- The block in the markdown is a fenced block (`web/animfence.js`): `id`, `show` and `fps`, and lines a later version may add are kept in their order. Anything else with that label stays an ordinary code block. Untouched blocks are written back byte for byte, as every block. In the text it shows the first step and its caption (`web/animblock.js`), or a calm message when the animation is gone; it never changes the drawing.
+- On the canvas (`web/canvasview.js`): outside editing, an animation's box shows its first step with "Animation, N steps"; it moves and resizes like a canvas region (a resize from a corner keeps the drawing in place) and Delete removes it (Undo brings it back). While editing, the tools work on the current step only (or on the background, with the "Background (all steps)" switch); the rest of the page shows faintly behind. Undo and Redo go through drawing and step actions in the order they were made (`AnimationHistory` in `web/animrules.js`). The `,` and `.` keys change the step; Escape or Done ends editing.
+- The step bar (`web/stepbar.js`): previous and next, "Step 3 of 7" (opens a strip of small pictures: tap to go there, press and drag to reorder), Duplicate step, New step, Move left and right, Delete step, the caption (title and a line of text), the Background switch and Done. It sits under the box when there is room. On a phone it is fixed at the bottom of the canvas and shows one line (moves, Duplicate, More, Done; the rest opens with More), and a sideways swipe on it changes the step.
+- Changed from the plan: while an animation is being edited, everything drawn goes into the step or the background, also outside the box (shown there, but cut to the box in the text). The plan said drawing outside the box goes onto the page; that would need two drawings to edit at once, and leaving editing (Done) gives the page back in one tap.
+- Tests: unit tests for the fence and the editing history; browser tests for /animation (block, fence, format 7 file), the first step and caption in the text, a calm message for a missing animation, unknown lines kept, a line drawn into one step only, duplicate then erase, Undo and Redo through both, the background, the keys and the step actions, and on a phone: the bar at the bottom, a swipe, and the strip jumping and reordering. Screenshots of editing on a computer and the strip on a phone looked at.
+
+NOT tried on a real device.
+
 ## 0.6.8: built, not tried on a real device (hardening and release of 0.6)
 
 Branch `feature/v0.6.8-release` (starts from `feature/pen-keys`). Release notes `docs/release-notes/0.6.8.md`, security checklists `docs/security-checklist-0.6.8.md` and, for the whole line, `docs/security-checklist-0.6.md`.

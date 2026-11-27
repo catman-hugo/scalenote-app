@@ -163,3 +163,73 @@ export function resizedBox(animation, rect, moveWithBox = false) {
     steps: animation.steps.map((step) => (dx === 0 && dy === 0 ? step : { ...step, items: shift(step.items) })),
   };
 }
+
+/**
+ * The undo history while an animation is edited on the canvas (canvasview.js). The canvas tools
+ * record their usual entries (a line added, items moved); here each one becomes a picture of the
+ * whole animation after the change, and Undo puts the picture from before it back. Changes to the
+ * steps themselves (duplicate, move, delete, a caption) are recorded the same way, so Undo and Redo
+ * go through drawing and step actions in the order they were made.
+ *
+ * `take()` gives that picture: `{ background, steps, step, layer }` (the lists themselves, which are
+ * replaced on every change and never changed in place, so a picture stays as it was). `sync()` puts
+ * the items being drawn into the animation first. `restore(picture)` puts a picture back.
+ */
+export class AnimationHistory {
+  constructor({ take, sync, restore }, limit = 200) {
+    this.take = take;
+    this.sync = sync;
+    this.restore = restore;
+    this.limit = limit;
+    this.last = take();
+    this.undoList = [];
+    this.redoList = [];
+  }
+
+  /** After a change: the items being drawn go into the animation, and the change is kept. */
+  record() {
+    this.sync();
+    this.keep();
+  }
+
+  /** After a change to the steps, which are already in the animation. */
+  keep() {
+    const after = this.take();
+    this.undoList.push({ before: this.last, after });
+    if (this.undoList.length > this.limit) this.undoList.shift();
+    this.redoList = [];
+    this.last = after;
+  }
+
+  /** Moving to another step changes nothing, but Undo should come back to that step. */
+  moved() {
+    const now = this.take();
+    this.last = { ...this.last, step: now.step, layer: now.layer };
+  }
+
+  undo() {
+    const entry = this.undoList.pop();
+    if (!entry) return false;
+    this.restore(entry.before);
+    this.last = entry.before;
+    this.redoList.push(entry);
+    return true;
+  }
+
+  redo() {
+    const entry = this.redoList.pop();
+    if (!entry) return false;
+    this.restore(entry.after);
+    this.last = entry.after;
+    this.undoList.push(entry);
+    return true;
+  }
+
+  get canUndo() {
+    return this.undoList.length > 0;
+  }
+
+  get canRedo() {
+    return this.redoList.length > 0;
+  }
+}

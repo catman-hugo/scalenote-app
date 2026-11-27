@@ -13,6 +13,7 @@ import { PdfBlock } from "./pdfblock.js";
 import { askLongPdf, askPdfMode, choosePdf, importPages, looksLikePdf, showProgress, storePdf } from "./pdfimport.js";
 import { PDF_LIMITS, pdfTitle } from "./pdfrules.js";
 import { CanvasBlock } from "./canvasblock.js";
+import { AnimationBlock } from "./animblock.js";
 import { attachToolbars } from "./toolbar.js";
 import { attachGutter } from "./gutter.js";
 import { Plugin } from "@tiptap/pm/state";
@@ -25,7 +26,7 @@ import { ToggleFold } from "./togglefold.js";
 // Pictures: the same path for paste, drop and the slash menu. The file is copied into the
 // vault first, and only then an image block is placed in the note.
 // `create()` makes a region in the page's drawing and resolves to its id, or null when it cannot.
-let canvasOptions = { create: async () => null };
+let canvasOptions = { create: async () => null, createAnimation: async () => null };
 let pictureOptions = { onProblem: () => {}, noteKey: () => null, pdfDialog: () => null, jobCard: () => null, pageToken: () => null, addToPage: async () => {}, notify: () => {} };
 
 async function insertPictures(editor, files, position) {
@@ -181,7 +182,7 @@ const SourceKeeper = Extension.create({
     const keep = { default: null, rendered: false };
     return [
       {
-        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock", "pdfBlock", "canvasBlock"],
+        types: ["paragraph", "heading", "bulletList", "orderedList", "taskList", "blockquote", "codeBlock", "horizontalRule", "callout", "columns", "toggle", "table", "imageBlock", "pdfBlock", "canvasBlock", "animationBlock"],
         attributes: { src: keep, base: keep, gap: keep, idx: keep },
       },
       // Only paragraphs can carry a block link id on their last line.
@@ -328,6 +329,15 @@ function slashItems() {
         canvasOptions.create().then((id) => id && e.chain().focus().insertContent([{ type: "canvasBlock", attrs: { id } }, { type: "paragraph" }]).run());
       },
     },
+    {
+      id: "animation",
+      title: s.animation,
+      words: "animation animate steps frames video loop gif sequence",
+      run: (e, r) => {
+        clear(e, r).run();
+        canvasOptions.createAnimation().then((id) => id && e.chain().focus().insertContent([{ type: "animationBlock", attrs: { id } }, { type: "paragraph" }]).run());
+      },
+    },
     { id: "table", title: s.table, words: "table grid rows columns", run: (e, r) => clear(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   ];
 }
@@ -447,7 +457,7 @@ const SlashMenu = Extension.create({
 
 // `options.loadImage(path)` gives the picture for an image block as a data: address.
 export function createEditor(element, onChange, options = {}) {
-  canvasOptions = { create: options.createCanvasRegion || (async () => null) };
+  canvasOptions = { create: options.createCanvasRegion || (async () => null), createAnimation: options.createAnimation || (async () => null) };
   pictureOptions = {
     onProblem: options.onProblem || (() => {}),
     noteKey: options.noteKey || (() => null),
@@ -493,6 +503,7 @@ export function createEditor(element, onChange, options = {}) {
       ImageBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))), words: options.loadWords || (() => Promise.reject(new Error("no words"))) }),
       PdfBlock.configure({ load: options.loadImage || (() => Promise.reject(new Error("no loader"))) }),
       CanvasBlock.configure({ drawing: options.canvasDrawing || (() => null) }),
+      AnimationBlock.configure({ drawing: options.canvasDrawing || (() => null), edit: options.editAnimation || (() => {}) }),
       ...tableExtensions,
       SlashMenu,
       LinkShortcut,

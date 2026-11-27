@@ -247,7 +247,8 @@ export function makeFrameId(taken, random = (n) => crypto.getRandomValues(new Ui
 
 /** Where a new frame goes: below everything already on the sheet, so it starts on empty paper. */
 export function nextFrameRect(canvas) {
-  const around = boundsOf([...canvas.items, ...(canvas.frames || []).map((f) => ({ tool: "note", x: f.x, y: f.y, w: f.w, h: f.h, color: "ink", text: "" }))]);
+  const boxes = [...(canvas.frames || []), ...(canvas.animations || [])];
+  const around = boundsOf([...canvas.items, ...boxes.map((f) => ({ tool: "note", x: f.x, y: f.y, w: f.w, h: f.h, color: "ink", text: "" }))]);
   return { x: around ? Math.round(around.minX) : 0, y: around ? Math.round(around.maxY + 40) : 0, w: 480, h: 320 };
 }
 
