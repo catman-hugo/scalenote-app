@@ -1036,7 +1036,8 @@ body.block-dragging .float-bar { visibility: hidden; }
    10 px is drawn; the invisible area around it is the target for a finger. */
 .image-handle,
 .pdf-width-handle,
-.image-reset { display: none; }
+.image-reset,
+.image-apply-all { display: none; }
 .image-block.ProseMirror-selectednode .image-handle,
 .image-block:focus-within .image-handle,
 .pdf-block.ProseMirror-selectednode .pdf-width-handle,
@@ -1067,7 +1068,9 @@ body.block-dragging .float-bar { visibility: hidden; }
 .image-handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
 .image-handle-w { left: 0; top: 50%; cursor: ew-resize; }
 .image-block.ProseMirror-selectednode .image-reset:not([hidden]),
-.image-block:focus-within .image-reset:not([hidden]) {
+.image-block:focus-within .image-reset:not([hidden]),
+.image-block.ProseMirror-selectednode .image-apply-all:not([hidden]),
+.image-block:focus-within .image-apply-all:not([hidden]) {
   display: block;
   flex: none;
   padding: var(--space-1) var(--space-2);
@@ -1080,7 +1083,8 @@ body.block-dragging .float-bar { visibility: hidden; }
   cursor: pointer;
 }
 .ProseMirror[contenteditable="false"] .image-handle,
-.ProseMirror[contenteditable="false"] .image-reset { display: none !important; }
+.ProseMirror[contenteditable="false"] .image-reset,
+.ProseMirror[contenteditable="false"] .image-apply-all { display: none !important; }
 
 /* ---------- floating toolbars ---------- */
 

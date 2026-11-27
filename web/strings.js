@@ -903,6 +903,8 @@ export const strings = {
     altPlaceholder: "Describe the picture",
     resetSize: "Original size",
     resetSizeLabel: "Return the picture to its original size",
+    applyAll: "Apply to all slides",
+    applyAllLabel: "Give every page of this PDF on the page this size",
     handleLabel: "Resize the picture from the {place}",
     places: {
       nw: "top left corner",
