@@ -2,7 +2,23 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-26; 0.6.8 built (the last version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-27; 0.6.9 in progress (fixes after testing 0.6.8; the sync list is now kept on both devices); 0.6.8 released (the last version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+
+## 0.6.9: in progress (fixes and requests after testing 0.6.8)
+
+The list comes from the owner's tests on a laptop and a phone on 2026-11-27 (sync, Find in page, ink on PDF pages, the sidebar, Settings). Each part has its own branch and pull request.
+
+### Both devices keep the sync list (branch `fix/sync-base-both-sides`)
+
+Reported by the owner with a laptop and a phone: a new page reached the phone unnamed and, after it was named on the laptop, came back unnamed, so it was there twice; editing a page on the laptop while syncing made a conflict copy; and the first Sync now on the phone showed "First sync with …" although the two had synced for weeks.
+
+Cause: at the end of a sync only the device that started it saved the list of what both had (`sync-base-<device>.txt`), the page texts for joining edits, the folder list and the colours and shares merge bases. The laptop had started every sync, so the phone had an old list or none. (The automatic round only starts syncs with devices it has a list for, so the phone never started one by itself.)
+
+- `engine.rs`: `finish` sends the list and the folders both have (`KIND_BASE`, as a listing) at the end of a sync between one's own devices, when the other device said `base=1`; `keep_own_base` keeps it on the answering side, only the files that are exactly so there, with the page texts, the folders that are there and the colours and shares files. `Pair::base`.
+- `exchange.rs`: `Scope::Whole` takes the list (`keep`); `service.rs`: `base=1` in the greeting, `Live::base`, a hello before the first sync after the app started so the first sync already knows.
+- Tests (two real services on loopback): a rename, an edit, edits on both devices and a removed folder are right when the device that only answered starts the next sync, and it does not see a first sync; an older device gets no list; the answering side keeps only files that are the same there. The five sync tests fail without the change (checked).
+
+NOT tried on a real device.
 
 ## 0.7.0: planned (animations in pages)
 
