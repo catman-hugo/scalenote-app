@@ -2568,6 +2568,16 @@ async function showNoNote() {
   setStatus("");
 }
 
+// The find bar was closed: back to the text without moving the page. With a text hit on show the
+// cursor goes to it (that is where the person is looking); otherwise it stays where it was, but
+// the page is not scrolled to it, which used to jump far away from what was being read.
+function closeFind(place) {
+  if (!app.editor) return;
+  const chain = app.editor.chain();
+  if (place) chain.setTextSelection(place.to);
+  chain.focus(null, { scrollIntoView: false }).run();
+}
+
 async function closeCurrentNote() {
   if (app.find) app.find.close({ quiet: true });
   await leaveInk();
@@ -3388,7 +3398,7 @@ async function start() {
     onNotice: (text) => showToast(text),
   });
   app.editor.on("update", () => app.ink.refresh());
-  app.find = createPageFind({ editor: () => app.editor, after: document.querySelector(".topbar"), onClose: () => app.editor.commands.focus() });
+  app.find = createPageFind({ editor: () => app.editor, after: document.querySelector(".topbar"), onClose: closeFind });
   app.editor.on("update", () => app.find.refresh());
   app.pageText = createPageText(app.editor);
   app.cover = createCover(el("editor"), {

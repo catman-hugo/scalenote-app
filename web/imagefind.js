@@ -144,6 +144,17 @@ export function attachImageFinder({ dom, sizer, alt, attrs, pos, load }) {
     mirror.scrollLeft = alt.scrollLeft;
   });
   return {
+    /**
+     * The block now shows another picture (the editor reuses a block's view when blocks above
+     * it are added or removed). The marks belong to the old picture's words, so they go; the
+     * find bar searches again after every change of the page.
+     */
+    pictureChanged() {
+      token++;
+      hits = [];
+      current = -1;
+      paint();
+    },
     destroy() {
       token++;
       removeFinder(finder);
