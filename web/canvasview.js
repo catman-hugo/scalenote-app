@@ -41,6 +41,8 @@ const NOTE_MIN_PIXELS = 24;
 const GRAB_PIXELS = 8;
 // How close to the resize handle counts as holding it. Bigger than it looks, for a finger or a pen.
 const HANDLE_PIXELS = 16;
+// A pen press shorter than this, that barely moves, is a tap (it may be half of a double tap).
+const TAP_MS = 300;
 // The grip left of a region's top corner (0.5.8), like the handle next to a block in the text:
 // pressing it moves the region with any tool, and shows its corners to change its size.
 const GRIP = { w: 16, h: 24, gap: 6 };
@@ -122,6 +124,8 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
   const state = {
     canvas: emptyCanvas(),
     history: new DrawingHistory(),
+    // Dots left by quick taps of the pen in the last moment (see the dblclick listener).
+    taps: [],
     readOnly: false,
     tool: "pen",
     toolBefore: null,
@@ -1138,7 +1142,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     } else {
       clearSelection();
       const mark = { tool, color: state.colour, width: state.width, points: [] };
-      state.gesture = { kind: "pen", id, last: screen, stroke: mark };
+      state.gesture = { kind: "pen", id, last: screen, stroke: mark, at: Date.now() };
       addPoint(event);
     }
   }
@@ -1241,7 +1245,11 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
         return scheduleDraw();
       }
       state.canvas.items.push(...parts);
-      state.history.record({ add: parts.length === 1 ? parts[0] : parts });
+      const entry = { add: parts.length === 1 ? parts[0] : parts };
+      state.history.record(entry);
+      // A quick tap leaves a dot. It is remembered for a moment, because the tap may be half of a
+      // double tap that opens an animation, and then the dot was never meant (see dblclick).
+      if (Date.now() - g.at < TAP_MS && points.length <= 3) state.taps = [...state.taps.filter((tap) => Date.now() - tap.at < TAP_MS * 3), { entry, at: Date.now() }];
       return changed();
     }
     if (g.kind === "notebox") {
@@ -1532,6 +1540,14 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
   // Every finger on the sheet is the sheet's (pan, zoom, or draw with Finger draws on).
   holdTouches(surface);
   surface.addEventListener("pointermove", onMove);
+  // Over the grip of a frame or an animation the pointer is a hand, whatever the tool: the grip
+  // picks the box up, it does not draw. While the box is carried the hand is closed.
+  surface.addEventListener("pointermove", (event) => {
+    const g = state.gesture;
+    const carrying = Boolean(g && g.kind === "frame" && g.part === "move");
+    const over = !g && gripAt(localPoint(event));
+    surface.style.cursor = carrying ? "grabbing" : over ? "grab" : "";
+  });
   surface.addEventListener("pointerup", onUp);
   surface.addEventListener("pointercancel", onUp);
   // Nothing in the sheet may show the system menu: a pen's long press would open it mid-stroke.
@@ -1581,7 +1597,21 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     const point = localPoint(event);
     const world = toWorld(point.x, point.y);
     const hit = [...(state.canvas.animations || [])].reverse().find((a) => insideBox(a, world.x, world.y));
-    if (hit) editAnimation(hit.id);
+    if (!hit) return;
+    // The two taps of the double tap each left a dot on the page: they are taken away again, with
+    // their steps in the undo list, as if they had never been drawn.
+    const recent = state.taps.filter((tap) => Date.now() - tap.at < TAP_MS * 3);
+    state.taps = [];
+    for (const tap of recent) {
+      const list = state.history.undoList;
+      const at = list.lastIndexOf(tap.entry);
+      if (at < 0) continue;
+      list.splice(at, 1);
+      const gone = new Set([].concat(tap.entry.add));
+      state.canvas.items = state.canvas.items.filter((item) => !gone.has(item));
+    }
+    if (recent.length) changed();
+    editAnimation(hit.id);
   });
   surface.addEventListener("keyup", (event) => {
     if (event.key === " ") state.spaceDown = false;

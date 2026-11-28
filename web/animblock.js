@@ -105,6 +105,8 @@ export function stepCaption(animation, index) {
   const t = strings.animationBlock;
   return {
     title: step && step.title ? step.title : t.stepOf.replace("{n}", String(index + 1)).replace("{total}", String(animation.steps.length)),
+    // True when the title is only the count, with no title of the step's own.
+    counted: !(step && step.title),
     text: step ? step.text : "",
   };
 }
@@ -212,6 +214,10 @@ export const AnimationBlock = Node.create({
           const words = stepCaption(animation, view.step);
           title.textContent = words.title;
           text.textContent = words.text;
+          // "Step 2 of 7" is for clicking through the steps; a video or a loop plays by itself, so
+          // it only shows a title or text the step has of its own.
+          title.hidden = show !== "steps" && words.counted;
+          caption.hidden = title.hidden && !words.text;
           surface.setAttribute("aria-label", t.surface.replace("{title}", words.title));
           const width = Math.max(50, dom.clientWidth);
           // While being drawn, always painted afresh, so the line in progress shows.

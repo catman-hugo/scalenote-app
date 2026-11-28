@@ -8019,6 +8019,77 @@ await test("the animation in the text follows the pen while a line is drawn, bef
   assert.ok((await dark()) > before + 20, "and stays after the pen is lifted");
 }, ctxOpts);
 
+await test("a double click that opens an animation with the pen leaves no dots on the page", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  const [x, y, ox, oy] = await inBoxPoint(page, 0.5, 0.8);
+  await page.click(".step-bar-button[aria-label='Done']");
+  await page.waitForSelector(".step-bar", { state: "hidden" });
+  await page.mouse.dblclick(ox + x, oy + y);
+  await page.waitForSelector(".step-bar:not([hidden])");
+  await page.click(".step-bar-button[aria-label='Done']");
+  await waitSaved(page);
+  assert.deepEqual((await savedDrawing(page, "Cell.md")).items, [], "the two clicks left nothing on the page");
+  // A single tap still draws a dot, as before.
+  await page.mouse.click(ox + x, oy + y + 30);
+  await page.waitForFunction(() => JSON.parse(window.__mock.canvases.get("Cell.md")).items.length === 1);
+}, ctxOpts);
+
+await test("over the grip of an animation the pointer is a hand, whatever tool is chosen", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  const [, , ox, oy] = await inBoxPoint(page, 0, 0);
+  const [left, top] = await page.evaluate(() => document.querySelector(".canvas-stage").dataset.animationBox.split(",").map(Number));
+  await page.click(".step-bar-button[aria-label='Done']");
+  const cursor = () => page.evaluate(() => getComputedStyle(document.querySelector(".canvas-surface")).cursor);
+  // The grip sits just left of the box's top corner (gripOf in canvasview.js).
+  await page.mouse.move(ox + left - 12, oy + top + 10);
+  assert.equal(await cursor(), "grab");
+  await page.mouse.move(ox + left + 100, oy + top + 100);
+  assert.equal(await cursor(), "crosshair", "inside the box the pen cursor is back");
+}, ctxOpts);
+
+await test("a video or a loop does not show Step 1 of 2; a title of the step's own still shows", async (page) => {
+  await animationPage(page);
+  const title = () => page.evaluate(() => { const t = document.querySelector(".animation-block-title"); return t.hidden || !t.offsetParent ? null : t.textContent; });
+  assert.equal(await title(), "1. Start", "steps with titles show them");
+  await page.evaluate(() => {
+    const d = JSON.parse(window.__mock.canvases.get("Cell.md"));
+    d.animations[0].steps = d.animations[0].steps.map((s) => ({ ...s, title: "" }));
+    window.__mock.canvases.set("Cell.md", JSON.stringify(d));
+    window.__mock.files.set("Other.md", "x\n");
+    window.__mock.files.set("Cell.md", "Intro\n\n```scalenote-animation\nid: srp00001\nshow: steps\nfps: 2\n```\n\n```scalenote-animation\nid: srp00001\nshow: video\nfps: 2\n```\n");
+  });
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Other.md"]');
+  await page.click('.tree-button[data-path="Cell.md"]');
+  await page.waitForFunction(() => document.querySelectorAll(".animation-block-surface:not([hidden])").length === 2);
+  const titles = await page.evaluate(() => [...document.querySelectorAll(".animation-block")].map((b) => { const t = b.querySelector(".animation-block-title"); return [b.dataset.show, t.hidden || !t.offsetParent ? null : t.textContent]; }));
+  assert.deepEqual(titles, [["steps", "Step 1 of 2"], ["video", null]]);
+}, ctxOpts);
+
+await test("after the Markdown view, the animation in the text is shown again (not 'could not be found')", async (page) => {
+  await animationPage(page);
+  // The way it was found: from the split view back to the text, then to Markdown and back.
+  await view(page, "Split");
+  await page.waitForSelector(".canvas-surface");
+  await view(page, "Text");
+  await page.click("#sourceToggle");
+  await page.waitForSelector("#source:not([hidden])");
+  await page.click("#sourceToggle");
+  // Looked at often for a while after going back: it must never say it could not be found.
+  const seen = [];
+  for (let i = 0; i < 30; i++) {
+    seen.push(await page.evaluate(() => {
+      const missing = document.querySelector("#editor .animation-block-missing");
+      return Boolean(missing && missing.offsetParent);
+    }));
+    await page.waitForTimeout(50);
+  }
+  assert.deepEqual(seen.filter(Boolean), [], "it never said it could not be found: " + seen.map(Number).join(""));
+  assert.equal(await page.isVisible("#editor .animation-block-surface"), true);
+}, ctxOpts);
+
 await test("Duplicate step copies the step, erasing in the copy leaves the original, and Undo and Redo go through it all", async (page) => {
   await animationPage(page);
   await editAnimationFromBlock(page);

@@ -3225,9 +3225,14 @@ function applyMode() {
 
 async function toggleSource() {
   if (!app.current) return;
+  // The page's drawing stays loaded while the Markdown is shown, so the animations and canvas
+  // blocks find it at once when the blocks come back. Without it they said "could not be found".
+  const drawingPath = app.inkPath;
   await leaveInk();
   await leaveCanvas();
   if (app.mode === "editor") {
+    // Only the ink over the text is put away; the drawing itself stays the page's drawing.
+    app.inkPath = drawingPath;
     // The note on screen is the truth: show exactly what saving it would write.
     fillSource(plainCurrentText());
     app.mode = "source";
@@ -3243,6 +3248,7 @@ async function toggleSource() {
     serialize: (json) => app.editor.markdown.serialize(json),
   });
   app.current.parts = parts;
+  if (app.inkPath === app.current.path && app.canvasView) app.ink.show();
   putInEditor(doc);
   app.mode = "editor";
   applyMode();
