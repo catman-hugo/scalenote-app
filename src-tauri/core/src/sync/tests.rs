@@ -78,6 +78,20 @@ fn scan_lists_files_with_hashes_and_ignores_trash_hidden_and_temp_files() {
 }
 
 #[test]
+fn names_lists_the_same_files_as_a_scan_without_reading_them() {
+    let dir = Dir::new("names");
+    dir.put("Note.md", "hello");
+    dir.put("Folder/Sub/Deep.md", "deep");
+    dir.put(".trash/Old.md", "gone");
+    dir.put("Half.md.sn-tmp", "cut off write");
+    dir.put(".scalenote/folder-icons.json", "{}");
+    dir.put("Folder/Plan (conflict alice 2026-11-17).md", "older");
+    let names = Manifest::names(dir.path()).unwrap();
+    let scanned: Vec<String> = scan(&dir).manifest.files.into_keys().collect();
+    assert_eq!(names, scanned);
+}
+
+#[test]
 fn scan_of_an_empty_vault_is_empty() {
     let dir = Dir::new("empty");
     let scan = scan(&dir);

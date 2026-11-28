@@ -54,9 +54,10 @@ pub fn parse(copy: &str) -> Option<(String, String, String)> {
 
 /// Every copy in the vault, oldest name first. Only visible files that a sync could have made.
 pub fn list(root: &Path) -> Result<Vec<ConflictItem>> {
-    let scan = Manifest::scan(root)?;
+    // Only the names are needed: this runs whenever the page list changes (for the count next
+    // to the sync status), so it must not read every file in the vault.
     let mut items = Vec::new();
-    for path in scan.manifest.files.keys() {
+    for path in &Manifest::names(root)? {
         if let Some((original, device, date)) = parse(path) {
             if safe_path(&original) {
                 items.push(ConflictItem { is_page: path.to_lowercase().ends_with(".md"), copy: path.clone(), original, device, date });

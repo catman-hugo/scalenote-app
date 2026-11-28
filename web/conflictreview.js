@@ -46,8 +46,10 @@ export async function openConflictReview({ logProblem, onSettled }) {
   closeOnBack(dialog);
   dialog.showModal();
 
-  async function draw(message) {
-    body.replaceChildren(element("p", text.conflictsLoading, "setting-hint"));
+  // The list is built aside and put in at once. "Looking" only shows the first time: after a
+  // choice the list stays on screen until the new one is ready, instead of going empty.
+  async function draw(message, first = false) {
+    if (first) body.replaceChildren(element("p", text.conflictsLoading, "setting-hint"));
     let items;
     try {
       items = await backend.conflictsList();
@@ -56,10 +58,12 @@ export async function openConflictReview({ logProblem, onSettled }) {
       body.replaceChildren(element("p", text.conflictsFailed, "setting-hint sync-error"));
       return;
     }
-    body.replaceChildren();
-    if (message) body.append(element("p", message, "setting-hint conflict-message"));
-    if (items.length === 0) body.append(element("p", text.conflictsNone, "setting-hint"));
-    for (const item of items) body.append(await row(item));
+    const parts = [];
+    if (message) parts.push(element("p", message, "setting-hint conflict-message"));
+    if (items.length === 0) parts.push(element("p", text.conflictsNone, "setting-hint"));
+    // The rows are made together: each may read two pages, and one after another was slow.
+    parts.push(...(await Promise.all(items.map(row))));
+    body.replaceChildren(...parts);
   }
 
   async function row(item) {
@@ -81,10 +85,12 @@ export async function openConflictReview({ logProblem, onSettled }) {
     }
     box.append(sides);
     const settle = async (keep) => {
+      // No second press while this one is being done.
+      for (const one of box.querySelectorAll("button")) one.disabled = true;
       try {
         const done = await backend.conflictSettle(item.copy, keep);
-        await onSettled();
-        await draw(done ? text.conflictSettled : text.conflictChanged);
+        // The page list and this list are brought up to date at the same time.
+        await Promise.all([onSettled(), draw(done ? text.conflictSettled : text.conflictChanged)]);
       } catch (error) {
         logProblem("settling a conflict copy failed", error);
         const code = error instanceof BackendError ? error.code : "unknown";
@@ -104,6 +110,6 @@ export async function openConflictReview({ logProblem, onSettled }) {
     return box;
   }
 
-  await draw("");
+  await draw("", true);
   close.focus();
 }
