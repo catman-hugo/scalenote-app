@@ -10,6 +10,8 @@
 //
 // This file has no editor code in it, so it can be tested on its own.
 
+import { readAnimationFence } from "./animfence.js";
+
 import { withoutStyleSyntax } from "./inlinestyles.js";
 import { withoutTags } from "./tagrules.js";
 import { withoutWikilinks } from "./wikilinkrules.js";
@@ -104,7 +106,13 @@ function readBlock(lines, i) {
   if (FENCE_ANY.test(first)) {
     if (!FENCE_OPEN.test(first)) return [skipToBlank(lines, i), "raw"];
     for (let j = i + 1; j < lines.length; j++) {
-      if (FENCE_CLOSE.test(lines[j].text)) return [j, j === i + 2 && CANVAS_FENCE.test(lines.slice(i, j + 1).map((l) => l.text).join("\n")) ? "canvasblock" : "code"];
+      if (FENCE_CLOSE.test(lines[j].text)) {
+        const fence = lines.slice(i, j + 1).map((l) => l.text).join("\n");
+        if (j === i + 2 && CANVAS_FENCE.test(fence)) return [j, "canvasblock"];
+        // An animation block (animfence.js); anything else with that label stays a code block.
+        if (readAnimationFence(fence)) return [j, "animationblock"];
+        return [j, "code"];
+      }
     }
     return [lines.length - 1, "raw"]; // never closed: keep everything as written
   }

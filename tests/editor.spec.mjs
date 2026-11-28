@@ -154,7 +154,7 @@ await test("slash menu offers every block and filters", async (page) => {
   await page.click("#editor .note-body");
   await page.keyboard.type("/");
   await page.waitForSelector(".slash-menu");
-  assert.equal(await page.locator(".slash-item").count(), 19);
+  assert.equal(await page.locator(".slash-item").count(), 20, "with Animation (0.7.0)");
   await page.keyboard.type("to-do");
   assert.deepEqual(await page.locator(".slash-item").allTextContents(), ["To-do list"]);
   await page.keyboard.press("Enter");
@@ -7869,6 +7869,230 @@ await test("/canvas adds a region to the drawing and a block to the text", async
   assert.equal(drawing.format, 6);
   assert.deepEqual(drawing.frames.map((f) => [f.id, f.w, f.h]), [[id[1], 480, 320]]);
 });
+
+// ---------- 0.7.0: animations ----------
+
+await test("/animation adds an animation to the drawing and a block to the text that shows its first step", async (page) => {
+  await start(page);
+  await page.click("#newNote");
+  await page.click("#editor .note-body");
+  await page.keyboard.type("/animation");
+  await page.waitForSelector(".slash-menu");
+  assert.match(await page.textContent(".slash-menu"), /Animation/);
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".animation-block-surface:not([hidden])");
+  assert.equal(await page.textContent(".animation-block-title"), "Step 1 of 1");
+  await page.waitForFunction(() => window.__mock.canvases.has("Untitled.md"));
+  await waitSaved(page);
+  const text = bodyOfPage((await files(page))["Untitled.md"]);
+  const id = /^```scalenote-animation\nid: ([a-z0-9]{8})\nshow: steps\nfps: 2\n```\n/.exec(text);
+  assert.ok(id, JSON.stringify(text));
+  const drawing = await page.evaluate(() => JSON.parse(window.__mock.canvases.get("Untitled.md")));
+  assert.equal(drawing.format, 7);
+  assert.deepEqual(drawing.animations.map((a) => [a.id, a.w, a.h, a.steps.length]), [[id[1], 600, 340, 1]]);
+  // Opened again, the block is there and shows the animation; the markdown view shows the fence.
+  await page.click("#newNote");
+  await page.click('.tree-button[data-path="Untitled.md"]');
+  await page.waitForSelector(".animation-block-surface:not([hidden])");
+});
+
+await test("an animation block shows the first step with its caption, and a calm message when the animation is gone", async (page) => {
+  await page.waitForSelector("#newNote");
+  const drawing = JSON.stringify({ format: 7, items: [], animations: [{
+    id: "srp00001", x: 0, y: 0, w: 400, h: 200, label: "SRP",
+    background: [{ tool: "shape", kind: "rect", color: "ink", width: 4, a: [0, 150], b: [400, 160] }],
+    steps: [
+      { id: "step0001", title: "1. Translation starts", text: "A ribosome reads the mRNA.", items: [{ tool: "shape", kind: "ellipse", color: "red", width: 8, a: [40, 40], b: [140, 120] }] },
+      { id: "step0002", title: "2. SRP binds", text: "", items: [] },
+    ] }] });
+  const body = "Intro\n\n```scalenote-animation\nid: srp00001\nshow: steps\nfps: 2\nhold-last: 3\n```\n\n```scalenote-animation\nid: gone0001\n```\n";
+  await page.evaluate(([d, b]) => { window.__mock.canvases.set("Cell.md", d); window.__mock.files.set("Cell.md", b); }, [drawing, body]);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Cell.md"]');
+  await page.waitForSelector(".animation-block-surface:not([hidden])");
+  assert.equal(await page.locator(".animation-block-title").first().textContent(), "1. Translation starts");
+  assert.equal(await page.locator(".animation-block-text").first().textContent(), "A ribosome reads the mRNA.");
+  // The step's red circle and the background's line are painted.
+  const colours = await page.evaluate(() => {
+    const surface = document.querySelector(".animation-block-surface");
+    const data = surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data;
+    let red = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] > 150 && data[i + 1] < 90 && data[i + 2] < 90) red++;
+    return { red };
+  });
+  assert.ok(colours.red > 50, JSON.stringify(colours));
+  // The second block names an animation that is not in the drawing.
+  await page.waitForSelector(".animation-block-missing:not([hidden])");
+  assert.match(await page.textContent(".animation-block-missing:not([hidden])"), /could not be found/);
+  // Typing elsewhere saves the page; both blocks, and the line this version does not know, stay.
+  await page.locator(".note-body p").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" more");
+  await waitSaved(page);
+  const saved = bodyOfPage((await files(page))["Cell.md"]);
+  assert.match(saved, /```scalenote-animation\nid: srp00001\nshow: steps\nfps: 2\nhold-last: 3\n```/);
+  assert.match(saved, /```scalenote-animation\nid: gone0001\n```/);
+  assert.equal(await page.evaluate(() => window.__mock.canvases.get("Cell.md")), drawing, "the block never changes the drawing");
+}, ctxOpts);
+
+// An animation of two steps on a page, and a page that shows it.
+const ANIM_DRAWING = JSON.stringify({ format: 7, items: [], animations: [{
+  id: "srp00001", x: 0, y: 0, w: 600, h: 340, label: "",
+  background: [],
+  steps: [
+    { id: "step0001", title: "1. Start", text: "", items: [{ tool: "shape", kind: "rect", color: "red", width: 4, a: [20, 20], b: [120, 80] }] },
+    { id: "step0002", title: "2. Next", text: "", items: [] },
+  ] }] });
+async function animationPage(page, drawing = ANIM_DRAWING) {
+  await page.waitForSelector("#newNote");
+  await page.evaluate(([d]) => { window.__mock.canvases.set("Cell.md", d); window.__mock.files.set("Cell.md", "Intro\n\n```scalenote-animation\nid: srp00001\nshow: steps\nfps: 2\n```\n"); }, [drawing]);
+  await page.click("#newFolder");
+  await page.click('.tree-button[data-path="Cell.md"]');
+  await page.waitForSelector(".animation-block-surface:not([hidden])");
+}
+// Double-clicking the block opens the canvas beside the text on the animation.
+async function editAnimationFromBlock(page) {
+  await page.dblclick(".animation-block-surface");
+  await page.waitForSelector(".step-bar:not([hidden])");
+}
+// A point inside the box on the canvas, as a fraction of the box ([0.5, 0.5] is its middle).
+async function inBoxPoint(page, fx, fy) {
+  // The box's place is known once the canvas has painted it (on the next frame after the bar shows).
+  await page.waitForFunction(() => Boolean(document.querySelector(".canvas-stage").dataset.animationBox));
+  return page.evaluate(([x, y]) => {
+    const bar = document.querySelector(".canvas-surface").getBoundingClientRect();
+    const [left, top, width, height] = document.querySelector(".canvas-stage").dataset.animationBox.split(",").map(Number);
+    return [left + width * x, top + height * y, bar.x, bar.y];
+  }, [fx, fy]);
+}
+async function drawInBox(page, from, to) {
+  const [x1, y1] = await inBoxPoint(page, ...from);
+  const [x2, y2, ox, oy] = await inBoxPoint(page, ...to);
+  await page.mouse.move(ox + x1, oy + y1);
+  await page.mouse.down();
+  await page.mouse.move(ox + x2, oy + y2, { steps: 8 });
+  await page.mouse.up();
+}
+const animSaved = async (page) => (await savedDrawing(page, "Cell.md")).animations[0];
+const stepLabel = (page) => page.getAttribute(".step-bar-count", "aria-label");
+
+await test("an animation opens on the canvas with its step bar; a line drawn in the box goes into that step only", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  assert.equal(await stepLabel(page), "Step 1 of 2");
+  assert.equal(await page.inputValue(".step-bar-title"), "1. Start");
+  await drawInBox(page, [0.3, 0.6], [0.7, 0.6]);
+  await shotBoth(page, "animation-editing");
+  await waitSaved(page);
+  const a = await animSaved(page);
+  assert.equal(a.steps[0].items.length, 2, "the line is in step 1");
+  assert.equal(a.steps[1].items.length, 0, "and not in step 2");
+  // Stored relative to the box: its x runs from about 30% to 70% of the box's width.
+  const xs = a.steps[0].items[1].points.map((p) => p[0]);
+  assert.ok(Math.min(...xs) > 150 && Math.max(...xs) < 450, JSON.stringify(xs));
+  // The step in the text follows (the split view shows it at once).
+  await page.click(".step-bar-button[aria-label='Done']");
+  await page.waitForSelector(".step-bar", { state: "hidden" });
+}, ctxOpts);
+
+await test("Duplicate step copies the step, erasing in the copy leaves the original, and Undo and Redo go through it all", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  await page.click(".step-bar-button[aria-label='Duplicate step']");
+  assert.equal(await stepLabel(page), "Step 2 of 3");
+  assert.equal(await page.inputValue(".step-bar-title"), "1. Start", "the copy has the same caption");
+  // Erase the copied rectangle in step 2.
+  await page.keyboard.press("e");
+  await page.click(".canvas-toolbar [aria-label='Eraser']").catch(() => {});
+  await drawInBox(page, [0.02, 0.05], [0.25, 0.3]);
+  await waitSaved(page);
+  let a = await animSaved(page);
+  assert.deepEqual(a.steps.map((s) => s.items.length), [1, 0, 0], "erased in the copy only");
+  assert.deepEqual(a.steps.map((s) => s.title), ["1. Start", "1. Start", "2. Next"]);
+  // Undo: the rectangle is back in the copy; again: the copy is gone. Redo brings both back.
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await waitSaved(page);
+  a = await animSaved(page);
+  assert.deepEqual(a.steps.map((s) => s.title), ["1. Start", "2. Next"]);
+  await page.keyboard.press("Control+Shift+z");
+  await page.keyboard.press("Control+Shift+z");
+  await waitSaved(page);
+  a = await animSaved(page);
+  assert.deepEqual(a.steps.map((s) => s.items.length), [1, 0, 0]);
+}, ctxOpts);
+
+await test("the background shows in every step, the , and . keys change the step, and step actions work", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  await page.check(".step-bar-switch input");
+  assert.equal(await stepLabel(page), "Background");
+  await drawInBox(page, [0.1, 0.9], [0.9, 0.9]);
+  await page.uncheck(".step-bar-switch input");
+  await waitSaved(page);
+  let a = await animSaved(page);
+  assert.equal(a.background.length, 1, "a membrane on the background");
+  assert.deepEqual(a.steps.map((s) => s.items.length), [1, 0]);
+  await page.locator(".canvas-surface").focus();
+  await page.keyboard.press(".");
+  assert.equal(await stepLabel(page), "Step 2 of 2");
+  await page.keyboard.press(",");
+  assert.equal(await stepLabel(page), "Step 1 of 2");
+  // A caption, a new step, a move and a delete.
+  await page.fill(".step-bar-text", "A ribosome reads the mRNA.");
+  await page.press(".step-bar-text", "Enter");
+  await page.click(".step-bar-button[aria-label='New step']");
+  assert.equal(await stepLabel(page), "Step 2 of 3");
+  await page.click(".step-bar-button[aria-label='Move left']");
+  assert.equal(await stepLabel(page), "Step 1 of 3");
+  await waitSaved(page);
+  a = await animSaved(page);
+  assert.deepEqual(a.steps.map((s) => s.title), ["", "1. Start", "2. Next"]);
+  assert.equal(a.steps[1].text, "A ribosome reads the mRNA.");
+  await page.click(".step-bar-button[aria-label='Delete step']");
+  await waitSaved(page);
+  a = await animSaved(page);
+  assert.deepEqual(a.steps.map((s) => s.title), ["1. Start", "2. Next"]);
+  // The background is drawn in the text's block for each step.
+  assert.equal(await page.locator(".step-bar-button[aria-label='Delete step']").isDisabled(), false);
+}, ctxOpts);
+
+await test("on a phone the step bar is at the bottom, a swipe on it changes the step, and the strip of steps jumps and reorders", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  assert.equal(await page.evaluate(() => document.querySelector(".step-bar").classList.contains("step-bar-bottom")), true);
+  const bar = await page.locator(".step-bar").boundingBox();
+  const surface = await page.locator(".canvas-surface").boundingBox();
+  assert.ok(bar.y + bar.height <= surface.y + surface.height + 2 && bar.y + bar.height > surface.y + surface.height - 30, "at the bottom of the canvas");
+  // A sideways swipe on the bar goes to the next step.
+  const y = bar.y + bar.height - 6;
+  await page.evaluate(([x0, yy]) => {
+    const node = document.querySelector(".step-bar");
+    const fire = (type, x) => node.dispatchEvent(new PointerEvent(type, { pointerId: 31, pointerType: "touch", isPrimary: true, clientX: x, clientY: yy, bubbles: true }));
+    fire("pointerdown", x0);
+    fire("pointermove", x0 - 30);
+    fire("pointermove", x0 - 70);
+    fire("pointerup", x0 - 70);
+  }, [bar.x + bar.width - 20, y]);
+  assert.equal(await stepLabel(page), "Step 2 of 2");
+  // The strip: a tap on the first picture goes there.
+  await page.click(".step-bar-count");
+  await page.waitForSelector(".step-strip:not([hidden]) .step-thumb");
+  assert.equal(await page.locator(".step-thumb").count(), 2);
+  await shotBoth(page, "phone-animation-strip");
+  await page.locator(".step-thumb").first().click();
+  assert.equal(await stepLabel(page), "Step 1 of 2");
+  // Pressed and dragged onto the second picture, the first step moves there.
+  const thumbs = await page.locator(".step-thumb").all();
+  const a = await thumbs[0].boundingBox();
+  const b = await thumbs[1].boundingBox();
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await waitSaved(page);
+  assert.deepEqual((await animSaved(page)).steps.map((s) => s.title), ["2. Next", "1. Start"]);
+}, { viewport: { width: 390, height: 800 }, settings: existingUser({ updates: false }), userAgent: ANDROID_UA });
 
 await test("two /canvas blocks on a page are two different regions", async (page) => {
   await start(page);

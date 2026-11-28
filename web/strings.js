@@ -581,6 +581,7 @@ export const strings = {
   },
 
   canvas: {
+    animationSteps: "Animation, {n} steps",
     // The View button on the top bar: its menu lists the views this page can go to.
     view: "View",
     viewLabel: "Choose how this page is shown",
@@ -792,6 +793,7 @@ export const strings = {
     table: "Table",
     image: "Image",
     canvas: "Canvas",
+    animation: "Animation",
     pdf: "PDF",
     columns2: "2 columns",
     columns3: "3 columns",
@@ -964,6 +966,38 @@ export const strings = {
     readOnly: "This page's drawing cannot be changed here, so no canvas block was added.",
     full: "This page's drawing is full, so no canvas block was added.",
     failed: "The canvas block could not be added.",
+  },
+
+  stepBar: {
+    label: "Steps of the animation",
+    previous: "Previous step (,)",
+    next: "Next step (.)",
+    stepOf: "Step {n} of {total}",
+    stepShort: "{n} / {total}",
+    backgroundShort: "Background",
+    showAll: "Show all steps",
+    strip: "All steps. Tap one to go there, or drag it to another place.",
+    duplicate: "Duplicate step",
+    add: "New step",
+    moveLeft: "Move left",
+    moveRight: "Move right",
+    remove: "Delete step",
+    title: "Title of this step",
+    titlePlaceholder: "Title",
+    text: "Text of this step",
+    textPlaceholder: "A line of text",
+    background: "Background (all steps)",
+    done: "Done",
+    more: "More step actions and the caption",
+  },
+
+  animationBlock: {
+    stepOf: "Step {n} of {total}",
+    surface: "Animation: {title}",
+    missing: "This animation could not be found. The drawing is kept in the page's canvas file; the animation may have been removed there.",
+    readOnly: "This page's drawing cannot be changed here, so no animation was added.",
+    full: "This page has as many animations as it can hold, so no animation was added.",
+    cannotEdit: "This animation cannot be edited here: the page's drawing is read-only or the animation is gone.",
   },
 
   newNoteTitle: "Untitled",

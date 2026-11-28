@@ -43,8 +43,10 @@ import { openHistory } from "./historydialog.js";
 import { createCanvasView } from "./canvasview.js";
 import { createInkLayer } from "./inklayer.js";
 import { createPageFind } from "./pagefind.js";
-import { FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
-import { drawingPicture, paintForPaper, repaintCanvasBlocks } from "./canvasblock.js";
+import { ANIMATION_LIMITS, FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
+import { drawingPicture, paintForPaper, repaintCanvasBlocks as repaintRegionBlocks } from "./canvasblock.js";
+import { repaintAnimationBlocks } from "./animblock.js";
+import { newAnimation, takenIds } from "./animrules.js";
 import { keepPageId } from "./historyrules.js";
 import { favoritePaths, pageTitle } from "./tagindex.js";
 import { readFavorite, withFavorite } from "./propertyrules.js";
@@ -74,6 +76,13 @@ const INCOMING_CHECK_MS = 2000;
 const isAndroid = /Android/i.test(navigator.userAgent);
 
 const el = (id) => document.getElementById(id);
+
+
+// The blocks in the text that show part of the page's drawing: canvas regions and animations.
+function repaintCanvasBlocks() {
+  repaintRegionBlocks();
+  repaintAnimationBlocks();
+}
 
 const app = {
   // True while the app lock's screen is shown (applock.js).
@@ -2990,7 +2999,7 @@ async function loadInk(path, force, given) {
     problem = read.problem || "";
   }
   // A drawing is also needed for the text when it holds regions that canvas blocks show.
-  if (!force && !(canvas && (canvas.ink.length || canvas.frames.length))) return false;
+  if (!force && !(canvas && (canvas.ink.length || canvas.frames.length || canvas.animations.length))) return false;
   const view = ensureCanvasView();
   app.canvasVersion = file ? file.version : null;
   view.show(canvas, problem);
@@ -3016,10 +3025,43 @@ async function createCanvasRegion() {
     showToast(strings.canvasBlock.full);
     return null;
   }
-  canvas.frames.push({ id: makeFrameId(canvas.frames.map((frame) => frame.id)), ...nextFrameRect(canvas), label: "" });
+  canvas.frames.push({ id: makeFrameId(takenIds(canvas)), ...nextFrameRect(canvas), label: "" });
   app.canvasSave.touch();
   repaintCanvasBlocks();
   return canvas.frames[canvas.frames.length - 1].id;
+}
+
+// Makes a new animation in the page's drawing for an animation block and gives its id, or null
+// (with a calm message) when the drawing cannot take one.
+async function createAnimation() {
+  const path = app.current && app.current.path;
+  if (!path) return null;
+  if (app.inkPath !== path && !(await loadInk(path, true))) return null;
+  const d = inkDrawing();
+  if (!d || d.readOnly) {
+    showToast(strings.animationBlock.readOnly);
+    return null;
+  }
+  const canvas = d.canvas;
+  if (canvas.animations.length >= ANIMATION_LIMITS.count) {
+    showToast(strings.animationBlock.full);
+    return null;
+  }
+  const animation = newAnimation(canvas);
+  canvas.animations.push(animation);
+  app.canvasSave.touch();
+  repaintCanvasBlocks();
+  // The canvas opens beside the text on the new animation, ready to draw its first step.
+  setTimeout(() => void openAnimation(animation.id), 0);
+  return animation.id;
+}
+
+// Opens the canvas beside the text (the split view) and starts editing an animation there.
+async function openAnimation(id, step = 0) {
+  if (!app.current) return;
+  if (app.canvasSave) await app.canvasSave.flush();
+  if (!drawingOpen()) await enterCanvas("split");
+  if (app.canvasView && !app.canvasView.editAnimation(id, step)) showToast(strings.animationBlock.cannotEdit);
 }
 
 async function startInk() {
@@ -3502,6 +3544,8 @@ async function start() {
     loadWords: (path) => backend.readPageText(pathForVault(path)),
     canvasDrawing: inkDrawing,
     createCanvasRegion,
+    createAnimation,
+    editAnimation: (id) => void openAnimation(id),
     noteKey: () => (app.current ? app.current.path : null),
     noteTitle: () => (app.current ? noteTitle(app.current.path) : ""),
     notify: showToast,

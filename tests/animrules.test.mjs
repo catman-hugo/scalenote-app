@@ -190,3 +190,46 @@ test("undo and redo put a changed animation back, and an added or removed one", 
   history.redo(canvas);
   assert.deepEqual(canvas.animations, [added]);
 });
+
+test("while editing, Undo and Redo go back through drawing and step actions in the order they were made", async () => {
+  const { AnimationHistory } = await import("../web/animrules.js");
+  const animation = structuredClone(ANIM);
+  const editing = { step: 0, layer: "step", items: onSheet(animation.steps[0].items, animation) };
+  const sync = () => {
+    animation.steps = animation.steps.map((one, i) => (i === editing.step ? { ...one, items: inBox(editing.items, animation) } : one));
+  };
+  const restored = [];
+  const history = new AnimationHistory({
+    take: () => ({ background: animation.background, steps: animation.steps, step: editing.step, layer: editing.layer }),
+    sync,
+    restore(picture) {
+      animation.background = picture.background;
+      animation.steps = picture.steps;
+      editing.step = picture.step;
+      restored.push(picture.step);
+      editing.items = onSheet(animation.steps[editing.step].items, animation);
+    },
+  });
+  // A line drawn in step 1, then the step duplicated, then the copy's items erased.
+  editing.items.push({ tool: "pen", color: "ink", width: 4, points: [[300, 300, 0.5]] });
+  history.record();
+  animation.steps = duplicateStep(animation, 0, counter());
+  editing.step = 1;
+  editing.items = onSheet(animation.steps[1].items, animation);
+  history.keep();
+  editing.items = [];
+  history.record();
+  assert.deepEqual(animation.steps.map((s) => s.items.length), [2, 0, 0]);
+  history.undo();
+  assert.deepEqual(animation.steps.map((s) => s.items.length), [2, 2, 0], "the erased items are back in the copy");
+  history.undo();
+  assert.deepEqual(animation.steps.map((s) => s.items.length), [2, 0], "the copy is gone");
+  history.undo();
+  assert.deepEqual(animation.steps.map((s) => s.items.length), [1, 0], "the line is gone");
+  assert.equal(history.canUndo, false);
+  history.redo();
+  history.redo();
+  history.redo();
+  assert.deepEqual(animation.steps.map((s) => s.items.length), [2, 0, 0]);
+  assert.deepEqual(restored.slice(0, 3), [1, 0, 0], "each undo shows the step it changed");
+});

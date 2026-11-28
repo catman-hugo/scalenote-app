@@ -22,6 +22,8 @@ import {
   FRAME_LIMITS,
 } from "./canvasrules.js";
 import { createPainter, readEnv } from "./canvaspaint.js";
+import { AnimationHistory, inBox, insideBox, onSheet, resizedBox, stepOnSheet } from "./animrules.js";
+import { createStepBar } from "./stepbar.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
 
@@ -115,7 +117,7 @@ function paperThumb(paper) {
  * most once a frame), so the canvas blocks in the text can follow the pen as it moves.
  * `topLeftEdge()` says whether the sheet stops at the top and the left (see clampView).
  */
-export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true, topLeftEdge = () => false }) {
+export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true, topLeftEdge = () => false, onEditAnimation = () => {} }) {
   const t = strings.canvas;
   const state = {
     canvas: emptyCanvas(),
@@ -143,6 +145,12 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     colours: {},
     pageFill: "#fff",
     wrapped: new WeakMap(),
+    // While an animation is being edited (0.7.0): `page` is the page's own drawing, and `canvas`
+    // holds only the items of the step (or the background) being drawn, on the sheet; `anim` is
+    // { animation, step, layer } where layer is "step" or "background". See editAnimation below.
+    page: null,
+    anim: null,
+    pageHistory: null,
   };
 
   const toolbar = make("div", "canvas-toolbar");
@@ -488,8 +496,9 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     // An undo or an erase may have removed selected items; the selection only keeps what is left.
     const present = new Set(state.canvas.items);
     state.selection = state.selection.filter((item) => present.has(item));
-    if (state.frameSel && !state.canvas.frames.includes(state.frameSel)) state.frameSel = null;
+    if (state.frameSel && !regions().includes(state.frameSel)) state.frameSel = null;
     drawToolbar();
+    if (state.anim) stepBar.update();
     scheduleDraw();
     onChange();
   }
@@ -504,6 +513,18 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
 
   function deleteSelection() {
     if (state.readOnly || state.gesture) return;
+    if (isAnimation(state.frameSel)) {
+      // The animation goes with its steps; Undo brings it back. A block that showed it says so.
+      const animation = state.frameSel;
+      const index = state.canvas.animations.indexOf(animation);
+      state.frameSel = null;
+      if (index >= 0) {
+        state.canvas.animations.splice(index, 1);
+        state.history.record({ animationRemove: { index, animation } });
+        changed();
+      }
+      return;
+    }
     if (state.frameSel) {
       // The region goes; what is drawn inside it stays on the sheet, and a block that showed it says so.
       const index = state.canvas.frames.indexOf(state.frameSel);
@@ -532,6 +553,10 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
 
   // ---- coordinates ----
   const toWorld = (sx, sy) => ({ x: (sx - state.view.x) / state.view.scale, y: (sy - state.view.y) / state.view.scale });
+  // The boxes that can be moved and resized on the sheet: canvas regions and animations. None
+  // while an animation is being edited (its box stays put then).
+  const regions = () => (state.anim ? [] : [...state.canvas.frames, ...(state.canvas.animations || [])]);
+  const isAnimation = (box) => Boolean(box && box.steps);
   function localPoint(event) {
     const box = surface.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
@@ -558,7 +583,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
       left = Math.min(left, around.minX);
       top = Math.min(top, around.minY);
     }
-    for (const frame of state.canvas.frames) {
+    for (const frame of [...state.canvas.frames, ...(state.canvas.animations || [])]) {
       left = Math.min(left, frame.x);
       top = Math.min(top, frame.y);
     }
@@ -631,18 +656,19 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
 
   function gripAt(point) {
     if (state.readOnly) return null;
-    for (let i = state.canvas.frames.length - 1; i >= 0; i--) {
-      const grip = gripOf(state.canvas.frames[i]);
-      if (point.x >= grip.x - 4 && point.x <= grip.x + grip.w + 4 && point.y >= grip.y - 4 && point.y <= grip.y + grip.h + 4) return state.canvas.frames[i];
+    const boxes = regions();
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const grip = gripOf(boxes[i]);
+      if (point.x >= grip.x - 4 && point.x <= grip.x + grip.w + 4 && point.y >= grip.y - 4 && point.y <= grip.y + grip.h + 4) return boxes[i];
     }
     return null;
   }
 
   function paintGrips(ratio) {
-    if (state.readOnly || !state.canvas.frames.length) return;
+    if (state.readOnly || !regions().length) return;
     context.save();
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    for (const frame of state.canvas.frames) {
+    for (const frame of regions()) {
       const grip = gripOf(frame);
       context.fillStyle = state.pageFill;
       context.strokeStyle = state.accent;
@@ -655,6 +681,203 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     }
     context.restore();
   }
+
+  // ---- animations (0.7.0) ----
+
+  // Outside editing, an animation's box shows its first step, cut to the box, with its name.
+  function paintAnimations(scale) {
+    for (const animation of state.canvas.animations || []) {
+      context.save();
+      context.beginPath();
+      context.rect(animation.x, animation.y, animation.w, animation.h);
+      context.clip();
+      painter.items(stepOnSheet(animation, 0));
+      context.restore();
+      context.save();
+      context.strokeStyle = state.accent;
+      context.fillStyle = state.accent;
+      context.lineWidth = 1.5 / scale;
+      context.setLineDash([8 / scale, 5 / scale]);
+      context.strokeRect(animation.x, animation.y, animation.w, animation.h);
+      context.font = `${12 / scale}px ${state.font}`;
+      context.textBaseline = "bottom";
+      const count = t.animationSteps.replace("{n}", String(animation.steps.length));
+      context.fillText(animation.label ? `${animation.label} · ${count}` : count, animation.x, animation.y - 3 / scale);
+      context.restore();
+    }
+  }
+
+  // While editing: the rest of the page faintly, the box, what every step shows (the background,
+  // or the step when the background is being drawn, faintly), then the items being drawn.
+  function paintEditing(scale) {
+    const { animation, layer, step } = state.anim;
+    context.save();
+    context.globalAlpha = 0.25;
+    paintItems(state.page.items);
+    for (const other of state.page.animations || []) if (other !== animation) painter.items(stepOnSheet(other, 0));
+    context.restore();
+    context.save();
+    context.fillStyle = state.pageFill;
+    context.fillRect(animation.x, animation.y, animation.w, animation.h);
+    context.strokeStyle = state.accent;
+    context.lineWidth = 2 / scale;
+    context.strokeRect(animation.x, animation.y, animation.w, animation.h);
+    context.restore();
+    context.save();
+    if (layer === "background") {
+      context.globalAlpha = 0.3;
+      painter.items(onSheet(animation.steps[step].items, animation));
+    } else painter.items(onSheet(animation.background, animation));
+    context.restore();
+    paintItems(state.canvas.items);
+  }
+
+  // What is being drawn, on the sheet: the step's own items, or the background's.
+  function layerOnSheet() {
+    const { animation, layer, step } = state.anim;
+    return onSheet(layer === "background" ? animation.background : animation.steps[step].items, animation);
+  }
+
+  // Puts what is being drawn back into the animation (relative to the box). The lists are replaced,
+  // never changed in place, so the undo history keeps the old ones (animrules.js).
+  function syncLayer() {
+    const { animation, layer, step } = state.anim;
+    const items = inBox(state.canvas.items, animation);
+    if (layer === "background") animation.background = items;
+    else animation.steps = animation.steps.map((one, i) => (i === step ? { ...one, items } : one));
+    state.page.paper = state.canvas.paper;
+    state.page.page = state.canvas.page;
+  }
+
+  // Shows the current step (or the background) for drawing, after moving or an undo.
+  function showLayer() {
+    state.canvas = { items: layerOnSheet(), paper: state.page.paper, page: state.page.page, ink: [], frames: [], animations: [] };
+    state.selection = [];
+    state.frameSel = null;
+    drawToolbar();
+    stepBar.update();
+    scheduleDraw();
+  }
+
+  /**
+   * Starts editing the animation `id` of the drawing, at step `step`: the step bar shows and the
+   * view goes to the box. Returns false when there is no such animation or the drawing is
+   * read-only.
+   */
+  function editAnimation(id, step = 0) {
+    if (state.readOnly) return false;
+    commitNote();
+    const page = state.page || state.canvas;
+    const animation = (page.animations || []).find((a) => a.id === id);
+    if (!animation) return false;
+    if (state.anim) leaveAnimation(true);
+    state.page = page;
+    state.pageHistory = state.history;
+    state.anim = { animation, step: Math.max(0, Math.min(step, animation.steps.length - 1)), layer: "step" };
+    state.history = new AnimationHistory({
+      take: () => ({ background: animation.background, steps: animation.steps, step: state.anim.step, layer: state.anim.layer }),
+      sync: syncLayer,
+      restore(picture) {
+        animation.background = picture.background;
+        animation.steps = picture.steps;
+        state.anim.step = Math.min(picture.step, animation.steps.length - 1);
+        state.anim.layer = picture.layer;
+        showLayer();
+      },
+    });
+    viewBox(animation);
+    stepBar.show();
+    showLayer();
+    onEditAnimation(id);
+    return true;
+  }
+
+  // Ends editing: the page's own drawing is back, with its undo history.
+  function leaveAnimation(quiet = false) {
+    if (!state.anim) return;
+    commitNote();
+    syncLayer();
+    state.canvas = state.page;
+    state.history = state.pageHistory || new DrawingHistory();
+    state.page = null;
+    state.pageHistory = null;
+    state.anim = null;
+    state.selection = [];
+    stepBar.hide();
+    drawToolbar();
+    scheduleDraw();
+    if (!quiet) onEditAnimation(null);
+  }
+
+  // The view on a box, at most life size, with a margin, and room for the step bar under it.
+  function viewBox(box) {
+    const area = surface.getBoundingClientRect();
+    if (!area.width || !area.height) return;
+    const margin = 32;
+    const room = area.height - 2 * margin - stepBar.height();
+    const scale = Math.min(1, Math.max(MIN_SCALE, Math.min((area.width - 2 * margin) / box.w, Math.max(40, room) / box.h)));
+    state.view = { scale, x: (area.width - box.w * scale) / 2 - box.x * scale, y: margin - box.y * scale };
+  }
+
+  // The step actions of the bar (stepbar.js). Each one is kept for Undo.
+  const stepActions = {
+    get animation() {
+      return state.anim && state.anim.animation;
+    },
+    get step() {
+      return state.anim ? state.anim.step : 0;
+    },
+    get layer() {
+      return state.anim ? state.anim.layer : "step";
+    },
+    get readOnly() {
+      return state.readOnly;
+    },
+    /** Goes to step `index` (nothing changes, so nothing is kept for Undo). */
+    go(index) {
+      if (!state.anim || state.gesture) return;
+      commitNote();
+      const to = Math.max(0, Math.min(index, state.anim.animation.steps.length - 1));
+      if (to === state.anim.step && state.anim.layer === "step") return;
+      state.anim.step = to;
+      state.anim.layer = "step";
+      state.history.moved();
+      showLayer();
+    },
+    /** Replaces the steps (from animrules.js) and shows step `index`. */
+    change(steps, index) {
+      if (!state.anim || !steps || state.readOnly || state.gesture) return;
+      commitNote();
+      state.anim.animation.steps = steps;
+      state.anim.step = Math.max(0, Math.min(index, steps.length - 1));
+      state.anim.layer = "step";
+      state.history.keep();
+      showLayer();
+      onChange();
+    },
+    /** Draws on the background (shown in every step) or on the step. */
+    background(on) {
+      if (!state.anim || state.gesture) return;
+      commitNote();
+      state.anim.layer = on ? "background" : "step";
+      state.history.moved();
+      showLayer();
+    },
+    done: () => leaveAnimation(),
+    focus: () => surface.focus({ preventScroll: true }),
+    /** The page's drawing (its paper and colour, for the pictures of the steps). */
+    get page() {
+      return state.page || state.canvas;
+    },
+    /** The animation's box on the screen, in pixels from the corner of the canvas. */
+    box() {
+      if (!state.anim) return null;
+      const { animation } = state.anim;
+      const { x, y, scale } = state.view;
+      return { left: animation.x * scale + x, top: animation.y * scale + y, width: animation.w * scale, height: animation.h * scale };
+    },
+  };
+  const stepBar = createStepBar(stage, stepActions);
 
   function paintFrameSelection(scale) {
     const f = state.frameSel;
@@ -689,8 +912,12 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     const { x, y, scale } = state.view;
     context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
     paintPaper(box);
-    paintItems(state.canvas.items);
-    painter.frames(state.canvas.frames, scale);
+    if (state.anim) paintEditing(scale);
+    else {
+      paintItems(state.canvas.items);
+      paintAnimations(scale);
+    }
+    painter.frames(state.anim ? [] : state.canvas.frames, scale);
     paintFrameSelection(scale);
     const g = state.gesture;
     if (g && g.kind === "pen" && g.stroke.tool !== "highlighter") paintStroke(g.stroke);
@@ -727,6 +954,12 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     }
     paintGrips(ratio);
     placeEditor();
+    if (state.anim) {
+      stepBar.place();
+      // Where the box is on the screen, for the step bar's tests and tools that read the page.
+      const b = stepActions.box();
+      stage.dataset.animationBox = `${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.width)},${Math.round(b.height)}`;
+    } else delete stage.dataset.animationBox;
   }
 
   function scheduleDraw() {
@@ -874,7 +1107,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
   }
 
   function startSelect(id, screen, world) {
-    const hit = frameHit(state.canvas.frames, state.frameSel, world, state.view.scale, HANDLE_PIXELS);
+    const hit = frameHit(regions(), state.frameSel, world, state.view.scale, HANDLE_PIXELS);
     if (hit) {
       state.selection = [];
       state.frameSel = hit.frame;
@@ -1006,6 +1239,18 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
       state.selection = itemsInLoop(state.canvas, g.loop).map((index) => state.canvas.items[index]);
       drawToolbar();
       return scheduleDraw();
+    }
+    if (g.kind === "frame" && isAnimation(g.frame)) {
+      // An animation's box: moving it moves every step with it; a corner keeps the drawing where it
+      // was on the sheet (animrules.js, resizedBox).
+      const rect = { x: g.frame.x, y: g.frame.y, w: g.frame.w, h: g.frame.h };
+      Object.assign(g.frame, g.before);
+      if (cancelled || Object.keys(rect).every((key) => rect[key] === g.before[key])) return scheduleDraw();
+      const before = { ...g.before, background: g.frame.background, steps: g.frame.steps };
+      const after = resizedBox(g.frame, rect, g.part === "move");
+      Object.assign(g.frame, after);
+      state.history.record({ animations: { animation: g.frame, before, after } });
+      return changed();
     }
     if (g.kind === "frame") {
       const after = { x: g.frame.x, y: g.frame.y, w: g.frame.w, h: g.frame.h };
@@ -1266,12 +1511,25 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     } else if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
       deleteSelection();
+    } else if (state.anim && (event.key === "," || event.key === ".") && !mod) {
+      // The step changes without moving the pen (0.7.0).
+      event.preventDefault();
+      stepActions.go(state.anim.step + (event.key === "." ? 1 : -1));
     } else if (event.key === "Escape") {
-      clearSelection();
+      if (state.anim && !state.selection.length) leaveAnimation();
+      else clearSelection();
     } else if (event.key === " ") {
       event.preventDefault();
       state.spaceDown = true;
     }
+  });
+  // A double click (or double tap) inside an animation's box starts editing it.
+  surface.addEventListener("dblclick", (event) => {
+    if (state.anim || state.readOnly) return;
+    const point = localPoint(event);
+    const world = toWorld(point.x, point.y);
+    const hit = [...(state.canvas.animations || [])].reverse().find((a) => insideBox(a, world.x, world.y));
+    if (hit) editAnimation(hit.id);
   });
   surface.addEventListener("keyup", (event) => {
     if (event.key === " ") state.spaceDown = false;
@@ -1299,6 +1557,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     /** Shows a drawing. `problem` (a code) makes it read-only with a message. */
     show(canvas, problem) {
       commitNote();
+      if (state.anim) leaveAnimation(true);
       state.canvas = canvas || emptyCanvas();
       state.history = new DrawingHistory();
       state.readOnly = Boolean(problem);
@@ -1321,8 +1580,15 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     },
     /** Ends any note being typed, so its text is in the drawing before the drawing is saved. */
     finish: commitNote,
+    /** The page's drawing (also while an animation is being edited), for saving. */
     get canvas() {
-      return state.canvas;
+      if (state.anim) syncLayer();
+      return state.page || state.canvas;
+    },
+    editAnimation,
+    leaveAnimation: () => leaveAnimation(),
+    get editing() {
+      return state.anim ? { id: state.anim.animation.id, step: state.anim.step, layer: state.anim.layer } : null;
     },
     liveItems,
     get readOnly() {

@@ -2236,3 +2236,41 @@ button.storage-row:hover { background: var(--bg-hover); }
 .capture-choice { justify-content: flex-start; gap: var(--space-2); }
 .capture-paste { width: 100%; box-sizing: border-box; font: inherit; }
 .capture-choices { margin-bottom: var(--space-3); }
+
+/* ---- animation block (0.7.0) ---- */
+.animation-block { margin: var(--space-3) 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+.animation-block-surface { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); }
+.animation-block-caption { align-self: stretch; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-s); color: var(--text-soft); }
+.animation-block-caption[hidden], .animation-block-surface[hidden], .animation-block-missing[hidden] { display: none; }
+.animation-block-title { color: var(--text); font-weight: 600; }
+.animation-block-missing { color: var(--text-soft); font-size: var(--text-s); padding: var(--space-3); border: 1px dashed var(--line); border-radius: var(--radius); }
+
+/* ---- the step bar of an animation on the canvas (0.7.0) ---- */
+.canvas-stage { position: relative; }
+.step-bar { position: absolute; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: calc(100% - 16px); padding: var(--space-2); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); touch-action: pan-y; }
+.step-bar[hidden], .step-strip[hidden] { display: none; }
+.step-bar.step-bar-bottom { left: 8px; right: 8px; bottom: 8px; top: auto; max-width: none; }
+.step-bar-more { display: none; }
+.step-bar-end { margin-left: auto; }
+/* Narrow: one line (moves, Duplicate, more, Done); the rest opens with the more button. */
+.step-bar.step-bar-narrow { gap: var(--space-1); }
+.step-bar.step-bar-narrow .step-bar-count { min-width: 3.5rem; }
+.step-bar.step-bar-narrow .step-bar-more { display: inline-flex; align-items: center; justify-content: center; }
+.step-bar.step-bar-narrow:not(.step-bar-open) .step-bar-extra { display: none; }
+.step-bar.step-bar-narrow.step-bar-open .step-bar-caption { flex-basis: 100%; }
+.step-bar-group { display: flex; align-items: center; gap: var(--space-1); }
+.step-bar-caption { flex: 1 1 14rem; min-width: 10rem; }
+.step-bar-caption input { flex: 1; min-width: 0; }
+.step-bar-title { flex: 0 1 12rem !important; font-weight: 600; }
+.step-bar-button, .step-bar-count { min-height: 36px; padding: 0 var(--space-2); font: inherit; font-size: var(--text-s); }
+.step-bar-count { min-width: 7rem; }
+.step-bar-switch { display: flex; align-items: center; gap: var(--space-1); font-size: var(--text-s); white-space: nowrap; }
+@media (pointer: coarse) {
+  .step-bar-button, .step-bar-count { min-height: 44px; min-width: 44px; }
+}
+.step-strip { position: absolute; z-index: 3; left: 8px; right: 8px; display: flex; gap: var(--space-2); overflow-x: auto; padding: var(--space-2); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); touch-action: pan-x; }
+.step-strip.step-strip-bottom { top: auto; }
+.step-thumb { position: relative; flex: none; padding: 2px; border: 2px solid transparent; border-radius: var(--radius); background: none; cursor: pointer; touch-action: none; }
+.step-thumb[aria-selected="true"] { border-color: var(--accent); }
+.step-thumb canvas { display: block; }
+.step-thumb-number { position: absolute; left: 4px; top: 2px; font-size: var(--text-s); color: var(--text-soft); }

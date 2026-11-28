@@ -9,6 +9,7 @@
 // null, and the caller keeps the block raw, which can never lose anything.
 
 import { splitBlocks } from "./blocks.js";
+import { readAnimationFence, writeAnimationFence } from "./animfence.js";
 
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"];
 export const MAX_TABLE_ROWS = 200;
@@ -62,6 +63,8 @@ function readInnerBlock(kind, src, io, depth) {
       return readImage(src);
     case "canvasblock":
       return readCanvasBlock(src);
+    case "animationblock":
+      return readAnimationBlock(src);
     default:
       break;
   }
@@ -341,6 +344,13 @@ export function writeCanvasBlock(node) {
   return "```scalenote-canvas\nid: " + String((node.attrs || {}).id || "") + "\n```";
 }
 
+// ---------- animation block (0.7.0): a fenced block that names an animation (animfence.js) ----------
+
+export function readAnimationBlock(src) {
+  const attrs = readAnimationFence(src);
+  return attrs ? { type: "animationBlock", attrs } : null;
+}
+
 // ---------- the two entry points used by compose.js ----------
 
 export function readRichBlock(kind, src, io) {
@@ -355,6 +365,8 @@ export function readRichBlock(kind, src, io) {
       return readImage(src);
     case "canvasblock":
       return readCanvasBlock(src);
+    case "animationblock":
+      return readAnimationBlock(src);
     default:
       return null;
   }
@@ -377,6 +389,8 @@ export function writeBlock(node, serialize) {
       return writePdf(node);
     case "canvasBlock":
       return writeCanvasBlock(node);
+    case "animationBlock":
+      return writeAnimationFence(node.attrs);
     default: {
       const text = trimEnd(serialize({ type: "doc", content: [node] }));
       // A paragraph can carry a block link id at the end of its last line.
