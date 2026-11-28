@@ -7995,6 +7995,30 @@ await test("an animation opens on the canvas with its step bar; a line drawn in 
   await page.waitForSelector(".step-bar", { state: "hidden" });
 }, ctxOpts);
 
+await test("the animation in the text follows the pen while a line is drawn, before the pen is lifted", async (page) => {
+  await animationPage(page);
+  await editAnimationFromBlock(page);
+  const dark = () => page.evaluate(() => {
+    const surface = document.querySelector(".animation-block-surface");
+    const data = surface.getContext("2d").getImageData(0, 0, surface.width, surface.height).data;
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] < 90 && data[i + 1] < 90 && data[i + 2] < 90 && data[i + 3] > 200) n++;
+    return n;
+  });
+  const before = await dark();
+  const [x1, y1] = await inBoxPoint(page, 0.3, 0.6);
+  const [x2, y2, ox, oy] = await inBoxPoint(page, 0.7, 0.6);
+  await page.mouse.move(ox + x1, oy + y1);
+  await page.mouse.down();
+  await page.mouse.move(ox + x2, oy + y2, { steps: 10 });
+  await page.waitForTimeout(100);
+  const during = await dark();
+  assert.ok(during > before + 20, `the line shows in the text while the pen is down: ${before} then ${during}`);
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+  assert.ok((await dark()) > before + 20, "and stays after the pen is lifted");
+}, ctxOpts);
+
 await test("Duplicate step copies the step, erasing in the copy leaves the original, and Undo and Redo go through it all", async (page) => {
   await animationPage(page);
   await editAnimationFromBlock(page);

@@ -2981,7 +2981,10 @@ async function toggleSplit() {
 // waiting to be saved. Reading the file again then would lose it.
 const inkBusy = () => Boolean((app.ink && app.ink.active) || (app.canvasSave && (app.canvasSave.pending || app.canvasSave.running)));
 
-const inkDrawing = () => (app.canvasView && app.inkPath && app.current ? { canvas: app.canvasView.canvas, readOnly: app.canvasView.readOnly, live: app.canvasView.liveItems() } : null);
+const inkDrawing = () =>
+  app.canvasView && app.inkPath && app.current
+    ? { canvas: app.canvasView.canvas, readOnly: app.canvasView.readOnly, live: app.canvasView.liveItems(), editing: app.canvasView.editing }
+    : null;
 
 // Reads the drawing of the open page for the text view. Without `force` it is only used when it
 // already holds ink (a page nobody drew on costs nothing); with `force` an empty drawing is made

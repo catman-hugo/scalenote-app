@@ -153,6 +153,15 @@ export const AnimationBlock = Node.create({
           const animation = d && d.canvas ? (d.canvas.animations || []).find((a) => a.id === current.attrs.id) : null;
           view.animation = animation;
           view.canvas = d && d.canvas;
+          // While this animation is being drawn on the canvas beside the text, the block shows the
+          // step being drawn, with the line the pen is drawing right now (as a /canvas block does).
+          const editing = animation && d.editing && d.editing.id === animation.id ? d.editing : null;
+          view.live = editing ? d.live || [] : [];
+          if (editing && editing.layer === "step") {
+            view.step = editing.step;
+            view.playing = false;
+          }
+          view.editing = Boolean(editing);
           for (const part of [stage, controls, caption]) part.hidden = !animation;
           missing.hidden = Boolean(animation);
           if (!animation) return view.stop();
@@ -170,7 +179,8 @@ export const AnimationBlock = Node.create({
           text.textContent = words.text;
           surface.setAttribute("aria-label", t.surface.replace("{title}", words.title));
           const width = Math.max(50, dom.clientWidth);
-          if (show === "steps") paintStep(surface, view.canvas, animation, view.step, width);
+          // While being drawn, always painted afresh, so the line in progress shows.
+          if (show === "steps" || view.editing) paintStep(surface, view.canvas, animation, view.step, width, { live: view.live });
           else view.drawPicture(width);
           controls.hidden = show !== "steps";
           back.disabled = view.step === 0;

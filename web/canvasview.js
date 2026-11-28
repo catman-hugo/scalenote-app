@@ -1600,7 +1600,9 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     finish: commitNote,
     /** The page's drawing (also while an animation is being edited), for saving. */
     get canvas() {
-      if (state.anim) syncLayer();
+      // While a line is being drawn the stored steps have not changed yet (the line is not in the
+      // drawing until the pen lifts), so they are not copied again on every move of the pen.
+      if (state.anim && !state.gesture) syncLayer();
       return state.page || state.canvas;
     },
     editAnimation,
