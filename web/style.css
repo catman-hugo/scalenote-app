@@ -2274,3 +2274,24 @@ button.storage-row:hover { background: var(--bg-hover); }
 .step-thumb[aria-selected="true"] { border-color: var(--accent); }
 .step-thumb canvas { display: block; }
 .step-thumb-number { position: absolute; left: 4px; top: 2px; font-size: var(--text-s); color: var(--text-soft); }
+.animation-block:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--radius); }
+.animation-block-stage { position: relative; display: flex; justify-content: center; max-width: 100%; }
+.animation-block-stage[hidden], .animation-block-controls[hidden], .animation-block-play[hidden] { display: none; }
+/* Sideways swipes are the block's; up and down scroll the page. */
+.animation-block-surface { touch-action: pan-y; }
+.animation-block-play { position: absolute; left: var(--space-2); bottom: var(--space-2); min-width: 44px; min-height: 36px; padding: 0 var(--space-3); font: inherit; font-size: var(--text-s); }
+.animation-block-controls { display: flex; align-items: center; justify-content: center; gap: var(--space-3); }
+.animation-block-button { min-height: 36px; min-width: 4.5rem; font: inherit; font-size: var(--text-s); }
+@media (pointer: coarse) {
+  .animation-block-button, .animation-block-play { min-height: 44px; min-width: 44px; }
+}
+.animation-block-dots { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-1); max-width: 60%; }
+.animation-block-dot { width: 22px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.animation-block-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.animation-block-dot[aria-current="true"]::before { background: var(--accent); }
+@media (pointer: coarse) {
+  .animation-block-dot { width: 32px; height: 44px; }
+}
+.dialog-field { display: flex; flex-direction: column; gap: var(--space-1); margin: var(--space-3) 0; }
+.dialog-error { color: var(--kind-warn); font-size: var(--text-s); }
+.dialog-error[hidden] { display: none; }
