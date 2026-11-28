@@ -22,7 +22,7 @@ import {
   FRAME_LIMITS,
 } from "./canvasrules.js";
 import { createPainter, readEnv } from "./canvaspaint.js";
-import { AnimationHistory, inBox, insideBox, onSheet, resizedBox, stepOnSheet } from "./animrules.js";
+import { AnimationHistory, inBox, insideBox, onSheet, onionSkin as onionOf, resizedBox, stepOnSheet } from "./animrules.js";
 import { createStepBar } from "./stepbar.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
@@ -117,7 +117,7 @@ function paperThumb(paper) {
  * most once a frame), so the canvas blocks in the text can follow the pen as it moves.
  * `topLeftEdge()` says whether the sheet stops at the top and the left (see clampView).
  */
-export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true, topLeftEdge = () => false, onEditAnimation = () => {} }) {
+export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, penButton = () => "erase", snapShapes = () => true, topLeftEdge = () => false, onEditAnimation = () => {}, onionSkin = { get: () => false, set: () => {} } }) {
   const t = strings.canvas;
   const state = {
     canvas: emptyCanvas(),
@@ -729,6 +729,16 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
       painter.items(onSheet(animation.steps[step].items, animation));
     } else painter.items(onSheet(animation.background, animation));
     context.restore();
+    // The steps before and after, faintly, when the switch on the step bar is on (a guide only:
+    // painted here and nowhere else, never part of the drawing).
+    if (layer === "step" && onionSkin.get()) {
+      const { before, after } = onionOf(animation, step);
+      context.save();
+      context.globalAlpha = 0.35;
+      painter.items(before);
+      painter.items(after);
+      context.restore();
+    }
     paintItems(state.canvas.items);
   }
 
@@ -865,6 +875,14 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     },
     done: () => leaveAnimation(),
     focus: () => surface.focus({ preventScroll: true }),
+    /** The steps before and after shown faintly (remembered on this device by main.js). */
+    get onion() {
+      return onionSkin.get();
+    },
+    set onion(on) {
+      onionSkin.set(on);
+      scheduleDraw();
+    },
     /** The page's drawing (its paper and colour, for the pictures of the steps). */
     get page() {
       return state.page || state.canvas;

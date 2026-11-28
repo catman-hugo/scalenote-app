@@ -96,6 +96,15 @@ export function createStepBar(stage, actions) {
   backgroundBox.addEventListener("change", () => actions.background(backgroundBox.checked));
   const backgroundRow = make("label", "step-bar-switch");
   backgroundRow.append(backgroundBox, make("span", "", t.background));
+  // The steps before and after, faintly (onion skin). Off at first; remembered on this device.
+  const onionBox = make("input");
+  onionBox.type = "checkbox";
+  onionBox.addEventListener("change", () => {
+    actions.onion = onionBox.checked;
+  });
+  const onionRow = make("label", "step-bar-switch");
+  onionRow.title = t.onionHint;
+  onionRow.append(onionBox, make("span", "", t.onion));
 
   const done = button(t.done, null, () => actions.done(), "primary");
   // On a narrow window the bar shows the moves, Duplicate and Done in one line, so most of the
@@ -115,7 +124,7 @@ export function createStepBar(stage, actions) {
   const caption = make("div", "step-bar-group step-bar-caption step-bar-extra");
   caption.append(title, text);
   const switches = make("div", "step-bar-group step-bar-extra");
-  switches.append(backgroundRow);
+  switches.append(backgroundRow, onionRow);
   const end = make("div", "step-bar-group step-bar-end");
   end.append(more, done);
   bar.append(moves, edits, caption, switches, end);
@@ -246,6 +255,8 @@ export function createStepBar(stage, actions) {
       if (document.activeElement !== title) title.value = step ? step.title : "";
       if (document.activeElement !== text) text.value = step ? step.text : "";
       backgroundBox.checked = drawingBackground;
+      onionBox.checked = actions.onion;
+      onionBox.disabled = drawingBackground;
       if (!strip.hidden) fillStrip();
       this.place();
     },
