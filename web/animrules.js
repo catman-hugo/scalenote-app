@@ -236,13 +236,14 @@ export class AnimationHistory {
 
 /**
  * The steps shown faintly while drawing a step ("onion skin"): the step before in a cool colour and
- * the step after in a warm one, as copies on the sheet. They are only guides: they are never part
+ * the step after in a warm one, relative to the box like the steps. They are only guides: they are never part
  * of the drawing, so they cannot be selected, erased, printed or exported. Notes keep their own
  * colours (they have their own palette) and are only shown faintly.
  */
 export function onionSkin(animation, index) {
+  // Only the colour differs, so the items are not copied deeply (this runs on every frame).
   const tinted = (items, color) => items.map((item) => (item.tool === "note" ? item : { ...item, color }));
-  const before = index > 0 ? tinted(onSheet(animation.steps[index - 1].items, animation), "blue") : [];
-  const after = index < animation.steps.length - 1 ? tinted(onSheet(animation.steps[index + 1].items, animation), "orange") : [];
+  const before = index > 0 ? tinted(animation.steps[index - 1].items, "blue") : [];
+  const after = index < animation.steps.length - 1 ? tinted(animation.steps[index + 1].items, "orange") : [];
   return { before, after };
 }

@@ -7,7 +7,7 @@
 //   pageFill  the colour of the page
 //   font      the font family for sticky notes
 //   wrapped   a WeakMap used to remember how a note's text was cut into lines
-import { NOTE, MARGIN_X, PEN_COLOURS, readableInk, arrowHead, boxOf, drawnWidth, ellipseOutline, paperInks, paperLayout, tidyStroke, widthAt, wrapText } from "./canvasrules.js";
+import { NOTE, MARGIN_X, PEN_COLOURS, readableInk, arrowHead, boxOf, drawnWidth, ellipseOutline, itemBounds, paperInks, paperLayout, tidyStroke, widthAt, wrapText } from "./canvasrules.js";
 
 export const HIGHLIGHT_ALPHA = 0.35;
 export const NOTE_FILL_ALPHA = 0.22;
@@ -23,6 +23,27 @@ export function readEnv(env) {
   env.background = style.getPropertyValue("--bg").trim() || "#fff";
   env.accent = style.getPropertyValue("--accent").trim() || "#06c";
   env.font = getComputedStyle(document.body).fontFamily || "sans-serif";
+}
+
+// Only the items that reach into `frame` ({x, y, w, h}, in drawing space) are painted: the part of
+// the sheet on the screen, or a canvas block's region. Painting the whole page every time made
+// drawing slow on a full page.
+// The box of each item is remembered, with what it was worked out from: items are moved in place
+// (moveItem), so a moved item gets a new box.
+const boxes = new WeakMap();
+export function itemsInside(items, frame) {
+  return items.filter((item) => {
+    // A note's text can reach below its box while it is typed; notes are few, so they always stay.
+    if (item.tool === "note") return true;
+    const from = item.tool === "shape" ? `${item.a},${item.b},${item.width}` : `${item.points.length},${item.points[0]},${item.points[item.points.length - 1]},${item.width}`;
+    let known = boxes.get(item);
+    if (!known || known.from !== from) {
+      known = { from, box: itemBounds(item) };
+      boxes.set(item, known);
+    }
+    const b = known.box;
+    return b.maxX >= frame.x && b.minX <= frame.x + frame.w && b.maxY >= frame.y && b.minY <= frame.y + frame.h;
+  });
 }
 
 export function createPainter(ctx, env) {

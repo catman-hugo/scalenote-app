@@ -21,8 +21,8 @@ import {
   draggedFrame,
   FRAME_LIMITS,
 } from "./canvasrules.js";
-import { createPainter, readEnv } from "./canvaspaint.js";
-import { AnimationHistory, inBox, insideBox, onSheet, onionSkin as onionOf, resizedBox, stepOnSheet } from "./animrules.js";
+import { createPainter, itemsInside, readEnv } from "./canvaspaint.js";
+import { AnimationHistory, inBox, insideBox, onSheet, onionSkin as onionOf, resizedBox } from "./animrules.js";
 import { createStepBar } from "./stepbar.js";
 import { icon } from "./icons.js";
 import { strings } from "./strings.js";
@@ -685,13 +685,27 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
   // ---- animations (0.7.0) ----
 
   // Outside editing, an animation's box shows its first step, cut to the box, with its name.
+  // The items of an animation are stored relative to its box. They are painted with the box's
+  // corner moved under them instead of being copied onto the sheet first: copying every item on
+  // every frame made the canvas slow with a few animations on it.
+  function paintInBox(animation, step, items = null) {
+    context.save();
+    context.translate(animation.x, animation.y);
+    if (items) painter.items(items);
+    else {
+      const own = animation.steps[Math.max(0, Math.min(step, animation.steps.length - 1))];
+      painter.items(own ? [...animation.background, ...own.items] : animation.background);
+    }
+    context.restore();
+  }
+
   function paintAnimations(scale) {
     for (const animation of state.canvas.animations || []) {
       context.save();
       context.beginPath();
       context.rect(animation.x, animation.y, animation.w, animation.h);
       context.clip();
-      painter.items(stepOnSheet(animation, 0));
+      paintInBox(animation, 0);
       context.restore();
       context.save();
       context.strokeStyle = state.accent;
@@ -714,7 +728,7 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     context.save();
     context.globalAlpha = 0.25;
     paintItems(state.page.items);
-    for (const other of state.page.animations || []) if (other !== animation) painter.items(stepOnSheet(other, 0));
+    for (const other of state.page.animations || []) if (other !== animation) paintInBox(other, 0);
     context.restore();
     context.save();
     context.fillStyle = state.pageFill;
@@ -726,8 +740,8 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     context.save();
     if (layer === "background") {
       context.globalAlpha = 0.3;
-      painter.items(onSheet(animation.steps[step].items, animation));
-    } else painter.items(onSheet(animation.background, animation));
+      paintInBox(animation, step, animation.steps[step].items);
+    } else paintInBox(animation, step, animation.background);
     context.restore();
     // The steps before and after, faintly, when the switch on the step bar is on (a guide only:
     // painted here and nowhere else, never part of the drawing).
@@ -735,8 +749,8 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
       const { before, after } = onionOf(animation, step);
       context.save();
       context.globalAlpha = 0.35;
-      painter.items(before);
-      painter.items(after);
+      paintInBox(animation, step, before);
+      paintInBox(animation, step, after);
       context.restore();
     }
     paintItems(state.canvas.items);
@@ -928,16 +942,27 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
     context.fillStyle = state.pageFill;
     context.fillRect(0, 0, surface.width, surface.height);
     const { x, y, scale } = state.view;
-    context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
-    paintPaper(box);
-    if (state.anim) paintEditing(scale);
-    else {
-      paintItems(state.canvas.items);
-      paintAnimations(scale);
-    }
-    painter.frames(state.anim ? [] : state.canvas.frames, scale);
-    paintFrameSelection(scale);
     const g = state.gesture;
+    // While a line or a shape is drawn, nothing under it changes. Painting the whole drawing again
+    // on every move made drawing slow on a full page, so it is painted once when the line starts,
+    // kept as a picture, and only the line itself is painted on top of that picture after that.
+    const still = Boolean(g && ((g.kind === "pen" && g.stroke.tool !== "highlighter") || g.kind === "shape" || g.kind === "lasso" || g.kind === "notebox"));
+    const key = `${width},${height},${x},${y},${scale}`;
+    if (still && state.under && state.under.key === key) {
+      context.drawImage(state.under.picture, 0, 0);
+      context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
+    } else {
+      context.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * x, ratio * y);
+      paintPaper(box);
+      if (state.anim) paintEditing(scale);
+      else {
+        paintItems(itemsInside(state.canvas.items, { x: -x / scale, y: -y / scale, w: box.width / scale, h: box.height / scale }));
+        paintAnimations(scale);
+      }
+      painter.frames(state.anim ? [] : state.canvas.frames, scale);
+      paintFrameSelection(scale);
+      state.under = still ? keepUnder(key, width, height) : null;
+    }
     if (g && g.kind === "pen" && g.stroke.tool !== "highlighter") paintStroke(g.stroke);
     if (g && g.kind === "shape") paintShape(g.shape);
     if (g && g.kind === "notebox") {
@@ -978,6 +1003,15 @@ export function createCanvasView(host, { onChange, onLive = () => {}, onNotice, 
       const b = stepActions.box();
       stage.dataset.animationBox = `${Math.round(b.left)},${Math.round(b.top)},${Math.round(b.width)},${Math.round(b.height)}`;
     } else delete stage.dataset.animationBox;
+  }
+
+  // A copy of what is on the surface now (the picture kept under a line being drawn; see draw).
+  function keepUnder(key, width, height) {
+    const picture = (state.under && state.under.picture) || document.createElement("canvas");
+    picture.width = width;
+    picture.height = height;
+    picture.getContext("2d").drawImage(surface, 0, 0);
+    return { key, picture };
   }
 
   function scheduleDraw() {

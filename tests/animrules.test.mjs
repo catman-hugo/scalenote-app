@@ -234,11 +234,11 @@ test("while editing, Undo and Redo go back through drawing and step actions in t
   assert.deepEqual(restored.slice(0, 3), [1, 0, 0], "each undo shows the step it changed");
 });
 
-test("the steps before and after are tinted copies on the sheet, and the drawing is not changed", async () => {
+test("the steps before and after are tinted copies, relative to the box, and the drawing is not changed", async () => {
   const { onionSkin } = await import("../web/animrules.js");
   const three = { ...ANIM, steps: [...ANIM.steps, { id: "step0003", title: "", text: "", items: [pen([[5, 5, 0.5]], "green"), { tool: "note", color: "yellow", x: 1, y: 1, w: 180, h: 60, text: "hi" }] }] };
   const middle = onionSkin(three, 1);
-  assert.deepEqual(middle.before.map((item) => [item.color, item.points[0][0]]), [["blue", 150]]);
+  assert.deepEqual(middle.before.map((item) => [item.color, item.points[0][0]]), [["blue", 50]], "relative to the box: the canvas moves the corner under them");
   assert.deepEqual(middle.after.map((item) => item.color), ["orange", "yellow"], "a note keeps its own colour");
   assert.deepEqual(onionSkin(three, 0).before, [], "nothing before the first step");
   assert.deepEqual(onionSkin(three, 2).after, [], "nothing after the last");
