@@ -156,6 +156,19 @@ impl Manifest {
     /// Looks at every file of the vault at `root`. A folder that cannot be read is an error;
     /// a single file that cannot be used is listed in `skipped`.
     pub fn scan(root: &Path) -> Result<Scan> {
+        Self::walk(root, true)
+    }
+
+    /// The names of the files a scan would list, without reading what is in them. Reading every
+    /// file to work out its hash took seconds on a phone with PDFs in the vault; a list of names
+    /// (to find conflict copies, for example) does not need it. The same files are left out as
+    /// in `scan`.
+    pub fn names(root: &Path) -> Result<Vec<String>> {
+        Ok(Self::walk(root, false)?.manifest.files.into_keys().collect())
+    }
+
+    /// The walk behind `scan` and `names`. Without `hash`, the files get an empty hash.
+    fn walk(root: &Path, hash: bool) -> Result<Scan> {
         let mut manifest = Manifest::default();
         let mut skipped = Vec::new();
         let mut folders = BTreeSet::new();
@@ -186,7 +199,7 @@ impl Manifest {
                             let settings = entry.path().join(file);
                             if let Ok(file_meta) = fs::symlink_metadata(&settings) {
                                 if file_meta.is_file() {
-                                    Self::add(&mut manifest, &mut skipped, relative.to_string(), &settings, &file_meta)?;
+                                    Self::add(&mut manifest, &mut skipped, relative.to_string(), &settings, &file_meta, hash)?;
                                 }
                             }
                         }
@@ -205,7 +218,7 @@ impl Manifest {
                         stack.push((entry.path(), format!("{relative}/"), depth + 1));
                     }
                 } else if meta.is_file() {
-                    Self::add(&mut manifest, &mut skipped, relative, &entry.path(), &meta)?;
+                    Self::add(&mut manifest, &mut skipped, relative, &entry.path(), &meta, hash)?;
                 } else {
                     skipped.push(Skip { path: relative, reason: SkipReason::NotAFile });
                 }
@@ -215,7 +228,7 @@ impl Manifest {
         Ok(Scan { manifest, skipped, folders })
     }
 
-    fn add(manifest: &mut Manifest, skipped: &mut Vec<Skip>, relative: String, path: &Path, meta: &fs::Metadata) -> Result<()> {
+    fn add(manifest: &mut Manifest, skipped: &mut Vec<Skip>, relative: String, path: &Path, meta: &fs::Metadata, hash: bool) -> Result<()> {
         if !safe_path(&relative) {
             skipped.push(Skip { path: relative, reason: SkipReason::NotPortable });
             return Ok(());
@@ -226,6 +239,10 @@ impl Manifest {
         }
         if manifest.files.len() >= MAX_FILES {
             return Err(SyncError::TooManyFiles);
+        }
+        if !hash {
+            manifest.files.insert(relative, FileState { hash: String::new(), size: meta.len(), modified: modified_seconds(meta) });
+            return Ok(());
         }
         match hash_file(path) {
             Ok(hash) => {
