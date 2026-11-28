@@ -51,3 +51,13 @@ tauri-plugin-global-shortcut = "=2.4.1"
 # nothing to use it with. Exact version, like every dependency here.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-biometric = "=2.5.0"
+
+# Release builds (every installer, and the Android app since it stopped being a debug build).
+# Smaller files without making the app slower: the code is optimised as a whole (lto, one
+# codegen unit) and the debugging names are left out (strip). Speed is kept at the default
+# level 3 instead of optimising for size, because sync, search and PDFs do heavy work.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
