@@ -5,7 +5,7 @@
 // its own: opening the whole canvas shows the same lines. A page whose frame is gone shows a calm
 // message instead, and the drawing is never touched by the block.
 import { Node } from "@tiptap/core";
-import { createPainter, readEnv } from "./canvaspaint.js";
+import { createPainter, itemsInside as near, readEnv } from "./canvaspaint.js";
 import { boundsOf, pageFill } from "./canvasrules.js";
 import { strings } from "./strings.js";
 
@@ -37,7 +37,7 @@ export function paintForPaper(on) {
  * when the frame is wider (never scaled up). `live` are items still being drawn on the canvas
  * (a pen line, a shape), so the block follows the pen in the split view. Returns the size.
  */
-export function paintRegion(surface, canvas, frame, width, { paper = forPaper, ratio = window.devicePixelRatio || 1, live = [] } = {}) {
+export function paintRegion(surface, canvas, frame, width, { paper = forPaper, ratio = window.devicePixelRatio || 1, live = [], inBox = null } = {}) {
   const scale = Math.min(1, width / frame.w);
   const cssWidth = Math.max(1, Math.round(frame.w * scale));
   const cssHeight = Math.max(1, Math.round(frame.h * scale));
@@ -63,9 +63,20 @@ export function paintRegion(surface, canvas, frame, width, { paper = forPaper, r
   ctx.rect(frame.x, frame.y, frame.w, frame.h);
   ctx.clip();
   painter.paper(canvas.paper, { x: -frame.x * scale, y: -frame.y * scale, scale }, { width: cssWidth, height: cssHeight });
-  painter.items(live.length ? [...canvas.items, ...live] : canvas.items);
+  if (inBox) {
+    // Items stored relative to the box (an animation's steps): the corner is moved under them.
+    ctx.save();
+    ctx.translate(frame.x, frame.y);
+    painter.items(inBox);
+    ctx.restore();
+    if (live.length) painter.items(live);
+  } else {
+    const items = near(canvas.items, frame);
+    painter.items(live.length ? [...items, ...live] : items);
+  }
   return { width: cssWidth, height: cssHeight };
 }
+
 
 export const CanvasBlock = Node.create({
   name: "canvasBlock",
@@ -106,7 +117,15 @@ export const CanvasBlock = Node.create({
           title.textContent = frame && frame.label ? frame.label : strings.canvasBlock.title;
           if (!frame) return;
           surface.setAttribute("aria-label", strings.canvasBlock.surface);
-          paintRegion(surface, d.canvas, frame, Math.max(50, dom.clientWidth), { live: d.live || [] });
+          const live = d.live || [];
+          const width = Math.max(50, dom.clientWidth);
+          // While a line is drawn somewhere else on the page, the drawing under it does not change:
+          // a block the line does not reach (and did not reach before) has nothing new to show.
+          const seen = { items: d.canvas.items, count: d.canvas.items.length, x: frame.x, y: frame.y, w: frame.w, h: frame.h, width, liveIn: near(live, frame).length > 0 };
+          const last = view.last;
+          view.last = seen;
+          if (live.length && last && !last.liveIn && !seen.liveIn && ["items", "count", "x", "y", "w", "h", "width"].every((key) => last[key] === seen[key])) return;
+          paintRegion(surface, d.canvas, frame, width, { live });
         },
       };
       views.add(view);

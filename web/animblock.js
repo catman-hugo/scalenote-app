@@ -7,7 +7,6 @@
 // loop) come later.
 import { Node } from "@tiptap/core";
 import { paintRegion } from "./canvasblock.js";
-import { stepOnSheet } from "./animrules.js";
 import { openContextMenu } from "./contextmenu.js";
 import { SPEEDS } from "./animfence.js";
 import { strings } from "./strings.js";
@@ -68,8 +67,36 @@ export function blockMenu(attrs, { show, speed, otherSpeed, edit, remove, editab
  * and colour, the background of every step, then the step's own items, cut to the box.
  */
 export function paintStep(surface, canvas, animation, index, width, options = {}) {
-  const sheet = { ...canvas, items: stepOnSheet(animation, index) };
-  return paintRegion(surface, sheet, animation, width, options);
+  const step = animation.steps[Math.max(0, Math.min(index, animation.steps.length - 1))];
+  const inBox = step ? [...animation.background, ...step.items] : animation.background;
+  return paintRegion(surface, canvas, animation, width, { ...options, inBox });
+}
+
+// Everything a block's pictures are made from. The drawing is never changed in place (a change
+// makes new arrays: see syncLayer in canvasview.js and animrules.js), so comparing the arrays
+// themselves is enough to know that a step looks the same.
+function paintedFrom(animation, d, attrs, width) {
+  const style = getComputedStyle(document.documentElement);
+  return {
+    animation,
+    background: animation && animation.background,
+    steps: animation && animation.steps,
+    // The place on the sheet too: the lines of the paper are painted from it.
+    x: animation && animation.x,
+    y: animation && animation.y,
+    w: animation && animation.w,
+    h: animation && animation.h,
+    paper: d && d.canvas && d.canvas.paper,
+    page: d && d.canvas && d.canvas.page,
+    show: attrs.show,
+    fps: attrs.fps,
+    width,
+    theme: style.getPropertyValue("--text") + style.getPropertyValue("--bg"),
+  };
+}
+
+function sameMade(a, b) {
+  return Object.keys(a).every((key) => a[key] === b[key]);
 }
 
 /** The caption of a step for the text: "Step 2 of 7" when the step has no title. */
@@ -78,6 +105,8 @@ export function stepCaption(animation, index) {
   const t = strings.animationBlock;
   return {
     title: step && step.title ? step.title : t.stepOf.replace("{n}", String(index + 1)).replace("{total}", String(animation.steps.length)),
+    // True when the title is only the count, with no title of the step's own.
+    counted: !(step && step.title),
     text: step ? step.text : "",
   };
 }
@@ -146,13 +175,30 @@ export const AnimationBlock = Node.create({
         // A picture of each step, made once, so playing fast stays smooth on a phone.
         pictures: null,
         visible: true,
+        // What the block was last painted from; see paint().
+        made: null,
         paint() {
-          // The drawing (or the theme, or the width) may have changed: the pictures are made again.
-          view.pictures = null;
           const d = drawing();
           const animation = d && d.canvas ? (d.canvas.animations || []).find((a) => a.id === current.attrs.id) : null;
           view.animation = animation;
           view.canvas = d && d.canvas;
+          // While this animation is being drawn on the canvas beside the text, the block shows the
+          // step being drawn, with the line the pen is drawing right now (as a /canvas block does).
+          const editing = animation && d.editing && d.editing.id === animation.id ? d.editing : null;
+          view.live = editing ? d.live || [] : [];
+          if (editing && editing.layer === "step") {
+            view.step = editing.step;
+            view.playing = false;
+          }
+          view.editing = Boolean(editing);
+          // The blocks are asked to paint again after every change on the canvas, and on every
+          // frame while a line is drawn there. Painting all the steps each time made the whole
+          // canvas slow, so the block only paints again when something it shows has changed.
+          const made = paintedFrom(animation, d, current.attrs, Math.max(50, dom.clientWidth));
+          if (!view.editing && view.made && sameMade(view.made, made)) return;
+          // The drawing (or the theme, or the width) has changed: the pictures are made again.
+          view.made = view.editing ? null : made;
+          view.pictures = null;
           for (const part of [stage, controls, caption]) part.hidden = !animation;
           missing.hidden = Boolean(animation);
           if (!animation) return view.stop();
@@ -168,9 +214,14 @@ export const AnimationBlock = Node.create({
           const words = stepCaption(animation, view.step);
           title.textContent = words.title;
           text.textContent = words.text;
+          // "Step 2 of 7" is for clicking through the steps; a video or a loop plays by itself, so
+          // it only shows a title or text the step has of its own.
+          title.hidden = show !== "steps" && words.counted;
+          caption.hidden = title.hidden && !words.text;
           surface.setAttribute("aria-label", t.surface.replace("{title}", words.title));
           const width = Math.max(50, dom.clientWidth);
-          if (show === "steps") paintStep(surface, view.canvas, animation, view.step, width);
+          // While being drawn, always painted afresh, so the line in progress shows.
+          if (show === "steps" || view.editing) paintStep(surface, view.canvas, animation, view.step, width, { live: view.live });
           else view.drawPicture(width);
           controls.hidden = show !== "steps";
           back.disabled = view.step === 0;

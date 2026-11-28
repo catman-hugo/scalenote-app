@@ -957,3 +957,9 @@ Changed from the plan: drawing outside the box while editing goes into the step,
 Alternatives. A separate file per animation: one more kind of file to sync, move and trash. Storing items on the sheet instead of relative to the box: moving the box would mean moving every item of every step.
 Cost. A page with an animation cannot be changed by an app before 0.7.0 (shown read-only); the release notes say to update every device first.
 
+
+## 2026-11-28: Painting skips work by comparing what it was painted from, and keeps the page as a picture under a line
+Context. With a 10-step animation on the page, drawing became unusable: every pen move painted every step of the animation in the text again, copied every animation item, and painted the whole page again under the line.
+Decision. An animation block remembers what it was last painted from (the step lists, the box, the paper, the theme, the width) and paints again only when one of them changed. This relies on step lists never being changed in place, which the editing code already keeps to (a change makes new lists). The canvas keeps a picture of the page while a line or shape is drawn and paints only the line on it; items off the screen or outside a block's region are not painted.
+Alternatives. Painting in a background thread (OffscreenCanvas in a worker): a much bigger change, and not available the same way on every platform. Throttling repaints to a few a second: the text would lag behind the pen, which the owner asked not to happen.
+Cost. If some future code changes a step's items in place, the block in the text would keep showing the old picture until something else changes. To undo, drop the comparison in `paint()` in `animblock.js` and the `state.under` picture in `canvasview.js`.
