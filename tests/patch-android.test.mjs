@@ -2,7 +2,7 @@
 // (the Tauri 2.12.4 template, with the example identifier used everywhere in this repository).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { patchManifest, patchActivity, networkBridgeSource, apkInstallerSource, apkFileProviderSource, shareBridgeSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
+import { patchManifest, patchActivity, patchGradle, keepRules, networkBridgeSource, apkInstallerSource, apkFileProviderSource, shareBridgeSource, APK_PATHS_XML } from "../scripts/patch-android.mjs";
 
 const MANIFEST = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -218,4 +218,51 @@ test("the share bridge copies files into its own folder with limits and gives th
   assert.doesNotMatch(src, /evaluateJavascript/, "nothing shared is ever put into the page as code");
   assert.match(src, /@JavascriptInterface\n  fun take\(\): String/);
   assert.match(src, /take\(25\)/, "the shortcut label is short and comes from the page");
+});
+
+// The parts of app/build.gradle.kts that the patch looks at, as the Tauri 2.12.4 template writes them.
+const GRADLE = `import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+    id("com.android.application")
+}
+
+android {
+    compileSdk = 37
+    defaultConfig {
+        applicationId = "local.example.scalenote"
+    }
+    buildTypes {
+        getByName("debug") {
+            isDebuggable = true
+        }
+        getByName("release") {
+            optimization {
+               enable = true
+            }
+        }
+    }
+}
+`;
+
+test("release builds are signed from keystore.properties, when that file is there", () => {
+  const out = patchGradle(GRADLE);
+  assert.match(out, /^import java\.util\.Properties\nimport java\.io\.FileInputStream\n/);
+  assert.match(out, /signingConfigs \{[\s\S]*rootProject\.file\("keystore\.properties"\)[\s\S]*if \(keystoreFile\.exists\(\)\)[\s\S]*create\("release"\)[\s\S]*\}\n    buildTypes \{/);
+  assert.match(out, /getByName\("release"\) \{\n            signingConfigs\.findByName\("release"\)\?\.let \{ signingConfig = it \}\n            optimization/);
+  assert.match(out, /getByName\("debug"\) \{\n            isDebuggable = true/, "the debug build is left alone");
+  assert.equal(patchGradle(out), out, "running it twice changes nothing");
+});
+
+test("the Gradle patch stops when the generated file looks different", () => {
+  assert.throws(() => patchGradle(GRADLE.replace("    buildTypes {", "    types {")), /buildTypes/);
+  assert.throws(() => patchGradle(GRADLE.replace('getByName("release")', 'getByName("other")')), /release build type/);
+  assert.throws(() => patchGradle(GRADLE.replace("import java.util.Properties\n", "")), /Properties/);
+});
+
+test("the shrinking of the release build keeps our classes and what the page calls", () => {
+  const rules = keepRules("local.example.scalenote");
+  assert.match(rules, /^-keep class local\.example\.scalenote\.\*\* \{ \*; \}$/m);
+  assert.match(rules, /@android\.webkit\.JavascriptInterface <methods>;/);
 });

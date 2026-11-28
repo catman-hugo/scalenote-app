@@ -119,6 +119,57 @@ class ApkFileProvider : FileProvider()
 `;
 }
 
+// ---------- the release build (after 0.7.0) ----------
+//
+// The APK used to be a debug build: about 164 MB, with Rust code that is not optimised. A release
+// build is much smaller and faster, but Android only installs it when it is signed, and only over
+// the installed app when it is signed with the same key. The generated build file signs release
+// builds with nothing, so a signing setup is added that reads src-tauri/gen/android/keystore.properties
+// (written in the build from a GitHub secret; Tauri's documented way, see "Android Code Signing").
+// Without that file the release build stays unsigned, and the build step stops (see build.yml).
+const GRADLE_IMPORT = "import java.io.FileInputStream";
+const SIGNING = `    signingConfigs {
+        val keystoreFile = rootProject.file("keystore.properties")
+        if (keystoreFile.exists()) {
+            val keystore = Properties()
+            FileInputStream(keystoreFile).use { keystore.load(it) }
+            create("release") {
+                keyAlias = keystore["keyAlias"] as String
+                keyPassword = keystore["password"] as String
+                storeFile = file(keystore["storeFile"] as String)
+                storePassword = keystore["password"] as String
+            }
+        }
+    }
+`;
+const RELEASE_SIGNING = `            signingConfigs.findByName("release")?.let { signingConfig = it }`;
+
+export function patchGradle(text) {
+  if (text.includes("signingConfigs {")) return text;
+  if (!text.includes("import java.util.Properties")) throw new Error("build.gradle.kts does not import Properties");
+  if (!text.includes("    buildTypes {")) throw new Error("build.gradle.kts has no buildTypes block");
+  const release = '        getByName("release") {';
+  if (!text.includes(release)) throw new Error("build.gradle.kts has no release build type");
+  return text
+    .replace("import java.util.Properties", `import java.util.Properties\n${GRADLE_IMPORT}`)
+    .replace("    buildTypes {", `${SIGNING}    buildTypes {`)
+    .replace(release, `${release}\n${RELEASE_SIGNING}`);
+}
+
+// A release build shrinks the Kotlin code (R8) and may rename or remove what it thinks is unused.
+// The page calls our Kotlin objects by name (addJavascriptInterface in MainActivity), which R8
+// cannot see, so our own classes and every method the page may call are kept as they are. The
+// generated build file reads every *.pro file in the app folder.
+export function keepRules(pkg) {
+  return `# Written by scripts/patch-android.mjs. See keepRules there for why.
+-keep class ${pkg}.** { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keepattributes JavascriptInterface
+`;
+}
+
 // Only the "updates" folder of the cache can be shared, and nothing else.
 export const APK_PATHS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <paths>
@@ -622,6 +673,10 @@ async function main() {
   await writeFile(path.join(path.dirname(activity), "ApkFileProvider.kt"), apkFileProviderSource(pkg));
   await writeFile(path.join(path.dirname(activity), "NetworkBridge.kt"), networkBridgeSource(pkg));
   await writeFile(path.join(path.dirname(activity), "ShareBridge.kt"), shareBridgeSource(pkg));
+  const gradle = path.join("src-tauri", "gen", "android", "app", "build.gradle.kts");
+  await writeFile(gradle, patchGradle(await readFile(gradle, "utf8")));
+  await writeFile(path.join("src-tauri", "gen", "android", "app", "proguard-scalenote.pro"), keepRules(pkg));
+  console.log("patched", gradle);
   await mkdir(path.join(root, "res", "xml"), { recursive: true });
   await writeFile(path.join(root, "res", "xml", "apk_paths.xml"), APK_PATHS_XML);
   console.log("patched", manifest);
