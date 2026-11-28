@@ -2,7 +2,7 @@
 
 Status key: not started, in progress, built (tried only where the builder can run it), tested (tried by the owner on a real device), reviewed (a human has read the code).
 
-Last updated: 2026-11-27; 0.6.9 built, not tried on a real device (fixes and requests after testing 0.6.8: the sync list on both devices, Find in page, ink on slides, the page place, the page list and Settings); 0.6.8 released (the last version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
+Last updated: 2026-11-27; 0.7.0 built, not tried on a real device (animations in pages); 0.6.9 merged (fixes after testing 0.6.8: the sync list on both devices, Find in page, ink on slides, the page place, the page list and Settings; not tried on real devices yet); 0.6.8 released (the last hardening version of the 0.6 line: Sync now waits, pen keys, readable dark pen colours, "Keep on this device", security check of the line; not tried on real devices yet); 0.6.7 released (folders sync, ink over the text shows after a sync; tried by the owner on a computer, a tablet and a phone); 0.6.6 released (sharing into ScaleNote and quick capture; not tried on real devices yet); 0.6.5 built (storage and search); 0.6.4 released (sharing with other people); 0.6.3 released (fixes and requests after testing 0.6.1); 0.6.1 released (sync over a hotspot or cable); 0.6.0 built (partial sync in the core, no new screens); 0.6 plan written (`docs/v0.6-plan.md`); 0.5.9 built (canvas edges setting, for a tester); 0.5.8 released (Settings cleanup, per-page options, Tailscale sync, faster phone PDF import, canvas region grip); 0.5.7 released.
 
 ## 0.6.9: built, not tried on a real device (fixes and requests after testing 0.6.8)
 
@@ -74,7 +74,7 @@ Asked by the owner after looking at a laptop and a phone.
 
 NOT tried on a real device.
 
-## 0.7.0: in progress (animations in pages)
+## 0.7.0: built, not tried on a real device (animations in pages)
 
 Plan: `docs/v0.7.0-animation.md`. `/animation` makes a box of steps on the page's canvas (duplicate a step, a background shared by all steps, captions, the steps before and after shown faintly while drawing). In the text it is shown as steps, a video that plays once, or a loop, chosen with a right-click together with the speed. Built in the plan's six slices, each on its own branch; each starts from the one before.
 
@@ -118,6 +118,16 @@ NOT tried on a real device.
 - Tests (browser, a loop and a video run on a controlled clock): the steps with Back, Next, the dots and the keys; the menu writes `show:` and `fps:`, a wrong speed is refused and `1,5` is kept as 1.5, Remove from page keeps the drawing; a loop steps at its speed, waits out of view and carries on, and keeps a pause; a video plays once and starts again; reduced motion waits for Play; on a touch screen a sideways swipe changes the step and an up-and-down one does not. Screenshots in light and dark of the steps and the menu looked at. Full browser run: 486 passed.
 
 NOT tried on a real device.
+
+### Slice 6: paper and finishing 0.7.0 (branch `feature/v0.7.0-release`, starts from `feature/animation-show`)
+
+- On paper (printing, Save as PDF) an animation shows every step one after another, small, with its caption, black ink on white, also for a video or a loop (`printAnimationBlocks` in `web/animblock.js`, called on the browser's print events in `web/main.js`; print styles in `web/style.css`). Browser test.
+- Version 0.7.0 everywhere; release notes `docs/release-notes/0.7.0.md` in two parts (since 0.6.9, and since 0.6.0), each with its short list for the app; security checklist `docs/security-checklist-0.7.0.md` (`npm audit` 0, `cargo audit` 0 with the same 6 allowed warnings); DECISIONS. What's new tests point at the 0.7.0 notes.
+- Design check: screenshots in light and dark of the block as steps, its menu, editing on a computer, before and after, and the step bar and strip on a phone, looked at; the speed menu said "1 steps", fixed; the strip covered the bar on a phone and the bar took two lines, fixed.
+
+- Packaged: `npx tauri build --bundles deb` made `ScaleNote_0.7.0_amd64.deb` (8.7 MB); the built app started on a virtual screen here and stayed up for 15 seconds with no error. Not opened on a real screen. Full browser run: 487 passed; `npm test`: 376 passed.
+
+NOT tried on a real device: the owner drawing the SRP example on the tablet is the test the plan asks for.
 
 ## 0.6.8: built, not tried on a real device (hardening and release of 0.6)
 

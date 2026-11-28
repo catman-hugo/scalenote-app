@@ -1957,6 +1957,12 @@ body.is-locked .toast { display: none; }
   .find-hit, .find-hit-current, .pdf-hit, .pdf-hit-current { background: none; outline: 0; }
   .canvas-block-surface { max-width: 100%; height: auto !important; }
   .canvas-block { break-inside: avoid; }
+  /* An animation on paper: every step with its caption, instead of the player. */
+  .animation-block-stage, .animation-block-controls, .animation-block-caption { display: none !important; }
+  .animation-block-paper:not([hidden]) { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; width: 100%; }
+  .animation-block-paper-step { margin: 0; break-inside: avoid; display: flex; flex-direction: column; gap: 4px; font-size: 10pt; color: #000; }
+  .animation-block-paper-step canvas { max-width: 100%; height: auto !important; border: 1px solid #999; }
+  .animation-block-paper-step figcaption { display: flex; flex-direction: column; }
   .note-body pre, .note-body blockquote, .note-body table, .note-body img { break-inside: avoid; }
   .note-body h1, .note-body h2, .note-body h3 { break-after: avoid; }
   a { color: inherit; text-decoration: underline; }
@@ -2295,3 +2301,4 @@ button.storage-row:hover { background: var(--bg-hover); }
 .dialog-field { display: flex; flex-direction: column; gap: var(--space-1); margin: var(--space-3) 0; }
 .dialog-error { color: var(--kind-warn); font-size: var(--text-s); }
 .dialog-error[hidden] { display: none; }
+.animation-block-paper { display: none; }

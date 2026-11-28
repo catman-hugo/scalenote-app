@@ -45,7 +45,7 @@ import { createInkLayer } from "./inklayer.js";
 import { createPageFind } from "./pagefind.js";
 import { ANIMATION_LIMITS, FRAME_LIMITS, makeFrameId, nextFrameRect, parseCanvas, serializeCanvas } from "./canvasrules.js";
 import { drawingPicture, paintForPaper, repaintCanvasBlocks as repaintRegionBlocks } from "./canvasblock.js";
-import { repaintAnimationBlocks } from "./animblock.js";
+import { printAnimationBlocks, repaintAnimationBlocks } from "./animblock.js";
 import { newAnimation, takenIds } from "./animrules.js";
 import { parseFps } from "./animfence.js";
 import { keepPageId } from "./historyrules.js";
@@ -2083,12 +2083,14 @@ async function printCurrentPage() {
 // printing is started with the keyboard and not from the menu.
 function getReadyForPaper() {
   paintForPaper(true);
+  printAnimationBlocks(true);
   if (!app.ink) return;
   const report = app.ink.printPrepare();
   if (report.skipped) showToast(strings.printPage.inkSkipped);
 }
 function backFromPaper() {
   paintForPaper(false);
+  printAnimationBlocks(false);
   if (app.ink) app.ink.printClear();
 }
 window.addEventListener("beforeprint", getReadyForPaper);

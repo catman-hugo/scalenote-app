@@ -949,3 +949,11 @@ Context. Only the device that started a sync saved the list of what both had. A 
 Decision. At the end of a sync between one's own devices the starting device sends the list and the folders both have (`KIND_BASE`, the same request share syncs use). The answering device keeps only the files that are exactly so on its side, so a list from the network can never make it think a file it changed is unchanged. Only sent to devices that say `base=1` in their greeting; older apps end a sync on a request they do not know.
 Alternatives. Each side working out the list itself from the other's listing at the end: the answering side never sees the caller's final listing, so it would need an extra listing request in the other direction, which is more traffic for the same result.
 Cost. One more message per sync. Undoing it means removing the greeting part; older lists stay valid.
+
+## 2026-11-27: Animations are kept in the page's drawing file, and edited as one layer at a time
+Context. 0.7.0 adds animations: a box with steps, shown in the text as steps, a video or a loop (plan: `docs/v0.7.0-animation.md`).
+Decision. An animation is a list in the page's own drawing file (format 7), with its items relative to the box, so it syncs, keeps history and goes to the trash with its page. The block in the text only holds the id and how to show it (`show`, `fps`), so the same animation can be shown in two ways. While an animation is edited, the canvas tools work on one list: the current step or the background, on the sheet; each change is written back and kept for Undo as a picture of the whole animation, so drawing and step actions undo in one order.
+Changed from the plan: drawing outside the box while editing goes into the step, not onto the page. Sending it to the page would mean editing two drawings at once with two undo histories; Done gives the page back in one tap.
+Alternatives. A separate file per animation: one more kind of file to sync, move and trash. Storing items on the sheet instead of relative to the box: moving the box would mean moving every item of every step.
+Cost. A page with an animation cannot be changed by an app before 0.7.0 (shown read-only); the release notes say to update every device first.
+
